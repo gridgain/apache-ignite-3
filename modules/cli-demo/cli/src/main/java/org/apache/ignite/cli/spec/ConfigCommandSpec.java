@@ -22,7 +22,7 @@ import org.apache.ignite.cli.builtins.config.ConfigurationClient;
 import picocli.CommandLine;
 
 @CommandLine.Command(name = "config",
-    description = "Show/change node configurations",
+    description = "Inspect and update Ignite cluster configuration.",
     subcommands = {
         ConfigCommandSpec.GetConfigCommandSpec.class,
         ConfigCommandSpec.SetConfigCommandSpec.class
