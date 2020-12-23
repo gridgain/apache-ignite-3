@@ -79,8 +79,23 @@ public class TrackerConfig {
     // as soon as possible.
     private Set<UUID> learnersNext;
 
+    public TrackerConfig(JointConfig voters, Set<UUID> learners, Set<UUID> learnersNext, boolean autoLeave) {
+        this.voters = voters;
+        this.learners = learners;
+        this.learnersNext = learnersNext;
+        this.autoLeave = autoLeave;
+    }
+
     public JointConfig voters() {
         return voters;
+    }
+
+    public Set<UUID> learners() {
+        return learners;
+    }
+
+    public Set<UUID> learnersNext() {
+        return learnersNext;
     }
 
     /**

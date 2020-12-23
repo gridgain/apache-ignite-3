@@ -17,14 +17,12 @@
 
 package org.apache.ignite.internal.replication.raft;
 
-import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
 import java.util.function.BiConsumer;
 import java.util.function.BiFunction;
 import org.apache.ignite.internal.replication.raft.quorum.JointConfig;
-import org.apache.ignite.internal.replication.raft.quorum.MajorityConfig;
 
 import static org.apache.ignite.internal.replication.raft.VoteResult.VoteWon;
 
@@ -35,15 +33,17 @@ public class Tracker {
     private TrackerConfig cfg;
     private ProgressMap progress;
     private Map<UUID, Boolean> votes;
-    private int maxInflight;
+    private final int maxInflight;
 
     public Tracker(int maxInflight) {
         this.maxInflight = maxInflight;
 
         cfg = new TrackerConfig(
-            new JointConfig(new MajorityConfig(Collections.emptySet()), null), // Voters
+            // Voters
+            JointConfig.of(null, null),
             null, // Learners
-            null  // Learners next
+            null,  // Learners next,
+            false
         );
 
         votes = new HashMap<>();
@@ -52,13 +52,54 @@ public class Tracker {
 
     public ConfigState configState() {
         return new ConfigState(
-            cfg.voters().main().ids(), // TODO agoncharuk: arrays should be sorted
-            cfg.voters().transition().ids(), // VotersOutgoing TODO agoncharuk: NPE here
+            cfg.voters().incoming(), // TODO agoncharuk: arrays should be sorted
+            cfg.voters().outgoing(), // VotersOutgoing TODO agoncharuk: NPE here
             cfg.learners(),
             cfg.learnersNext(),
             cfg.autoLeave()
         );
     }
+
+    // RecordVote records that the node with the given id voted for this Raft
+    // instance if v == true (and declined it otherwise).
+    public void recordVote(UUID id, boolean v) {
+        if (!votes.containsKey(id))
+            votes.put(id, v);
+    }
+
+    // TallyVotes returns the number of granted and rejected Votes, and whether the
+    // election outcome is known.
+    public PollResult tallyVotes() {
+        int granted = 0, rejected = 0;
+
+        // Make sure to populate granted/rejected correctly even if the Votes slice
+        // contains members no longer part of the configuration. This doesn't really
+        // matter in the way the numbers are used (they're informational), but might
+        // as well get it right.
+        for (Map.Entry<UUID, Progress> entry : progress.entrySet()) {
+            UUID id = entry.getKey();
+            Progress pr = entry.getValue();
+
+            if (pr.isLearner())
+                continue;
+
+            Boolean voted = votes.get(id);
+
+            if (voted == null)
+                continue;
+
+            if (voted) {
+                granted++;
+            } else {
+                rejected++;
+            }
+        }
+
+        VoteResult result = config().voters().voteResult(votes);
+
+        return new PollResult(granted, rejected, result);
+    }
+
 
     public void foreach(BiConsumer<UUID, Progress> consumer) {
         // TODO agoncharuk.
@@ -70,6 +111,10 @@ public class Tracker {
 
     public Progress progress(UUID id) {
         // TODO
+        return null;
+    }
+
+    public ProgressMap progress() {
         return null;
     }
 
@@ -107,7 +152,7 @@ public class Tracker {
     }
 
     public long committed() {
-        return 0;
+        return cfg.voters().committedIndex(progress);
     }
 
     // IsSingleton returns true if (and only if) there is only one voting member

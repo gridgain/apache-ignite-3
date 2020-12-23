@@ -80,4 +80,44 @@ public class ReadOnly {
 
         return readIndexQueue.get(readIndexQueue.size() - 1).getBytes();
     }
+
+    // advance advances the read only request queue kept by the readonly struct.
+    // It dequeues the requests until it finds the read only request that has
+    // the same context as the given `m`.
+    public List<ReadIndexStatus> advance(Message m) {
+        int i = 0;
+        boolean found = false;
+
+        String ctx = new String(m.context());
+
+        List<ReadIndexStatus> rss = new ArrayList<>();
+
+        for (String okctx : readIndexQueue) {
+            i++;
+
+            ReadIndexStatus rs = pendingReadIndex.get(okctx);
+
+            if (rs == null)
+                throw new AssertionError("cannot find corresponding read state from pending map");
+
+            rss.add(rs);
+
+            if (okctx.equals(ctx)) {
+                found = true;
+
+                break;
+            }
+        }
+
+        if (found) {
+            readIndexQueue = readIndexQueue.subList(i, readIndexQueue.size());
+
+            for (ReadIndexStatus rs : rss)
+                pendingReadIndex.remove(new String(rs.request().entries().get(0).data()));
+
+            return rss;
+        }
+
+        return null;
+    }
 }

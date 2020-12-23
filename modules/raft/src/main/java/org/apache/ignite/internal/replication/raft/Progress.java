@@ -40,10 +40,16 @@ public class Progress {
     }
 
     public Progress(long match, long next, Inflights inflights, boolean learner) {
+        this(match, next, inflights, learner, false);
+    }
+
+
+    public Progress(long match, long next, Inflights inflights, boolean learner, boolean recentActive) {
         this.match = match;
         this.next = next;
         this.inflights = inflights;
         this.learner = learner;
+        this.recentActive = recentActive;
     }
 
     private long match;
@@ -179,6 +185,10 @@ public class Progress {
         return pendingSnapshot;
     }
 
+    public void pendingSnapshot(long pendingSnapshot) {
+        this.pendingSnapshot = pendingSnapshot;
+    }
+
     public boolean maybeUpdate(long n) {
         boolean updated = false;
 
@@ -233,9 +243,12 @@ public class Progress {
         return true;
     }
 
-
     public boolean isLearner() {
         return learner;
+    }
+
+    public void setLearner(boolean learner) {
+        this.learner = learner;
     }
 
     // OptimisticUpdate signals that appends all the way up to and including index n

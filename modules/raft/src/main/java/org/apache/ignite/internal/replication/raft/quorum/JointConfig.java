@@ -32,21 +32,28 @@ import static org.apache.ignite.internal.replication.raft.VoteResult.VotePending
  * majority configurations. Decisions require the support of both majorities.
  */
 public class JointConfig {
-    private MajorityConfig main;
-    private MajorityConfig transition;
+    private MajorityConfig incoming;
+    private MajorityConfig outgoing;
 
-    public JointConfig(MajorityConfig main, MajorityConfig transition) {
-        this.main = main;
-        this.transition = transition;
+    public JointConfig(MajorityConfig incoming, MajorityConfig outgoing) {
+        this.incoming = incoming;
+        this.outgoing = outgoing;
+    }
+
+    public static JointConfig of(Set<UUID> incoming, Set<UUID> outgoing) {
+        return new JointConfig(
+            new MajorityConfig(incoming == null ? Collections.emptySet() : incoming),
+            outgoing == null || outgoing.isEmpty() ? null : new MajorityConfig(outgoing)
+        );
     }
 
     public Set<UUID> ids() {
-        if (transition == null)
-            return main.ids();
+        if (outgoing == null)
+            return incoming.ids();
 
         // Sorted set is requred to make logs stable for data-driven tests.
-        Set<UUID> res = new TreeSet<>(main.ids());
-        res.addAll(transition.ids());
+        Set<UUID> res = new TreeSet<>(incoming.ids());
+        res.addAll(outgoing.ids());
 
         return Collections.unmodifiableSet(res);
     }
@@ -55,12 +62,12 @@ public class JointConfig {
     // a result indicating whether the vote is pending, lost, or won. A joint quorum
     // requires both majority quorums to vote in favor.
     public VoteResult voteResult(Map<UUID, Boolean> votes) {
-        VoteResult resMain = main.voteResult(votes);
+        VoteResult resMain = incoming.voteResult(votes);
 
-        if (transition == null)
+        if (outgoing == null)
             return resMain;
 
-        VoteResult resTrans = transition.voteResult(votes);
+        VoteResult resTrans = outgoing.voteResult(votes);
 
         if (resMain == resTrans) {
             // If they agree, return the agreed state.
@@ -76,11 +83,31 @@ public class JointConfig {
         return VotePending;
     }
 
+    // CommittedIndex returns the largest committed index for the given joint
+    // quorum. An index is jointly committed if it is committed in both constituent
+    // majorities.
+    public long committedIndex(AckedIndexer l) {
+        long idx0 = incoming.committedIndex(l);
+
+        long idx1 = outgoing == null ? Long.MAX_VALUE : outgoing.committedIndex(l);
+
+        return Math.min(idx0, idx1);
+    }
+
+
+    public Set<UUID> incoming() {
+        return incoming == null ? null : incoming.ids();
+    }
+
+    public Set<UUID> outgoing() {
+        return outgoing == null ? null : outgoing.ids();
+    }
+
     public boolean isSingleton() {
-        return transition == null && main.ids().size() == 1;
+        return outgoing == null && incoming.ids().size() == 1;
     }
 
     public boolean isJoint() {
-        return transition != null;
+        return outgoing != null;
     }
 }

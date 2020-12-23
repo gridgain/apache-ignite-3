@@ -15,40 +15,14 @@
  * limitations under the License.
  */
 
-package org.apache.ignite.internal.replication.raft;
+package org.apache.ignite.internal.replication.raft.quorum;
+
+import java.util.UUID;
 
 /**
  *
  */
-public class PollResult {
-    private final int granted;
-    private final int rejected;
-    private final VoteResult res;
-
-    public PollResult(int granted, int rejected, VoteResult res) {
-        this.granted = granted;
-        this.rejected = rejected;
-        this.res = res;
-    }
-
-    /**
-     * @return
-     */
-    public int granted() {
-        return granted;
-    }
-
-    /**
-     * @return
-     */
-    public int rejected() {
-        return rejected;
-    }
-
-    /**
-     * @return
-     */
-    public VoteResult result() {
-        return res;
-    }
+@FunctionalInterface
+public interface AckedIndexer {
+    public long ackedIndex(UUID id);
 }

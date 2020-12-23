@@ -22,6 +22,9 @@ import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 import java.util.function.Consumer;
+import org.apache.ignite.internal.replication.raft.confchange.Changer;
+import org.apache.ignite.internal.replication.raft.confchange.Restore;
+import org.apache.ignite.internal.replication.raft.confchange.RestoreResult;
 import org.slf4j.Logger;
 
 import static org.apache.ignite.internal.replication.raft.CampaignType.CAMPAIGN_ELECTION;
@@ -128,7 +131,7 @@ public class Raft {
 
     private Logger logger;
 
-    private boolean hasLeader() {
+    public boolean hasLeader() {
         return lead != null;
     }
 
@@ -456,7 +459,7 @@ public class Raft {
                     }
 
                     default:
-                        logger.error("{} is sending append in unhandled state {}", id, pr.state());
+                        logger.panic("{} is sending append in unhandled state {}", id, pr.state());
                 }
             }
 
@@ -483,7 +486,7 @@ public class Raft {
 
                 send(m);
 
-                logger.debug("%x [firstindex: %d, commit: %d] sent snapshot[index: %d, term: %d] to %x [%s]",
+                logger.debug("{} [firstindex: {}, commit: {}] sent snapshot[index: {}, term: {}] to {} [{}]",
                     id, raftLog.firstIndex(), raftLog.committed(), sindex, sterm, to, pr);
 
                 pr.becomeSnapshot(sindex);
@@ -491,7 +494,7 @@ public class Raft {
                 logger.debug("{} paused sending replication messages to {} [{}]", id, to, pr);
             }
             catch (SnapshotTemporarilyUnavailableException ex) {
-                logger.debug("%x failed to send snapshot to %x because snapshot is temporarily unavailable", id, to);
+                logger.debug("{} failed to send snapshot to {} because snapshot is temporarily unavailable", id, to);
 
                 return false;
             }
@@ -552,7 +555,7 @@ public class Raft {
         this.lead = lead;
         state = StateType.STATE_FOLLOWER;
 
-        logger.debug("%x became follower at term %d", id, this.term);
+        logger.debug("{} became follower at term {}", id, this.term);
     }
 
     private void becomeCandidate() {
@@ -566,7 +569,7 @@ public class Raft {
         vote = id;
         state = StateType.STATE_CANDIDATE;
 
-        logger.debug("%x became candidate at term %d", id, term);
+        logger.debug("{} became candidate at term {}", id, term);
     }
 
     private void becomePreCandidate() {
@@ -583,7 +586,7 @@ public class Raft {
         lead = null;
         state = StateType.STATE_PRE_CANDIDATE;
 
-        logger.info("%x became pre-candidate at term %d", id, term);
+        logger.info("{} became pre-candidate at term {}", id, term);
     }
 
     private void becomeLeader() {
@@ -664,7 +667,7 @@ public class Raft {
 
             case MsgProp: {
                 if (m.entries().isEmpty())
-                    logger.error("{} stepped empty MsgProp", id);
+                    logger.panic("{} stepped empty MsgProp", id);
 
                 if (prs.progress(id) == null) {
                     // If we are not currently a member of the range (i.e. this node
@@ -682,8 +685,8 @@ public class Raft {
                 for (int i = 0; i < m.entries().size(); i++) {
                     Entry e = m.entries().get(i);
 
-                    if (e.type() == EntryConfChangeV2) {
-                        ConfChange cc = unmarshal(e.data());
+                    if (e.type() == Entry.EntryType.ENTRY_CONF_CHANGE_V2) {
+                        ConfChange cc = ((ConfChangeEntry)e).confChange();
 
                         boolean alreadyPending = pendingConfIndex > raftLog.applied();
                         boolean alreadyJoint = prs.config().voters().isJoint();
@@ -704,7 +707,7 @@ public class Raft {
 
                             // TODO agoncharuk: since messages are immutable, need to figure out how to avoid changing the collection
                             // TODO Should not be a problem since MsgProp should not be a message anyway.
-                            m.entries().set(i, new Entry(EntryNormal));
+                            m.entries().set(i, messageFactory.newEntry(Entry.EntryType.ENTRY_NORMAL));
                         }
                         else
                             pendingConfIndex = raftLog.lastIndex() + i + 1;
@@ -858,7 +861,7 @@ public class Raft {
                 if (prs.config().voters().voteResult(readOnly.recvAck(m.from(), m.context())) != VoteWon)
                     return;
 
-                ReadIndexStatus[] rss = readOnly.advance(m);
+                List<ReadIndexStatus> rss = readOnly.advance(m);
 
                 for (ReadIndexStatus rs : rss) {
                     Message resp = responseToReadIndexReq(rs.request(), rs.index);
@@ -997,30 +1000,33 @@ public class Raft {
                 break;
             }
 
-            case myVoteRespType: {
-                PollResult p = poll(m.from(), m.type(), !m.reject());
+            case MsgPreVoteResp:
+            case MsgVoteResp: {
+                if (m.type() == myVoteRespType) {
+                    PollResult p = poll(m.from(), m.type(), !m.reject());
 
-                logger.info("{} has received {} {} votes and {} vote rejections", id, p.granted(), m.type(), p.rejected());
+                    logger.info("{} has received {} {} votes and {} vote rejections", id, p.granted(), m.type(), p.rejected());
 
-                switch (p.result()) {
-                    case VoteWon: {
-                        if (state == StateType.STATE_PRE_CANDIDATE)
-                            campaign(CAMPAIGN_ELECTION);
-                        else {
-                            becomeLeader();
+                    switch (p.result()) {
+                        case VoteWon: {
+                            if (state == StateType.STATE_PRE_CANDIDATE)
+                                campaign(CAMPAIGN_ELECTION);
+                            else {
+                                becomeLeader();
 
-                            bcastAppend();
+                                bcastAppend();
+                            }
+
+                            break;
                         }
 
-                        break;
-                    }
+                        case VoteLost: {
+                            // MsgPreVoteResp contains future term of pre-candidate
+                            // m.term() > r.term; reuse r.term
+                            becomeFollower(term, null);
 
-                    case VoteLost: {
-                        // MsgPreVoteResp contains future term of pre-candidate
-                        // m.term() > r.term; reuse r.term
-                        becomeFollower(term, null);
-
-                        break;
+                            break;
+                        }
                     }
                 }
 
@@ -1185,7 +1191,7 @@ public class Raft {
         if (ok)
             send(messageFactory.newMessage(id, m.from(), MsgAppResp, /*TODO verify*/term, lastIdx, /*TODO verify*/0, null));
         else {
-            logger.debug("%x [logterm: %d, index: %d] rejected MsgApp [logterm: %d, index: %d] from %x",
+            logger.debug("{} [logterm: {}, index: {}] rejected MsgApp [logterm: {}, index: {}] from {}",
                 id, raftLog.zeroTermOnErrCompacted(raftLog.term(m.index())), m.index(), m.logTerm(), m.index(), m.from());
 
             send(messageFactory.newMessage(id, m.from(), MsgAppResp, /*TODO verify*/term, m.index(), /*TODO verify*/0, null, /*reject*/true, /*reject hint*/raftLog.lastIndex()));
@@ -1345,22 +1351,24 @@ public class Raft {
         }
     }
 
-    public ConfigState applyConfChange(ConfChangeV2 cc) {
+    public ConfigState applyConfChange(ConfChange cc) {
         Changer changer = new Changer(
-            prs,
-            raftLog.lastIndex()
+            prs.config(),
+            prs.progress(),
+            raftLog.lastIndex(),
+            prs.maxInflight()
         );
 
-        Tuple<TrackerConfig, ProgressMap> t;
+        RestoreResult t;
 
-        if (cc.leaveJoint())
+        if (Changer.leaveJoint(cc))
             t = changer.leaveJoint();
-        else if (cc.enterJoint())
-            t = changer.enterJoint(cc.autoLeave(), cc.changes());
+        else if (Changer.enterJoint(cc))
+            t = changer.enterJoint(Changer.autoLeave(cc), cc.changes());
         else
             t = changer.simple(cc.changes());
 
-        return switchToConfig(t.get1(), t.get2());
+        return switchToConfig(t.trackerConfig(), t.progressMap());
     }
 
     // switchToConfig reconfigures this node to use the provided configuration. It
@@ -1428,13 +1436,13 @@ public class Raft {
         long sterm = m.snapshot().metadata().term();
 
         if (restore(m.snapshot())) {
-            logger.info("%x [commit: %d] restored snapshot [index: %d, term: %d]",
+            logger.info("{} [commit: {}] restored snapshot [index: {}, term: {}]",
                 id, raftLog.committed(), sindex, sterm);
 
             send(messageFactory.newMessage(id, m.from(), MsgAppResp, term, raftLog.lastIndex(), raftLog.lastTerm()));
         }
         else {
-            logger.info("%x [commit: %d] ignored snapshot [index: %d, term: %d]",
+            logger.info("{} [commit: {}] ignored snapshot [index: {}, term: {}]",
                 id, raftLog.committed(), sindex, sterm);
 
             send(messageFactory.newMessage(id, m.from(), MsgAppResp, term, raftLog.committed()));
@@ -1456,7 +1464,7 @@ public class Raft {
             //
             // At the time of writing, the instance is guaranteed to be in follower
             // state when this method is called.
-            logger.warning("%x attempted to restore snapshot as leader; should never happen", id);
+            logger.warn("{} attempted to restore snapshot as leader; should never happen", id);
 
             becomeFollower(term + 1, null);
 
@@ -1469,7 +1477,7 @@ public class Raft {
         boolean found = false;
         ConfigState cs = s.metadata().configState();
 
-        for (UUID[] set : new UUID[][] {cs.voters(), cs.learners()}) {
+        for (Set<UUID> set : new Set[] {cs.voters(), cs.learners()}) {
             for (UUID id : set) {
                 if (this.id.equals(id)) {
                     found = true;
@@ -1505,13 +1513,16 @@ public class Raft {
         prs = new Tracker(prs.maxInflight());
 
         try {
-            RestoreResult res = Confchange.restore(
-                new confchange.Changer(
-                    prs,
-                    raftLog.lastIndex()), cs);
+            RestoreResult res = Restore.restore(
+                new Changer(
+                    prs.config(),
+                    prs.progress(),
+                    raftLog.lastIndex(),
+                    prs.maxInflight()),
+                cs);
 
-            TrackerConfig cfg = restore.trackerConfig();
-            ProgressMap prs = restore.trackerProgress();
+            TrackerConfig cfg = res.trackerConfig();
+            ProgressMap prs = res.progressMap();
 
             assertConfStatesEquivalent(logger, cs, switchToConfig(cfg, prs));
 
@@ -1519,13 +1530,13 @@ public class Raft {
 
             pr.maybeUpdate(pr.next() - 1); // TODO(tbg): this is untested and likely unneeded
 
-            logger.info("%x [commit: %d, lastindex: %d, lastterm: %d] restored snapshot [index: %d, term: %d]",
+            logger.info("{} [commit: {}, lastindex: {}, lastterm: {}] restored snapshot [index: {}, term: {}]",
                 id, raftLog.committed(), raftLog.lastIndex(), raftLog.lastTerm(), s.metadata().index(), s.metadata().term());
 
             return true;
 
         }
-        catch (Exception e) { // TODO agoncharuk specific exception
+        catch (Exception e) { // TODO agoncharuk specific exception should be used here (thrown from restore)
             // This should never happen. Either there's a bug in our config change
             // handling or the client corrupted the conf change.
             throw new AssertionError(String.format("unable to restore config %s: %s", cs, e), e);
@@ -1534,9 +1545,9 @@ public class Raft {
 
     private PollResult poll(UUID id, MessageType t, boolean v) {
         if (v)
-            logger.info("%x received %s from %x at term %d", id, t, id, term);
+            logger.info("{} received {} from {} at term {}", id, t, id, term);
         else
-            logger.info("%x received %s rejection from %x at term %d", id, t, id, term);
+            logger.info("{} received {} rejection from {} at term {}", id, t, id, term);
 
         prs.recordVote(id, v);
 
@@ -1563,10 +1574,10 @@ public class Raft {
      * TODO agoncharuk: this is used only in new Raft construction, move to RaftLog creation
      */
     private void loadState(HardState state) {
-        if (state.commit() < raftLog.committed() || state.commit() > raftLog.lastIndex())
-            logger.panic("%x state.commit %d is out of range [%d, %d]", id, state.commit(), raftLog.committed(), raftLog.lastIndex());
+        if (state.committed() < raftLog.committed() || state.committed() > raftLog.lastIndex())
+            logger.panic("%x state.commit %d is out of range [%d, %d]", id, state.committed(), raftLog.committed(), raftLog.lastIndex());
 
-        raftLog.committed(state.committed());
+        raftLog.commitTo(state.committed());
         term = state.term();
         vote = state.vote();
     }
@@ -1595,7 +1606,7 @@ public class Raft {
     private int numOfPendingConf(Entry[] ents) {
         int n = 0;
         for (Entry ent : ents) {
-            if (ent.type() == EntryConfChangeV2)
+            if (ent.type() == Entry.EntryType.ENTRY_CONF_CHANGE_V2)
                 n++;
         }
 

@@ -17,8 +17,65 @@
 
 package org.apache.ignite.internal.replication.raft;
 
+import java.util.Set;
+import java.util.UUID;
+
 /**
  *
  */
 public class ConfigState {
+    private final Set<UUID> voters;
+    private final Set<UUID> outgoing;
+    private final Set<UUID> learners;
+    private final Set<UUID> learnersNext;
+    private final boolean autoLeave;
+
+    public ConfigState(
+        Set<UUID> voters,
+        Set<UUID> outgoing,
+        Set<UUID> learners,
+        Set<UUID> learnersNext,
+        boolean autoLeave
+    ) {
+        this.voters = voters;
+        this.outgoing = outgoing;
+        this.learners = learners;
+        this.learnersNext = learnersNext;
+        this.autoLeave = autoLeave;
+    }
+
+    /**
+     * @return
+     */
+    public Set<UUID> voters() {
+        return voters;
+    }
+
+    /**
+     * @return
+     */
+    public Set<UUID> outgoing() {
+        return outgoing;
+    }
+
+    /**
+     * @return
+     */
+    public Set<UUID> learners() {
+        return learners;
+    }
+
+    /**
+     * @return
+     */
+    public Set<UUID> learnersNext() {
+        return learnersNext;
+    }
+
+    /**
+     * @return
+     */
+    public boolean autoLeave() {
+        return autoLeave;
+    }
 }

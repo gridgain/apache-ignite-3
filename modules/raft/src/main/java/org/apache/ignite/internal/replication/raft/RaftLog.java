@@ -101,4 +101,8 @@ public class RaftLog {
     public Entry[] slice(long fromIdx, long toIdx, long maxSize) {
         return new Entry[0];
     }
+
+    public boolean hasPendingSnapshot() {
+        return false;
+    }
 }

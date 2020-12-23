@@ -15,40 +15,34 @@
  * limitations under the License.
  */
 
-package org.apache.ignite.internal.replication.raft;
+package org.apache.ignite.internal.replication.raft.confchange;
+
+import org.apache.ignite.internal.replication.raft.ProgressMap;
+import org.apache.ignite.internal.replication.raft.TrackerConfig;
 
 /**
  *
  */
-public class PollResult {
-    private final int granted;
-    private final int rejected;
-    private final VoteResult res;
+public class RestoreResult {
+    private final TrackerConfig trackerCfg;
+    private final ProgressMap progressMap;
 
-    public PollResult(int granted, int rejected, VoteResult res) {
-        this.granted = granted;
-        this.rejected = rejected;
-        this.res = res;
+    public RestoreResult(TrackerConfig trackerCfg, ProgressMap progressMap) {
+        this.trackerCfg = trackerCfg;
+        this.progressMap = progressMap;
     }
 
     /**
      * @return
      */
-    public int granted() {
-        return granted;
+    public TrackerConfig trackerConfig() {
+        return trackerCfg;
     }
 
     /**
      * @return
      */
-    public int rejected() {
-        return rejected;
-    }
-
-    /**
-     * @return
-     */
-    public VoteResult result() {
-        return res;
+    public ProgressMap progressMap() {
+        return progressMap;
     }
 }

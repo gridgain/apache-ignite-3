@@ -20,35 +20,16 @@ package org.apache.ignite.internal.replication.raft;
 /**
  *
  */
-public class PollResult {
-    private final int granted;
-    private final int rejected;
-    private final VoteResult res;
-
-    public PollResult(int granted, int rejected, VoteResult res) {
-        this.granted = granted;
-        this.rejected = rejected;
-        this.res = res;
+public class InvalidConfigTransitionException extends RuntimeException {
+    public InvalidConfigTransitionException(String message) {
+        super(message);
     }
 
-    /**
-     * @return
-     */
-    public int granted() {
-        return granted;
+    public InvalidConfigTransitionException(String message, Throwable cause) {
+        super(message, cause);
     }
 
-    /**
-     * @return
-     */
-    public int rejected() {
-        return rejected;
-    }
-
-    /**
-     * @return
-     */
-    public VoteResult result() {
-        return res;
+    public InvalidConfigTransitionException(Throwable cause) {
+        super(cause);
     }
 }

@@ -17,38 +17,33 @@
 
 package org.apache.ignite.internal.replication.raft;
 
+import java.util.UUID;
+
 /**
- *
+ * ConfChangeSingle is an individual configuration change operation. Multiple
+ * such operations can be carried out atomically via a ConfChange
  */
-public class PollResult {
-    private final int granted;
-    private final int rejected;
-    private final VoteResult res;
-
-    public PollResult(int granted, int rejected, VoteResult res) {
-        this.granted = granted;
-        this.rejected = rejected;
-        this.res = res;
+public class ConfChangeSingle {
+    public enum ConfChangeType {
+        ConfChangeAddNode,
+        ConfChangeRemoveNode,
+        ConfChangeUpdateNode,
+        ConfChangeAddLearnerNode
     }
 
-    /**
-     * @return
-     */
-    public int granted() {
-        return granted;
+    private final UUID nodeId;
+    private final ConfChangeType type;
+
+    public ConfChangeSingle(UUID nodeId, ConfChangeType type) {
+        this.nodeId = nodeId;
+        this.type = type;
     }
 
-    /**
-     * @return
-     */
-    public int rejected() {
-        return rejected;
+    public UUID nodeId() {
+        return nodeId;
     }
 
-    /**
-     * @return
-     */
-    public VoteResult result() {
-        return res;
+    public ConfChangeType type() {
+        return type;
     }
 }

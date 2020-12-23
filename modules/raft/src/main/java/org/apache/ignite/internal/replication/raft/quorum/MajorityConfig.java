@@ -96,7 +96,7 @@ public class MajorityConfig {
             return VoteWon;
         }
 
-        int missing = 0, yes = 0, no = 0;
+        int missing = 0, yes = 0;
 
         for (UUID id : ids) {
             Boolean res = votes.get(id);
@@ -108,8 +108,6 @@ public class MajorityConfig {
 
             if (res)
                 yes++;
-            else
-                no++;
         }
 
         int q = ids.size() / 2 + 1;
@@ -120,5 +118,9 @@ public class MajorityConfig {
             return VotePending;
 
         return VoteLost;
+    }
+
+    public boolean isEmpty() {
+        return ids.isEmpty();
     }
 }

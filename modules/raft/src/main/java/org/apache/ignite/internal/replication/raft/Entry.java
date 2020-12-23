@@ -21,4 +21,15 @@ package org.apache.ignite.internal.replication.raft;
  *
  */
 public interface Entry {
+    public enum EntryType {
+        ENTRY_NORMAL,
+
+        ENTRY_CONF_CHANGE_V2
+    }
+
+    public EntryType type();
+
+    public long term();
+
+    public long index();
 }
