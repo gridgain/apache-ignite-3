@@ -19,12 +19,15 @@ package org.apache.ignite.internal.replication.raft;
 
 import java.util.UUID;
 
-import static org.apache.ignite.internal.replication.raft.MessageType.MsgHup;
-import static org.apache.ignite.internal.replication.raft.MessageType.MsgProp;
-import static org.apache.ignite.internal.replication.raft.MessageType.MsgReadIndex;
-import static org.apache.ignite.internal.replication.raft.MessageType.MsgSnapStatus;
-import static org.apache.ignite.internal.replication.raft.MessageType.MsgTransferLeader;
-import static org.apache.ignite.internal.replication.raft.MessageType.MsgUnreachable;
+import org.apache.ignite.internal.replication.raft.message.Message;
+import org.apache.ignite.internal.replication.raft.storage.ConfChange;
+
+import static org.apache.ignite.internal.replication.raft.message.MessageType.MsgHup;
+import static org.apache.ignite.internal.replication.raft.message.MessageType.MsgProp;
+import static org.apache.ignite.internal.replication.raft.message.MessageType.MsgReadIndex;
+import static org.apache.ignite.internal.replication.raft.message.MessageType.MsgSnapStatus;
+import static org.apache.ignite.internal.replication.raft.message.MessageType.MsgTransferLeader;
+import static org.apache.ignite.internal.replication.raft.message.MessageType.MsgUnreachable;
 
 /**
  *
@@ -63,7 +66,7 @@ public class RawNode {
 
     // ProposeConfChange proposes a config change. See (Node).ProposeConfChange for
     // details.
-    public void proposeConfChange(ConfChangeV2 cc) {
+    public void proposeConfChange(ConfChange cc) {
         Message m = confChangeToMsg(cc);
 
         raft.step(m);
@@ -72,7 +75,7 @@ public class RawNode {
     // ApplyConfChange applies a config change to the local node. The app must call
     // this when it applies a configuration change, except when it decides to reject
     // the configuration change, in which case no call must take place.
-    public ConfigState applyConfChange(ConfChangeV2 cc) {
+    public ConfigState applyConfChange(ConfChange cc) {
         return raft.applyConfChange(cc);
     }
 

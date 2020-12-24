@@ -19,6 +19,8 @@ package org.apache.ignite.internal.replication.raft;
 
 import java.util.Arrays;
 import java.util.List;
+import org.apache.ignite.internal.replication.raft.message.Message;
+import org.apache.ignite.internal.replication.raft.storage.Entry;
 
 /**
  * Ready encapsulates the entries and messages that are ready to read,

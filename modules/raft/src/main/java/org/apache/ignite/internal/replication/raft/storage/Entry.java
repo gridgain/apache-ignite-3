@@ -15,43 +15,23 @@
  * limitations under the License.
  */
 
-package org.apache.ignite.internal.replication.raft;
-
-import java.util.UUID;
+package org.apache.ignite.internal.replication.raft.storage;
 
 /**
  *
  */
-public class HardState {
-    private final long term;
-    private final UUID vote;
-    private final long committed;
+public interface Entry {
+    public enum EntryType {
+        ENTRY_DATA,
 
-    public HardState(long term, UUID vote, long committed) {
-        this.term = term;
-        this.vote = vote;
-        this.committed = committed;
+        ENTRY_CONF_CHANGE
     }
 
-    /**
-     */
-    public long term() {
-        return term;
-    }
+    public EntryType type();
 
-    /**
-     */
-    public UUID vote() {
-        return vote;
-    }
+    public long term();
 
-    /**
-     */
-    public long committed() {
-        return committed;
-    }
+    public long index();
 
-    public boolean isEmpty() {
-        return term == 0 && vote == null && committed == 0;
-    }
+    LogData data();
 }

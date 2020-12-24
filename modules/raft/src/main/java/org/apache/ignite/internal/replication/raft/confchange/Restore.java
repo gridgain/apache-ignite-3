@@ -21,7 +21,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.UUID;
-import org.apache.ignite.internal.replication.raft.ConfChangeSingle;
+import org.apache.ignite.internal.replication.raft.storage.ConfChangeSingle;
 import org.apache.ignite.internal.replication.raft.ConfigState;
 
 /**

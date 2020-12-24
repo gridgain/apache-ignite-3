@@ -15,11 +15,12 @@
  * limitations under the License.
  */
 
-package org.apache.ignite.internal.replication.raft;
+package org.apache.ignite.internal.replication.raft.message;
 
 /**
  *
  */
-public interface ConfChangeEntry extends Entry {
-    public ConfChange confChange();
+public interface HeartbeatRequest extends Message {
+    long commitIndex();
+    byte[] context();
 }

@@ -15,43 +15,15 @@
  * limitations under the License.
  */
 
-package org.apache.ignite.internal.replication.raft;
+package org.apache.ignite.internal.replication.raft.message;
 
-import java.util.UUID;
+import org.apache.ignite.internal.replication.raft.Snapshot;
 
 /**
  *
  */
-public class HardState {
-    private final long term;
-    private final UUID vote;
-    private final long committed;
-
-    public HardState(long term, UUID vote, long committed) {
-        this.term = term;
-        this.vote = vote;
-        this.committed = committed;
-    }
-
-    /**
-     */
-    public long term() {
-        return term;
-    }
-
-    /**
-     */
-    public UUID vote() {
-        return vote;
-    }
-
-    /**
-     */
-    public long committed() {
-        return committed;
-    }
-
-    public boolean isEmpty() {
-        return term == 0 && vote == null && committed == 0;
-    }
+public interface InstallSnapshotRequest extends Message {
+    long snapshotIndex();
+    long snapshotTerm();
+    Snapshot snapshot();
 }

@@ -15,10 +15,22 @@
  * limitations under the License.
  */
 
-package org.apache.ignite.internal.replication.raft;
+package org.apache.ignite.internal.replication.raft.storage;
 
 /**
  *
  */
-public class State {
+@SuppressWarnings("rawtypes")
+public class UserData<T> implements LogData {
+    private static final UserData EMPTY = new UserData(null);
+
+    private final T data;
+
+    public static <T> UserData<T> empty() {
+        return EMPTY;
+    }
+
+    public UserData(T data) {
+        this.data = data;
+    }
 }

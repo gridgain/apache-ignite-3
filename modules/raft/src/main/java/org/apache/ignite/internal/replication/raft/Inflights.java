@@ -84,7 +84,7 @@ public class Inflights {
     // monotonic sequence of indexes.
     public void add(long inflight) {
         if (full())
-            throw new AssertionError("cannot add into a Full inflights");
+            throw new AssertionError("cannot add into a full inflights");
 
         int next = start + count;
         int size = this.size;

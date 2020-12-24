@@ -15,10 +15,19 @@
  * limitations under the License.
  */
 
-package org.apache.ignite.internal.replication.raft;
+package org.apache.ignite.internal.replication.raft.message;
 
 /**
  *
  */
-public interface Storage {
+public interface VoteRequest extends Message {
+    public default boolean preVote() {
+        return type() == MessageType.MsgPreVote;
+    }
+
+    long lastIndex();
+
+    long lastTerm();
+
+    boolean campaignTransfer();
 }

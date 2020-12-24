@@ -21,4 +21,29 @@ package org.apache.ignite.internal.replication.raft;
  *
  */
 public class Snapshot {
+    private final byte[] data;
+    private final SnapshotMetadata meta;
+
+    public Snapshot(SnapshotMetadata meta, byte[] data) {
+        this.meta = meta;
+        this.data = data;
+    }
+
+    /**
+     * @return
+     */
+    public SnapshotMetadata metadata() {
+        return meta;
+    }
+
+    /**
+     * @return
+     */
+    public byte[] data() {
+        return data;
+    }
+
+    public boolean isEmpty() {
+        return meta.index() == 0;
+    }
 }

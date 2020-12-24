@@ -15,21 +15,13 @@
  * limitations under the License.
  */
 
-package org.apache.ignite.internal.replication.raft;
+package org.apache.ignite.internal.replication.raft.message;
 
 /**
  *
  */
-public interface Entry {
-    public enum EntryType {
-        ENTRY_NORMAL,
-
-        ENTRY_CONF_CHANGE_V2
-    }
-
-    public EntryType type();
-
-    public long term();
-
-    public long index();
+public interface AppendEntriesResponse extends Message {
+    public long logIndex();
+    public boolean reject();
+    public long rejectHint();
 }

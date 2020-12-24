@@ -15,7 +15,7 @@
  * limitations under the License.
  */
 
-package org.apache.ignite.internal.replication.raft;
+package org.apache.ignite.internal.replication.raft.message;
 
 /**
  * TODO agoncharuk: for some reason, the original implementation chose messages to communicate local actions to the

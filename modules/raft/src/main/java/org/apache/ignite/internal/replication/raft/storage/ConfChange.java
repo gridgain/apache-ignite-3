@@ -15,7 +15,7 @@
  * limitations under the License.
  */
 
-package org.apache.ignite.internal.replication.raft;
+package org.apache.ignite.internal.replication.raft.storage;
 
 import java.util.List;
 
@@ -23,7 +23,7 @@ import java.util.List;
  * ConfChangeTransition specifies the behavior of a configuration change with
  * respect to joint consensus.
  */
-public interface ConfChange {
+public interface ConfChange extends LogData {
     public enum ConfChangeTransition {
         // Automatically use the simple protocol if possible, otherwise fall back
         // to ConfChangeJointImplicit. Most applications will want to use this.
@@ -45,8 +45,6 @@ public interface ConfChange {
     }
 
     public ConfChangeTransition transition();
-
-    public byte[] context();
 
     public List<ConfChangeSingle> changes();
 }

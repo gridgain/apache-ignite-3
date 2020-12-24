@@ -20,6 +20,8 @@ package org.apache.ignite.internal.replication.raft;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
+import org.apache.ignite.internal.replication.raft.message.Message;
+import org.apache.ignite.internal.replication.raft.storage.Entry;
 
 /**
  * 1. Model interaction bw RawNode & metastorage/partition

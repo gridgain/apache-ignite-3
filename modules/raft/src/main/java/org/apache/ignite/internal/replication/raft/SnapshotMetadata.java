@@ -17,21 +17,38 @@
 
 package org.apache.ignite.internal.replication.raft;
 
-import java.util.UUID;
-
 /**
  *
  */
-public interface MessageFactory {
-    Message newMessage(
-        UUID from,
-        UUID to,
-        MessageType msgType,
-        long term,
-        long idx,
-        long logTerm,
-        byte[] data
-    );
+public class SnapshotMetadata {
+    private final ConfigState confState;
+    private final long idx;
+    private final long term;
 
-    Message newMessage(UUID from, UUID to, MessageType msgType);
+    public SnapshotMetadata(ConfigState confState, long idx, long term) {
+        this.confState = confState;
+        this.idx = idx;
+        this.term = term;
+    }
+
+    /**
+     * @return
+     */
+    public ConfigState configState() {
+        return confState;
+    }
+
+    /**
+     * @return
+     */
+    public long index() {
+        return idx;
+    }
+
+    /**
+     * @return
+     */
+    public long term() {
+        return term;
+    }
 }

@@ -15,11 +15,27 @@
  * limitations under the License.
  */
 
-package org.apache.ignite.internal.replication.raft;
+package org.apache.ignite.internal.replication.raft.message;
+
+import java.util.UUID;
 
 /**
  *
  */
-public interface NormalEntry<T> extends Entry {
-    public T data();
+public interface Message {
+    MessageType type();
+
+    UUID from();
+
+    UUID to();
+
+    long term();
+
+//    List<Entry> entries();
+//
+//    long index();
+//
+//    boolean reject();
+//
+//    long logTerm();
 }

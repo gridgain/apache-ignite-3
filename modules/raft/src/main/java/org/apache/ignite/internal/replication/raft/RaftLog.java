@@ -17,7 +17,9 @@
 
 package org.apache.ignite.internal.replication.raft;
 
+import java.util.Collections;
 import java.util.List;
+import org.apache.ignite.internal.replication.raft.storage.Entry;
 
 /**
  *
@@ -51,7 +53,7 @@ public class RaftLog {
         return 0;
     }
 
-    public Snapshot snapshot() {
+    public Snapshot snapshot() throws SnapshotTemporarilyUnavailableException {
         return null;
     }
 
@@ -76,7 +78,7 @@ public class RaftLog {
         return 0;
     }
 
-    public boolean maybeAppend(long idx, long term, long commit, Entry[] entries) {
+    public boolean maybeAppend(long idx, long term, long commit, List<Entry> entries) {
         return false;
     }
 
@@ -93,8 +95,8 @@ public class RaftLog {
         return term > 0 ? term : 0;
     }
 
-    public Entry[] entries(long startIdx, long maxSize) {
-        return new Entry[0];
+    public List<Entry> entries(long startIdx, long maxSize) {
+        return Collections.emptyList();
     }
 
     // slice returns a slice of log entries from fromIdx through toIdx - 1, inclusive.
@@ -104,5 +106,9 @@ public class RaftLog {
 
     public boolean hasPendingSnapshot() {
         return false;
+    }
+
+    public void restore(Snapshot s) {
+
     }
 }

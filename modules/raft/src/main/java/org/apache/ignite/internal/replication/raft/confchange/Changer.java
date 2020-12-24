@@ -24,8 +24,8 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Stream;
-import org.apache.ignite.internal.replication.raft.ConfChange;
-import org.apache.ignite.internal.replication.raft.ConfChangeSingle;
+import org.apache.ignite.internal.replication.raft.storage.ConfChange;
+import org.apache.ignite.internal.replication.raft.storage.ConfChangeSingle;
 import org.apache.ignite.internal.replication.raft.Inflights;
 import org.apache.ignite.internal.replication.raft.InvalidConfigTransitionException;
 import org.apache.ignite.internal.replication.raft.Progress;
@@ -33,7 +33,7 @@ import org.apache.ignite.internal.replication.raft.ProgressMap;
 import org.apache.ignite.internal.replication.raft.TrackerConfig;
 import org.apache.ignite.internal.replication.raft.quorum.JointConfig;
 
-import static org.apache.ignite.internal.replication.raft.ConfChange.ConfChangeTransition.ConfChangeTransitionAuto;
+import static org.apache.ignite.internal.replication.raft.storage.ConfChange.ConfChangeTransition.ConfChangeTransitionAuto;
 
 /**
  * Changer facilitates configuration changes. It exposes methods to handle

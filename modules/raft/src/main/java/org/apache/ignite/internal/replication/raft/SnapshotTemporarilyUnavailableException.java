@@ -17,24 +17,19 @@
 
 package org.apache.ignite.internal.replication.raft;
 
-import java.util.List;
-import java.util.UUID;
-
 /**
  *
  */
-public interface Message {
-    MessageType type();
+public class SnapshotTemporarilyUnavailableException extends RuntimeException {
+    public SnapshotTemporarilyUnavailableException(String message) {
+        super(message);
+    }
 
-    UUID from();
+    public SnapshotTemporarilyUnavailableException(String message, Throwable cause) {
+        super(message, cause);
+    }
 
-    List<Entry> entries();
-
-    long index();
-
-    long term();
-
-    boolean reject();
-
-    long logTerm();
+    public SnapshotTemporarilyUnavailableException(Throwable cause) {
+        super(cause);
+    }
 }

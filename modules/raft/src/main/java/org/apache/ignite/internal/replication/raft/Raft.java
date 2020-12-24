@@ -17,6 +17,7 @@
 
 package org.apache.ignite.internal.replication.raft;
 
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Set;
@@ -25,30 +26,45 @@ import java.util.function.Consumer;
 import org.apache.ignite.internal.replication.raft.confchange.Changer;
 import org.apache.ignite.internal.replication.raft.confchange.Restore;
 import org.apache.ignite.internal.replication.raft.confchange.RestoreResult;
+import org.apache.ignite.internal.replication.raft.message.AppendEntriesRequest;
+import org.apache.ignite.internal.replication.raft.message.AppendEntriesResponse;
+import org.apache.ignite.internal.replication.raft.message.HeartbeatRequest;
+import org.apache.ignite.internal.replication.raft.message.HeartbeatResponse;
+import org.apache.ignite.internal.replication.raft.message.InstallSnapshotRequest;
+import org.apache.ignite.internal.replication.raft.message.Message;
+import org.apache.ignite.internal.replication.raft.message.MessageFactory;
+import org.apache.ignite.internal.replication.raft.message.MessageType;
+import org.apache.ignite.internal.replication.raft.message.VoteRequest;
+import org.apache.ignite.internal.replication.raft.message.VoteResponse;
+import org.apache.ignite.internal.replication.raft.storage.ConfChange;
+import org.apache.ignite.internal.replication.raft.storage.Entry;
+import org.apache.ignite.internal.replication.raft.storage.EntryFactory;
+import org.apache.ignite.internal.replication.raft.storage.LogData;
+import org.apache.ignite.internal.replication.raft.storage.Storage;
+import org.apache.ignite.internal.replication.raft.storage.UserData;
 import org.slf4j.Logger;
 
 import static org.apache.ignite.internal.replication.raft.CampaignType.CAMPAIGN_ELECTION;
 import static org.apache.ignite.internal.replication.raft.CampaignType.CAMPAIGN_PRE_ELECTION;
 import static org.apache.ignite.internal.replication.raft.CampaignType.CAMPAIGN_TRANSFER;
-import static org.apache.ignite.internal.replication.raft.MessageType.MsgApp;
-import static org.apache.ignite.internal.replication.raft.MessageType.MsgAppResp;
-import static org.apache.ignite.internal.replication.raft.MessageType.MsgBeat;
-import static org.apache.ignite.internal.replication.raft.MessageType.MsgCheckQuorum;
-import static org.apache.ignite.internal.replication.raft.MessageType.MsgHeartbeat;
-import static org.apache.ignite.internal.replication.raft.MessageType.MsgHeartbeatResp;
-import static org.apache.ignite.internal.replication.raft.MessageType.MsgHup;
-import static org.apache.ignite.internal.replication.raft.MessageType.MsgPreVote;
-import static org.apache.ignite.internal.replication.raft.MessageType.MsgPreVoteResp;
-import static org.apache.ignite.internal.replication.raft.MessageType.MsgProp;
-import static org.apache.ignite.internal.replication.raft.MessageType.MsgReadIndex;
-import static org.apache.ignite.internal.replication.raft.MessageType.MsgReadIndexResp;
-import static org.apache.ignite.internal.replication.raft.MessageType.MsgSnap;
-import static org.apache.ignite.internal.replication.raft.MessageType.MsgTimeoutNow;
-import static org.apache.ignite.internal.replication.raft.MessageType.MsgVote;
-import static org.apache.ignite.internal.replication.raft.MessageType.MsgVoteResp;
 import static org.apache.ignite.internal.replication.raft.Progress.ProgressState.StateReplicate;
 import static org.apache.ignite.internal.replication.raft.Progress.ProgressState.StateSnapshot;
 import static org.apache.ignite.internal.replication.raft.VoteResult.VoteWon;
+import static org.apache.ignite.internal.replication.raft.message.MessageType.MsgApp;
+import static org.apache.ignite.internal.replication.raft.message.MessageType.MsgBeat;
+import static org.apache.ignite.internal.replication.raft.message.MessageType.MsgCheckQuorum;
+import static org.apache.ignite.internal.replication.raft.message.MessageType.MsgHeartbeat;
+import static org.apache.ignite.internal.replication.raft.message.MessageType.MsgHup;
+import static org.apache.ignite.internal.replication.raft.message.MessageType.MsgPreVote;
+import static org.apache.ignite.internal.replication.raft.message.MessageType.MsgPreVoteResp;
+import static org.apache.ignite.internal.replication.raft.message.MessageType.MsgProp;
+import static org.apache.ignite.internal.replication.raft.message.MessageType.MsgReadIndex;
+import static org.apache.ignite.internal.replication.raft.message.MessageType.MsgReadIndexResp;
+import static org.apache.ignite.internal.replication.raft.message.MessageType.MsgSnap;
+import static org.apache.ignite.internal.replication.raft.message.MessageType.MsgTimeoutNow;
+import static org.apache.ignite.internal.replication.raft.message.MessageType.MsgVote;
+import static org.apache.ignite.internal.replication.raft.message.MessageType.MsgVoteResp;
+import static org.apache.ignite.internal.replication.raft.storage.Entry.EntryType.ENTRY_CONF_CHANGE;
 
 /**
  * TODO agoncharuk: Looks like the ETCD model heavily relies on MsgUnreachable to be fed to the Raft state machine.
@@ -128,6 +144,7 @@ public class Raft {
     private Consumer<Message> step;
 
     private MessageFactory messageFactory;
+    private EntryFactory<?> entryFactory;
 
     private Logger logger;
 
@@ -170,17 +187,14 @@ public class Raft {
                 state == StateType.STATE_LEADER) {
                 // If the current (and most recent, at least for this leader's term)
                 // configuration should be auto-left, initiate that now. We use a
-                // null data which unmarshals into an empty ConfChangeV2 and has the TODO agoncharuk: ConfChangeV2
+                // null data which unmarshals into an empty ConfChange and has the
                 // benefit that appendEntry can never refuse it based on its size
                 // (which registers as zero).
-                Entry ent = messageFactory.newEntry(
-                    EntryConfChangeV2,
-                    null
-                );
+                ConfChange zeroChange = null;
 
                 // There's no way in which this proposal should be able to be rejected.
-                if (!appendEntry(Collections.singletonList(ent)))
-                    throw new AssertionError("refused un-refusable auto-leaving ConfChangeV2");
+                if (!appendEntry(Collections.<LogData>singletonList(zeroChange)))
+                    throw new AssertionError("refused un-refusable auto-leaving ConfChange");
 
                 pendingConfIndex = raftLog.lastIndex();
                 logger.info("initiating automatic transition out of joint configuration {}", prs.config());
@@ -205,7 +219,9 @@ public class Raft {
         }
         else if (m.term() > term) {
             if (m.type() == MsgVote || m.type() == MsgPreVote) {
-                boolean force = bytes.Equal(m.context(), (byte[])(CAMPAIGN_TRANSFER));
+                VoteRequest req = (VoteRequest)m;
+
+                boolean force = req.campaignTransfer();
 
                 boolean inLease = checkQuorum && lead != null && electionElapsed < electionTimeout;
 
@@ -213,7 +229,8 @@ public class Raft {
                     // If a server receives a RequestVote request within the minimum election timeout
                     // of hearing from a current leader, it does not update its term or grant its vote
                     logger.info("{} [logterm: {}, index: {}, vote: {}] ignored {} from {} [logterm: {}, index: {}] at term {}: lease is not expired (remaining ticks: {})",
-                        id, raftLog.lastTerm(), raftLog.lastIndex(), vote, m.type(), m.from(), m.logTerm(), m.index(), term, electionTimeout - electionElapsed);
+                        id, raftLog.lastTerm(), raftLog.lastIndex(), vote,
+                        req.type(), req.from(), req.lastTerm(), req.lastIndex(), term, electionTimeout - electionElapsed);
 
                     return;
                 }
@@ -223,7 +240,7 @@ public class Raft {
             if (m.type() == MsgPreVote) {
 
             }
-            else if (m.type() == MsgPreVoteResp && !m.reject()) {
+            else if (m.type() == MsgPreVoteResp && !((VoteResponse)m).reject()) {
                 // We send pre-vote requests with a term in our future. If the
                 // pre-vote is granted, we will increment our term when we get a
                 // quorum. If it is not, the term comes from the node that
@@ -260,19 +277,33 @@ public class Raft {
                 // When follower gets isolated, it soon starts an election ending
                 // up with a higher term than leader, although it won't receive enough
                 // votes to win the election. When it regains connectivity, this response
-                // with "pb.MsgAppResp" of higher term would force leader to step down.
+                // with "MsgAppResp" of higher term would force leader to step down.
                 // However, this disruption is inevitable to free this stuck node with
                 // fresh election. This can be prevented with Pre-Vote phase.
-                send(messageFactory.newMessage(id, m.from(), MsgAppResp));
+                send(messageFactory.newAppendEntriesResponse(
+                    id,
+                    m.from(),
+                    term,
+                    0,
+                    false,
+                    0));
             }
             else if (m.type() == MsgPreVote) {
+                VoteRequest req = (VoteRequest)m;
+
                 // Before Pre-Vote enable, there may have candidate with higher term,
                 // but less log. After update to Pre-Vote, the cluster may deadlock if
                 // we drop messages with a lower term.
                 logger.info("{} [logterm: {}, index: {}, vote: {}] rejected {} from {} [logterm: {}, index: {}] at term {}",
-                    id, raftLog.lastTerm(), raftLog.lastIndex(), vote, m.type(), m.from(), m.logTerm(), m.index(), term);
+                    id, raftLog.lastTerm(), raftLog.lastIndex(), vote,
+                    req.type(), req.from(), req.lastTerm(), req.lastIndex(), term);
 
-                send(messageFactory.newMessage(id, m.from(), MsgPreVoteResp, term, 0, 0, null, /*Reject*/true));
+                send(messageFactory.newVoteResponse(
+                    id,
+                    m.from(),
+                    true,
+                    term,
+                    /*reject*/true));
             }
             else {
                 // ignore other cases
@@ -292,6 +323,8 @@ public class Raft {
 
             case MsgVote:
             case MsgPreVote: {
+                VoteRequest req = (VoteRequest)m;
+
                 // We can vote if this is a repeat of a vote we've already cast...
                 boolean canVote = m.from().equals(vote) ||
                     // ...we haven't voted and we don't think there's a leader yet in this term...
@@ -300,7 +333,7 @@ public class Raft {
                     (m.type() == MsgPreVote && m.term() > term);
 
                 // ...and we believe the candidate is up to date.
-                if (canVote && raftLog.isUpToDate(m.index(), m.logTerm())) {
+                if (canVote && raftLog.isUpToDate(req.lastIndex(), req.lastTerm())) {
                     // Note: it turns out that that learners must be allowed to cast votes.
                     // This seems counter- intuitive but is necessary in the situation in which
                     // a learner has been promoted (i.e. is now a voter) but has not learned
@@ -320,7 +353,8 @@ public class Raft {
                     // in:
                     // https://github.com/etcd-io/etcd/issues/7625#issuecomment-488798263.
                     logger.info("{} [logterm: {}, index: {}, vote: {}] cast {} for {} [logterm: {}, index: {}] at term {}",
-                        id, raftLog.lastTerm(), raftLog.lastIndex(), vote, m.type(), m.from(), m.logTerm(), m.index(), term);
+                        id, raftLog.lastTerm(), raftLog.lastIndex(), vote,
+                        req.type(), req.from(), req.lastTerm(), req.lastIndex(), term);
 
                     // When responding to Msg{Pre,}Vote messages we include the term
                     // from the message, not the local term. To see why, consider the
@@ -332,14 +366,12 @@ public class Raft {
                     // The term in the original message and current local term are the
                     // same in the case of regular votes, but different for pre-votes.
                     send(
-                        messageFactory.newMessage(
+                        messageFactory.newVoteResponse(
                             id,
                             m.from(),
-                            MessageType.voteResponseType(m.type()),
+                            req.preVote(),
                             m.term(),
-                            0,
-                            0,
-                            null));
+                            /*reject*/false));
 
                     if (m.type() == MsgVote) {
                         // Only record real votes.
@@ -349,15 +381,15 @@ public class Raft {
                 }
                 else {
                     logger.info("{} [logterm: {}, index: {}, vote: {}] rejected {} from {} [logterm: {}, index: {}] at term {}",
-                        id, raftLog.lastTerm(), raftLog.lastIndex(), vote, m.type(), m.from(), m.logTerm(), m.index(), term);
+                        id, raftLog.lastTerm(), raftLog.lastIndex(), vote,
+                        req.type(), req.from(), req.lastTerm(), req.lastIndex(), term);
 
-                    send(messageFactory.newMessage(
+                    send(messageFactory.newVoteResponse(
                         id,
                         m.from(),
-                        MessageType.voteResponseType(m.type()),
+                        req.preVote(),
                         term,
-                        /*reject*/true
-                        ));
+                        /*reject*/true));
                 }
 
                 break;
@@ -393,7 +425,8 @@ public class Raft {
                 //   same reasons MsgPreVote is
                 throw new AssertionError("term should be set when sending " + m.type());
             }
-        } else {
+        }
+        else {
             if (m.term() != 0)
                 throw new AssertionError("term should not be set when sending " + m.type() + " (was " + m.term() + ")");
 
@@ -433,12 +466,19 @@ public class Raft {
 
         try {
             long term = raftLog.term(pr.next() - 1);
-            Entry[] ents = raftLog.entries(pr.next(), maxMsgSize);
+            List<Entry> ents = raftLog.entries(pr.next(), maxMsgSize);
 
-            if (ents.length == 0 && !sndIfEmpty)
+            if (ents.isEmpty() && !sndIfEmpty)
                 return false;
 
-            Message m = messageFactory.newMessage(id, to, MsgApp, this.term, pr.next() - 1, term, ents, raftLog.committed());
+            AppendEntriesRequest m = messageFactory.newAppendEntriesRequest(
+                id,
+                to,
+                this.term,
+                pr.next() - 1,
+                term,
+                ents,
+                raftLog.committed());
 
             if (!m.entries().isEmpty()) {
                 switch (pr.state()) {
@@ -479,17 +519,23 @@ public class Raft {
                 if (snapshot.isEmpty())
                     throw new AssertionError("need non-empty snapshot");
 
-                long sindex = snapshot.metadata().index();
-                long sterm = snapshot.metadata().term();
+                long snapIdx = snapshot.metadata().index();
+                long snapTerm = snapshot.metadata().term();
 
-                Message m = messageFactory.newMessage(id, to, MsgSnap, term, sindex, sterm, snapshot);
+                Message m = messageFactory.newInstallSnapshotRequest(
+                    id,
+                    to,
+                    term,
+                    snapIdx,
+                    snapTerm,
+                    snapshot);
 
                 send(m);
 
                 logger.debug("{} [firstindex: {}, commit: {}] sent snapshot[index: {}, term: {}] to {} [{}]",
-                    id, raftLog.firstIndex(), raftLog.committed(), sindex, sterm, to, pr);
+                    id, raftLog.firstIndex(), raftLog.committed(), snapIdx, snapTerm, to, pr);
 
-                pr.becomeSnapshot(sindex);
+                pr.becomeSnapshot(snapIdx);
 
                 logger.debug("{} paused sending replication messages to {} [{}]", id, to, pr);
             }
@@ -498,7 +544,7 @@ public class Raft {
 
                 return false;
             }
-            catch (Exception ex) { // TODO agoncharuk: Specific exception should be used here.
+            catch (Exception ex) { // TODO agoncharuk: Specific exception should be used here, thrown from raftLog.snapshot()
                 // panic
             }
         }
@@ -543,7 +589,12 @@ public class Raft {
         // an unmatched index.
         long commit = Math.min(prs.progress(to).match(), raftLog.committed());
 
-        Message m = messageFactory.newMessage(id, to, MsgHeartbeat, term, 0, 0, null, commit, ctx);
+        Message m = messageFactory.newHeartbeatRequest(
+            id,
+            to,
+            term,
+            commit,
+            ctx);
 
         send(m);
     }
@@ -613,9 +664,9 @@ public class Raft {
         // could be expensive.
         pendingConfIndex = raftLog.lastIndex();
 
-        Entry emptyEnt = messageFactory.newEntry(null);
+        LogData empty = UserData.empty();
 
-        if (!appendEntry(Collections.singletonList(emptyEnt))) {
+        if (!appendEntry(Collections.singletonList(empty))) {
             // This won't happen because we just called reset() above.
             logger.panic("empty entry was dropped");
         }
@@ -624,7 +675,7 @@ public class Raft {
         // uncommitted log quota. This is because we want to preserve the
         // behavior of allowing one entry larger than quota if the current
         // usage is zero.
-        reduceUncommittedSize(emptyEnt);
+        reduceUncommittedSize(empty);
 
         logger.info("{} became leader at term {}", id, term);
     }
@@ -685,7 +736,7 @@ public class Raft {
                 for (int i = 0; i < m.entries().size(); i++) {
                     Entry e = m.entries().get(i);
 
-                    if (e.type() == Entry.EntryType.ENTRY_CONF_CHANGE_V2) {
+                    if (e.type() == ENTRY_CONF_CHANGE) {
                         ConfChange cc = ((ConfChangeEntry)e).confChange();
 
                         boolean alreadyPending = pendingConfIndex > raftLog.applied();
@@ -707,7 +758,7 @@ public class Raft {
 
                             // TODO agoncharuk: since messages are immutable, need to figure out how to avoid changing the collection
                             // TODO Should not be a problem since MsgProp should not be a message anyway.
-                            m.entries().set(i, messageFactory.newEntry(Entry.EntryType.ENTRY_NORMAL));
+                            m.entries().set(i, messageFactory.newEntry(Entry.EntryType.ENTRY_DATA));
                         }
                         else
                             pendingConfIndex = raftLog.lastIndex() + i + 1;
@@ -777,13 +828,15 @@ public class Raft {
 
         switch (m.type()) {
             case MsgAppResp: {
+                AppendEntriesResponse res = (AppendEntriesResponse)m;
+
                 pr.recentActive(true);
 
-                if (m.reject()) {
+                if (res.reject()) {
                     logger.debug("{} received MsgAppResp(MsgApp was rejected, lastindex: {}) from {} for index {}",
-                        id, m.rejectHint(), m.from(), m.index());
+                        id, res.rejectHint(), res.from(), res.logIndex());
 
-                    if (pr.maybeDecreaseTo(m.index(), m.rejectHint())) {
+                    if (pr.maybeDecreaseTo(res.logIndex(), res.rejectHint())) {
                         logger.debug("{} decreased progress of {} to [{}]", id, m.from(), pr);
 
                         if (pr.state() == StateReplicate)
@@ -795,7 +848,7 @@ public class Raft {
                 else {
                     boolean oldPaused = pr.isPaused();
 
-                    if (pr.maybeUpdate(m.index())) {
+                    if (pr.maybeUpdate(res.logIndex())) {
                         if (pr.state() == Progress.ProgressState.StateProbe)
                             pr.becomeReplicate();
                         else if (pr.state() == Progress.ProgressState.StateSnapshot && pr.match() >= pr.pendingSnapshot()) {
@@ -813,7 +866,7 @@ public class Raft {
                             pr.becomeReplicate();
                         }
                         else if (pr.state() == StateReplicate)
-                            pr.inflights().freeLE(m.index());
+                            pr.inflights().freeLE(res.logIndex());
 
                         if (maybeCommit())
                             bcastAppend();
@@ -844,21 +897,23 @@ public class Raft {
             }
 
             case MsgHeartbeatResp: {
+                HeartbeatResponse res = (HeartbeatResponse)m;
+
                 pr.recentActive(true);
                 pr.probeSent(false);
 
                 // free one slot for the full inflights window to allow progress.
-                // TODO agoncharuk: this is not clear, why can we free up a slot in response to a heartbeat?
+                // TODO agoncharuk: this is not clear, why can we free up an inflights slot in response to a heartbeat?
                 if (pr.state() == StateReplicate && pr.inflights().full())
                     pr.inflights().freeFirstOne();
 
                 if (pr.match() < raftLog.lastIndex())
                     sendAppend(m.from());
 
-                if (readOnly.option() != ReadOnlyOption.READ_ONLY_SAFE || m.context() == null)
+                if (readOnly.option() != ReadOnlyOption.READ_ONLY_SAFE || res.context() == null)
                     return;
 
-                if (prs.config().voters().voteResult(readOnly.recvAck(m.from(), m.context())) != VoteWon)
+                if (prs.config().voters().voteResult(readOnly.recvAck(res.from(), res.context())) != VoteWon)
                     return;
 
                 List<ReadIndexStatus> rss = readOnly.advance(m);
@@ -876,6 +931,7 @@ public class Raft {
             case MsgSnapStatus: {
                 if (pr.state() != StateSnapshot)
                     return;
+
                 // TODO(tbg): this code is very similar to the snapshot handling in
                 // MsgAppResp above. In fact, the code there is more correct than the
                 // code here and should likely be updated to match (or even better, the
@@ -977,25 +1033,25 @@ public class Raft {
             }
 
             case MsgApp: {
-                becomeFollower(m.term(), m.from()); // always m.term() == r.term
+                becomeFollower(m.term(), m.from()); // always m.term() == term
 
-                handleAppendEntries(m);
+                handleAppendEntries((AppendEntriesRequest)m);
 
                 break;
             }
 
             case MsgHeartbeat: {
-                becomeFollower(m.term(), m.from()); // always m.term() == r.term
+                becomeFollower(m.term(), m.from()); // always m.term() == term
 
-                handleHeartbeat(m);
+                handleHeartbeat((HeartbeatRequest)m);
 
                 break;
             }
 
             case MsgSnap: {
-                becomeFollower(m.term(), m.from()); // always m.term() == r.term
+                becomeFollower(m.term(), m.from()); // always m.term() == term
 
-                handleSnapshot(m);
+                handleSnapshot((InstallSnapshotRequest)m);
 
                 break;
             }
@@ -1003,9 +1059,11 @@ public class Raft {
             case MsgPreVoteResp:
             case MsgVoteResp: {
                 if (m.type() == myVoteRespType) {
-                    PollResult p = poll(m.from(), m.type(), !m.reject());
+                    VoteResponse res = (VoteResponse)m;
 
-                    logger.info("{} has received {} {} votes and {} vote rejections", id, p.granted(), m.type(), p.rejected());
+                    PollResult p = poll(res.from(), res.type(), !res.reject());
+
+                    logger.info("{} has received {} {} votes and {} vote rejections", id, p.granted(), res.type(), p.rejected());
 
                     switch (p.result()) {
                         case VoteWon: {
@@ -1022,7 +1080,7 @@ public class Raft {
 
                         case VoteLost: {
                             // MsgPreVoteResp contains future term of pre-candidate
-                            // m.term() > r.term; reuse r.term
+                            // m.term() > term; reuse term
                             becomeFollower(term, null);
 
                             break;
@@ -1065,7 +1123,7 @@ public class Raft {
                 electionElapsed = 0;
                 lead = m.from();
 
-                handleAppendEntries(m);
+                handleAppendEntries((AppendEntriesRequest)m);
 
                 break;
             }
@@ -1074,7 +1132,7 @@ public class Raft {
                 electionElapsed = 0;
                 lead = m.from();
 
-                handleHeartbeat(m);
+                handleHeartbeat((HeartbeatRequest)m);
 
                 break;
             }
@@ -1083,7 +1141,7 @@ public class Raft {
                 electionElapsed = 0;
                 lead = m.from();
 
-                handleSnapshot(m);
+                handleSnapshot((InstallSnapshotRequest)m);
 
                 break;
             }
@@ -1140,7 +1198,7 @@ public class Raft {
         }
     }
 
-    private boolean appendEntry(List<Entry> es) {
+    private boolean appendEntry(List<LogData> es) {
         // Track the size of this uncommitted proposal.
         if (!increaseUncommittedSize(es)) {
             logger.debug(
@@ -1151,15 +1209,15 @@ public class Raft {
             return false;
         }
 
+        List<Entry> entries = new ArrayList<>(es.size());
+
         long li = raftLog.lastIndex();
 
-        for (int i = 0; i < es.size(); i++) {
-            es.get(i).term(term);
-            es.get(i).index(li + 1 + i);
-        }
+        for (int i = 0; i < es.size(); i++)
+            entries.add(entryFactory.newEntry(es.get(i), term, li + i + 1));
 
         // use latest "last" index after truncate/append
-        li = raftLog.append(es);
+        li = raftLog.append(entries);
 
         prs.progress(id).maybeUpdate(li);
 
@@ -1178,30 +1236,52 @@ public class Raft {
         return raftLog.maybeCommit(mci, term);
     }
 
-    private void handleAppendEntries(Message m) {
-        if (m.index() < raftLog.committed()) {
-            send(messageFactory.newMessage(id, m.from(), MsgAppResp, /*TODO verify*/term, raftLog.committed(), /*TODO verify*/0, null));
+    private void handleAppendEntries(AppendEntriesRequest req) {
+        if (req.logIndex() < raftLog.committed()) {
+            send(messageFactory.newAppendEntriesResponse(
+                id,
+                req.from(),
+                term,
+                raftLog.committed(),
+                /*reject*/false,
+                0));
 
             return;
         }
 
-        boolean ok = raftLog.maybeAppend(m.index(), m.logTerm(), m.commit(), m.entries());
+        boolean ok = raftLog.maybeAppend(req.logIndex(), req.logTerm(), req.committedIndex(), req.entries());
         long lastIdx = raftLog.lastIndex();
 
         if (ok)
-            send(messageFactory.newMessage(id, m.from(), MsgAppResp, /*TODO verify*/term, lastIdx, /*TODO verify*/0, null));
+            send(messageFactory.newAppendEntriesResponse(
+                id,
+                req.from(),
+                term,
+                lastIdx,
+                /*reject*/false,
+                0));
         else {
             logger.debug("{} [logterm: {}, index: {}] rejected MsgApp [logterm: {}, index: {}] from {}",
-                id, raftLog.zeroTermOnErrCompacted(raftLog.term(m.index())), m.index(), m.logTerm(), m.index(), m.from());
+                id, raftLog.zeroTermOnErrCompacted(raftLog.term(req.logIndex())), req.logIndex(), req.logTerm(), req.logIndex(), req.from());
 
-            send(messageFactory.newMessage(id, m.from(), MsgAppResp, /*TODO verify*/term, m.index(), /*TODO verify*/0, null, /*reject*/true, /*reject hint*/raftLog.lastIndex()));
+            send(messageFactory.newAppendEntriesResponse(
+                id,
+                req.from(),
+                term,
+                req.logIndex(),
+                /*reject*/true,
+                raftLog.lastIndex()));
         }
     }
 
-    private void handleHeartbeat(Message m) {
-        raftLog.commitTo(m.commit());
+    private void handleHeartbeat(HeartbeatRequest m) {
+        raftLog.commitTo(m.commitIndex());
 
-        send(messageFactory.newMessage(id, m.from(), MsgHeartbeatResp, /*TODO verify*/term, m.context()));
+        send(messageFactory.newHeartbeatResponse(
+            id,
+            m.from(),
+            term,
+            m.context()));
     }
 
     // tickElection is run by followers and candidates after r.electionTimeout.
@@ -1345,9 +1425,14 @@ public class Raft {
             logger.info("{} [logterm: {}, index: {}] sent {} request to {} at term {}",
                 rmtId, raftLog.lastTerm(), raftLog.lastIndex(), voteMsg, rmtId, term);
 
-            byte[] ctx = t == CAMPAIGN_TRANSFER ? new byte[] {(byte)t.ordinal()} : null;
-
-            send(messageFactory.newMessage(id, rmtId, voteMsg, term, raftLog.lastIndex(), raftLog.lastTerm(), ctx));
+            send(messageFactory.newVoteRequest(
+                id,
+                rmtId,
+                voteMsg == MsgPreVote,
+                term,
+                raftLog.lastIndex(),
+                raftLog.lastTerm(),
+                t == CAMPAIGN_TRANSFER));
         }
     }
 
@@ -1420,7 +1505,7 @@ public class Raft {
                 if (this.id.equals(id))
                     return;
 
-                maybeSendAppend(id, false/* sendIfEmpty */);
+                maybeSendAppend(id, false/*sendIfEmpty*/);
             });
         }
 
@@ -1431,7 +1516,7 @@ public class Raft {
         return cs;
     }
 
-    private void handleSnapshot(Message m) {
+    private void handleSnapshot(InstallSnapshotRequest m) {
         long sindex = m.snapshot().metadata().index();
         long sterm = m.snapshot().metadata().term();
 
@@ -1439,13 +1524,25 @@ public class Raft {
             logger.info("{} [commit: {}] restored snapshot [index: {}, term: {}]",
                 id, raftLog.committed(), sindex, sterm);
 
-            send(messageFactory.newMessage(id, m.from(), MsgAppResp, term, raftLog.lastIndex(), raftLog.lastTerm()));
+            send(messageFactory.newAppendEntriesResponse(
+                id,
+                m.from(),
+                term,
+                raftLog.lastIndex(),
+                /*reject*/false,
+                0));
         }
         else {
             logger.info("{} [commit: {}] ignored snapshot [index: {}, term: {}]",
                 id, raftLog.committed(), sindex, sterm);
 
-            send(messageFactory.newMessage(id, m.from(), MsgAppResp, term, raftLog.committed()));
+            send(messageFactory.newAppendEntriesResponse(
+                id,
+                m.from(),
+                term,
+                raftLog.committed(),
+                /*reject*/false,
+                0));
         }
     }
 
@@ -1499,7 +1596,7 @@ public class Raft {
 
         // Now go ahead and actually restore.
         if (raftLog.matchTerm(s.metadata().index(), s.metadata().term())) {
-            logger.info("%x [commit: %d, lastindex: %d, lastterm: %d] fast-forwarded commit to snapshot [index: %d, term: %d]",
+            logger.info("{} [commit: {}, lastindex: {}, lastterm: {}] fast-forwarded commit to snapshot [index: {}, term: {}]",
                 id, raftLog.committed(), raftLog.lastIndex(), raftLog.lastTerm(), s.metadata().index(), s.metadata().term());
 
             raftLog.commitTo(s.metadata().index());
@@ -1606,7 +1703,7 @@ public class Raft {
     private int numOfPendingConf(Entry[] ents) {
         int n = 0;
         for (Entry ent : ents) {
-            if (ent.type() == Entry.EntryType.ENTRY_CONF_CHANGE_V2)
+            if (ent.type() == ENTRY_CONF_CHANGE)
                 n++;
         }
 
@@ -1621,10 +1718,10 @@ public class Raft {
     //
     // Empty payloads are never refused. This is used both for appending an empty
     // entry at a new leader's term, as well as leaving a joint configuration.
-    private boolean increaseUncommittedSize(List<Entry> ents) {
+    private boolean increaseUncommittedSize(List<LogData> ents) {
         long s = 0;
 
-        for (Entry ent : ents)
+        for (LogData ent : ents)
             s += payloadSize(ent);
 
         if (uncommittedSize > 0 && s > 0 && uncommittedSize + s > maxUncommittedSize) {
@@ -1645,7 +1742,7 @@ public class Raft {
 
     // reduceUncommittedSize accounts for the newly committed entries by decreasing
     // the uncommitted entry size limit.
-    private void reduceUncommittedSize(Entry... ents) {
+    private void reduceUncommittedSize(LogData... ents) {
         if (uncommittedSize == 0)
             // Fast-path for followers, that do not track or enforce the limit.
             return;
@@ -1674,12 +1771,12 @@ public class Raft {
 
             RaftLog raftlog = newLogWithSize(storage, logger, c.maxCommittedSizePerReady());
 
-            State state = storage.initialState();
-            ConfigState cs = state.configState();
-            HardState hs = state.hardState();
+            InitialState initState = storage.initialState();
+            ConfigState cs = initState.configState();
+            HardState hs = initState.hardState();
 
             if (!c.peers().isEmpty() || !c.learners().isEmpty()) {
-                if (cs.voters().length > 0 || cs.learners().length > 0) {
+                if (!cs.voters().isEmpty() || !cs.learners().isEmpty()) {
                     // TODO(bdarnell): the peers argument is always nil except in
                     // tests; the argument should be removed and these tests should be
                     // updated to specify their nodes through a snapshot.
@@ -1706,15 +1803,17 @@ public class Raft {
                 c.disableProposalForwarding()
             );
 
-            RestoreResult restore = Confchange.restore(
-                new confchange.Changer(
-                    r.prs,
-                    raftlog.lastIndex()
+            RestoreResult restore = Restore.restore(
+                new Changer(
+                    r.prs.config(),
+                    r.prs.progress(),
+                    raftlog.lastIndex(),
+                    r.prs.maxInflight()
                 ),
                 cs);
 
             TrackerConfig cfg = restore.trackerConfig();
-            ProgressMap prs = restore.trackerProgress();
+            ProgressMap prs = restore.progressMap();
 
             assertConfStatesEquivalent(logger, cs, r.switchToConfig(cfg, prs));
 
@@ -1728,7 +1827,8 @@ public class Raft {
             r.becomeFollower(r.term, null);
 
             logger.debug("newRaft %x [peers: [%s], term: %d, commit: %d, applied: %d, lastindex: %d, lastterm: %d]",
-                r.id, strings.Join(r.prs.voterNodes(), ","), r.term, r.raftLog.committed(), r.raftLog.applied(), r.raftLog.lastIndex(), r.raftLog.lastTerm());
+                r.id, strings.Join(r.prs.config().voters().ids(), ","), r.term,
+                raftlog.committed(), raftlog.applied(), raftlog.lastIndex(), raftlog.lastTerm());
 
             return r;
         }

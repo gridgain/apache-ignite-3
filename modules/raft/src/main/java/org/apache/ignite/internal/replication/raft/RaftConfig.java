@@ -19,6 +19,7 @@ package org.apache.ignite.internal.replication.raft;
 
 import java.util.List;
 import java.util.UUID;
+import org.apache.ignite.internal.replication.raft.storage.Storage;
 
 /**
  * The config object contains parameters required to start a Raft group.

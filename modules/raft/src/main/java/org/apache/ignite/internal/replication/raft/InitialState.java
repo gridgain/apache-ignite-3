@@ -17,34 +17,29 @@
 
 package org.apache.ignite.internal.replication.raft;
 
-import java.util.Collections;
-import java.util.Map;
-import java.util.UUID;
-import org.apache.ignite.internal.replication.raft.message.Message;
-
 /**
  *
  */
-public class ReadIndexStatus {
-    long index;
-    private Message req;
+public class InitialState {
+    private final HardState hardState;
+    private final ConfigState configState;
 
-    // NB: this never records 'false', but it's more convenient to use this
-    // instead of a Set<UUID> due to the API of VoteResult. If
-    // this becomes performance sensitive enough (doubtful), VoteResult
-    // can change to an API that is closer to that of committedIndex.
-    private Map<UUID, Boolean> acks;
-
-    public ReadIndexStatus(long index, Message req) {
-        this.index = index;
-        this.req = req;
+    public InitialState(HardState hardState, ConfigState configState) {
+        this.hardState = hardState;
+        this.configState = configState;
     }
 
-    public Map<UUID, Boolean> acks() {
-        return Collections.unmodifiableMap(acks);
+    /**
+     * @return
+     */
+    public HardState hardState() {
+        return hardState;
     }
 
-    public void recvAck(UUID id) {
-        acks.put(id, true);
+    /**
+     * @return
+     */
+    public ConfigState configState() {
+        return configState;
     }
 }
