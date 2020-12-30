@@ -21,6 +21,7 @@ import java.util.List;
 import java.util.UUID;
 import org.apache.ignite.internal.replication.raft.storage.Entry;
 import org.apache.ignite.internal.replication.raft.Snapshot;
+import org.apache.ignite.lang.IgniteUuid;
 
 /**
  *
@@ -80,14 +81,14 @@ public interface MessageFactory {
         UUID to,
         long term,
         long commitIdx,
-        byte[] ctx // TODO agoncharuk the type of context should be reconsidered when ReadIndex is refactored.
+        IgniteUuid ctx
     );
 
     HeartbeatResponse newHeartbeatResponse(
         UUID from,
         UUID to,
         long term,
-        byte[] ctx
+        IgniteUuid ctx
     );
 
     InstallSnapshotRequest newInstallSnapshotRequest(
@@ -97,4 +98,10 @@ public interface MessageFactory {
         long snapIdx,
         long snapTerm,
         Snapshot snapshot);
+
+    TimeoutNowRequest newTimeoutNowRequest(
+        UUID from,
+        UUID to,
+        long term
+    );
 }

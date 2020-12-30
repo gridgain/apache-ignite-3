@@ -53,6 +53,10 @@ public class RaftLog {
         return 0;
     }
 
+    public Snapshot unstableSnapshot() {
+        return null;
+    }
+
     public Snapshot snapshot() throws SnapshotTemporarilyUnavailableException {
         return null;
     }
@@ -72,8 +76,8 @@ public class RaftLog {
     public boolean maybeCommit(long maybeCommitIdx, long term) {
         return false;
     }
-
     // TODO agoncharuk: this method will return -1 instead of ErrCompacted.
+
     public long term(long idx) {
         return 0;
     }
@@ -98,8 +102,8 @@ public class RaftLog {
     public List<Entry> entries(long startIdx, long maxSize) {
         return Collections.emptyList();
     }
-
     // slice returns a slice of log entries from fromIdx through toIdx - 1, inclusive.
+
     public Entry[] slice(long fromIdx, long toIdx, long maxSize) {
         return new Entry[0];
     }
@@ -110,5 +114,17 @@ public class RaftLog {
 
     public void restore(Snapshot s) {
 
+    }
+
+    public List<Entry> unstableEntries() {
+        return null;
+    }
+
+    public List<Entry> nextEntries() {
+        return null;
+    }
+
+    public boolean hasNextEntries() {
+        return false;
     }
 }

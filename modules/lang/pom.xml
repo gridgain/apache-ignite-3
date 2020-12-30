@@ -11,20 +11,6 @@
         <relativePath>../../pom.xml</relativePath>
     </parent>
 
-    <artifactId>ignite-raft</artifactId>
+    <artifactId>ignite-lang</artifactId>
     <version>3.0.0-SNAPSHOT</version>
-
-    <dependencies>
-        <dependency>
-            <groupId>org.apache.ignite</groupId>
-            <artifactId>ignite-lang</artifactId>
-            <version>3.0.0-SNAPSHOT</version>
-        </dependency>
-
-        <dependency>
-            <groupId>org.slf4j</groupId>
-            <artifactId>slf4j-api</artifactId>
-            <version>1.7.30</version>
-        </dependency>
-    </dependencies>
 </project>

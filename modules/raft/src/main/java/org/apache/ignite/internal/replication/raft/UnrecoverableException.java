@@ -15,13 +15,23 @@
  * limitations under the License.
  */
 
-package org.apache.ignite.internal.replication.raft.message;
-
-import org.apache.ignite.lang.IgniteUuid;
+package org.apache.ignite.internal.replication.raft;
 
 /**
- *
+ * The exception is thrown when Raft encounters a violation of an internal invariant. When caught, the Raft
+ * instance must be no longer used. A new instance of Raft must be restored from the most recent hard state
+ * stored on disk.
  */
-public interface HeartbeatResponse extends Message {
-    public IgniteUuid context();
+public class UnrecoverableException extends RuntimeException {
+    public UnrecoverableException(String message) {
+        super(message);
+    }
+
+    public UnrecoverableException(String message, Throwable cause) {
+        super(message, cause);
+    }
+
+    public UnrecoverableException(Throwable cause) {
+        super(cause);
+    }
 }

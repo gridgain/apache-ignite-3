@@ -27,7 +27,7 @@ public class Inflights {
     private int count;
 
     // the size of the buffer
-    private int size;
+    private final int size;
 
     // buffer contains the index of the last entry
     // inside one message.
@@ -102,5 +102,20 @@ public class Inflights {
     public void reset() {
         count = 0;
         start = 0;
+    }
+
+    private void grow() {
+        int newSize = buffer.length * 2;
+
+        if (newSize == 0)
+            newSize = 1;
+        else if (newSize > size)
+            newSize = size;
+
+        long[] newBuffer = new long[newSize];
+
+        System.arraycopy(buffer, 0, newBuffer, 0, buffer.length);
+
+        buffer = newBuffer;
     }
 }

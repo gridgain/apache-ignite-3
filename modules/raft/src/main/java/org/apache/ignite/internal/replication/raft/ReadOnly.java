@@ -23,15 +23,16 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
-import org.apache.ignite.internal.replication.raft.message.Message;
+import org.apache.ignite.lang.IgniteUuid;
 
 /**
  *
  */
 public class ReadOnly {
     private ReadOnlyOption option;
-    private Map<String, ReadIndexStatus> pendingReadIndex;
-    private List<String> readIndexQueue;
+    // TODO agoncharuk use LinkedHashMap here instead of map, queue pair
+    private Map<IgniteUuid, ReadIndexStatus> pendingReadIndex;
+    private List<IgniteUuid> readIndexQueue;
 
     public ReadOnly(ReadOnlyOption option) {
         this.option = option;
@@ -48,22 +49,20 @@ public class ReadOnly {
     // `index` is the commit index of the raft state machine when it received
     // the read only request.
     // `m` is the original read only request message from the local or remote node.
-    public void addRequest(long index, Message m) {
-        String s = new String(m.entries().get(0).data());
-
-        if (pendingReadIndex.containsKey(s))
+    public void addRequest(long index, IgniteUuid ctx) {
+        if (pendingReadIndex.containsKey(ctx))
             return;
 
-        pendingReadIndex.put(s, new ReadIndexStatus(index, m));
+        pendingReadIndex.put(ctx, new ReadIndexStatus(index, ctx));
 
-        readIndexQueue.add(s);
+        readIndexQueue.add(ctx);
     }
 
     // recvAck notifies the readonly struct that the raft state machine received
     // an acknowledgment of the heartbeat that attached with the read only request
     // context.
-    public Map<UUID, Boolean> recvAck(UUID id, byte[] context) {
-        ReadIndexStatus rs = pendingReadIndex.get(new String(context));
+    public Map<UUID, Boolean> recvAck(UUID id, IgniteUuid ctx) {
+        ReadIndexStatus rs = pendingReadIndex.get(ctx);
 
         if (rs == null)
             return Collections.emptyMap();
@@ -75,25 +74,23 @@ public class ReadOnly {
 
     // lastPendingRequestCtx returns the context of the last pending read only
     // request in readonly struct.
-    public byte[] lastPendingRequestCtx() {
+    public IgniteUuid lastPendingRequestCtx() {
         if (readIndexQueue.isEmpty())
             return null;
 
-        return readIndexQueue.get(readIndexQueue.size() - 1).getBytes();
+        return readIndexQueue.get(readIndexQueue.size() - 1);
     }
 
     // advance advances the read only request queue kept by the readonly struct.
     // It dequeues the requests until it finds the read only request that has
-    // the same context as the given `m`.
-    public List<ReadIndexStatus> advance(Message m) {
+    // the same context as the given ctx.
+    public List<ReadIndexStatus> advance(IgniteUuid ctx) {
         int i = 0;
         boolean found = false;
 
-        String ctx = new String(m.context());
-
         List<ReadIndexStatus> rss = new ArrayList<>();
 
-        for (String okctx : readIndexQueue) {
+        for (IgniteUuid okctx : readIndexQueue) {
             i++;
 
             ReadIndexStatus rs = pendingReadIndex.get(okctx);
@@ -114,7 +111,7 @@ public class ReadOnly {
             readIndexQueue = readIndexQueue.subList(i, readIndexQueue.size());
 
             for (ReadIndexStatus rs : rss)
-                pendingReadIndex.remove(new String(rs.request().entries().get(0).data()));
+                pendingReadIndex.remove(rs.context());
 
             return rss;
         }

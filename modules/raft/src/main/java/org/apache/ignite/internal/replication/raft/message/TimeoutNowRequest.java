@@ -17,11 +17,8 @@
 
 package org.apache.ignite.internal.replication.raft.message;
 
-import org.apache.ignite.lang.IgniteUuid;
-
 /**
  *
  */
-public interface HeartbeatResponse extends Message {
-    public IgniteUuid context();
+public interface TimeoutNowRequest extends Message {
 }

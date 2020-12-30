@@ -12,6 +12,7 @@
     <description>Java-based middleware for in-memory processing of big data in a distributed environment.</description>
 
     <modules>
+        <module>modules/lang</module>
         <module>modules/raft</module>
     </modules>
 

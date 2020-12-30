@@ -17,10 +17,12 @@
 
 package org.apache.ignite.internal.replication.raft.message;
 
+import org.apache.ignite.lang.IgniteUuid;
+
 /**
  *
  */
 public interface HeartbeatRequest extends Message {
     long commitIndex();
-    byte[] context();
+    IgniteUuid context();
 }

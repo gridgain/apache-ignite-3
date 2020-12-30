@@ -30,12 +30,4 @@ public interface Message {
     UUID to();
 
     long term();
-
-//    List<Entry> entries();
-//
-//    long index();
-//
-//    boolean reject();
-//
-//    long logTerm();
 }

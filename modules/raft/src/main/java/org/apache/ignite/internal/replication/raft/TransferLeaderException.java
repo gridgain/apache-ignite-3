@@ -23,9 +23,16 @@ import java.util.UUID;
  *
  */
 public class TransferLeaderException extends ProposalDroppedException {
-    private UUID transferee;
+    private final UUID leaderTransferee;
 
-    public TransferLeaderException(UUID transferee) {
-        this.transferee = transferee;
+    public TransferLeaderException(UUID leaderTransferee) {
+        this.leaderTransferee = leaderTransferee;
+    }
+
+    /**
+     * @return
+     */
+    public UUID leaderTransferee() {
+        return leaderTransferee;
     }
 }

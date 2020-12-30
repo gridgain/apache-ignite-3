@@ -15,13 +15,12 @@
  * limitations under the License.
  */
 
-package org.apache.ignite.internal.replication.raft.message;
-
-import org.apache.ignite.lang.IgniteUuid;
+package org.apache.ignite.internal.replication.raft;
 
 /**
  *
  */
-public interface HeartbeatResponse extends Message {
-    public IgniteUuid context();
+public enum SnapshotStatus {
+    SnapshotFinish,
+    SnapshotFailure
 }

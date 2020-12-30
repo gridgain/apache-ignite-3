@@ -18,29 +18,30 @@
 package org.apache.ignite.internal.replication.raft.message;
 
 /**
- * TODO agoncharuk: for some reason, the original implementation chose messages to communicate local actions to the
- * TODO             Raft instance. We need to move these actions to separate methods to clean up the code.
+ *
  */
 public enum MessageType {
-    MsgHup,
-    MsgBeat,
-    MsgProp,
-    MsgApp,
-    MsgAppResp,
-    MsgVote,
-    MsgVoteResp,
-    MsgSnap,
-    MsgHeartbeat,
-    MsgHeartbeatResp,
-    MsgUnreachable,
-    MsgSnapStatus,
-    MsgCheckQuorum,
-    MsgTransferLeader,
-    MsgTimeoutNow,
-    MsgReadIndex,
-    MsgReadIndexResp,
-    MsgPreVote,
-    MsgPreVoteResp;
+    MsgApp(false),
+    MsgAppResp(true),
+    MsgVote(false),
+    MsgVoteResp(true),
+    MsgSnap(false),
+    MsgHeartbeat(false),
+    MsgHeartbeatResp(true),
+    MsgTimeoutNow(false),
+    // TODO agoncharuk pre-vote is already a flag, need to remove the separate message type.
+    MsgPreVote(false),
+    MsgPreVoteResp(true);
+
+    private boolean resp;
+
+    private MessageType(boolean resp) {
+        this.resp = resp;
+    }
+
+    public boolean isResponse() {
+        return resp;
+    }
 
     public static MessageType voteResponseType(MessageType type) {
         switch (type) {

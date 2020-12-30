@@ -17,48 +17,45 @@
 
 package org.apache.ignite.internal.replication.raft;
 
-import java.util.Collections;
-import java.util.Map;
-import java.util.UUID;
-import org.apache.ignite.lang.IgniteUuid;
-
 /**
- *
+ * An acknowledgement returned by the Raft RawNode when entries are appended to the leader's log. The proposing
+ * client can track the committed entry callback and get notified when the corresponding receipt is confirmed to
+ * be committed.
  */
-public class ReadIndexStatus {
-    private final long idx;
-    private final IgniteUuid ctx;
+public class ProposeReceipt {
+    /** */
+    private final long term;
 
-    // NB: this never records 'false', but it's more convenient to use this
-    // instead of a Set<UUID> due to the API of VoteResult. If
-    // this becomes performance sensitive enough (doubtful), VoteResult
-    // can change to an API that is closer to that of committedIndex.
-    private Map<UUID, Boolean> acks;
+    /** */
+    private final long startIdx;
 
-    public ReadIndexStatus(long idx, IgniteUuid ctx) {
-        this.idx = idx;
-        this.ctx = ctx;
-    }
+    /** */
+    private final long endIdx;
 
-    public Map<UUID, Boolean> acks() {
-        return Collections.unmodifiableMap(acks);
-    }
-
-    public void recvAck(UUID id) {
-        acks.put(id, true);
+    public ProposeReceipt(long term, long startIdx, long endIdx) {
+        this.term = term;
+        this.startIdx = startIdx;
+        this.endIdx = endIdx;
     }
 
     /**
      * @return
      */
-    public long index() {
-        return idx;
+    public long term() {
+        return term;
     }
 
     /**
      * @return
      */
-    public IgniteUuid context() {
-        return ctx;
+    public long startIndex() {
+        return startIdx;
+    }
+
+    /**
+     * @return
+     */
+    public long endIndex() {
+        return endIdx;
     }
 }

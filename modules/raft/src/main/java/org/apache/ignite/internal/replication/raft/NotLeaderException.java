@@ -17,8 +17,24 @@
 
 package org.apache.ignite.internal.replication.raft;
 
+import java.util.UUID;
+
 /**
  *
  */
 public class NotLeaderException extends ProposalDroppedException {
+    /** */
+    private final UUID knonwLeader;
+
+    public NotLeaderException(UUID knonwLeader) {
+        this.knonwLeader = knonwLeader;
+    }
+
+    public NotLeaderException() {
+        this(null);
+    }
+
+    public UUID knownLeader() {
+        return knonwLeader;
+    }
 }

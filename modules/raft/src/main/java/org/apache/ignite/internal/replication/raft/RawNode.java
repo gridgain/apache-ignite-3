@@ -23,6 +23,7 @@ import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 import java.util.function.Consumer;
+import java.util.stream.Collectors;
 import org.apache.ignite.internal.replication.raft.confchange.Changer;
 import org.apache.ignite.internal.replication.raft.confchange.Restore;
 import org.apache.ignite.internal.replication.raft.confchange.RestoreResult;
@@ -42,7 +43,9 @@ import org.apache.ignite.internal.replication.raft.storage.EntryFactory;
 import org.apache.ignite.internal.replication.raft.storage.LogData;
 import org.apache.ignite.internal.replication.raft.storage.Storage;
 import org.apache.ignite.internal.replication.raft.storage.UserData;
+import org.apache.ignite.lang.IgniteUuid;
 import org.slf4j.Logger;
+import org.slf4j.helpers.MessageFormatter;
 
 import static org.apache.ignite.internal.replication.raft.CampaignType.CAMPAIGN_ELECTION;
 import static org.apache.ignite.internal.replication.raft.CampaignType.CAMPAIGN_PRE_ELECTION;
@@ -51,20 +54,10 @@ import static org.apache.ignite.internal.replication.raft.Progress.ProgressState
 import static org.apache.ignite.internal.replication.raft.Progress.ProgressState.StateSnapshot;
 import static org.apache.ignite.internal.replication.raft.VoteResult.VoteWon;
 import static org.apache.ignite.internal.replication.raft.message.MessageType.MsgApp;
-import static org.apache.ignite.internal.replication.raft.message.MessageType.MsgBeat;
-import static org.apache.ignite.internal.replication.raft.message.MessageType.MsgCheckQuorum;
 import static org.apache.ignite.internal.replication.raft.message.MessageType.MsgHeartbeat;
-import static org.apache.ignite.internal.replication.raft.message.MessageType.MsgHup;
 import static org.apache.ignite.internal.replication.raft.message.MessageType.MsgPreVote;
 import static org.apache.ignite.internal.replication.raft.message.MessageType.MsgPreVoteResp;
-import static org.apache.ignite.internal.replication.raft.message.MessageType.MsgProp;
-import static org.apache.ignite.internal.replication.raft.message.MessageType.MsgReadIndex;
-import static org.apache.ignite.internal.replication.raft.message.MessageType.MsgReadIndexResp;
 import static org.apache.ignite.internal.replication.raft.message.MessageType.MsgSnap;
-import static org.apache.ignite.internal.replication.raft.message.MessageType.MsgSnapStatus;
-import static org.apache.ignite.internal.replication.raft.message.MessageType.MsgTimeoutNow;
-import static org.apache.ignite.internal.replication.raft.message.MessageType.MsgTransferLeader;
-import static org.apache.ignite.internal.replication.raft.message.MessageType.MsgUnreachable;
 import static org.apache.ignite.internal.replication.raft.message.MessageType.MsgVote;
 import static org.apache.ignite.internal.replication.raft.message.MessageType.MsgVoteResp;
 import static org.apache.ignite.internal.replication.raft.storage.Entry.EntryType.ENTRY_CONF_CHANGE;
@@ -72,13 +65,13 @@ import static org.apache.ignite.internal.replication.raft.storage.Entry.EntryTyp
 /**
  *
  */
-public class RawNode {
+public class RawNode<T> {
     private UUID id;
 
     private long term;
     private UUID vote;
 
-    private List<ReadState> readStates;
+    private List<ReadState> readStates = new ArrayList<>();
 
     // the log
     private RaftLog raftLog;
@@ -94,7 +87,7 @@ public class RawNode {
     // isLearner is true if the local raft node is a learner.
     private boolean isLearner;
 
-    private List<Message> msgs;
+    private List<Message> msgs = new ArrayList<>();
 
     // the leader id
     private UUID lead;
@@ -139,18 +132,16 @@ public class RawNode {
     // when raft changes its state to follower or candidate.
     private int randomizedElectionTimeout;
 
-    private boolean disableProposalForwarding;
-
     private Runnable tick;
     private Consumer<Message> step;
 
     private MessageFactory messageFactory;
-    private EntryFactory<?> entryFactory;
+    private EntryFactory entryFactory;
 
     private Logger logger;
 
     private SoftState prevSoftState;
-    private HardState prevHardSt;
+    private HardState prevHardState;
 
     // Tick advances the internal logical clock by a single tick.
     public void tick() {
@@ -170,21 +161,105 @@ public class RawNode {
     }
 
     // Campaign causes this RawNode to transition to candidate state.
-    public void campaign() {
-        return stepInternal(MsgHup);
+    public boolean campaign() {
+        return hup(preVote ? CAMPAIGN_PRE_ELECTION : CAMPAIGN_ELECTION);
     }
 
-    // Propose proposes data be appended to the raft log.
-    public void propose(byte[] data) {
-        stepInternal(MsgProp, data);
+    // Proposes data be appended to the raft log.
+    public ProposeReceipt propose(T data) {
+        checkValidLeader();
+
+        return leaderAppendEntries(Collections.singletonList(new UserData<>(data)));
     }
 
-    // ProposeConfChange proposes a config change. See (Node).ProposeConfChange for
-    // details.
-    public void proposeConfChange(ConfChange cc) {
-        Message m = confChangeToMsg(cc);
+    // Proposes data batch be appended to the raft log.
+    public ProposeReceipt propose(List<? extends T> data) {
+        checkValidLeader();
 
-        stepInternal(m);
+        return leaderAppendEntries(data.stream().map(e -> new UserData<>(e)).collect(Collectors.toList()));
+    }
+
+    // ProposeConfChange proposes a config change.
+    public ProposeReceipt proposeConfChange(ConfChange cc) {
+        checkValidLeader();
+
+        boolean alreadyPending = pendingConfIndex > raftLog.applied();
+        boolean alreadyJoint = prs.config().voters().isJoint();
+
+        boolean wantsLeaveJoint = cc.changes().isEmpty();
+
+        String refused = null;
+
+        if (alreadyPending)
+            refused = String.format("possible unapplied conf change at index %d (applied to %d)", pendingConfIndex,
+                raftLog.applied());
+        else if (alreadyJoint && !wantsLeaveJoint)
+            refused = String.format("must transition out of joint config first: %s", prs.config().voters());
+        else if (!alreadyJoint && wantsLeaveJoint)
+            refused = String.format("%s not in joint state, refusing empty conf change", id);
+
+        if (refused != null) {
+            logger.info("{} ignoring conf change {} at config {}: {}", id, cc, prs.config(), refused);
+
+            throw new InvalidConfigTransitionException(refused);
+        }
+
+        ProposeReceipt receipt = leaderAppendEntries(Collections.singletonList(cc));
+
+        assert receipt.startIndex() == receipt.endIndex() : "Invalid receipt for single-entry propose: " + receipt;
+
+        pendingConfIndex = receipt.startIndex();
+
+        return receipt;
+    }
+
+    /**
+     * ReadIndex requests a read state. The read state will be set in ready.
+     * Read State has a read index. Once the application advances further than the read
+     * index, any linearizable read requests issued before the read request can be
+     * processed safely. The read state will have the same rctx attached.
+     */
+    public void requestReadIndex(IgniteUuid reqCtx) {
+        checkValidLeader();
+
+        // only one voting member (the leader) in the cluster
+        if (prs.isSingleton()) {
+            responseToReadIndexReq(reqCtx, raftLog.committed());
+
+            return;
+        }
+
+        // Reject read only request when this leader has not committed any log entry at its term.
+        if (!committedEntryInCurrentTerm()) {
+            responseToReadIndexReq(reqCtx, -1);
+
+            return;
+        }
+
+        // thinking: use an interally defined context instead of the user given context.
+        // We can express this in terms of the term and index instead of a user-supplied value.
+        // This would allow multiple reads to piggyback on the same message.
+        switch (readOnly.option()) {
+            // If more than the local vote is needed, go through a full broadcast.
+            case READ_ONLY_SAFE: {
+                readOnly.addRequest(raftLog.committed(), reqCtx);
+
+                // The local node automatically acks the request.
+                readOnly.recvAck(id, reqCtx);
+                bcastHeartbeatWithCtx(reqCtx);
+
+                break;
+            }
+
+            case READ_ONLY_LEASE_BASED: {
+                responseToReadIndexReq(reqCtx, raftLog.committed());
+
+                break;
+            }
+        }
+
+        return;
+
     }
 
     // ApplyConfChange applies a config change to the local node. The app must call
@@ -212,16 +287,12 @@ public class RawNode {
 
     // Step advances the state machine using the given message.
     public void step(Message m) {
-        // ignore unexpected local messages receiving over network
-        if (isLocalMsg(m.type()))
-            throw new IllegalArgumentException("Message is local: " + m);
+        Progress pr = prs.progress(m.from());
 
-        // TODO agoncharuk: this validation should happen inside raft state machine.
-        Progress pr = progress(m.from());
-
-        if (pr != null || !isResponseMsg(m.type()))
+        if (pr != null || !m.type().isResponse())
             stepInternal(m);
         else
+            // TODO agoncharuk not sure if this is an exception: we just received a stale response message.
             throw new IllegalStateException("Peer not found: " + m.from());
     }
 
@@ -240,29 +311,30 @@ public class RawNode {
     // readyWithoutAccept returns a Ready. This is a read-only operation, i.e. there
     // is no obligation that the Ready must be handled.
     public Ready readyWithoutAccept() {
+        SoftState softState = softState();
+        HardState hardState = hardState();
+
         return new Ready(
             raftLog.unstableEntries(),
-            raftLog.nextEnts(),
+            raftLog.nextEntries(),
             msgs,
-            softState(),
-            hardState(),
-            raftLog.unstable.snapshot,
-            readStates,
-            prevSoftState,
-            prevHardSt);
+            softState.equals(prevSoftState) ? null : softState,
+            hardState.equals(prevHardState) ? null : hardState,
+            raftLog.unstableSnapshot(),
+            readStates);
     }
 
     // acceptReady is called when the consumer of the RawNode has decided to go
     // ahead and handle a Ready. Nothing must alter the state of the RawNode between
-    // this call and the prior call to Ready().
+    // this call and the prior call to readyWithoutAccept().
     public void acceptReady(Ready rd) {
         if (rd.softState() != null)
             prevSoftState = rd.softState();
 
         if (!rd.readStates().isEmpty())
-            readStates = null;
+            readStates = new ArrayList<>();
 
-        .msgs = null;
+        msgs = new ArrayList<>();
     }
 
     // HasReady called when RawNode user need to check if any Ready pending.
@@ -273,13 +345,13 @@ public class RawNode {
 
         HardState hardSt = hardState();
 
-        if (!hardSt.isEmpty() && !hardSt.equals(prevHardSt))
+        if (!hardSt.isEmpty() && !hardSt.equals(prevHardState))
             return true;
 
         if (raftLog.hasPendingSnapshot())
             return true;
 
-        if (!msgs.isEmpty() || !raftLog.unstableEntries().isEmpty() || raftLog.hasNextEnts())
+        if (!msgs.isEmpty() || !raftLog.unstableEntries().isEmpty() || raftLog.hasNextEntries())
             return true;
 
         return !readStates.isEmpty();
@@ -289,7 +361,7 @@ public class RawNode {
     // last Ready results.
     public void advance(Ready rd) {
         if (!rd.hardState().isEmpty())
-            prevHardSt = rd.hardState();
+            prevHardState = rd.hardState();
 
         reduceUncommittedSize(rd.committedEntries());
 
@@ -312,11 +384,12 @@ public class RawNode {
                 // null data which unmarshals into an empty ConfChange and has the
                 // benefit that appendEntry can never refuse it based on its size
                 // (which registers as zero).
+                // TODO agoncharuk treating null as zero change is wrong and needs to be fixed.
                 ConfChange zeroChange = null;
 
                 // There's no way in which this proposal should be able to be rejected.
-                if (!appendEntry(Collections.<LogData>singletonList(zeroChange)))
-                    throw new AssertionError("refused un-refusable auto-leaving ConfChange");
+                if (!appendEntries(Collections.<LogData>singletonList(zeroChange)))
+                    panic("refused un-refusable auto-leaving ConfChange");
 
                 pendingConfIndex = raftLog.lastIndex();
                 logger.info("initiating automatic transition out of joint configuration {}", prs.config());
@@ -331,7 +404,6 @@ public class RawNode {
 
         if (!rd.snapshot().isEmpty())
             raftLog.stableSnapshotTo(rd.snapshot().metadata().index());
-
     }
 
     // Status returns the current status of the given group. This allocates, see
@@ -371,27 +443,141 @@ public class RawNode {
 
     // ReportUnreachable reports the given node is not reachable for the last send.
     public void reportUnreachable(UUID id) {
-        stepInternal(MsgUnreachable, id);
+        if (state == StateType.STATE_LEADER) {
+            Progress pr = prs.progress(id);
+
+            if (pr == null) {
+                logger.debug("{} no progress available for {}", this.id, id);
+
+                return;
+            }
+
+            // During optimistic replication, if the remote becomes unreachable,
+            // there is huge probability that a MsgApp is lost.
+            if (pr.state() == StateReplicate)
+                pr.becomeProbe();
+
+            logger.debug("{} failed to send message to {} because it is unreachable [{}]", id, m.from(), pr);
+        }
     }
 
     // ReportSnapshot reports the status of the sent snapshot.
     public void ReportSnapshot(UUID id, SnapshotStatus status) {
-        boolean rej = status == SnapshotFailure;
+        boolean rej = status == SnapshotStatus.SnapshotFailure;
 
-        stepInternal(MsgSnapStatus, id, rej);
+        if (state == StateType.STATE_LEADER) {
+            Progress pr = prs.progress(id);
+
+            if (pr == null) {
+                logger.debug("{} no progress available for {}", this.id, id);
+
+                return;
+            }
+
+            if (pr.state() != StateSnapshot)
+                return;
+
+            // TODO(tbg): this code is very similar to the snapshot handling in
+            // MsgAppResp above. In fact, the code there is more correct than the
+            // code here and should likely be updated to match (or even better, the
+            // logic pulled into a newly created Progress state machine handler).
+            if (!rej) {
+                pr.becomeProbe();
+
+                logger.debug("{} snapshot succeeded, resumed sending replication messages to {} [{}]", this.id, id, pr);
+            }
+            else {
+                // NB: the order here matters or we'll be probing erroneously from
+                // the snapshot index, but the snapshot never applied.
+                pr.pendingSnapshot(0);
+
+                pr.becomeProbe();
+
+                logger.debug("{} snapshot failed, resumed sending replication messages to {} [{}]", this.id, id, pr);
+            }
+
+            // If snapshot finish, wait for the MsgAppResp from the remote node before sending
+            // out the next MsgApp.
+            // If snapshot failure, wait for a heartbeat interval before next try
+            pr.probeSent(true);
+
+        }
     }
 
     // TransferLeader tries to transfer leadership to the given transferee.
-    public void TransferLeader(UUID transferee) {
-        stepInternal(MsgTransferLeader, transferee);
+    public void transferLeader(UUID leadTransferee) {
+        if (state == StateType.STATE_LEADER) {
+            Progress pr = prs.progress(leadTransferee);
+
+            if (pr == null) {
+                logger.debug("{} unknown remote peer {}. Ignored transferring leadership", id, leadTransferee);
+            }
+
+            if (pr.isLearner()) {
+                logger.debug("{} remote node {} is learner. Ignored transferring leadership", id, leadTransferee);
+
+                return;
+            }
+
+            UUID lastLeadTransferee = this.leadTransferee;
+
+            if (lastLeadTransferee != null) {
+                if (lastLeadTransferee.equals(leadTransferee)) {
+                    logger.info("{} [term {}] transfer leadership to {} is in progress, ignores request to same node {}",
+                        id, term, leadTransferee, leadTransferee);
+                    return;
+                }
+
+                abortLeaderTransfer();
+
+                logger.info("{} [term {}] abort previous transferring leadership to {}", id, term, lastLeadTransferee);
+            }
+
+            if (id.equals(leadTransferee)) {
+                logger.debug("{} is already leader. Ignored transferring leadership to self", id);
+
+                return;
+            }
+
+            // Transfer leadership to third party.
+            logger.info("{} [term {}] starts to transfer leadership to {}", id, term, leadTransferee);
+
+            // Transfer leadership should be finished in one electionTimeout, so reset r.electionElapsed.
+            electionElapsed = 0;
+            this.leadTransferee = leadTransferee;
+
+            if (pr.match() == raftLog.lastIndex()) {
+                send(messageFactory.newTimeoutNowRequest(id, leadTransferee, term));
+
+                logger.info("{} sends MsgTimeoutNow to {} immediately as {} already has up-to-date log", id, leadTransferee, leadTransferee);
+            }
+            else
+                sendAppend(leadTransferee);
+        }
+        else
+            throw new NotLeaderException(lead);
     }
 
-    // ReadIndex requests a read state. The read state will be set in ready.
-    // Read State has a read index. Once the application advances further than the read
-    // index, any linearizable read requests issued before the read request can be
-    // processed safely. The read state will have the same rctx attached.
-    public void readIndex(byte[] rctx) {
-        stepInternal(MsgReadIndex, rctx);
+    private void checkValidLeader() {
+        if (state != StateType.STATE_LEADER) {
+            logger.info("{} not leader at term {} (known leader is {}); dropping proposal", id, term, lead);
+
+            throw new NotLeaderException(lead);
+        }
+        else {
+            if (prs.progress(id) == null) {
+                // If we are not currently a member of the range (i.e. this node
+                // was removed from the configuration while serving as leader),
+                // drop any new proposals.
+                throw new NotLeaderException();
+            }
+
+            if (leadTransferee != null) {
+                logger.debug("{} [term {}] transfer leadership to {} is in progress; dropping request", id, term, leadTransferee);
+
+                throw new TransferLeaderException(leadTransferee);
+            }
+        }
     }
 
     // TODO: 24.12.20 Should we rename it? Originally it's an raft.step(Message m).
@@ -499,12 +685,6 @@ public class RawNode {
         }
 
         switch (m.type()) {
-            case MsgHup: {
-                hup(preVote ? CAMPAIGN_PRE_ELECTION : CAMPAIGN_ELECTION);
-
-                break;
-            }
-
             case MsgVote:
             case MsgPreVote: {
                 VoteRequest req = (VoteRequest)m;
@@ -661,7 +841,7 @@ public class RawNode {
 
     // reduceUncommittedSize accounts for the newly committed entries by decreasing
     // the uncommitted entry size limit.
-    private void reduceUncommittedSize(LogData... ents) {
+    private void reduceUncommittedSize(List<Entry> ents) {
         if (uncommittedSize == 0)
             // Fast-path for followers, that do not track or enforce the limit.
             return;
@@ -669,7 +849,7 @@ public class RawNode {
         long s = 0;
 
         for (Entry ent : ents)
-            s += payloadSize(ent);
+            s += payloadSize(ent.data());
 
         if (s > uncommittedSize) {
             // uncommittedSize may underestimate the size of the uncommitted Raft
@@ -711,7 +891,23 @@ public class RawNode {
         return true;
     }
 
-    private boolean appendEntry(List<LogData> es) {
+    private ProposeReceipt leaderAppendEntries(List<LogData> entries) {
+        long start = raftLog.lastIndex() + 1;
+
+        if (!appendEntries(entries))
+            throw new ProposalDroppedException();
+
+        long end = raftLog.lastIndex();
+
+        assert end - start + 1 == entries.size() : "Produced invalid log offsets [entries=" + entries +
+            ", start=" + start + ", end=" + end + ']';
+
+        bcastAppend();
+
+        return new ProposeReceipt(term, start, end);
+    }
+
+    private boolean appendEntries(List<LogData> es) {
         // Track the size of this uncommitted proposal.
         if (!increaseUncommittedSize(es)) {
             logger.debug(
@@ -751,9 +947,8 @@ public class RawNode {
     }
 
     private void becomeCandidate() {
-        // TODO(xiangli) remove the panic when the raft implementation is stable
         if (state == StateType.STATE_LEADER)
-            throw new AssertionError("invalid transition [leader -> candidate]");
+            panic("invalid transition [leader -> candidate]");
 
         step = this::stepCandidate;
         reset(term + 1);
@@ -765,9 +960,8 @@ public class RawNode {
     }
 
     private void becomePreCandidate() {
-        // TODO(xiangli) remove the panic when the raft implementation is stable
         if (state == StateType.STATE_LEADER)
-            throw new AssertionError("invalid transition [leader -> pre-candidate]");
+            panic("invalid transition [leader -> pre-candidate]");
 
         // Becoming a pre-candidate changes our step functions and state,
         // but doesn't change anything else. In particular it does not increase
@@ -782,9 +976,8 @@ public class RawNode {
     }
 
     private void becomeLeader() {
-        // TODO(xiangli) remove the panic when the raft implementation is stable
         if (state == StateType.STATE_FOLLOWER)
-            throw new AssertionError("invalid transition [follower -> leader]");
+            panic("invalid transition [follower -> leader]");
 
         step = this::stepLeader;
         reset(term);
@@ -807,73 +1000,56 @@ public class RawNode {
 
         LogData empty = UserData.empty();
 
-        if (!appendEntry(Collections.singletonList(empty))) {
-            // This won't happen because we just called reset() above.
-            logger.panic("empty entry was dropped");
+        if (!appendEntries(Collections.singletonList(empty))) {
+            // This won't happen because we just called reset(term) above.
+            panic("Empty entry was dropped in becomeLeader()");
         }
 
         // As a special case, don't count the initial empty entry towards the
         // uncommitted log quota. This is because we want to preserve the
         // behavior of allowing one entry larger than quota if the current
         // usage is zero.
-        reduceUncommittedSize(empty);
+        reduceUncommittedSize(Collections.singletonList(
+            entryFactory.newEntry(empty, term, raftLog.lastIndex())));
 
         logger.info("{} became leader at term {}", id, term);
     }
 
     // send persists state to stable storage and then sends to its mailbox.
-    // TODO agoncharuk: messages should be immutable
     private void send(Message m) {
-        if (m.from() == null)
-            m.from(id);
-
-        if (m.type() == MsgVote || m.type() == MsgVoteResp || m.type() == MsgPreVote || m.type() == MsgPreVoteResp) {
-            if (m.term() == 0) {
-                // All {pre-,}campaign messages need to have the term set when
-                // sending.
-                // - MsgVote: m.term() is the term the node is campaigning for,
-                //   non-zero as we increment the term when campaigning.
-                // - MsgVoteResp: m.term() is the new term if the MsgVote was
-                //   granted, non-zero for the same reason MsgVote is
-                // - MsgPreVote: m.term() is the term the node will campaign,
-                //   non-zero as we use m.term() to indicate the next term we'll be
-                //   campaigning for
-                // - MsgPreVoteResp: m.term() is the term received in the original
-                //   MsgPreVote if the pre-vote was granted, non-zero for the
-                //   same reasons MsgPreVote is
-                throw new AssertionError("term should be set when sending " + m.type());
-            }
-        }
-        else {
-            if (m.term() != 0)
-                throw new AssertionError("term should not be set when sending " + m.type() + " (was " + m.term() + ")");
-
-            // do not attach term to MsgProp, MsgReadIndex
-            // proposals are a way to forward to the leader and
-            // should be treated as local message.
-            // MsgReadIndex is also forwarded to leader.
-            // TODO agoncharuk: the message should be immutable.
-            if (m.type() != MsgProp && m.type() != MsgReadIndex)
-                m.term(term);
+        if (m.term() == 0) {
+            // All {pre-,}campaign messages need to have the term set when
+            // sending.
+            // - MsgVote: m.term() is the term the node is campaigning for,
+            //   non-zero as we increment the term when campaigning.
+            // - MsgVoteResp: m.term() is the new term if the MsgVote was
+            //   granted, non-zero for the same reason MsgVote is
+            // - MsgPreVote: m.term() is the term the node will campaign,
+            //   non-zero as we use m.term() to indicate the next term we'll be
+            //   campaigning for
+            // - MsgPreVoteResp: m.term() is the term received in the original
+            //   MsgPreVote if the pre-vote was granted, non-zero for the
+            //   same reasons MsgPreVote is
+            panic("term should be set when sending " + m.type());
         }
 
         msgs.add(m);
     }
 
-    private void hup(CampaignType t) {
+    private boolean hup(CampaignType t) {
         if (state == StateType.STATE_LEADER) {
-            logger.debug("{} ignoring MsgHup because already leader", id);
+            logger.debug("{} ignoring hup request because already leader", id);
 
-            return;
+            return false;
         }
 
         if (!promotable()) {
             logger.warn("{} is unpromotable and can not campaign", id);
 
-            return;
+            return false;
         }
 
-        Entry[] ents = raftLog.slice(raftLog.applied() + 1, raftLog.committed() + 1, noLimit);
+        Entry[] ents = raftLog.slice(raftLog.applied() + 1, raftLog.committed() + 1, Long.MAX_VALUE);
 
         int n = numOfPendingConf(ents);
 
@@ -881,12 +1057,14 @@ public class RawNode {
             logger.warn("{} cannot campaign at term {} since there are still {} pending configuration changes to apply",
                 id, term, n);
 
-            return;
+            return false;
         }
 
         logger.info("{} is starting a new election at term {}", id, term);
 
         campaign(t);
+
+        return true;
     }
 
     // maybeCommit attempts to advance the commit index. Returns true if
@@ -944,7 +1122,7 @@ public class RawNode {
                     }
 
                     default:
-                        logger.panic("{} is sending append in unhandled state {}", id, pr.state());
+                        panic("{} is sending append in unhandled state {}", id, pr.state());
                 }
             }
 
@@ -962,7 +1140,7 @@ public class RawNode {
                 Snapshot snapshot = raftLog.snapshot();
 
                 if (snapshot.isEmpty())
-                    throw new AssertionError("need non-empty snapshot");
+                    panic("need non-empty snapshot");
 
                 long snapIdx = snapshot.metadata().index();
                 long snapTerm = snapshot.metadata().term();
@@ -1004,7 +1182,7 @@ public class RawNode {
     }
 
     // sendHeartbeat sends a heartbeat message to the given peer.
-    private void sendHeartbeat(UUID to, byte[] ctx) {
+    private void sendHeartbeat(UUID to, IgniteUuid ctx) {
         // Attach the commit as min(to.matched, committed).
         // When the leader sends out heartbeat message,
         // the receiver(follower) might not be matched with the leader
@@ -1023,10 +1201,6 @@ public class RawNode {
         send(m);
     }
 
-    private void sendTimeoutNow(UUID to) {
-        send(messageFactory.newMessage(id, to, MsgTimeoutNow));
-    }
-
     // bcastAppend sends message, with entries to all peers that are not up-to-date
     // according to the progress recorded in r.prs.
     private void bcastAppend() {
@@ -1040,12 +1214,14 @@ public class RawNode {
 
     // bcastHeartbeat sends message, without entries to all the peers.
     private void bcastHeartbeat() {
-        byte[] lastCtx = readOnly.lastPendingRequestCtx();
+        assert state == StateType.STATE_LEADER;
+
+        IgniteUuid lastCtx = readOnly.lastPendingRequestCtx();
 
         bcastHeartbeatWithCtx(lastCtx);
     }
 
-    private void bcastHeartbeatWithCtx(byte[] ctx) {
+    private void bcastHeartbeatWithCtx(IgniteUuid ctx) {
         prs.foreach((id, progress) -> {
             if (this.id.equals(id))
                 return;
@@ -1059,143 +1235,7 @@ public class RawNode {
     }
 
     private void stepLeader(Message m) {
-        // These message types do not require any progress for m.From.
-        switch (m.type()) {
-            case MsgBeat: {
-                bcastHeartbeat();
-                return;
-            }
-
-            case MsgCheckQuorum: {
-                // The leader should always see itself as active. As a precaution, handle
-                // the case in which the leader isn't in the configuration any more (for
-                // example if it just removed itself).
-                //
-                // TODO(tbg): I added a TODO in removeNode, it doesn't seem that the
-                // leader steps down when removing itself. I might be missing something.
-                Progress pr = prs.progress(id);
-
-                if (pr != null)
-                    pr.recentActive(true);
-
-                if (!prs.quorumActive()) {
-                    logger.warn("{} stepped down to follower since quorum is not active", id);
-
-                    becomeFollower(term, null);
-                }
-
-                // Mark everyone (but ourselves) as inactive in preparation for the next
-                // CheckQuorum.
-                prs.foreach((id, progress) -> {
-                    if (!this.id.equals(id))
-                        progress.recentActive(false);
-                });
-
-                return;
-            }
-
-            case MsgProp: {
-                if (m.entries().isEmpty())
-                    logger.panic("{} stepped empty MsgProp", id);
-
-                if (prs.progress(id) == null) {
-                    // If we are not currently a member of the range (i.e. this node
-                    // was removed from the configuration while serving as leader),
-                    // drop any new proposals.
-                    throw new NotLeaderException();
-                }
-
-                if (leadTransferee != null) {
-                    logger.debug("{} [term {}] transfer leadership to {} is in progress; dropping proposal", id, term, leadTransferee);
-
-                    throw new TransferLeaderException(leadTransferee);
-                }
-
-                for (int i = 0; i < m.entries().size(); i++) {
-                    Entry e = m.entries().get(i);
-
-                    if (e.type() == ENTRY_CONF_CHANGE) {
-                        ConfChange cc = ((ConfChangeEntry)e).confChange();
-
-                        boolean alreadyPending = pendingConfIndex > raftLog.applied();
-                        boolean alreadyJoint = prs.config().voters().isJoint();
-
-                        boolean wantsLeaveJoint = cc.changes().isEmpty();
-
-                        String refused = null;
-
-                        if (alreadyPending)
-                            refused = String.format("possible unapplied conf change at index %d (applied to %d)", pendingConfIndex, raftLog.applied());
-                        else if (alreadyJoint && !wantsLeaveJoint)
-                            refused = "must transition out of joint config first";
-                        else if (!alreadyJoint && wantsLeaveJoint)
-                            refused = "not in joint state; refusing empty conf change";
-
-                        if (refused != null) {
-                            logger.info("{} ignoring conf change {} at config {}: {}", id, cc, prs.config(), refused);
-
-                            // TODO agoncharuk: since messages are immutable, need to figure out how to avoid changing the collection
-                            // TODO Should not be a problem since MsgProp should not be a message anyway.
-                            m.entries().set(i, messageFactory.newEntry(Entry.EntryType.ENTRY_DATA));
-                        }
-                        else
-                            pendingConfIndex = raftLog.lastIndex() + i + 1;
-                    }
-                }
-
-                if (!appendEntry(m.entries()))
-                    throw new ProposalDroppedException();
-
-                bcastAppend();
-
-                return;
-            }
-
-            case MsgReadIndex: {
-                // only one voting member (the leader) in the cluster
-                if (prs.isSingleton()) {
-                    Message resp = responseToReadIndexReq(m, raftLog.committed());
-
-                    if (resp.to() != null)
-                        send(resp);
-
-                    return;
-                }
-
-                // Reject read only request when this leader has not committed any log entry at its term.
-                if (!committedEntryInCurrentTerm())
-                    return;
-
-                // thinking: use an interally defined context instead of the user given context.
-                // We can express this in terms of the term and index instead of a user-supplied value.
-                // This would allow multiple reads to piggyback on the same message.
-                switch (readOnly.option()) {
-                    // If more than the local vote is needed, go through a full broadcast.
-                    case READ_ONLY_SAFE: {
-                        readOnly.addRequest(raftLog.committed(), m);
-
-                        // The local node automatically acks the request.
-                        readOnly.recvAck(id, m.entries().get(0).data());
-                        bcastHeartbeatWithCtx(m.entries().get(0).data());
-
-                        break;
-                    }
-
-                    case READ_ONLY_LEASE_BASED: {
-                        Message resp = responseToReadIndexReq(m, raftLog.committed());
-
-                        if (resp.to() != null)
-                            send(resp);
-
-                        break;
-                    }
-                }
-
-                return;
-            }
-        }
-
-        // All other message types require a progress for m.From (pr).
+        // Require a progress for m.from().
         Progress pr = prs.progress(m.from());
 
         if (pr == null) {
@@ -1259,14 +1299,13 @@ public class RawNode {
                         // replicate, or when freeTo() covers multiple messages). If
                         // we have more entries to send, send as many messages as we
                         // can (without sending empty messages for the commit index)
-                        // TODO agoncharuk: looks like this may fail(overflow) via inflights.
                         while (maybeSendAppend(m.from(), false));
 
                         // Transfer leadership is in progress.
                         if (m.from().equals(leadTransferee) && pr.match() == raftLog.lastIndex()) {
                             logger.info("{} sent MsgTimeoutNow to {} after received MsgAppResp", id, m.from());
 
-                            sendTimeoutNow(m.from());
+                            send(messageFactory.newTimeoutNowRequest(id, m.from(), term));
                         }
                     }
                 }
@@ -1294,101 +1333,10 @@ public class RawNode {
                 if (prs.config().voters().voteResult(readOnly.recvAck(res.from(), res.context())) != VoteWon)
                     return;
 
-                List<ReadIndexStatus> rss = readOnly.advance(m);
+                List<ReadIndexStatus> rss = readOnly.advance(res.context());
 
-                for (ReadIndexStatus rs : rss) {
-                    Message resp = responseToReadIndexReq(rs.request(), rs.index);
-
-                    if (resp.to() != null)
-                        send(resp);
-                }
-
-                break;
-            }
-
-            case MsgSnapStatus: {
-                if (pr.state() != StateSnapshot)
-                    return;
-
-                // TODO(tbg): this code is very similar to the snapshot handling in
-                // MsgAppResp above. In fact, the code there is more correct than the
-                // code here and should likely be updated to match (or even better, the
-                // logic pulled into a newly created Progress state machine handler).
-                if (!m.reject()) {
-                    pr.becomeProbe();
-
-                    logger.debug("{} snapshot succeeded, resumed sending replication messages to {} [{}]", id, m.from(), pr);
-                }
-                else {
-                    // NB: the order here matters or we'll be probing erroneously from
-                    // the snapshot index, but the snapshot never applied.
-                    pr.pendingSnapshot(0);
-
-                    pr.becomeProbe();
-
-                    logger.debug("{} snapshot failed, resumed sending replication messages to {} [{}]", id, m.from(), pr);
-                }
-
-                // If snapshot finish, wait for the MsgAppResp from the remote node before sending
-                // out the next MsgApp.
-                // If snapshot failure, wait for a heartbeat interval before next try
-                pr.probeSent(true);
-
-                break;
-            }
-
-            case MsgUnreachable: {
-                // During optimistic replication, if the remote becomes unreachable,
-                // there is huge probability that a MsgApp is lost.
-                if (pr.state() == StateReplicate)
-                    pr.becomeProbe();
-
-                logger.debug("{} failed to send message to {} because it is unreachable [{}]", id, m.from(), pr);
-
-                break;
-            }
-
-            case MsgTransferLeader: {
-                if (pr.isLearner()) {
-                    logger.debug("{} remote node {} is learner. Ignored transferring leadership", id, m.from());
-
-                    return;
-                }
-
-                UUID leadTransferee = m.from();
-                UUID lastLeadTransferee = this.leadTransferee;
-
-                if (lastLeadTransferee != null) {
-                    if (lastLeadTransferee.equals(leadTransferee)) {
-                        logger.info("{} [term {}] transfer leadership to {} is in progress, ignores request to same node {}",
-                            id, term, leadTransferee, leadTransferee);
-                        return;
-                    }
-
-                    abortLeaderTransfer();
-
-                    logger.info("{} [term {}] abort previous transferring leadership to {}", id, term, lastLeadTransferee);
-                }
-
-                if (id.equals(leadTransferee)) {
-                    logger.debug("{} is already leader. Ignored transferring leadership to self", id);
-
-                    return;
-                }
-
-                // Transfer leadership to third party.
-                logger.info("{} [term {}] starts to transfer leadership to {}", id, term, leadTransferee);
-
-                // Transfer leadership should be finished in one electionTimeout, so reset r.electionElapsed.
-                electionElapsed = 0;
-                this.leadTransferee = leadTransferee;
-
-                if (pr.match() == raftLog.lastIndex()) {
-                    sendTimeoutNow(leadTransferee);
-                    logger.info("{} sends MsgTimeoutNow to {} immediately as {} already has up-to-date log", id, leadTransferee, leadTransferee);
-                }
-                else
-                    sendAppend(leadTransferee);
+                for (ReadIndexStatus rs : rss)
+                    responseToReadIndexReq(rs.context(), rs.index());
 
                 break;
             }
@@ -1397,24 +1345,6 @@ public class RawNode {
 
     private void stepFollower(Message m) throws ProposalDroppedException {
         switch (m.type()) {
-            case MsgProp: {
-                if (lead == null) {
-                    logger.info("{} no leader at term {}; dropping proposal", id, term);
-                    throw new NotLeaderException();
-                }
-                else if (disableProposalForwarding) {
-                    logger.info("{} not forwarding to leader {} at term {}; dropping proposal", id, lead, term);
-
-                    throw new NotLeaderException();
-                }
-
-                // TODO agoncharuk: we most likely will not need this forwarding as the client should do the retries
-                m.to(lead);
-                send(m);
-
-                break;
-            }
-
             case MsgApp: {
                 electionElapsed = 0;
                 lead = m.from();
@@ -1442,19 +1372,6 @@ public class RawNode {
                 break;
             }
 
-            case MsgTransferLeader: {
-                if (lead == null) {
-                    logger.info("{} no leader at term {}; dropping leader transfer msg", id, term);
-
-                    return;
-                }
-
-                m.to(lead);
-                send(m);
-
-                break;
-            }
-
             case MsgTimeoutNow: {
                 logger.info("{} [term {}] received MsgTimeoutNow from {} and starts an election to get leadership.", id, term, m.from());
 
@@ -1462,32 +1379,6 @@ public class RawNode {
                 // know we are not recovering from a partition so there is no need for the
                 // extra round trip.
                 hup(CampaignType.CAMPAIGN_TRANSFER);
-
-                break;
-            }
-
-            case MsgReadIndex: {
-                if (lead == null) {
-                    logger.info("{} no leader at term {}; dropping index reading msg", id, term);
-
-                    return;
-                }
-
-                m.to(lead);
-                send(m);
-
-                break;
-            }
-
-            case MsgReadIndexResp: {
-                if (m.entries().size() != 1) {
-                    logger.error("{} invalid format of MsgReadIndexResp from {}, entries count: {}",
-                        id, m.from(), m.entries().size());
-
-                    return;
-                }
-
-                readStates.add(new ReadState(m.index(), m.entries().get(0).data()));
 
                 break;
             }
@@ -1503,12 +1394,6 @@ public class RawNode {
         MessageType myVoteRespType = state == StateType.STATE_PRE_CANDIDATE ? MsgPreVoteResp : MsgVoteResp;
 
         switch (m.type()) {
-            case MsgProp: {
-                logger.info("{} not a leader at term {}; dropping proposal", id, term);
-
-                throw new NotLeaderException();
-            }
-
             case MsgApp: {
                 becomeFollower(m.term(), m.from()); // always m.term() == term
 
@@ -1586,7 +1471,7 @@ public class RawNode {
             m.context()));
     }
 
-    // tickHeartbeat is run by leaders to send a MsgBeat after r.heartbeatTimeout.
+    // tickHeartbeat is run by leaders to send a heartbeat after heartbeatTimeout.
     private void tickHeartbeat() {
         heartbeatElapsed++;
         electionElapsed++;
@@ -1595,7 +1480,7 @@ public class RawNode {
             electionElapsed = 0;
 
             if (checkQuorum)
-                step.accept(messageFactory.newMessage(id, MsgCheckQuorum));
+                doCheckQuorum();
 
             // If current leader cannot transfer leadership in electionTimeout, it becomes leader again.
             if (state == StateType.STATE_LEADER && leadTransferee != null)
@@ -1608,7 +1493,7 @@ public class RawNode {
         if (heartbeatElapsed >= heartbeatTimeout) {
             heartbeatElapsed = 0;
 
-            step.accept(messageFactory.newMessage(id, MsgBeat));
+            bcastHeartbeat();
         }
     }
 
@@ -1619,8 +1504,38 @@ public class RawNode {
         if (promotable() && pastElectionTimeout()) {
             electionElapsed = 0;
 
-            step.accept(messageFactory.newMessage(id, MsgHup));
+            hup(preVote ? CAMPAIGN_PRE_ELECTION : CAMPAIGN_ELECTION);
         }
+    }
+
+    private void doCheckQuorum() {
+        assert state == StateType.STATE_LEADER;
+
+        // The leader should always see itself as active. As a precaution, handle
+        // the case in which the leader isn't in the configuration any more (for
+        // example if it just removed itself).
+        //
+        // TODO(tbg): I added a TODO in removeNode, it doesn't seem that the
+        // leader steps down when removing itself. I might be missing something.
+        Progress pr = prs.progress(id);
+
+        if (pr != null)
+            pr.recentActive(true);
+
+        if (!prs.quorumActive()) {
+            logger.warn("{} stepped down to follower since quorum is not active", id);
+
+            becomeFollower(term, null);
+        }
+
+        // Mark everyone (but ourselves) as inactive in preparation for the next
+        // CheckQuorum.
+        prs.foreach((id, progress) -> {
+            if (!this.id.equals(id))
+                progress.recentActive(false);
+        });
+
+        return;
     }
 
     private void reset(long term) {
@@ -1732,16 +1647,9 @@ public class RawNode {
         return raftLog.zeroTermOnErrCompacted(raftLog.term(raftLog.committed())) == term;
     }
 
-    // responseToReadIndexReq constructs a response for `req`. If `req` comes from the peer
-    // itself, a blank value will be returned.
-    private Message responseToReadIndexReq(Message req, long readIndex) {
-        if (req.from() == null || id.equals(req.from())) {
-            readStates.add(new ReadState(readIndex, req.entries().get(0).data()));
-
-            return messageFactory.newMessage(id, MsgReadIndexResp);
-        }
-
-        return messageFactory.newMessage(id, req.from(), MsgReadIndexResp, term, readIndex, 0, req.entries());
+    // responseToReadIndexReq updates the read states with a validated read index.
+    private void responseToReadIndexReq(IgniteUuid ctx, long readIndex) {
+        readStates.add(new ReadState(ctx, readIndex));
     }
 
     private void handleAppendEntries(AppendEntriesRequest req) {
@@ -1887,7 +1795,11 @@ public class RawNode {
             TrackerConfig cfg = res.trackerConfig();
             ProgressMap prs = res.progressMap();
 
-            assertConfStatesEquivalent(logger, cs, switchToConfig(cfg, prs));
+            ConfigState updatedConfState = switchToConfig(cfg, prs);
+
+            if (!updatedConfState.equals(cs))
+                panic("Config states are not equivalent after config switch " +
+                    "[snapshot={}, switched={}]", cs, updatedConfState);
 
             Progress pr = this.prs.progress(id);
 
@@ -1899,10 +1811,11 @@ public class RawNode {
             return true;
 
         }
-        catch (Exception e) { // TODO agoncharuk specific exception should be used here (thrown from restore)
+        // TODO agoncharuk specific exception should be used here (thrown from restore)
+        catch (Exception e) {
             // This should never happen. Either there's a bug in our config change
             // handling or the client corrupted the conf change.
-            throw new AssertionError(String.format("unable to restore config %s: %s", cs, e), e);
+            throw new UnrecoverableException(String.format("unable to restore config %s: %s", cs, e), e);
         }
     }
 
@@ -1929,11 +1842,18 @@ public class RawNode {
      */
     private void loadState(HardState state) {
         if (state.committed() < raftLog.committed() || state.committed() > raftLog.lastIndex())
-            logger.panic("%x state.commit %d is out of range [%d, %d]", id, state.committed(), raftLog.committed(), raftLog.lastIndex());
+            panic("{} state.commit {} is out of range [{}, {}]", id, state.committed(), raftLog.committed(),
+                raftLog.lastIndex());
 
         raftLog.commitTo(state.committed());
         term = state.term();
         vote = state.vote();
+    }
+
+    private void panic(String formatMsg, Object... args) {
+        logger.error(formatMsg, args);
+
+        throw new UnrecoverableException(MessageFormatter.arrayFormat(formatMsg, args).getMessage());
     }
 
     // TODO: 24.12.20 Should we have builder for RawNode instead of Raft builder?

@@ -17,10 +17,17 @@
 
 package org.apache.ignite.internal.replication.raft;
 
+import org.apache.ignite.lang.IgniteUuid;
+
 /**
  *
  */
 public class ReadState {
-    private long idx;
-    private byte[] reqCtx;
+    private final IgniteUuid ctx;
+    private final long idx;
+
+    public ReadState(IgniteUuid ctx, long idx) {
+        this.ctx = ctx;
+        this.idx = idx;
+    }
 }
