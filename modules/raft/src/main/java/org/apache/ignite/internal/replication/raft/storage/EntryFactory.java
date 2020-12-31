@@ -21,5 +21,6 @@ package org.apache.ignite.internal.replication.raft.storage;
  *
  */
 public interface EntryFactory {
-    public Entry newEntry(LogData data, long term, long idx);
+    public Entry newEntry(long term, long idx, LogData data);
+    public long payloadSize(LogData data);
 }

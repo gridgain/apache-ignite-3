@@ -17,10 +17,6 @@
 
 package org.apache.ignite.internal.replication.raft;
 
-import java.util.List;
-import java.util.UUID;
-import org.apache.ignite.internal.replication.raft.storage.Storage;
-
 /**
  * The config object contains parameters required to start a Raft group.
  * TODO agoncharuk: Not all fields belong to this class. Most likely we should have an 'initialization'
@@ -29,26 +25,7 @@ import org.apache.ignite.internal.replication.raft.storage.Storage;
  */
 public class RaftConfig {
     /**
-     * Identity of the local Raft member.
-     */
-    private UUID id;
-
-    /**
-     * {@code peers} contains the IDs of all nodes (including self) in the Raft group. It
-     * should only be set when starting a new raft cluster. Restarting Raft group from
-     * previous configuration will fail if {@code peers} is set.
-     */
-    private List<UUID> peers;
-
-    /**
-     * {@code learners} contains the IDs of all learner nodes (including self if the
-     * local node is a learner) in the Raft group. Learners only receive
-     * entries from the leader node. It does not vote or promote itself.
-     */
-    private List<UUID> learners;
-
-    /**
-     * {@code electionTick} is the number of {@link Node#tick()} invocations that must pass between
+     * {@code electionTick} is the number of {@link RawNode#tick()} invocations that must pass between
      * elections. That is, if a follower does not receive any message from the
      * leader of current term before {@code electionTick} has elapsed, it will become
      * candidate and start an election. {@code electionTick} must be greater than
@@ -63,22 +40,6 @@ public class RaftConfig {
      * leadership every {@code heartbeatTick} ticks.
      */
     private int heartbeatTick;
-
-    /**
-     * {@code storage} is the storage for Raft group. Raft generates entries and states to be
-     * stored in storage. Raft reads the persisted entries and states out of
-     * storage when it needs. Raft reads out the previous state and configuration
-     * out of storage when restarting.
-     */
-    private Storage storage;
-
-    /**
-     * Applied is the last applied index. It should only be set when restarting
-     * raft. raft will not return entries to the application smaller or equal to
-     * Applied. If Applied is unset when restarting, raft might return previous
-     * applied entries. This is a very application dependent configuration.
-     */
-    private long applied;
 
     /**
      * {@code maxSizePerMsg} limits the max byte size of each append message. Smaller
@@ -123,7 +84,7 @@ public class RaftConfig {
      * PreVote enables the Pre-Vote algorithm described in raft thesis section
      * 9.6. This prevents disruption when a node that has been partitioned away
      * rejoins the cluster.
-     * TODO agoncharuk: I see no reason to keep this option, preVote should be always true.
+     * TODO agoncharuk: I see no reason to keep this option, preVote should be always true?
      */
     private boolean preVote;
 
@@ -132,60 +93,6 @@ public class RaftConfig {
      * TODO agoncharuk: this should be moved to the read-only request so we can change the read guarantees at runtime.
      */
     private ReadOnlyOption readOnlyOption;
-
-    /**
-     *  {@code disableProposalForwarding} set to true means that followers will drop
-     *  proposals, rather than forwarding them to the leader. One use case for
-     *  this feature would be in a situation where the Raft leader is used to
-     *  compute the data of a proposal, for example, adding a timestamp from a
-     *  hybrid logical clock to data in a monotonically increasing way. Forwarding
-     *  should be disabled to prevent a follower with an inaccurate hybrid
-     *  logical clock from assigning the timestamp and then forwarding the data
-     *  to the leader.
-     */
-    private boolean disableProposalForwarding;
-
-    /**
-     * @return
-     */
-    public UUID id() {
-        return id;
-    }
-
-    /**
-     * @param id
-     */
-    public void id(UUID id) {
-        this.id = id;
-    }
-
-    /**
-     * @return
-     */
-    public List<UUID> peers() {
-        return peers;
-    }
-
-    /**
-     * @param peers
-     */
-    public void peers(List<UUID> peers) {
-        this.peers = peers;
-    }
-
-    /**
-     * @return
-     */
-    public List<UUID> learners() {
-        return learners;
-    }
-
-    /**
-     * @param learners
-     */
-    public void learners(List<UUID> learners) {
-        this.learners = learners;
-    }
 
     /**
      * @return
@@ -213,34 +120,6 @@ public class RaftConfig {
      */
     public void heartbeatTick(int heartbeatTick) {
         this.heartbeatTick = heartbeatTick;
-    }
-
-    /**
-     * @return
-     */
-    public Storage storage() {
-        return storage;
-    }
-
-    /**
-     * @param storage
-     */
-    public void storage(Storage storage) {
-        this.storage = storage;
-    }
-
-    /**
-     * @return
-     */
-    public long applied() {
-        return applied;
-    }
-
-    /**
-     * @param applied
-     */
-    public void applied(long applied) {
-        this.applied = applied;
     }
 
     /**
@@ -339,49 +218,5 @@ public class RaftConfig {
      */
     public void readOnlyOption(ReadOnlyOption readOnlyOption) {
         this.readOnlyOption = readOnlyOption;
-    }
-
-    /**
-     * @return
-     */
-    public boolean disableProposalForwarding() {
-        return disableProposalForwarding;
-    }
-
-    /**
-     * @param disableProposalForwarding
-     */
-    public void disableProposalForwarding(boolean disableProposalForwarding) {
-        this.disableProposalForwarding = disableProposalForwarding;
-    }
-
-    /**
-     * TODO agoncharuk: this should be moved to builder.
-     */
-    public void validate() {
-        if (id == null)
-            throw new IllegalArgumentException("Raft member ID must not be null");
-
-        if (heartbeatTick <= 0)
-            throw new IllegalArgumentException("heartbeatTick must be positive");
-
-        if (electionTick <= heartbeatTick)
-            throw new IllegalArgumentException("electionTick must be greater than heartbeatTick");
-
-        if (storage == null)
-            throw new IllegalArgumentException("storage must not be null");
-
-        if (maxUncommittedEntriesSize == 0)
-            maxUncommittedEntriesSize = Long.MAX_VALUE;
-
-        if (maxCommittedSizePerReady == 0)
-            maxCommittedSizePerReady = Integer.MAX_VALUE;
-
-        if (maxInflightMsgs <= 0)
-            throw new IllegalArgumentException("maxInflightMessages must be positive");
-
-        if (readOnlyOption == ReadOnlyOption.READ_ONLY_LEASE_BASED && !checkQuorum)
-            throw new IllegalArgumentException("checkQuorum must be enabled when ReadOnlyOption is " +
-                "READ_ONLY_LEASE_BASED");
     }
 }

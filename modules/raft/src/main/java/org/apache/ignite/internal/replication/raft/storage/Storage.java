@@ -31,9 +31,15 @@ public interface Storage {
     // InitialState returns the saved HardState and ConfState information.
     InitialState initialState();
 
-    // Entries returns a list of log entries in the range [lo,hi).
-    // MaxSize limits the total size of the log entries returned, but
-    // entries returns at least one entry if any.
+    /**
+     * Entries returns a list of log entries in the range [lo, hi).
+     *
+     * @param lo Low index, inclusive.
+     * @param hi High index, exclusive.
+     * @param maxSize limits the total size of the log entries returned, but this method will return
+     *      at least one entry if any.
+     * @return
+     */
     List<Entry> entries(long lo, long hi, long maxSize);
 
     // Term returns the term of entry i, which must be in the range

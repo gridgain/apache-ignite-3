@@ -20,9 +20,9 @@ package org.apache.ignite.internal.replication.raft;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Random;
 import java.util.Set;
 import java.util.UUID;
-import java.util.function.Consumer;
 import java.util.stream.Collectors;
 import org.apache.ignite.internal.replication.raft.confchange.Changer;
 import org.apache.ignite.internal.replication.raft.confchange.Restore;
@@ -41,7 +41,6 @@ import org.apache.ignite.internal.replication.raft.storage.ConfChange;
 import org.apache.ignite.internal.replication.raft.storage.Entry;
 import org.apache.ignite.internal.replication.raft.storage.EntryFactory;
 import org.apache.ignite.internal.replication.raft.storage.LogData;
-import org.apache.ignite.internal.replication.raft.storage.Storage;
 import org.apache.ignite.internal.replication.raft.storage.UserData;
 import org.apache.ignite.lang.IgniteUuid;
 import org.slf4j.Logger;
@@ -63,38 +62,64 @@ import static org.apache.ignite.internal.replication.raft.message.MessageType.Ms
 import static org.apache.ignite.internal.replication.raft.storage.Entry.EntryType.ENTRY_CONF_CHANGE;
 
 /**
- *
+ * Followers will drop proposals, rather than forwarding them to the leader. One use case for
+ * this feature is in a situation where the Raft leader is used to compute the data of a proposal,
+ * for example, adding a timestamp from a hybrid logical clock to data in a monotonically increasing way.
+ * Dropping the proposal instead of forwarding will prevent a follower with an inaccurate hybrid logical
+ * clock from assigning the timestamp and then forwarding the data to the leader.
  */
 public class RawNode<T> {
-    private UUID id;
+    private final UUID id;
+    private final boolean checkQuorum;
+    private final boolean preVote;
+    private final long maxMsgSize;
+    private final long maxUncommittedSize;
+    private final int heartbeatTimeout;
+    private final int electionTimeout;
+    private final Random rnd;
+    private final MessageFactory msgFactory;
+    private final EntryFactory entryFactory;
+    private final Logger logger;
 
+    // ------ Hard state fields. ------
+    /** Current term of raft node. */
     private long term;
-    private UUID vote;
 
+    /** Current vote of raft node. {@code null} if hasn't voted in current term. */
+    private UUID vote;
+    // --------------------------------
+
+    // ------ Soft state fields. ------
+    /** Current node state type. */
+    private StateType state;
+
+    /** The known leader ID in current term. */
+    private UUID lead;
+
+    /**
+     * leadTransferee is id of the leader transfer target when its value is not null.
+     * Follow the procedure defined in raft thesis 3.10.
+     */
+    private UUID leadTransferee;
+    // --------------------------------
+
+    // ------ Ready fields. ----------
+    /** Results of read-only requests to return. */
     private List<ReadState> readStates = new ArrayList<>();
 
-    // the log
-    private RaftLog raftLog;
+    /** Messages to send to remote peers. */
+    private List<Message> msgs = new ArrayList<>();
+    // --------------------------------
 
-    private long maxMsgSize;
-    private long maxUncommittedSize;
+    /** The log as it is viewed by the state machine. May differ from the actual durable state of the log. */
+    private final RaftLog raftLog;
 
     // TODO(tbg): rename to trk.
     private Tracker prs;
 
-    private StateType state;
-
     // isLearner is true if the local raft node is a learner.
+    // TODO agoncharuk looks like this may be moved to Progress.
     private boolean isLearner;
-
-    private List<Message> msgs = new ArrayList<>();
-
-    // the leader id
-    private UUID lead;
-
-    // leadTransferee is id of the leader transfer target when its value is not zero.
-    // Follow the procedure defined in raft thesis 3.10.
-    private UUID leadTransferee;
 
     // Only one conf change may be pending (in the log, but not yet
     // applied) at a time. This is enforced via pendingConfIndex, which
@@ -109,6 +134,7 @@ public class RawNode<T> {
     // term changes.
     private long uncommittedSize;
 
+    /** Aux structure to track read-only requests. */
     private ReadOnly readOnly;
 
     // number of ticks since it reached last electionTimeout when it is leader
@@ -121,27 +147,50 @@ public class RawNode<T> {
     // only leader keeps heartbeatElapsed.
     private int heartbeatElapsed;
 
-    private boolean checkQuorum;
-    private boolean preVote;
-
-    private int heartbeatTimeout;
-    private int electionTimeout;
-
-    // randomizedElectionTimeout is a random number between
-    // [electiontimeout, 2 * electiontimeout - 1]. It gets reset
-    // when raft changes its state to follower or candidate.
+    /**
+     * randomizedElectionTimeout is a random number between [electiontimeout, 2 * electiontimeout - 1].
+     * It gets reset when raft changes its state to follower or candidate, and each time a candidate times out.
+     */
     private int randomizedElectionTimeout;
 
     private Runnable tick;
-    private Consumer<Message> step;
-
-    private MessageFactory messageFactory;
-    private EntryFactory entryFactory;
-
-    private Logger logger;
+    private StepFunction step;
 
     private SoftState prevSoftState;
     private HardState prevHardState;
+
+    RawNode(
+        UUID id,
+        RaftLog raftLog,
+        int maxSizePerMsg,
+        long maxUncommittedEntriesSize,
+        int maxInflightMsgs,
+        int electionTick,
+        int heartbeatTick,
+        boolean checkQuorum,
+        boolean preVote,
+        ReadOnlyOption readOnlyOption,
+        MessageFactory msgFactory,
+        EntryFactory entryFactory,
+        Logger logger,
+        Random rnd
+    ) {
+        this.id = id;
+        this.raftLog = raftLog;
+        maxMsgSize = maxSizePerMsg;
+        maxUncommittedSize = maxUncommittedEntriesSize;
+        electionTimeout = electionTick;
+        heartbeatTimeout = heartbeatTick;
+        this.checkQuorum = checkQuorum;
+        this.preVote = preVote;
+        this.msgFactory = msgFactory;
+        this.entryFactory = entryFactory;
+        this.logger = logger;
+        this.rnd = rnd;
+
+        prs = new Tracker(maxInflightMsgs);
+        readOnly = new ReadOnly(readOnlyOption);
+    }
 
     // Tick advances the internal logical clock by a single tick.
     public void tick() {
@@ -389,7 +438,7 @@ public class RawNode<T> {
 
                 // There's no way in which this proposal should be able to be rejected.
                 if (!appendEntries(Collections.<LogData>singletonList(zeroChange)))
-                    panic("refused un-refusable auto-leaving ConfChange");
+                    unrecoverable("refused un-refusable auto-leaving ConfChange");
 
                 pendingConfIndex = raftLog.lastIndex();
                 logger.info("initiating automatic transition out of joint configuration {}", prs.config());
@@ -409,26 +458,23 @@ public class RawNode<T> {
     // Status returns the current status of the given group. This allocates, see
     // BasicStatus and WithProgress for allocation-friendlier choices.
     public Status status() {
-        // TODO: 24.12.20 Implement.
+        return new Status(basicStatus(), prs.config(), new ProgressMap(prs.progress()));
     }
 
     // BasicStatus returns a BasicStatus. Notably this does not contain the
     // Progress map; see WithProgress for an allocation-free way to inspect it.
     public BasicStatus basicStatus() {
-        // TODO: 24.12.20 Implement.
-    }
-
-    // ProgressType indicates the type of replica a Progress corresponds to.
-    enum ProgressType {
-        // ProgressTypePeer accompanies a Progress for a regular peer replica.
-        ProgressTypePeer,
-        // ProgressTypeLearner accompanies a Progress for a learner replica.
-        ProgressTypeLearner
+        return new BasicStatus(
+            id,
+            hardState(),
+            softState(),
+            raftLog.applied(),
+            leadTransferee);
     }
 
     // WithProgress is a helper to introspect the Progress for this node and its
     // peers.
-    public void withProgress(ProgressVisotor visitor) {
+    public void withProgress(ProgressVisitor visitor) {
         prs.foreach((id, progress) -> {
             ProgressType typ = ProgressType.ProgressTypePeer;
 
@@ -457,7 +503,7 @@ public class RawNode<T> {
             if (pr.state() == StateReplicate)
                 pr.becomeProbe();
 
-            logger.debug("{} failed to send message to {} because it is unreachable [{}]", id, m.from(), pr);
+            logger.debug("{} failed to send message to {} because it is unreachable [{}]", this.id, id, pr);
         }
     }
 
@@ -500,7 +546,6 @@ public class RawNode<T> {
             // out the next MsgApp.
             // If snapshot failure, wait for a heartbeat interval before next try
             pr.probeSent(true);
-
         }
     }
 
@@ -525,6 +570,7 @@ public class RawNode<T> {
                 if (lastLeadTransferee.equals(leadTransferee)) {
                     logger.info("{} [term {}] transfer leadership to {} is in progress, ignores request to same node {}",
                         id, term, leadTransferee, leadTransferee);
+
                     return;
                 }
 
@@ -547,7 +593,7 @@ public class RawNode<T> {
             this.leadTransferee = leadTransferee;
 
             if (pr.match() == raftLog.lastIndex()) {
-                send(messageFactory.newTimeoutNowRequest(id, leadTransferee, term));
+                send(msgFactory.newTimeoutNowRequest(id, leadTransferee, term));
 
                 logger.info("{} sends MsgTimeoutNow to {} immediately as {} already has up-to-date log", id, leadTransferee, leadTransferee);
             }
@@ -650,7 +696,7 @@ public class RawNode<T> {
                 // with "MsgAppResp" of higher term would force leader to step down.
                 // However, this disruption is inevitable to free this stuck node with
                 // fresh election. This can be prevented with Pre-Vote phase.
-                send(messageFactory.newAppendEntriesResponse(
+                send(msgFactory.newAppendEntriesResponse(
                     id,
                     m.from(),
                     term,
@@ -668,7 +714,7 @@ public class RawNode<T> {
                     id, raftLog.lastTerm(), raftLog.lastIndex(), vote,
                     req.type(), req.from(), req.lastTerm(), req.lastIndex(), term);
 
-                send(messageFactory.newVoteResponse(
+                send(msgFactory.newVoteResponse(
                     id,
                     m.from(),
                     true,
@@ -730,7 +776,7 @@ public class RawNode<T> {
                     // The term in the original message and current local term are the
                     // same in the case of regular votes, but different for pre-votes.
                     send(
-                        messageFactory.newVoteResponse(
+                        msgFactory.newVoteResponse(
                             id,
                             m.from(),
                             req.preVote(),
@@ -748,7 +794,7 @@ public class RawNode<T> {
                         id, raftLog.lastTerm(), raftLog.lastIndex(), vote,
                         req.type(), req.from(), req.lastTerm(), req.lastIndex(), term);
 
-                    send(messageFactory.newVoteResponse(
+                    send(msgFactory.newVoteResponse(
                         id,
                         m.from(),
                         req.preVote(),
@@ -849,7 +895,7 @@ public class RawNode<T> {
         long s = 0;
 
         for (Entry ent : ents)
-            s += payloadSize(ent.data());
+            s += entryFactory.payloadSize(ent.data());
 
         if (s > uncommittedSize) {
             // uncommittedSize may underestimate the size of the uncommitted Raft
@@ -873,7 +919,7 @@ public class RawNode<T> {
         long s = 0;
 
         for (LogData ent : ents)
-            s += payloadSize(ent);
+            s += entryFactory.payloadSize(ent);
 
         if (uncommittedSize > 0 && s > 0 && uncommittedSize + s > maxUncommittedSize) {
             // If the uncommitted tail of the Raft log is empty, allow any size
@@ -923,7 +969,7 @@ public class RawNode<T> {
         long li = raftLog.lastIndex();
 
         for (int i = 0; i < es.size(); i++)
-            entries.add(entryFactory.newEntry(es.get(i), term, li + i + 1));
+            entries.add(entryFactory.newEntry(term, li + i + 1, es.get(i)));
 
         // use latest "last" index after truncate/append
         li = raftLog.append(entries);
@@ -948,7 +994,7 @@ public class RawNode<T> {
 
     private void becomeCandidate() {
         if (state == StateType.STATE_LEADER)
-            panic("invalid transition [leader -> candidate]");
+            unrecoverable("invalid transition [leader -> candidate]");
 
         step = this::stepCandidate;
         reset(term + 1);
@@ -961,7 +1007,7 @@ public class RawNode<T> {
 
     private void becomePreCandidate() {
         if (state == StateType.STATE_LEADER)
-            panic("invalid transition [leader -> pre-candidate]");
+            unrecoverable("invalid transition [leader -> pre-candidate]");
 
         // Becoming a pre-candidate changes our step functions and state,
         // but doesn't change anything else. In particular it does not increase
@@ -977,7 +1023,7 @@ public class RawNode<T> {
 
     private void becomeLeader() {
         if (state == StateType.STATE_FOLLOWER)
-            panic("invalid transition [follower -> leader]");
+            unrecoverable("invalid transition [follower -> leader]");
 
         step = this::stepLeader;
         reset(term);
@@ -1002,7 +1048,7 @@ public class RawNode<T> {
 
         if (!appendEntries(Collections.singletonList(empty))) {
             // This won't happen because we just called reset(term) above.
-            panic("Empty entry was dropped in becomeLeader()");
+            unrecoverable("Empty entry was dropped in becomeLeader()");
         }
 
         // As a special case, don't count the initial empty entry towards the
@@ -1010,7 +1056,7 @@ public class RawNode<T> {
         // behavior of allowing one entry larger than quota if the current
         // usage is zero.
         reduceUncommittedSize(Collections.singletonList(
-            entryFactory.newEntry(empty, term, raftLog.lastIndex())));
+            entryFactory.newEntry(term, raftLog.lastIndex(), empty)));
 
         logger.info("{} became leader at term {}", id, term);
     }
@@ -1030,7 +1076,7 @@ public class RawNode<T> {
             // - MsgPreVoteResp: m.term() is the term received in the original
             //   MsgPreVote if the pre-vote was granted, non-zero for the
             //   same reasons MsgPreVote is
-            panic("term should be set when sending " + m.type());
+            unrecoverable("term should be set when sending " + m.type());
         }
 
         msgs.add(m);
@@ -1094,7 +1140,7 @@ public class RawNode<T> {
             if (ents.isEmpty() && !sndIfEmpty)
                 return false;
 
-            AppendEntriesRequest m = messageFactory.newAppendEntriesRequest(
+            AppendEntriesRequest m = msgFactory.newAppendEntriesRequest(
                 id,
                 to,
                 this.term,
@@ -1122,7 +1168,7 @@ public class RawNode<T> {
                     }
 
                     default:
-                        panic("{} is sending append in unhandled state {}", id, pr.state());
+                        unrecoverable("{} is sending append in unhandled state {}", id, pr.state());
                 }
             }
 
@@ -1140,12 +1186,12 @@ public class RawNode<T> {
                 Snapshot snapshot = raftLog.snapshot();
 
                 if (snapshot.isEmpty())
-                    panic("need non-empty snapshot");
+                    unrecoverable("need non-empty snapshot");
 
                 long snapIdx = snapshot.metadata().index();
                 long snapTerm = snapshot.metadata().term();
 
-                Message m = messageFactory.newInstallSnapshotRequest(
+                Message m = msgFactory.newInstallSnapshotRequest(
                     id,
                     to,
                     term,
@@ -1191,7 +1237,7 @@ public class RawNode<T> {
         // an unmatched index.
         long commit = Math.min(prs.progress(to).match(), raftLog.committed());
 
-        Message m = messageFactory.newHeartbeatRequest(
+        Message m = msgFactory.newHeartbeatRequest(
             id,
             to,
             term,
@@ -1305,7 +1351,7 @@ public class RawNode<T> {
                         if (m.from().equals(leadTransferee) && pr.match() == raftLog.lastIndex()) {
                             logger.info("{} sent MsgTimeoutNow to {} after received MsgAppResp", id, m.from());
 
-                            send(messageFactory.newTimeoutNowRequest(id, m.from(), term));
+                            send(msgFactory.newTimeoutNowRequest(id, m.from(), term));
                         }
                     }
                 }
@@ -1464,7 +1510,7 @@ public class RawNode<T> {
     private void handleHeartbeat(HeartbeatRequest m) {
         raftLog.commitTo(m.commitIndex());
 
-        send(messageFactory.newHeartbeatResponse(
+        send(msgFactory.newHeartbeatResponse(
             id,
             m.from(),
             term,
@@ -1574,6 +1620,10 @@ public class RawNode<T> {
         return pr != null && !pr.isLearner() && !raftLog.hasPendingSnapshot();
     }
 
+    private void resetRandomizedElectionTimeout() {
+        randomizedElectionTimeout = electionTimeout + rnd.nextInt(electionTimeout);
+    }
+
     private int numOfPendingConf(Entry[] ents) {
         int n = 0;
         for (Entry ent : ents) {
@@ -1631,7 +1681,7 @@ public class RawNode<T> {
             logger.info("{} [logterm: {}, index: {}] sent {} request to {} at term {}",
                 rmtId, raftLog.lastTerm(), raftLog.lastIndex(), voteMsg, rmtId, term);
 
-            send(messageFactory.newVoteRequest(
+            send(msgFactory.newVoteRequest(
                 id,
                 rmtId,
                 voteMsg == MsgPreVote,
@@ -1654,7 +1704,7 @@ public class RawNode<T> {
 
     private void handleAppendEntries(AppendEntriesRequest req) {
         if (req.logIndex() < raftLog.committed()) {
-            send(messageFactory.newAppendEntriesResponse(
+            send(msgFactory.newAppendEntriesResponse(
                 id,
                 req.from(),
                 term,
@@ -1669,7 +1719,7 @@ public class RawNode<T> {
         long lastIdx = raftLog.lastIndex();
 
         if (ok)
-            send(messageFactory.newAppendEntriesResponse(
+            send(msgFactory.newAppendEntriesResponse(
                 id,
                 req.from(),
                 term,
@@ -1680,7 +1730,7 @@ public class RawNode<T> {
             logger.debug("{} [logterm: {}, index: {}] rejected MsgApp [logterm: {}, index: {}] from {}",
                 id, raftLog.zeroTermOnErrCompacted(raftLog.term(req.logIndex())), req.logIndex(), req.logTerm(), req.logIndex(), req.from());
 
-            send(messageFactory.newAppendEntriesResponse(
+            send(msgFactory.newAppendEntriesResponse(
                 id,
                 req.from(),
                 term,
@@ -1698,7 +1748,7 @@ public class RawNode<T> {
             logger.info("{} [commit: {}] restored snapshot [index: {}, term: {}]",
                 id, raftLog.committed(), sindex, sterm);
 
-            send(messageFactory.newAppendEntriesResponse(
+            send(msgFactory.newAppendEntriesResponse(
                 id,
                 m.from(),
                 term,
@@ -1710,7 +1760,7 @@ public class RawNode<T> {
             logger.info("{} [commit: {}] ignored snapshot [index: {}, term: {}]",
                 id, raftLog.committed(), sindex, sterm);
 
-            send(messageFactory.newAppendEntriesResponse(
+            send(msgFactory.newAppendEntriesResponse(
                 id,
                 m.from(),
                 term,
@@ -1797,9 +1847,7 @@ public class RawNode<T> {
 
             ConfigState updatedConfState = switchToConfig(cfg, prs);
 
-            if (!updatedConfState.equals(cs))
-                panic("Config states are not equivalent after config switch " +
-                    "[snapshot={}, switched={}]", cs, updatedConfState);
+            checkConfStatesEquivalent(cs, updatedConfState);
 
             Progress pr = this.prs.progress(id);
 
@@ -1842,90 +1890,57 @@ public class RawNode<T> {
      */
     private void loadState(HardState state) {
         if (state.committed() < raftLog.committed() || state.committed() > raftLog.lastIndex())
-            panic("{} state.commit {} is out of range [{}, {}]", id, state.committed(), raftLog.committed(),
+            unrecoverable("{} state.commit {} is out of range [{}, {}]", id, state.committed(), raftLog.committed(),
                 raftLog.lastIndex());
 
-        raftLog.commitTo(state.committed());
         term = state.term();
         vote = state.vote();
     }
 
-    private void panic(String formatMsg, Object... args) {
+    void initFromState(InitialState initState) {
+        HardState hs = initState.hardState();
+        ConfigState cs = initState.configState();
+
+        RestoreResult restore = Restore.restore(
+            new Changer(
+                prs.config(),
+                prs.progress(),
+                raftLog.lastIndex(),
+                prs.maxInflight()
+            ),
+            cs);
+
+        TrackerConfig trackerCfg = restore.trackerConfig();
+        ProgressMap progressMap = restore.progressMap();
+
+        ConfigState updatedConfState = switchToConfig(trackerCfg, progressMap);
+
+        checkConfStatesEquivalent(cs, updatedConfState);
+
+        if (!hs.isEmpty())
+            loadState(hs);
+
+        becomeFollower(term, null);
+
+        logger.debug("Initialized Raft {} [peers: [{}], term: {}, commit: {}, applied: {}, lastindex: {}, lastterm: {}]",
+            id,
+            String.join(",", prs.config().voters().ids().stream().map(Object::toString).collect(Collectors.toList())),
+            term,
+            raftLog.committed(),
+            raftLog.applied(),
+            raftLog.lastIndex(),
+            raftLog.lastTerm());
+    }
+
+    private void checkConfStatesEquivalent(ConfigState cs, ConfigState updatedConfState) {
+        if (!updatedConfState.equals(cs))
+            unrecoverable("Config states are not equivalent after config switch " +
+                "[snapshot={}, switched={}]", cs, updatedConfState);
+    }
+
+    private void unrecoverable(String formatMsg, Object... args) {
         logger.error(formatMsg, args);
 
         throw new UnrecoverableException(MessageFormatter.arrayFormat(formatMsg, args).getMessage());
-    }
-
-    // TODO: 24.12.20 Should we have builder for RawNode instead of Raft builder?
-    public static class Builder {
-        private RaftConfig c;
-        private Storage storage;
-
-//        public Raft build() {
-//            c.validate();
-//
-//            RaftLog raftlog = newLogWithSize(storage, logger, c.maxCommittedSizePerReady());
-//
-//            InitialState initState = storage.initialState();
-//            ConfigState cs = initState.configState();
-//            HardState hs = initState.hardState();
-//
-//            if (!c.peers().isEmpty() || !c.learners().isEmpty()) {
-//                if (!cs.voters().isEmpty() || !cs.learners().isEmpty()) {
-//                    // TODO(bdarnell): the peers argument is always nil except in
-//                    // tests; the argument should be removed and these tests should be
-//                    // updated to specify their nodes through a snapshot.
-//                    // TODO agoncharuk: why? Initializing new raft group should specify the peers?
-//                    // TODO agoncharuk: can we split this into two builder flows?
-//                    throw new IllegalStateException("cannot specify both newRaft(peers, learners) and ConfState.(Voters, Learners)");
-//                }
-//                cs.voters(c.peers());
-//                cs.learners(c.learners());
-//            }
-//
-//            Raft r = new Raft(
-//                c.id(),
-//                raftlog,
-//                c.maxSizePerMsg(),
-//                c.maxUncommittedEntriesSize(),
-//                new Tracker(c.maxInflightMsgs()),
-//                c.electionTick(),
-//                c.heartbeatTick(),
-//                logger,
-//                c.checkQuorum(),
-//                c.preVote(),
-//                new ReadOnly(c.readOnlyOption()),
-//                c.disableProposalForwarding()
-//            );
-//
-//            RestoreResult restore = Restore.restore(
-//                new Changer(
-//                    r.prs.config(),
-//                    r.prs.progress(),
-//                    raftlog.lastIndex(),
-//                    r.prs.maxInflight()
-//                ),
-//                cs);
-//
-//            TrackerConfig cfg = restore.trackerConfig();
-//            ProgressMap prs = restore.progressMap();
-//
-//            assertConfStatesEquivalent(logger, cs, r.switchToConfig(cfg, prs));
-//
-//            if (!hs.isEmpty())
-//                r.loadState(hs);
-//
-//            // TODO agoncharuk: move to log construction
-//            if (c.applied() > 0)
-//                raftlog.appliedTo(c.applied());
-//
-//            r.becomeFollower(r.term, null);
-//
-//            logger.debug("newRaft %x [peers: [%s], term: %d, commit: %d, applied: %d, lastindex: %d, lastterm: %d]",
-//                r.id, strings.Join(r.prs.config().voters().ids(), ","), r.term,
-//                raftlog.committed(), raftlog.applied(), raftlog.lastIndex(), raftlog.lastTerm());
-//
-//            return r;
-//        }
     }
 }

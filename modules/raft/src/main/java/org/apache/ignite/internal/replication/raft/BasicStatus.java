@@ -23,13 +23,21 @@ import java.util.UUID;
  *
  */
 public class BasicStatus {
-    private UUID id;
+    private final UUID id;
 
-    private HardState hardState;
+    private final HardState hardState;
 
-    private SoftState softState;
+    private final SoftState softState;
 
-    private long applied;
+    private final long applied;
 
-    private UUID leadTransferee;
+    private final UUID leadTransferee;
+
+    public BasicStatus(UUID id, HardState hardState, SoftState softState, long applied, UUID leadTransferee) {
+        this.id = id;
+        this.hardState = hardState;
+        this.softState = softState;
+        this.applied = applied;
+        this.leadTransferee = leadTransferee;
+    }
 }

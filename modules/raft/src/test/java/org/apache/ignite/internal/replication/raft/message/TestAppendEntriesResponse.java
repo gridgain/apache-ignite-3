@@ -15,27 +15,50 @@
  * limitations under the License.
  */
 
-package org.apache.ignite.internal.replication.raft;
+package org.apache.ignite.internal.replication.raft.message;
 
-import java.util.HashMap;
 import java.util.UUID;
-import org.apache.ignite.internal.replication.raft.quorum.AckedIndexer;
 
 /**
  *
  */
-public class ProgressMap extends HashMap<UUID, Progress> implements AckedIndexer {
-    public ProgressMap() {
-    }
+public class TestAppendEntriesResponse extends TestBaseMessage implements AppendEntriesResponse {
+    /** */
+    private final long logIdx;
 
-    public ProgressMap(ProgressMap progress) {
-        super(progress);
+    /** */
+    private final boolean reject;
+
+    /** */
+    private final long rejectHint;
+
+    public TestAppendEntriesResponse(
+        UUID from,
+        UUID to,
+        long term,
+        long logIdx,
+        boolean reject,
+        long rejectHint
+    ) {
+        super(MessageType.MsgAppResp, from, to, term);
+
+        this.logIdx = logIdx;
+        this.reject = reject;
+        this.rejectHint = rejectHint;
     }
 
     /** {@inheritDoc} */
-    @Override public long ackedIndex(UUID id) {
-        Progress p = get(id);
+    @Override public long logIndex() {
+        return logIdx;
+    }
 
-        return p == null ? 0L : p.match();
+    /** {@inheritDoc} */
+    @Override public boolean reject() {
+        return reject;
+    }
+
+    /** {@inheritDoc} */
+    @Override public long rejectHint() {
+        return rejectHint;
     }
 }

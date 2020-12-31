@@ -458,7 +458,7 @@ public class Changer {
         return src == null ? new HashSet<>() : new HashSet<>(src);
     }
     // symdiff returns the cardinality of the symmetric difference between the sets of
-    // UUIDs, i.e. len((l - r) \union (r - l)).
+    // UUIDs, i.e. len((l - r) union (r - l)).
 
     private int symdiff(Set<UUID> l, Set<UUID> r) {
         int n = 0;

@@ -78,13 +78,17 @@ public class Inflights {
         }
     }
 
+    public void freeFirstOne() {
+        freeLE(buffer[start]);
+    }
+
     // add() notifies the inflights that a new message with the given index is being
     // dispatched. full() must be called prior to add() to verify that there is room
     // for one more message, and consecutive calls to add add() must provide a
     // monotonic sequence of indexes.
     public void add(long inflight) {
         if (full())
-            throw new AssertionError("cannot add into a full inflights");
+            throw new UnrecoverableException("cannot add into a full inflights");
 
         int next = start + count;
         int size = this.size;

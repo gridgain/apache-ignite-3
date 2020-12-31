@@ -17,11 +17,17 @@
 
 package org.apache.ignite.internal.replication.raft;
 
+import java.util.Collections;
+import java.util.Random;
+import java.util.UUID;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 import org.apache.ignite.internal.replication.raft.message.Message;
+import org.apache.ignite.internal.replication.raft.message.TestMessageFactory;
 import org.apache.ignite.internal.replication.raft.storage.Entry;
+import org.apache.ignite.internal.replication.raft.storage.MemoryStorage;
+import org.apache.ignite.internal.replication.raft.storage.TestEntryFactory;
 
 /**
  * 1. Model interaction bw RawNode & metastorage/partition
@@ -32,14 +38,25 @@ import org.apache.ignite.internal.replication.raft.storage.Entry;
  *
  */
 public class Example {
-    public Object get(Object key) {
-        long linearizedReadIndex = partition.getReadIndex().get();
-
-        return stateMachine.waitAppliedTo(linearizedReadIndex).get(key);
-    }
-
     public void usage() throws InterruptedException {
-        RawNode node = new RawNode();
+        UUID locId = UUID.randomUUID();
+
+        // Bootstrap a new node. New node starts with term 1 with no entries appended to its log.
+        // In this example the node is the only member of Raft group.
+        MemoryStorage storage = new MemoryStorage(locId,
+            new HardState(1, null, 0),
+            ConfigState.bootstrap(Collections.singletonList(locId), null),
+            Collections.emptyList());
+
+        Random rnd = new Random(1L);
+
+        RawNode<?> node = new RawNodeBuilder()
+            .setMessageFactory(new TestMessageFactory())
+            .setEntryFactory(new TestEntryFactory())
+            .setStorage(storage)
+            .setRandom(rnd)
+            .build();
+
         final long tickTimeout = 100;
 
         BlockingQueue<Message> incoming = new LinkedBlockingQueue<>();

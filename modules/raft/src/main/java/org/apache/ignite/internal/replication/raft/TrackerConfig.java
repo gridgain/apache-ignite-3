@@ -17,6 +17,7 @@
 
 package org.apache.ignite.internal.replication.raft;
 
+import java.util.Collections;
 import java.util.Set;
 import java.util.UUID;
 import org.apache.ignite.internal.replication.raft.quorum.JointConfig;
@@ -25,13 +26,13 @@ import org.apache.ignite.internal.replication.raft.quorum.JointConfig;
  * TrackerConfig reflects the configuration tracked in a ProgressTracker.
  */
 public class TrackerConfig {
-    private JointConfig voters;
+    private final JointConfig voters;
 
     // autoLeave is true if the configuration is joint and a transition to the
     // incoming configuration should be carried out automatically by Raft when
     // this is possible. If false, the configuration will be joint until the
     // application initiates the transition manually.
-    private boolean autoLeave;
+    private final boolean autoLeave;
 
     // learners is a set of IDs corresponding to the learners active in the
     // current configuration.
@@ -41,7 +42,7 @@ public class TrackerConfig {
     // learner it can't be in either half of the joint config. This invariant
     // simplifies the implementation since it allows peers to have clarity about
     // its current role without taking into account joint consensus.
-    private Set<UUID> learners;
+    private final Set<UUID> learners;
 
     // When we turn a voter into a learner during a joint consensus transition,
     // we cannot add the learner directly when entering the joint state. This is
@@ -77,12 +78,12 @@ public class TrackerConfig {
     // also a voter in the joint config. In this case, the learner is added
     // right away when entering the joint configuration, so that it is caught up
     // as soon as possible.
-    private Set<UUID> learnersNext;
+    private final Set<UUID> learnersNext;
 
     public TrackerConfig(JointConfig voters, Set<UUID> learners, Set<UUID> learnersNext, boolean autoLeave) {
         this.voters = voters;
-        this.learners = learners;
-        this.learnersNext = learnersNext;
+        this.learners = learners == null ? null : Collections.unmodifiableSet(learners);
+        this.learnersNext = learnersNext == null ? learnersNext : Collections.unmodifiableSet(learnersNext);
         this.autoLeave = autoLeave;
     }
 

@@ -17,16 +17,30 @@
 
 package org.apache.ignite.internal.replication.raft;
 
+import java.util.UUID;
+
 /**
  *
  */
 public class InitialState {
+    /**
+     * Identity of the local Raft member.
+     */
+    private final UUID id;
     private final HardState hardState;
     private final ConfigState configState;
 
-    public InitialState(HardState hardState, ConfigState configState) {
+    public InitialState(UUID id, HardState hardState, ConfigState configState) {
+        this.id = id;
         this.hardState = hardState;
         this.configState = configState;
+    }
+
+    /**
+     * @return
+     */
+    public UUID id() {
+        return id;
     }
 
     /**

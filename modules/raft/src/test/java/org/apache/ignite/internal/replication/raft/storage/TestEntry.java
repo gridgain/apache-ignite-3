@@ -15,27 +15,45 @@
  * limitations under the License.
  */
 
-package org.apache.ignite.internal.replication.raft;
-
-import java.util.HashMap;
-import java.util.UUID;
-import org.apache.ignite.internal.replication.raft.quorum.AckedIndexer;
+package org.apache.ignite.internal.replication.raft.storage;
 
 /**
  *
  */
-public class ProgressMap extends HashMap<UUID, Progress> implements AckedIndexer {
-    public ProgressMap() {
-    }
+public class TestEntry implements Entry {
+    private final EntryType type;
+    private final long term;
+    private final long idx;
+    private final LogData data;
 
-    public ProgressMap(ProgressMap progress) {
-        super(progress);
+    TestEntry(
+        EntryType type,
+        long term,
+        long idx,
+        LogData data
+    ) {
+        this.type = type;
+        this.term = term;
+        this.idx = idx;
+        this.data = data;
+    }
+    /** {@inheritDoc} */
+    @Override public EntryType type() {
+        return type;
     }
 
     /** {@inheritDoc} */
-    @Override public long ackedIndex(UUID id) {
-        Progress p = get(id);
+    @Override public long term() {
+        return term;
+    }
 
-        return p == null ? 0L : p.match();
+    /** {@inheritDoc} */
+    @Override public long index() {
+        return idx;
+    }
+
+    /** {@inheritDoc} */
+    @Override public LogData data() {
+        return data;
     }
 }

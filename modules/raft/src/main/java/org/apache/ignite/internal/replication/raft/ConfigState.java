@@ -17,7 +17,10 @@
 
 package org.apache.ignite.internal.replication.raft;
 
+import java.util.Collections;
+import java.util.List;
 import java.util.Set;
+import java.util.TreeSet;
 import java.util.UUID;
 
 /**
@@ -29,6 +32,24 @@ public class ConfigState {
     private final Set<UUID> learners;
     private final Set<UUID> learnersNext;
     private final boolean autoLeave;
+
+    /**
+     * Utility method to create a initial config state when starting a new Raft cluster.
+     *
+     * @param peers Contains the IDs of all nodes (including self) in the Raft group.
+     * @param learners contains the IDs of all learner nodes (including self if the local node
+     *      is a learner) in the Raft group. Learners only receive entries from the leader node.
+     *      It does not vote or promote itself.
+     * @return Instance of bootstrap config state.
+     */
+    public static ConfigState bootstrap(List<UUID> peers, List<UUID> learners) {
+        return new ConfigState(
+            Collections.unmodifiableSet(new TreeSet<>(peers)),
+            null,
+            Collections.unmodifiableSet(new TreeSet<>(learners)),
+            null,
+            false);
+    }
 
     public ConfigState(
         Set<UUID> voters,

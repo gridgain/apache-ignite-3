@@ -17,25 +17,12 @@
 
 package org.apache.ignite.internal.replication.raft;
 
-import java.util.HashMap;
-import java.util.UUID;
-import org.apache.ignite.internal.replication.raft.quorum.AckedIndexer;
+import org.apache.ignite.internal.replication.raft.message.Message;
 
 /**
  *
  */
-public class ProgressMap extends HashMap<UUID, Progress> implements AckedIndexer {
-    public ProgressMap() {
-    }
-
-    public ProgressMap(ProgressMap progress) {
-        super(progress);
-    }
-
-    /** {@inheritDoc} */
-    @Override public long ackedIndex(UUID id) {
-        Progress p = get(id);
-
-        return p == null ? 0L : p.match();
-    }
+@FunctionalInterface
+interface StepFunction {
+    void accept(Message msg);
 }

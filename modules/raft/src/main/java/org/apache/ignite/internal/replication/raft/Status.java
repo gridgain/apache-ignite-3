@@ -21,9 +21,15 @@ package org.apache.ignite.internal.replication.raft;
  *
  */
 public class Status {
-    private BasicStatus basicStatus;
+    private final BasicStatus basicStatus;
 
-    private TrackerConfig config;
+    private final TrackerConfig config;
 
-    private ProgressMap progress;
+    private final ProgressMap progress;
+
+    public Status(BasicStatus basicStatus, TrackerConfig config, ProgressMap progress) {
+        this.basicStatus = basicStatus;
+        this.config = config;
+        this.progress = progress;
+    }
 }

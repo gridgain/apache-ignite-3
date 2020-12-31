@@ -15,27 +15,26 @@
  * limitations under the License.
  */
 
-package org.apache.ignite.internal.replication.raft;
-
-import java.util.HashMap;
-import java.util.UUID;
-import org.apache.ignite.internal.replication.raft.quorum.AckedIndexer;
+package org.apache.ignite.internal.replication.raft.storage;
 
 /**
  *
  */
-public class ProgressMap extends HashMap<UUID, Progress> implements AckedIndexer {
-    public ProgressMap() {
-    }
-
-    public ProgressMap(ProgressMap progress) {
-        super(progress);
+public class TestEntryFactory implements EntryFactory {
+    /** {@inheritDoc} */
+    @Override public Entry newEntry(long term, long idx, LogData data) {
+        // We now consider null data as an empty configuration change. This will be fixed after tests are added and
+        // we can refactor the code.
+        if (data == null || data instanceof ConfChange)
+            return new TestEntry(Entry.EntryType.ENTRY_CONF_CHANGE, term, idx, data);
+        else if (data instanceof UserData)
+            return new TestEntry(Entry.EntryType.ENTRY_DATA, term, idx, data);
+        else
+            throw new IllegalArgumentException("Unsupported LogData type: " + data);
     }
 
     /** {@inheritDoc} */
-    @Override public long ackedIndex(UUID id) {
-        Progress p = get(id);
-
-        return p == null ? 0L : p.match();
+    @Override public long payloadSize(LogData data) {
+        return 10;
     }
 }

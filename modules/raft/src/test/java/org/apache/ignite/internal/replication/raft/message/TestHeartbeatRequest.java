@@ -15,27 +15,40 @@
  * limitations under the License.
  */
 
-package org.apache.ignite.internal.replication.raft;
+package org.apache.ignite.internal.replication.raft.message;
 
-import java.util.HashMap;
 import java.util.UUID;
-import org.apache.ignite.internal.replication.raft.quorum.AckedIndexer;
+import org.apache.ignite.lang.IgniteUuid;
 
 /**
  *
  */
-public class ProgressMap extends HashMap<UUID, Progress> implements AckedIndexer {
-    public ProgressMap() {
-    }
+public class TestHeartbeatRequest extends TestBaseMessage implements HeartbeatRequest {
+    /** */
+    private final long commitIdx;
 
-    public ProgressMap(ProgressMap progress) {
-        super(progress);
+    /** */
+    private final IgniteUuid ctx;
+
+    public TestHeartbeatRequest(
+        UUID from,
+        UUID to,
+        long term,
+        long commitIdx,
+        IgniteUuid ctx
+    ) {
+        super(MessageType.MsgHeartbeat, from, to, term);
+        this.commitIdx = commitIdx;
+        this.ctx = ctx;
     }
 
     /** {@inheritDoc} */
-    @Override public long ackedIndex(UUID id) {
-        Progress p = get(id);
+    @Override public long commitIndex() {
+        return commitIdx;
+    }
 
-        return p == null ? 0L : p.match();
+    /** {@inheritDoc} */
+    @Override public IgniteUuid context() {
+        return ctx;
     }
 }

@@ -15,27 +15,50 @@
  * limitations under the License.
  */
 
-package org.apache.ignite.internal.replication.raft;
+package org.apache.ignite.internal.replication.raft.message;
 
-import java.util.HashMap;
 import java.util.UUID;
-import org.apache.ignite.internal.replication.raft.quorum.AckedIndexer;
 
 /**
  *
  */
-public class ProgressMap extends HashMap<UUID, Progress> implements AckedIndexer {
-    public ProgressMap() {
-    }
+public abstract class TestBaseMessage implements Message {
+    /** */
+    private final MessageType type;
 
-    public ProgressMap(ProgressMap progress) {
-        super(progress);
+    /** */
+    private final UUID from;
+
+    /** */
+    private final UUID to;
+
+    /** */
+    private final long term;
+
+    TestBaseMessage(MessageType type, UUID from, UUID to, long term) {
+        this.type = type;
+        this.from = from;
+        this.to = to;
+        this.term = term;
     }
 
     /** {@inheritDoc} */
-    @Override public long ackedIndex(UUID id) {
-        Progress p = get(id);
+    @Override public MessageType type() {
+        return null;
+    }
 
-        return p == null ? 0L : p.match();
+    /** {@inheritDoc} */
+    @Override public UUID from() {
+        return null;
+    }
+
+    /** {@inheritDoc} */
+    @Override public UUID to() {
+        return null;
+    }
+
+    /** {@inheritDoc} */
+    @Override public long term() {
+        return 0;
     }
 }

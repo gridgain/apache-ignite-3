@@ -27,18 +27,6 @@ import org.apache.ignite.lang.IgniteUuid;
  *
  */
 public interface MessageFactory {
-    Message newMessage(
-        UUID from,
-        UUID to,
-        MessageType msgType,
-        long term,
-        long idx,
-        long logTerm,
-        byte[] data
-    );
-
-    Message newMessage(UUID from, UUID to, MessageType msgType);
-
     public VoteRequest newVoteRequest(
         UUID from,
         UUID to,
