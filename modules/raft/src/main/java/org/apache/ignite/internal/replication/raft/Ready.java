@@ -99,6 +99,10 @@ public class Ready {
         return Math.max(idx, 0);
     }
 
+    public List<Message> messages() {
+        return msgs;
+    }
+
     public List<Entry> committedEntries() {
         return committedEntries;
     }

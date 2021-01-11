@@ -58,7 +58,12 @@ public class Changer {
 
     private boolean autoLeave;
 
-    public Changer(TrackerConfig trackerCfg, ProgressMap originalProgress, long lastIdx, int maxInflight) {
+    public Changer(
+        TrackerConfig trackerCfg,
+        ProgressMap originalProgress,
+        long lastIdx,
+        int maxInflight
+    ) {
         this.trackerCfg = trackerCfg;
         this.lastIdx = lastIdx;
         this.maxInflight = maxInflight;
@@ -67,8 +72,8 @@ public class Changer {
     }
 
     // LeaveJoint is true if the configuration change leaves a joint configuration.
-    // This is the case if the ConfChangeV2 is zero, with the possible exception of
-    // the Context field.
+    // This is the case if the ConfChange is zero, with the possible exception of
+    // the context field.
     public static boolean leaveJoint(ConfChange cc) {
         // TODO agoncharuk cc.context(null) - why this is needed?
         return cc.changes().isEmpty();

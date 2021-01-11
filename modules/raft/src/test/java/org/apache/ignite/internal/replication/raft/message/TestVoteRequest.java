@@ -42,6 +42,7 @@ public class TestVoteRequest extends TestBaseMessage implements VoteRequest {
         boolean campaignTransfer
     ) {
         super(preVote ? MessageType.MsgPreVote : MessageType.MsgVote, from, to, term);
+
         this.lastIdx = lastIdx;
         this.lastTerm = lastTerm;
         this.campaignTransfer = campaignTransfer;
@@ -60,5 +61,41 @@ public class TestVoteRequest extends TestBaseMessage implements VoteRequest {
     /** {@inheritDoc} */
     @Override public boolean campaignTransfer() {
         return campaignTransfer;
+    }
+
+    /** {@inheritDoc} */
+    @Override public boolean equals(Object o) {
+        if (this == o)
+            return true;
+
+        if (o == null || getClass() != o.getClass())
+            return false;
+
+        if (!super.equals(o))
+            return false;
+
+        TestVoteRequest that = (TestVoteRequest)o;
+
+        if (lastIdx != that.lastIdx)
+            return false;
+
+        if (lastTerm != that.lastTerm)
+            return false;
+
+        if (campaignTransfer != that.campaignTransfer)
+            return false;
+
+        return true;
+    }
+
+    /** {@inheritDoc} */
+    @Override public int hashCode() {
+        int result = super.hashCode();
+
+        result = 31 * result + (int)(lastIdx ^ (lastIdx >>> 32));
+        result = 31 * result + (int)(lastTerm ^ (lastTerm >>> 32));
+        result = 31 * result + (campaignTransfer ? 1 : 0);
+
+        return result;
     }
 }

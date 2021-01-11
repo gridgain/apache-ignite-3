@@ -67,7 +67,6 @@ public class Restore {
             // If there are outgoing voters, first add them one by one so that the
             // (non-joint) config has them all.
             out.add(new ConfChangeSingle(id, ConfChangeSingle.ConfChangeType.ConfChangeAddNode));
-
         }
 
         // We're done constructing the outgoing slice, now on to the incoming one

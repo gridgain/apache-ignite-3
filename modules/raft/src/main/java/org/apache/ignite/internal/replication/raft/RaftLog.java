@@ -127,4 +127,8 @@ public class RaftLog {
     public boolean hasNextEntries() {
         return false;
     }
+
+    public List<Entry> allEntries() {
+        return null;
+    }
 }

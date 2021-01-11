@@ -67,7 +67,7 @@ public class Progress {
     //
     // When in StateSnapshot, leader should have sent out snapshot
     // before and stops sending any replication message.
-    private ProgressState state;
+    private ProgressState state = ProgressState.StateProbe;
 
     // pendingSnapshot is used in StateSnapshot.
     // If there is a pending snapshot, the pendingSnapshot will be set to the
@@ -159,9 +159,10 @@ public class Progress {
     // ResetState moves the Progress into the specified State, resetting ProbeSent,
     // PendingSnapshot, and Inflights.
     private void resetState(ProgressState state) {
+        this.state = state;
+
         probeSent = false;
         pendingSnapshot = 0;
-        this.state = state;
         inflights.reset();
     }
 

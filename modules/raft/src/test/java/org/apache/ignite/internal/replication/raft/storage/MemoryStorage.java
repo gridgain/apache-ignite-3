@@ -17,6 +17,7 @@
 
 package org.apache.ignite.internal.replication.raft.storage;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 import org.apache.ignite.internal.replication.raft.ConfigState;
@@ -39,7 +40,7 @@ public class MemoryStorage implements Storage {
     private ConfigState confState;
 
     /** */
-    private List<Entry> entries;
+    private final List<Entry> entries;
 
     public MemoryStorage(
         UUID id,
@@ -50,7 +51,7 @@ public class MemoryStorage implements Storage {
         this.id = id;
         this.hardState = hardState;
         this.confState = confState;
-        this.entries = entries;
+        this.entries = new ArrayList<>(entries);
     }
 
     /** {@inheritDoc} */
@@ -89,5 +90,9 @@ public class MemoryStorage implements Storage {
     /** {@inheritDoc} */
     @Override public Snapshot snapshot() throws SnapshotTemporarilyUnavailableException {
         throw new SnapshotTemporarilyUnavailableException("Snapshot not implemented for memory storage");
+    }
+
+    public void append(List<Entry> entries) {
+        this.entries.addAll(entries);
     }
 }

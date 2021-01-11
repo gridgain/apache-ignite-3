@@ -72,7 +72,7 @@ public class RaftConfig {
      * has its own sending buffer over TCP/UDP. Setting MaxInflightMsgs to avoid
      * overflowing that sending buffer.
      */
-    private int maxInflightMsgs;
+    private int maxInflightMsgs = Integer.MAX_VALUE;
 
     /**
      * {@code checkQuorum} specifies if the leader should check quorum activity. Leader
@@ -104,8 +104,10 @@ public class RaftConfig {
     /**
      * @param electionTick
      */
-    public void electionTick(int electionTick) {
+    public RaftConfig electionTick(int electionTick) {
         this.electionTick = electionTick;
+
+        return this;
     }
 
     /**
@@ -118,8 +120,10 @@ public class RaftConfig {
     /**
      * @param heartbeatTick
      */
-    public void heartbeatTick(int heartbeatTick) {
+    public RaftConfig heartbeatTick(int heartbeatTick) {
         this.heartbeatTick = heartbeatTick;
+
+        return this;
     }
 
     /**
@@ -132,8 +136,10 @@ public class RaftConfig {
     /**
      * @param maxSizePerMsg
      */
-    public void maxSizePerMsg(int maxSizePerMsg) {
+    public RaftConfig maxSizePerMsg(int maxSizePerMsg) {
         this.maxSizePerMsg = maxSizePerMsg;
+
+        return this;
     }
 
     /**
@@ -146,8 +152,10 @@ public class RaftConfig {
     /**
      * @param maxCommittedSizePerReady
      */
-    public void maxCommittedSizePerReady(int maxCommittedSizePerReady) {
+    public RaftConfig maxCommittedSizePerReady(int maxCommittedSizePerReady) {
         this.maxCommittedSizePerReady = maxCommittedSizePerReady;
+
+        return this;
     }
 
     /**
@@ -160,8 +168,10 @@ public class RaftConfig {
     /**
      * @param maxUncommittedEntriesSize
      */
-    public void maxUncommittedEntriesSize(long maxUncommittedEntriesSize) {
+    public RaftConfig maxUncommittedEntriesSize(long maxUncommittedEntriesSize) {
         this.maxUncommittedEntriesSize = maxUncommittedEntriesSize;
+
+        return this;
     }
 
     /**
@@ -174,8 +184,10 @@ public class RaftConfig {
     /**
      * @param maxInflightMsgs
      */
-    public void maxInflightMsgs(int maxInflightMsgs) {
+    public RaftConfig maxInflightMsgs(int maxInflightMsgs) {
         this.maxInflightMsgs = maxInflightMsgs;
+
+        return this;
     }
 
     /**
@@ -188,8 +200,10 @@ public class RaftConfig {
     /**
      * @param checkQuorum
      */
-    public void checkQuorum(boolean checkQuorum) {
+    public RaftConfig checkQuorum(boolean checkQuorum) {
         this.checkQuorum = checkQuorum;
+
+        return this;
     }
 
     /**
@@ -202,8 +216,10 @@ public class RaftConfig {
     /**
      * @param preVote
      */
-    public void preVote(boolean preVote) {
+    public RaftConfig preVote(boolean preVote) {
         this.preVote = preVote;
+
+        return this;
     }
 
     /**
@@ -216,7 +232,9 @@ public class RaftConfig {
     /**
      * @param readOnlyOption
      */
-    public void readOnlyOption(ReadOnlyOption readOnlyOption) {
+    public RaftConfig readOnlyOption(ReadOnlyOption readOnlyOption) {
         this.readOnlyOption = readOnlyOption;
+
+        return this;
     }
 }

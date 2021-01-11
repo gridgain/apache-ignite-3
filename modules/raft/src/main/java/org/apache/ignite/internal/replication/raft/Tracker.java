@@ -32,7 +32,7 @@ import static org.apache.ignite.internal.replication.raft.VoteResult.VoteWon;
 public class Tracker {
     private TrackerConfig cfg;
     private ProgressMap progress;
-    private Map<UUID, Boolean> votes;
+    private final Map<UUID, Boolean> votes;
     private final int maxInflight;
 
     public Tracker(int maxInflight) {
@@ -52,8 +52,8 @@ public class Tracker {
 
     public ConfigState configState() {
         return new ConfigState(
-            cfg.voters().incoming(), // TODO agoncharuk: arrays should be sorted
-            cfg.voters().outgoing(), // VotersOutgoing TODO agoncharuk: NPE here
+            cfg.voters().incoming(),
+            cfg.voters().outgoing(), // VotersOutgoing
             cfg.learners(),
             cfg.learnersNext(),
             cfg.autoLeave()
@@ -100,9 +100,12 @@ public class Tracker {
         return new PollResult(granted, rejected, result);
     }
 
+    public Boolean voted(UUID id) {
+        return votes.get(id);
+    }
 
     public void foreach(BiConsumer<UUID, Progress> consumer) {
-        // TODO agoncharuk.
+        progress.entrySet().forEach(entry -> consumer.accept(entry.getKey(), entry.getValue()));
     }
 
     public void visit(BiFunction<UUID, Progress, Progress> updater) {
@@ -110,12 +113,11 @@ public class Tracker {
     }
 
     public Progress progress(UUID id) {
-        // TODO
-        return null;
+        return progress.get(id);
     }
 
     public ProgressMap progress() {
-        return null;
+        return progress;
     }
 
     // QuorumActive returns true if the quorum is active from the view of the local
@@ -132,7 +134,6 @@ public class Tracker {
 
         return cfg.voters().voteResult(votes) == VoteWon;
     }
-
 
     public TrackerConfig config() {
         return cfg;

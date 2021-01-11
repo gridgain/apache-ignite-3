@@ -96,11 +96,11 @@ public class JointConfig {
 
 
     public Set<UUID> incoming() {
-        return incoming == null ? null : incoming.ids();
+        return incoming == null ? Collections.emptySet() : incoming.ids();
     }
 
     public Set<UUID> outgoing() {
-        return outgoing == null ? null : outgoing.ids();
+        return outgoing == null ? Collections.emptySet() : outgoing.ids();
     }
 
     public boolean isSingleton() {

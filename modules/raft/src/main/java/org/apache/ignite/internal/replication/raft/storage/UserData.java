@@ -33,4 +33,12 @@ public class UserData<T> implements LogData {
     public UserData(T data) {
         this.data = data;
     }
+
+    public T data() {
+        return data;
+    }
+
+    public String toString() {
+        return "UserData[" + data + "]";
+    }
 }

@@ -24,16 +24,16 @@ import java.util.UUID;
  */
 public abstract class TestBaseMessage implements Message {
     /** */
-    private final MessageType type;
+    protected final MessageType type;
 
     /** */
-    private final UUID from;
+    protected final UUID from;
 
     /** */
-    private final UUID to;
+    protected final UUID to;
 
     /** */
-    private final long term;
+    protected final long term;
 
     TestBaseMessage(MessageType type, UUID from, UUID to, long term) {
         this.type = type;
@@ -44,21 +44,57 @@ public abstract class TestBaseMessage implements Message {
 
     /** {@inheritDoc} */
     @Override public MessageType type() {
-        return null;
+        return type;
     }
 
     /** {@inheritDoc} */
     @Override public UUID from() {
-        return null;
+        return from;
     }
 
     /** {@inheritDoc} */
     @Override public UUID to() {
-        return null;
+        return to;
     }
 
     /** {@inheritDoc} */
     @Override public long term() {
-        return 0;
+        return term;
+    }
+
+    /** {@inheritDoc} */
+    @Override public boolean equals(Object o) {
+        if (this == o)
+            return true;
+
+        if (!(o instanceof TestBaseMessage))
+            return false;
+
+        TestBaseMessage that = (TestBaseMessage)o;
+
+        if (term != that.term)
+            return false;
+
+        if (type != that.type)
+            return false;
+
+        if (!from.equals(that.from))
+            return false;
+
+        if (!to.equals(that.to))
+            return false;
+
+        return true;
+    }
+
+    /** {@inheritDoc} */
+    @Override public int hashCode() {
+        int result = type.hashCode();
+
+        result = 31 * result + from.hashCode();
+        result = 31 * result + to.hashCode();
+        result = 31 * result + (int)(term ^ (term >>> 32));
+
+        return result;
     }
 }

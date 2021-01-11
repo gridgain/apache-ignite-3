@@ -19,6 +19,7 @@ package org.apache.ignite.internal.replication.raft;
 
 import java.util.Collections;
 import java.util.List;
+import java.util.Objects;
 import java.util.Set;
 import java.util.TreeSet;
 import java.util.UUID;
@@ -43,11 +44,14 @@ public class ConfigState {
      * @return Instance of bootstrap config state.
      */
     public static ConfigState bootstrap(List<UUID> peers, List<UUID> learners) {
+        Objects.requireNonNull(peers, "peers must be non-null");
+        Objects.requireNonNull(learners, "learners must be non-null");
+
         return new ConfigState(
             Collections.unmodifiableSet(new TreeSet<>(peers)),
-            null,
+            Collections.emptySet(),
             Collections.unmodifiableSet(new TreeSet<>(learners)),
-            null,
+            Collections.emptySet(),
             false);
     }
 
@@ -58,6 +62,11 @@ public class ConfigState {
         Set<UUID> learnersNext,
         boolean autoLeave
     ) {
+        Objects.requireNonNull(voters, "voters must be non-null");
+        Objects.requireNonNull(outgoing, "outgoing must be non-null");
+        Objects.requireNonNull(learners, "learners must be non-null");
+        Objects.requireNonNull(learnersNext, "learnersNext must be non-null");
+
         this.voters = voters;
         this.outgoing = outgoing;
         this.learners = learners;
@@ -98,5 +107,34 @@ public class ConfigState {
      */
     public boolean autoLeave() {
         return autoLeave;
+    }
+
+    /** {@inheritDoc} */
+    @Override public boolean equals(Object o) {
+        if (this == o)
+            return true;
+
+        if (o == null || getClass() != o.getClass())
+            return false;
+
+        ConfigState that = (ConfigState)o;
+
+        return autoLeave == that.autoLeave &&
+            voters.equals(that.voters) &&
+            outgoing.equals(that.outgoing) &&
+            learners.equals(that.learners) &&
+            learnersNext.equals(that.learnersNext);
+    }
+
+    /** {@inheritDoc} */
+    @Override public int hashCode() {
+        int result = voters.hashCode();
+
+        result = 31 * result + outgoing.hashCode();
+        result = 31 * result + learners.hashCode();
+        result = 31 * result + learnersNext.hashCode();
+        result = 31 * result + (autoLeave ? 1 : 0);
+
+        return result;
     }
 }

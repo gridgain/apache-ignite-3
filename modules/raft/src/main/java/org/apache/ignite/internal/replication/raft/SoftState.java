@@ -30,4 +30,18 @@ public class SoftState {
         this.lead = lead;
         this.state = state;
     }
+
+    /**
+     * @return
+     */
+    public UUID lead() {
+        return lead;
+    }
+
+    /**
+     * @return
+     */
+    public StateType state() {
+        return state;
+    }
 }

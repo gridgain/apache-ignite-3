@@ -40,4 +40,39 @@ public class BasicStatus {
         this.applied = applied;
         this.leadTransferee = leadTransferee;
     }
+
+    /**
+     * @return
+     */
+    public UUID id() {
+        return id;
+    }
+
+    /**
+     * @return
+     */
+    public HardState hardState() {
+        return hardState;
+    }
+
+    /**
+     * @return
+     */
+    public SoftState softState() {
+        return softState;
+    }
+
+    /**
+     * @return
+     */
+    public long applied() {
+        return applied;
+    }
+
+    /**
+     * @return
+     */
+    public UUID leadTransferee() {
+        return leadTransferee;
+    }
 }

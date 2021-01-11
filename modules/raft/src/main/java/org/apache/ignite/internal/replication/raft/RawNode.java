@@ -154,7 +154,8 @@ public class RawNode<T> {
     private int randomizedElectionTimeout;
 
     private Runnable tick;
-    private StepFunction step;
+    // TODO agoncharuk settable by tests - need to get rid of this.
+    StepFunction step;
 
     private SoftState prevSoftState;
     private HardState prevHardState;
@@ -982,7 +983,7 @@ public class RawNode<T> {
         return true;
     }
 
-    private void becomeFollower(long term, UUID lead) {
+    void becomeFollower(long term, UUID lead) {
         step = this::stepFollower;
         reset(term);
         tick = this::tickElection;
@@ -992,7 +993,7 @@ public class RawNode<T> {
         logger.debug("{} became follower at term {}", id, this.term);
     }
 
-    private void becomeCandidate() {
+    void becomeCandidate() {
         if (state == StateType.STATE_LEADER)
             unrecoverable("invalid transition [leader -> candidate]");
 
@@ -1021,7 +1022,7 @@ public class RawNode<T> {
         logger.info("{} became pre-candidate at term {}", id, term);
     }
 
-    private void becomeLeader() {
+    void becomeLeader() {
         if (state == StateType.STATE_FOLLOWER)
             unrecoverable("invalid transition [follower -> leader]");
 
@@ -1942,5 +1943,21 @@ public class RawNode<T> {
         logger.error(formatMsg, args);
 
         throw new UnrecoverableException(MessageFormatter.arrayFormat(formatMsg, args).getMessage());
+    }
+
+    List<Message> readMessages() {
+        List<Message> ret = msgs;
+
+        msgs = new ArrayList<>();
+
+        return ret;
+    }
+
+    Tracker tracker() {
+        return prs;
+    }
+
+    RaftLog raftLog() {
+        return raftLog;
     }
 }
