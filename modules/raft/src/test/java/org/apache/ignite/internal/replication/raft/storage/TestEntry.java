@@ -56,4 +56,10 @@ public class TestEntry implements Entry {
     @Override public LogData data() {
         return data;
     }
+
+    /** {@inheritDoc} */
+    @Override public int size() {
+        // TODO: sanpwc Implement.
+        return 0;
+    }
 }

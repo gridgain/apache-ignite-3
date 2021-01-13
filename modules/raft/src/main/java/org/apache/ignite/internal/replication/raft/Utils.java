@@ -14,26 +14,31 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+package org.apache.ignite.internal.replication.raft;
 
-package org.apache.ignite.internal.replication.raft.storage;
+import java.util.List;
+import org.apache.ignite.internal.replication.raft.storage.Entry;
 
-/**
- *
- */
-public interface Entry {
-    public enum EntryType {
-        ENTRY_DATA,
+public class Utils {
 
-        ENTRY_CONF_CHANGE
+    // TODO: sanpwc Is it valid to use static for such methods according to new ignite-3.0 guidelines?
+    public static List<Entry> limitSize(List<Entry> entries, long maxSize) {
+        if (entries.size() == 0)
+            return entries;
+
+        long totalSize = 0;
+
+        int limitIdx = 0;
+
+        for (Entry entry: entries) {
+            totalSize += entry.size();
+
+            if (totalSize > maxSize)
+                break;
+
+            limitIdx++;
+        }
+
+        return entries.subList(0, limitIdx);
     }
-
-    public EntryType type();
-
-    public long term();
-
-    public long index();
-
-    LogData data();
-
-    public int size();
 }

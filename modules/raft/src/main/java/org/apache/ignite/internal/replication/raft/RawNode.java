@@ -1096,7 +1096,7 @@ public class RawNode<T> {
             return false;
         }
 
-        Entry[] ents = raftLog.slice(raftLog.applied() + 1, raftLog.committed() + 1, Long.MAX_VALUE);
+        List<Entry> ents = raftLog.slice(raftLog.applied() + 1, raftLog.committed() + 1, Long.MAX_VALUE);
 
         int n = numOfPendingConf(ents);
 
@@ -1625,7 +1625,7 @@ public class RawNode<T> {
         randomizedElectionTimeout = electionTimeout + rnd.nextInt(electionTimeout);
     }
 
-    private int numOfPendingConf(Entry[] ents) {
+    private int numOfPendingConf(List<Entry> ents) {
         int n = 0;
         for (Entry ent : ents) {
             if (ent.type() == ENTRY_CONF_CHANGE)

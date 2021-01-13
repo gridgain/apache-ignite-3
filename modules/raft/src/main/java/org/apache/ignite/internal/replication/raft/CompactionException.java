@@ -14,26 +14,15 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+package org.apache.ignite.internal.replication.raft;
 
-package org.apache.ignite.internal.replication.raft.storage;
+// ErrCompacted is returned by Storage.Entries/Compact when a requested
+// index is unavailable because it predates the last snapshot.
+// TODO: sanpwc I'm not sure whether it should be checked or unchecked exception.
+// TODO: Should we design exception handling logic in our version of raft?
+public class CompactionException extends Exception {
 
-/**
- *
- */
-public interface Entry {
-    public enum EntryType {
-        ENTRY_DATA,
-
-        ENTRY_CONF_CHANGE
+    public CompactionException() {
+        super("Requested index is unavailable due to compaction.");
     }
-
-    public EntryType type();
-
-    public long term();
-
-    public long index();
-
-    LogData data();
-
-    public int size();
 }
