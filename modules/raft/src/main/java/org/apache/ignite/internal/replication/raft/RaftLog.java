@@ -100,12 +100,10 @@ public class RaftLog {
 
         if (committed < newApplied || newApplied < applied) {
             unrecoverable(
-                String.format(
-                    "applied(%d) is out of range [prevApplied(%d), committed(%d)]",
-                    newApplied,
-                    applied,
-                    committed
-                )
+                "applied({}) is out of range [prevApplied(%d), committed({})]",
+                newApplied,
+                applied,
+                committed
             );
         }
 
@@ -178,11 +176,9 @@ public class RaftLog {
         if (committed < idx) {
             if (lastIndex() < idx) {
                 unrecoverable(
-                    String.format(
-                        "tocommit(%d) is out of range [lastIndex(%d)]. Was the raft log corrupted, truncated, or lost?",
-                        idx,
-                        lastIndex()
-                    )
+                    "tocommit(%d) is out of range [lastIndex(%d)]. Was the raft log corrupted, truncated, or lost?",
+                    idx,
+                    lastIndex()
                 );
             }
 
@@ -198,7 +194,10 @@ public class RaftLog {
 
         if (afterIdx < committed()) {
             unrecoverable(
-                String.format("after(%d) is out of range [committed(%d)]", afterIdx, committed()));
+                "after({}) is out of range [committed({})]",
+                afterIdx,
+                committed()
+            );
         }
 
         unstable.truncateAndAppend(entries);
@@ -249,7 +248,10 @@ public class RaftLog {
 
             if (conflictIdx <= committed()) {
                 unrecoverable(
-                    String.format("entry %d conflict with committed entry [committed(%d)]", conflictIdx, committed()));
+                    "entry {} conflict with committed entry [committed({})]",
+                    conflictIdx,
+                    committed()
+                );
             }
             else {
                 long off = idx + 1;
@@ -319,7 +321,7 @@ public class RaftLog {
         return term > 0 ? term : 0;
     }
 
-    public List<Entry> entries(long startIdx, long maxSize) {
+    public List<Entry> entries(long startIdx, long maxSize) throws CompactionException {
         if (startIdx > lastIndex())
             return null;
 
@@ -327,15 +329,8 @@ public class RaftLog {
     }
 
     // slice returns a slice of log entries from fromIdx through toIdx - 1, inclusive.
-    public List<Entry> slice(long fromIdx, long toIdx, long maxSize){
-        try {
-            mustCheckOutOfBounds(fromIdx, toIdx);
-        }
-        catch (CompactionException e) {
-            // TODO: sanpwc In etcd code there are lots of checks for ErrCompacted
-            // TODO: were missed in our code. Seems that we should design exception handling.
-            return null;
-        }
+    public List<Entry> slice(long fromIdx, long toIdx, long maxSize) throws CompactionException {
+        mustCheckOutOfBounds(fromIdx, toIdx);
 
         if (fromIdx == toIdx)
             return null;
@@ -352,6 +347,11 @@ public class RaftLog {
 
                 entries = storedEntries;
             }
+            // TODO: sanpwc CompactionException and ErrUnavailable in etcd that's currently not thrown in our case.
+            // TODO: sanpwc currently storage doesn't throw CompactionException
+//            catch (CompactionException compactionException) {
+//                throw compactionException;
+//            }
             catch (Error e) {
                 unrecoverable("TODO(bdarnell)");
             }
@@ -423,6 +423,9 @@ public class RaftLog {
     public List<Entry> allEntries() {
         try {
             return entries(firstIndex(), Long.MAX_VALUE);
+        }
+        catch (CompactionException compactionException) {
+            return allEntries();
         }
         catch (Exception e) {
             unrecoverable("TODO (xiangli)", e);

@@ -1096,7 +1096,13 @@ public class RawNode<T> {
             return false;
         }
 
-        List<Entry> ents = raftLog.slice(raftLog.applied() + 1, raftLog.committed() + 1, Long.MAX_VALUE);
+        List<Entry> ents = null;
+        try {
+            ents = raftLog.slice(raftLog.applied() + 1, raftLog.committed() + 1, Long.MAX_VALUE);
+        }
+        catch (CompactionException compactionException) {
+            unrecoverable("unexpected error getting unapplied entries ({})", compactionException);
+        }
 
         int n = numOfPendingConf(ents);
 
@@ -1175,7 +1181,7 @@ public class RawNode<T> {
 
             send(m);
         }
-        catch (Exception e) { // TODO agoncharuk: Specific exception
+        catch (CompactionException compactionException) {
             // send snapshot if we failed to get term or entries
             if (!pr.recentActive()) {
                 logger.debug("ignore sending snapshot to {} since it is not recently active", to);
