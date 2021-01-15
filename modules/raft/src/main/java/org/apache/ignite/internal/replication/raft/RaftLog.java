@@ -17,6 +17,8 @@
 
 package org.apache.ignite.internal.replication.raft;
 
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import org.apache.ignite.internal.replication.raft.storage.Entry;
@@ -230,13 +232,13 @@ public class RaftLog {
         try {
             return storage.term(idx);
         }
-        catch (Exception e) {
-            // TODO: sanpwc What is a proper pay to handle exception from storage.term?
-            // TODO: if err == ErrCompacted || err == ErrUnavailable
-            // TODO:   return 0, err
+        catch (CompactionException | UnavailabilityException processedException) {
             // TODO agoncharuk: this method will return -1 instead of ErrCompacted.
             // TODO if error is not ErrCompacted or ErrUnavailable we should panic with // TODO(bdarnell)
-
+            return -1;
+        }
+        catch (Exception e) {
+            unrecoverable("TODO(bdarnell)");
             return -1;
         }
     }
@@ -323,7 +325,7 @@ public class RaftLog {
 
     public List<Entry> entries(long startIdx, long maxSize) throws CompactionException {
         if (startIdx > lastIndex())
-            return null;
+            return Collections.emptyList();
 
         return slice(startIdx, lastIndex() + 1, maxSize);
     }
@@ -333,9 +335,9 @@ public class RaftLog {
         mustCheckOutOfBounds(fromIdx, toIdx);
 
         if (fromIdx == toIdx)
-            return null;
+            return Collections.emptyList();
 
-        List<Entry> entries = null;
+        List<Entry> entries = new ArrayList<>();
 
         if (fromIdx < unstable.offset()) {
             try {
@@ -347,11 +349,16 @@ public class RaftLog {
 
                 entries = storedEntries;
             }
-            // TODO: sanpwc CompactionException and ErrUnavailable in etcd that's currently not thrown in our case.
-            // TODO: sanpwc currently storage doesn't throw CompactionException
-//            catch (CompactionException compactionException) {
-//                throw compactionException;
-//            }
+            catch (CompactionException compactionException) {
+                throw compactionException;
+            }
+            catch (UnavailabilityException unavailabilityException) {
+                unrecoverable(
+                    "entries[{}:{}) is unavailable from storage",
+                    fromIdx,
+                    Math.min(toIdx, unstable.offset())
+                );
+            }
             catch (Error e) {
                 unrecoverable("TODO(bdarnell)");
             }
@@ -389,7 +396,7 @@ public class RaftLog {
 
     public List<Entry> unstableEntries() {
         if (unstable.entries().size() == 0)
-            return null;
+            return Collections.emptyList();
         else
             return unstable.entries();
 
@@ -409,7 +416,7 @@ public class RaftLog {
                 unrecoverable("unexpected error when getting unapplied entries.", e);
             }
         }
-        return null;
+        return Collections.emptyList();
     }
 
     // hasNextEnts returns if there is any available entries for execution. This
@@ -430,7 +437,7 @@ public class RaftLog {
         catch (Exception e) {
             unrecoverable("TODO (xiangli)", e);
 
-            return null;
+            return Collections.emptyList();
         }
     }
 

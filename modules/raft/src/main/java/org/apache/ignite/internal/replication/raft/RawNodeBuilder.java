@@ -105,7 +105,7 @@ public class RawNodeBuilder {
         InitialState initState = storage.initialState();
         UUID id = initState.id();
 
-        RaftLog raftLog = new RaftLog(); //new RaftLog(storage, logger, c.maxCommittedSizePerReady());
+        RaftLog raftLog = new RaftLog(logger, storage, cfg.maxCommittedSizePerReady());
 
         // TODO agoncharuk: move to log constructor.
         if (applied > 0)

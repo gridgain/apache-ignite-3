@@ -42,6 +42,7 @@ public class UnstableRaftLog {
     public UnstableRaftLog(Logger logger, long offset) {
         this.logger = logger;
         this.offset = offset;
+        this.entries = new ArrayList<>();
     }
 
     // maybeFirstIndex returns the index of the first possible entry in entries

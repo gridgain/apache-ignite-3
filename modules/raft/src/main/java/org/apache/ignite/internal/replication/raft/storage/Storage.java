@@ -18,9 +18,11 @@
 package org.apache.ignite.internal.replication.raft.storage;
 
 import java.util.List;
+import org.apache.ignite.internal.replication.raft.CompactionException;
 import org.apache.ignite.internal.replication.raft.InitialState;
 import org.apache.ignite.internal.replication.raft.Snapshot;
 import org.apache.ignite.internal.replication.raft.SnapshotTemporarilyUnavailableException;
+import org.apache.ignite.internal.replication.raft.UnavailabilityException;
 
 /**
  *
@@ -40,13 +42,13 @@ public interface Storage {
      *      at least one entry if any.
      * @return
      */
-    List<Entry> entries(long lo, long hi, long maxSize);
+    List<Entry> entries(long lo, long hi, long maxSize) throws CompactionException, UnavailabilityException;
 
     // Term returns the term of entry i, which must be in the range
     // [firstIndex() - 1, lastIndex()]. The term of the entry before
     // firstIndex() is retained for matching purposes even though the
     // rest of that entry may not be available.
-    long term(long i);
+    long term(long i) throws CompactionException, UnavailabilityException;
 
     // lastIndex returns the index of the last entry in the log.
     long lastIndex();
