@@ -62,4 +62,22 @@ public class TestEntry implements Entry {
         // TODO: sanpwc Implement.
         return 0;
     }
+
+    /** {@inheritDoc} */
+    @Override public boolean equals(Object o) {
+        if (this == o)
+            return true;
+        if (o == null || getClass() != o.getClass())
+            return false;
+
+        TestEntry entry = (TestEntry)o;
+
+        if (term != entry.term)
+            return false;
+        if (idx != entry.idx)
+            return false;
+        if (type != entry.type)
+            return false;
+        return data != null ? data.equals(entry.data) : entry.data == null;
+    }
 }

@@ -41,4 +41,16 @@ public class UserData<T> implements LogData {
     public String toString() {
         return "UserData[" + data + "]";
     }
+
+    /** {@inheritDoc} */
+    @Override public boolean equals(Object o) {
+        if (this == o)
+            return true;
+        if (o == null || getClass() != o.getClass())
+            return false;
+
+        UserData<?> data1 = (UserData<?>)o;
+
+        return data != null ? data.equals(data1.data) : data1.data == null;
+    }
 }

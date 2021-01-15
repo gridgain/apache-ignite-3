@@ -248,7 +248,9 @@ public class RaftLog {
             long lastNewIdx = idx + entries.size();
             long conflictIdx = findConflict(entries);
 
-            if (conflictIdx <= committed()) {
+            if (conflictIdx == 0) {
+                // Do nothing
+            } else if (conflictIdx <= committed()) {
                 unrecoverable(
                     "entry {} conflict with committed entry [committed({})]",
                     conflictIdx,
