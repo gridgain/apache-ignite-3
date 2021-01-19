@@ -913,7 +913,7 @@ public class RaftPaperTest {
 
             // The election occurs in the term after the one we loaded with
             // lead.loadState above.
-            n.send(msgFactory.newAppendEntriesResponse(ids[2], ids[0], term + 1, 0, false, 0));
+            n.send(msgFactory.newVoteResponse(ids[2], ids[0], false, term + 1, false));
             n.drain(ids[0]);
 
             lead.propose("");
