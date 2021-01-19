@@ -19,9 +19,9 @@ package org.apache.ignite.storage.usecases;
 
 import java.math.BigDecimal;
 import org.apache.ignite.storage.binary.BinaryObject;
-import org.apache.ignite.storage.KVStorage;
+import org.apache.ignite.storage.KVView;
 import org.apache.ignite.storage.Table;
-import org.apache.ignite.storage.TableRow;
+import org.apache.ignite.storage.Row;
 import org.apache.ignite.storage.TableView;
 import org.apache.ignite.storage.binary.BinaryObjects;
 import org.apache.ignite.storage.mapper.Mappers;
@@ -41,7 +41,7 @@ public class Example {
      */
     public void useCase1(Table t) {
         // Search row will allow nulls even in non-null columns.
-        TableRow res = t.select(t.createSearchRow(1, 1));
+        Row res = t.get(t.createSearchRow(1, 1));
 
         String name = res.field("name");
         String lastName = res.field("latName");
@@ -69,7 +69,7 @@ public class Example {
 
         TableView<Employee> employeeView = t.tableView(Mappers.ofRowClass(Employee.class));
 
-        Employee e = employeeView.select(new Employee(1, 1));
+        Employee e = employeeView.get(new Employee(1, 1));
 
         // As described in the IEP, we can have a truncated mapping.
         class TruncatedEmployee {
@@ -88,7 +88,7 @@ public class Example {
         TableView<TruncatedEmployee> truncatedEmployeeView = t.tableView(Mappers.ofRowClass(TruncatedEmployee.class));
 
         // salary and department will not be sent over the network during this call.
-        TruncatedEmployee te = truncatedEmployeeView.select(new TruncatedEmployee(1, 1));
+        TruncatedEmployee te = truncatedEmployeeView.get(new TruncatedEmployee(1, 1));
     }
 
     /**
@@ -102,7 +102,7 @@ public class Example {
      * {@code upgradedObject} is a version 2 of the object, and department is extracted field.
      */
     public void useCase2(Table t) {
-        TableRow res = t.select(t.createSearchRow(1, 1));
+        Row res = t.get(t.createSearchRow(1, 1));
 
         byte[] objData = res.field("originalObject");
         BinaryObject binObj = BinaryObjects.wrap(objData);
@@ -129,7 +129,7 @@ public class Example {
         TableView<Record> recordView = t.tableView(Mappers.ofRowClass(Record.class));
 
         // Similarly work with the binary objects.
-        Record rec = recordView.select(new Record(1, 1));
+        Record rec = recordView.get(new Record(1, 1));
 
         // Now assume that we have some POJO classes to deserialize the binary objects.
         class JavaPerson {
@@ -197,7 +197,7 @@ public class Example {
             int department;
         }
 
-        KVStorage<EmployeeKey, Employee> employeeKv = t.kvView(
+        KVView<EmployeeKey, Employee> employeeKv = t.kvView(
             Mappers.ofKeyClass(EmployeeKey.class),
             Mappers.ofValueClass(Employee.class));
 
@@ -209,7 +209,7 @@ public class Example {
             String lastName;
         }
 
-        KVStorage<EmployeeKey, TruncatedEmployee> truncatedEmployeeKv = t.kvView(
+        KVView<EmployeeKey, TruncatedEmployee> truncatedEmployeeKv = t.kvView(
             Mappers.ofKeyClass(EmployeeKey.class),
             Mappers.ofValueClass(TruncatedEmployee.class));
 
@@ -217,7 +217,7 @@ public class Example {
     }
 
     /**
-     * Use case 3: mixing KV mapping and nested binary objects? Does this even make sense? Will keep it for symmetry.
+     * Use case 4: mixing KV mapping and nested binary objects? Does this even make sense? Will keep it for symmetry.
      * The table has structure is
      * [
      *     [id int, orgId int] // key
@@ -243,7 +243,7 @@ public class Example {
             BinaryObject arbitraryNested;
         }
 
-        KVStorage<EmployeeKey, EmployeeWithBinary> employeeWithBinaryKv = t.kvView(
+        KVView<EmployeeKey, EmployeeWithBinary> employeeWithBinaryKv = t.kvView(
             Mappers.ofKeyClass(EmployeeKey.class),
             Mappers.ofValueClass(EmployeeWithBinary.class));
 
@@ -262,7 +262,7 @@ public class Example {
             ArbitraryObject arbitraryNested;
         }
 
-        KVStorage<EmployeeKey, EmployeeDeserialized> employeeNestedKv = t.kvView(
+        KVView<EmployeeKey, EmployeeDeserialized> employeeNestedKv = t.kvView(
             Mappers.ofKeyClass(EmployeeKey.class),
             Mappers.ofValueClass(EmployeeDeserialized.class));
 
@@ -280,7 +280,7 @@ public class Example {
             Object arbitraryNested;
         }
 
-        KVStorage<EmployeeKey, EmployeeConditional> employeeCondKv = t.kvView(Mappers.ofKeyClass(EmployeeKey.class),
+        KVView<EmployeeKey, EmployeeConditional> employeeCondKv = t.kvView(Mappers.ofKeyClass(EmployeeKey.class),
             Mappers.ofValueClassBuilder(EmployeeConditional.class)
                 .map("arbitraryNested", (row) -> {
                     BinaryObject bobj = row.binaryObjectField("arbitraryNested");
@@ -292,3 +292,5 @@ public class Example {
         EmployeeConditional ec = employeeCondKv.get(new EmployeeKey(1, 1));
     }
 }
+
+

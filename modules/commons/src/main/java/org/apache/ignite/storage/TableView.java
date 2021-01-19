@@ -21,7 +21,7 @@ package org.apache.ignite.storage;
  *
  */
 public interface TableView<T> {
-    public T select(T keyRow);
+    public T get(T keyRow);
     public boolean upsert(T row);
     public boolean insert(T row);
 }

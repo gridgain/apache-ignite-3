@@ -18,7 +18,7 @@
 package org.apache.ignite.storage.mapper;
 
 import java.util.function.Function;
-import org.apache.ignite.storage.TableRow;
+import org.apache.ignite.storage.Row;
 
 /**
  *
@@ -26,7 +26,7 @@ import org.apache.ignite.storage.TableRow;
 public interface RowMapper<R> {
     public interface Builder<R> {
         public Builder<R> deserializing(String fieldName, Class<?> targetClass);
-        public Builder<R> map(String fieldName, Function<TableRow, Object> mapping);
+        public Builder<R> map(String fieldName, Function<Row, Object> mapping);
         public <R> RowMapper<R> build();
     }
 }

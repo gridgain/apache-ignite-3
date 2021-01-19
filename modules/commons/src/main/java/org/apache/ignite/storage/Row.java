@@ -17,11 +17,15 @@
 
 package org.apache.ignite.storage;
 
+import org.apache.ignite.storage.binary.BinaryObject;
+
 /**
  *
  */
-public interface KVStorage<K, V> {
-    public V get(K key);
-    public V put(K key, V val);
-    public boolean putIfAbsent(K key, V val);
+public interface Row {
+    public <T> T field(String name);
+
+    public BinaryObject binaryObjectField(String fieldName);
+
+    int intField(String fieldName);
 }

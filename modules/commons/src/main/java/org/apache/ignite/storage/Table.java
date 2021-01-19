@@ -18,15 +18,27 @@
 package org.apache.ignite.storage;
 
 import org.apache.ignite.storage.mapper.KeyMapper;
+import org.apache.ignite.storage.mapper.Mappers;
 import org.apache.ignite.storage.mapper.RowMapper;
 import org.apache.ignite.storage.mapper.ValueMapper;
 
 /**
  *
  */
-public interface Table extends TableView<TableRow> {
+public interface Table {
     public <R> TableView<R> tableView(RowMapper<R> rowMapper);
-    public <K, V> KVStorage<K, V> kvView(KeyMapper<K> keyMapper, ValueMapper<V> valMapper);
 
-    TableRow createSearchRow(Object... args);
+    public <K, V> KVView<K, V> kvView(KeyMapper<K> keyMapper, ValueMapper<V> valMapper);
+
+    default public <K, V> KVView<K, V> kvView(Class<K> kCls, Class<V> vCls) {
+        return kvView(Mappers.ofKeyClass(kCls), Mappers.ofValueClass(vCls));
+    }
+
+    public Row get(Row keyRow);
+    public Iterable<Row> find(Row template);
+
+    public boolean upsert(Row row);
+    public boolean insert(Row row);
+
+    Row createSearchRow(Object... args);
 }
