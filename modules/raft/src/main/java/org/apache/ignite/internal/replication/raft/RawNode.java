@@ -452,7 +452,7 @@ public class RawNode<T> {
             raftLog.stableTo(e.index(), e.term());
         }
 
-        if (!rd.snapshot().isEmpty())
+        if (rd.hasSnapshot())
             raftLog.stableSnapshotTo(rd.snapshot().metadata().index());
     }
 
@@ -1256,7 +1256,7 @@ public class RawNode<T> {
 
     // bcastAppend sends message, with entries to all peers that are not up-to-date
     // according to the progress recorded in r.prs.
-    private void bcastAppend() {
+    void bcastAppend() {
         prs.foreach((id, progress) -> {
             if (this.id.equals(id))
                 return;
@@ -1266,7 +1266,7 @@ public class RawNode<T> {
     }
 
     // bcastHeartbeat sends message, without entries to all the peers.
-    private void bcastHeartbeat() {
+    void bcastHeartbeat() {
         assert state == StateType.STATE_LEADER;
 
         IgniteUuid lastCtx = readOnly.lastPendingRequestCtx();

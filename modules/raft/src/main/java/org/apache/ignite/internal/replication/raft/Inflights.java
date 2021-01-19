@@ -34,6 +34,8 @@ public class Inflights {
     private long[] buffer;
 
     public Inflights(int size) {
+        buffer = new long[Math.min(size, 4)];
+
         this.size = size;
     }
 

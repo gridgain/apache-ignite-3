@@ -105,11 +105,13 @@ public class Tracker {
     }
 
     public void foreach(BiConsumer<UUID, Progress> consumer) {
-        progress.entrySet().forEach(entry -> consumer.accept(entry.getKey(), entry.getValue()));
+        for (Map.Entry<UUID, Progress> e : progress.entrySet())
+            consumer.accept(e.getKey(), e.getValue());
     }
 
     public void visit(BiFunction<UUID, Progress, Progress> updater) {
-
+        for (Map.Entry<UUID, Progress> e : progress.entrySet())
+            e.setValue(updater.apply(e.getKey(), e.getValue()));
     }
 
     public Progress progress(UUID id) {

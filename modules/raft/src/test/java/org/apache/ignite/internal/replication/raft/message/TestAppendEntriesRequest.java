@@ -73,4 +73,35 @@ public class TestAppendEntriesRequest extends TestBaseMessage implements AppendE
     @Override public long committedIndex() {
         return committedIdx;
     }
+
+    /** {@inheritDoc} */
+    @Override public boolean equals(Object o) {
+        if (this == o)
+            return true;
+
+        if (o == null || getClass() != o.getClass())
+            return false;
+
+        if (!super.equals(o))
+            return false;
+
+        TestAppendEntriesRequest that = (TestAppendEntriesRequest)o;
+
+        return logIdx == that.logIdx &&
+            logTerm == that.logTerm &&
+            committedIdx == that.committedIdx &&
+            entries.equals(that.entries);
+    }
+
+    /** {@inheritDoc} */
+    @Override public int hashCode() {
+        int result = super.hashCode();
+
+        result = 31 * result + (int)(logIdx ^ (logIdx >>> 32));
+        result = 31 * result + (int)(logTerm ^ (logTerm >>> 32));
+        result = 31 * result + entries.hashCode();
+        result = 31 * result + (int)(committedIdx ^ (committedIdx >>> 32));
+
+        return result;
+    }
 }

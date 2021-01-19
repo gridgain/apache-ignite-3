@@ -189,7 +189,7 @@ public class RaftLog {
     }
 
     public long append(List<Entry> entries) {
-        if (entries.size() == 0)
+        if (entries.isEmpty())
             return lastIndex();
 
         long afterIdx = entries.get(0).index() - 1;
@@ -368,7 +368,7 @@ public class RaftLog {
 
         if (toIdx > unstable.offset()) {
             List<Entry> unstableEntries = unstable.slice(Math.max(fromIdx, unstable.offset()), toIdx);
-            if (unstableEntries.size() > 0)
+            if (!unstableEntries.isEmpty())
                 entries.addAll(unstableEntries);
             else
                 entries = unstableEntries;
@@ -397,7 +397,7 @@ public class RaftLog {
     }
 
     public List<Entry> unstableEntries() {
-        if (unstable.entries().size() == 0)
+        if (unstable.entries().isEmpty())
             return Collections.emptyList();
         else
             return unstable.entries();

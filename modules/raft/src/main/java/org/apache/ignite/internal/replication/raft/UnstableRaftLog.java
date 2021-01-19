@@ -32,6 +32,7 @@ public class UnstableRaftLog {
 
     private Snapshot snapshot;
 
+    // TODO agoncharuk: we should probably replace entries with a circular buffer to avoid extra allocations.
     private List<Entry> entries;
 
     private long offset;
@@ -96,7 +97,7 @@ public class UnstableRaftLog {
         // only update the unstable entries if term is matched with
         // an unstable entry.
         if (maybeTerm.getKey() == term && idx >= offset) {
-            entries = entries.subList((int)(idx + 1 - offset), entries.size());
+            entries = new ArrayList<>(entries.subList((int)(idx + 1 - offset), entries.size()));
 
             offset = idx + 1;
 
@@ -110,7 +111,7 @@ public class UnstableRaftLog {
     // entries wouldn't be safe because clients might still be using them.
     public void shrinkEntriesArray() {
         if (entries.isEmpty())
-            entries = null;
+            entries = new ArrayList<>();
 
         // TODO: sanpwc Implement.
     }
@@ -123,7 +124,7 @@ public class UnstableRaftLog {
     public void restore(Snapshot s) {
         offset = s.metadata().index() + 1;
 
-        entries = null;
+        entries = new ArrayList<>();
 
         snapshot = s;
     }
@@ -131,11 +132,12 @@ public class UnstableRaftLog {
     public void truncateAndAppend(List<Entry> entries) {
         long after = entries.get(0).index();
 
-            if (after == offset+(this.entries.size())) {
+            if (after == offset + this.entries.size()) {
                 // after is the next index in the this.entries
                 // directly append
                 this.entries.addAll(entries);
-            } else if (after <= offset) {
+            }
+            else if (after <= offset) {
                 logger.info(
                     String.format(
                         "replace the unstable entries from index %d",
@@ -146,7 +148,7 @@ public class UnstableRaftLog {
                 // The log is being truncated to before our current offset
                 // portion, so set the offset and replace the entries
                 offset = after;
-                this.entries = entries;
+                this.entries = new ArrayList<>(entries);
             } else {
                 // truncate to after and copy to this.entries
                 // then append

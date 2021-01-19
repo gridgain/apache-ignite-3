@@ -203,12 +203,16 @@ public class RaftPaperTest {
         long term = r.basicStatus().hardState().term();
 
         for (int i = 0; i < 10; i++) {
-            ProposeReceipt receipt = r.propose(i + 1);
+             ProposeReceipt receipt = r.propose(i + 1);
 
             Assertions.assertEquals(term, receipt.term());
-            Assertions.assertEquals(i + 1, receipt.startIndex());
-            Assertions.assertEquals(i + 1, receipt.endIndex());
+            // Node commits en empty entry when becomes a leader.
+            Assertions.assertEquals(i + 2, receipt.startIndex());
+            Assertions.assertEquals(i + 2, receipt.endIndex());
         }
+
+        // Consume messages emitted after a propose.
+        r.readMessages();
 
         for (int i = 0; i < hi; i++)
             r.tick();
@@ -471,9 +475,11 @@ public class RaftPaperTest {
     public void testLeaderStartReplication() {
         MemoryStorage memStorage = memoryStorage(ids, new HardState(1, null, 0));
 
-        RawNode<String> r = newTestRaft(ids, 10, 1);
+        RawNode<String> r = newTestRaft(10, 1, memStorage);
         r.becomeCandidate();
         r.becomeLeader();
+
+        long term = r.basicStatus().hardState().term();
 
         commitNoopEntry(r, memStorage);
 
@@ -487,11 +493,11 @@ public class RaftPaperTest {
         List<Message> msgs = r.readMessages();
         Collections.sort(msgs, destinationComparator);
 
-        List<Entry> wents = Arrays.asList(entry(1, li + 1, "some data"));
+        List<Entry> wents = Arrays.asList(entry(term, li + 1, "some data"));
 
-        Assertions.assertEquals(msgFactory.newAppendEntriesRequest(ids[0], ids[1], 1, li, 1, wents, li),
+        Assertions.assertEquals(msgFactory.newAppendEntriesRequest(ids[0], ids[1], term, li, term, wents, li),
             msgs.get(0));
-        Assertions.assertEquals(msgFactory.newAppendEntriesRequest(ids[0], ids[2], 1, li, 1, wents, li),
+        Assertions.assertEquals(msgFactory.newAppendEntriesRequest(ids[0], ids[2], term, li, term, wents, li),
             msgs.get(1));
     }
 
@@ -707,7 +713,7 @@ public class RaftPaperTest {
         }
     }
 
-    private Entry entry(int term, long idx, String data) {
+    private Entry entry(long term, long idx, String data) {
         return entryFactory.newEntry(term, idx, new UserData<>(data));
     }
 
@@ -1146,16 +1152,10 @@ public class RaftPaperTest {
         Assertions.assertEquals(STATE_LEADER, r.basicStatus().softState().state(),
             "should only be used when RawNode is the leader");
 
-        r.tick();
-
-        Ready rd = r.ready();
-
-        storage.append(rd.entries());
-
-        r.advance(rd);
+        r.bcastAppend();
 
         // simulate the response of MsgApp
-        for (Message m : rd.messages()) {
+        for (Message m : r.readMessages()) {
             Assertions.assertEquals(MessageType.MsgApp, m.type());
 
             AppendEntriesRequest req = (AppendEntriesRequest)m;
@@ -1171,6 +1171,9 @@ public class RaftPaperTest {
 
         // ignore further messages to refresh followers' commit index
         r.readMessages();
+        storage.append(r.raftLog().unstableEntries());
+        r.raftLog().appliedTo(r.raftLog().committed());
+        r.raftLog().stableTo(r.raftLog().lastIndex(), r.raftLog().lastTerm());
     }
 
     private Message acceptAndReply(AppendEntriesRequest req) {

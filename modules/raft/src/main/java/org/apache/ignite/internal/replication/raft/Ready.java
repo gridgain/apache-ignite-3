@@ -94,7 +94,7 @@ public class Ready {
         if (n > 0)
             return committedEntries.get(n - 1).index();
 
-        long idx = snapshot.metadata().index();
+        long idx = snapshot == null ? 0 : snapshot.metadata().index();
 
         return Math.max(idx, 0);
     }
@@ -109,6 +109,10 @@ public class Ready {
 
     public List<Entry> entries() {
         return entries;
+    }
+
+    public boolean hasSnapshot() {
+        return snapshot != null;
     }
 
     public Snapshot snapshot() {
