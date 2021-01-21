@@ -132,37 +132,38 @@ public class UnstableRaftLog {
     public void truncateAndAppend(List<Entry> entries) {
         long after = entries.get(0).index();
 
-            if (after == offset + this.entries.size()) {
-                // after is the next index in the this.entries
-                // directly append
-                this.entries.addAll(entries);
-            }
-            else if (after <= offset) {
-                logger.info(
-                    String.format(
-                        "replace the unstable entries from index %d",
-                        after
-                    )
-                );
+        if (after == offset + this.entries.size()) {
+            // after is the next index in the this.entries
+            // directly append
+            this.entries.addAll(entries);
+        }
+        else if (after <= offset) {
+            logger.info(
+                String.format(
+                    "replace the unstable entries from index %d",
+                    after
+                )
+            );
 
-                // The log is being truncated to before our current offset
-                // portion, so set the offset and replace the entries
-                offset = after;
-                this.entries = new ArrayList<>(entries);
-            } else {
-                // truncate to after and copy to this.entries
-                // then append
-                logger.info(
-                    String.format(
-                        "truncate the unstable entries before index %d",
-                        after
-                    )
-                );
+            // The log is being truncated to before our current offset
+            // portion, so set the offset and replace the entries
+            offset = after;
+            this.entries = new ArrayList<>(entries);
+        }
+        else {
+            // truncate to after and copy to this.entries
+            // then append
+            logger.info(
+                String.format(
+                    "truncate the unstable entries before index %d",
+                    after
+                )
+            );
 
-                this.entries = new ArrayList<>(slice(offset,after));
+            this.entries = new ArrayList<>(slice(offset,after));
 
-                this.entries.addAll(entries);
-            }
+            this.entries.addAll(entries);
+        }
     }
 
     public List<Entry> slice(long low, long high) {

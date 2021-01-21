@@ -18,12 +18,13 @@ package org.apache.ignite.internal.replication.raft;
 
 import java.util.List;
 import org.apache.ignite.internal.replication.raft.storage.Entry;
+import org.apache.ignite.internal.replication.raft.storage.EntryFactory;
 
 public class Utils {
 
     // TODO: sanpwc Is it valid to use static for such methods according to new ignite-3.0 guidelines?
-    public static List<Entry> limitSize(List<Entry> entries, long maxSize) {
-        if (entries.size() == 0)
+    public static List<Entry> limitSize(EntryFactory ef, List<Entry> entries, long maxSize) {
+        if (entries.size() <= 1)
             return entries;
 
         long totalSize = 0;
@@ -31,9 +32,9 @@ public class Utils {
         int limitIdx = 0;
 
         for (Entry entry: entries) {
-            totalSize += entry.size();
+            totalSize += ef.payloadSize(entry);
 
-            if (totalSize > maxSize)
+            if (totalSize > maxSize && limitIdx > 0)
                 break;
 
             limitIdx++;

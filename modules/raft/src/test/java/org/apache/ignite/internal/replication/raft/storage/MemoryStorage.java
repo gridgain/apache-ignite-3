@@ -22,12 +22,10 @@ import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
-
 import org.apache.ignite.internal.replication.raft.CompactionException;
 import org.apache.ignite.internal.replication.raft.ConfigState;
 import org.apache.ignite.internal.replication.raft.HardState;
 import org.apache.ignite.internal.replication.raft.InitialState;
-import org.apache.ignite.internal.replication.raft.RawNode;
 import org.apache.ignite.internal.replication.raft.Snapshot;
 import org.apache.ignite.internal.replication.raft.SnapshotTemporarilyUnavailableException;
 import org.apache.ignite.internal.replication.raft.UnavailabilityException;
@@ -54,20 +52,26 @@ public class MemoryStorage implements Storage {
     private List<Entry> entries;
 
     /** */
+    private EntryFactory entryFactory;
+
+    /** */
     private Lock memoryStorageLock = new ReentrantLock();
 
+    /** */
     private Logger logger = LoggerFactory.getLogger(MemoryStorage.class);
 
     public MemoryStorage(
         UUID id,
         HardState hardState,
         ConfigState confState,
-        List<Entry> entries
+        List<Entry> entries,
+        EntryFactory entryFactory
     ) {
         this.id = id;
         this.hardState = hardState;
         this.confState = confState;
         this.entries = new ArrayList<>(entries);
+        this.entryFactory = entryFactory;
 
         // When starting from scratch populate the list with a dummy entry at term zero.
         this.entries.add(new TestEntry(Entry.EntryType.ENTRY_DATA, 0,0,null));
@@ -100,7 +104,7 @@ public class MemoryStorage implements Storage {
             if (entries.size() == 1)
                 throw new UnavailabilityException();
 
-            return Utils.limitSize(entries.subList((int) (lo - off), (int) (hi - off)), maxSize);
+            return Utils.limitSize(entryFactory, entries.subList((int) (lo - off), (int) (hi - off)), maxSize);
         }
         finally {
             memoryStorageLock.unlock();
@@ -183,7 +187,7 @@ public class MemoryStorage implements Storage {
             if (fist > entries.get(0).index())
                 entries = entries.subList((int)(fist - entries.get(0).index()), entries.size());
 
-            long offset = entries.get(0).index() - this.entries.get(0).size();
+            long offset = entries.get(0).index() - this.entries.get(0).index();
 
             if (this.entries.size() > offset) {
                 this.entries = this.entries.subList(0, (int)offset);

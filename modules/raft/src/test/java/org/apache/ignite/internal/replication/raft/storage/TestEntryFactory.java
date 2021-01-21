@@ -34,7 +34,26 @@ public class TestEntryFactory implements EntryFactory {
     }
 
     /** {@inheritDoc} */
-    @Override public long payloadSize(LogData data) {
-        return 10;
+    @Override public long payloadSize(Entry entry) {
+        if (entry.type() == Entry.EntryType.ENTRY_DATA) {
+            UserData<?> data = (UserData<?>)entry.data();
+
+            Object d = data.data();
+
+            // Handle special case on empty entry.
+            if (d == null)
+                return 0;
+
+            if (d instanceof CharSequence) {
+                return ((CharSequence)d).length();
+            }
+            else if (d instanceof Integer)
+                return 4;
+            else
+                throw new IllegalArgumentException("Unsupported data: " + data);
+        }
+        else
+            // TODO agoncharuk define conf change size.
+            return 10;
     }
 }

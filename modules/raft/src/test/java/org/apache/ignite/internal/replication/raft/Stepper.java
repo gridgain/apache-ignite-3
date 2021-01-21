@@ -15,23 +15,36 @@
  * limitations under the License.
  */
 
-package org.apache.ignite.internal.replication.raft.storage;
+package org.apache.ignite.internal.replication.raft;
+
+import java.util.Collections;
+import java.util.List;
+import java.util.UUID;
+import org.apache.ignite.internal.replication.raft.message.Message;
 
 /**
  *
  */
-public interface Entry {
-    public enum EntryType {
-        ENTRY_DATA,
+public interface Stepper {
+    public static Stepper blackHole(UUID id) {
+        return new Stepper() {
+            @Override public UUID id() {
+                return id;
+            }
 
-        ENTRY_CONF_CHANGE
+            @Override public void step(Message m) {
+
+            }
+
+            @Override public List<Message> readMessages() {
+                return Collections.emptyList();
+            }
+        };
     }
 
-    public EntryType type();
+    public UUID id();
 
-    public long term();
+    public void step(Message m);
 
-    public long index();
-
-    LogData data();
+    public List<Message> readMessages();
 }

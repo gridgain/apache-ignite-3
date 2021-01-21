@@ -170,6 +170,10 @@ public class Progress {
         return inflights;
     }
 
+    public boolean probeSent() {
+        return probeSent;
+    }
+
     public void probeSent(boolean sent) {
         probeSent = sent;
     }

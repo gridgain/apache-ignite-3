@@ -15,23 +15,39 @@
  * limitations under the License.
  */
 
-package org.apache.ignite.internal.replication.raft.storage;
+package org.apache.ignite.internal.replication.raft;
+
+import java.util.List;
+import java.util.UUID;
+import org.apache.ignite.internal.replication.raft.message.Message;
 
 /**
  *
  */
-public interface Entry {
-    public enum EntryType {
-        ENTRY_DATA,
+public class RawNodeStepper<T> implements Stepper {
+    /** */
+    private RawNode<T> rawNode;
 
-        ENTRY_CONF_CHANGE
+    public RawNodeStepper(RawNode<T> rawNode) {
+        this.rawNode = rawNode;
     }
 
-    public EntryType type();
+    /** {@inheritDoc} */
+    @Override public UUID id() {
+        return rawNode.basicStatus().id();
+    }
 
-    public long term();
+    /** {@inheritDoc} */
+    @Override public void step(Message m) {
+        rawNode.step(m);
+    }
 
-    public long index();
+    /** {@inheritDoc} */
+    @Override public List<Message> readMessages() {
+        return rawNode.readMessages();
+    }
 
-    LogData data();
+    public RawNode<T> node() {
+        return rawNode;
+    }
 }

@@ -888,7 +888,7 @@ public class RawNode<T> {
 
     // reduceUncommittedSize accounts for the newly committed entries by decreasing
     // the uncommitted entry size limit.
-    private void reduceUncommittedSize(List<Entry> ents) {
+    void reduceUncommittedSize(List<Entry> ents) {
         if (uncommittedSize == 0)
             // Fast-path for followers, that do not track or enforce the limit.
             return;
@@ -896,7 +896,7 @@ public class RawNode<T> {
         long s = 0;
 
         for (Entry ent : ents)
-            s += entryFactory.payloadSize(ent.data());
+            s += entryFactory.payloadSize(ent);
 
         if (s > uncommittedSize) {
             // uncommittedSize may underestimate the size of the uncommitted Raft
@@ -908,6 +908,10 @@ public class RawNode<T> {
             uncommittedSize -= s;
     }
 
+    long uncommittedSize() {
+        return uncommittedSize;
+    }
+
     // increaseUncommittedSize computes the size of the proposed entries and
     // determines whether they would push leader over its maxUncommittedSize limit.
     // If the new entries would exceed the limit, the method returns false. If not,
@@ -916,10 +920,10 @@ public class RawNode<T> {
     //
     // Empty payloads are never refused. This is used both for appending an empty
     // entry at a new leader's term, as well as leaving a joint configuration.
-    private boolean increaseUncommittedSize(List<LogData> ents) {
+    private boolean increaseUncommittedSize(List<Entry> ents) {
         long s = 0;
 
-        for (LogData ent : ents)
+        for (Entry ent : ents)
             s += entryFactory.payloadSize(ent);
 
         if (uncommittedSize > 0 && s > 0 && uncommittedSize + s > maxUncommittedSize) {
@@ -956,7 +960,14 @@ public class RawNode<T> {
 
     private boolean appendEntries(List<LogData> es) {
         // Track the size of this uncommitted proposal.
-        if (!increaseUncommittedSize(es)) {
+        List<Entry> entries = new ArrayList<>(es.size());
+
+        long li = raftLog.lastIndex();
+
+        for (int i = 0; i < es.size(); i++)
+            entries.add(entryFactory.newEntry(term, li + i + 1, es.get(i)));
+
+        if (!increaseUncommittedSize(entries)) {
             logger.debug(
                 "{} appending new entries to log would exceed uncommitted entry size limit; dropping proposal",
                 id);
@@ -964,13 +975,6 @@ public class RawNode<T> {
             // Drop the proposal.
             return false;
         }
-
-        List<Entry> entries = new ArrayList<>(es.size());
-
-        long li = raftLog.lastIndex();
-
-        for (int i = 0; i < es.size(); i++)
-            entries.add(entryFactory.newEntry(term, li + i + 1, es.get(i)));
 
         // use latest "last" index after truncate/append
         li = raftLog.append(entries);

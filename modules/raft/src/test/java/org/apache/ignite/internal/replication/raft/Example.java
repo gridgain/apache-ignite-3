@@ -46,7 +46,8 @@ public class Example {
         MemoryStorage storage = new MemoryStorage(locId,
             new HardState(1, null, 0),
             ConfigState.bootstrap(Collections.singletonList(locId), null),
-            Collections.emptyList());
+            Collections.emptyList(),
+            new TestEntryFactory());
 
         Random rnd = new Random(1L);
 

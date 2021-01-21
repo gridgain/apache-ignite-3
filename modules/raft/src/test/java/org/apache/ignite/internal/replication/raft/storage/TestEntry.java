@@ -58,15 +58,21 @@ public class TestEntry implements Entry {
     }
 
     /** {@inheritDoc} */
-    @Override public int size() {
-        // TODO: sanpwc Implement.
-        return 0;
+    @Override public int hashCode() {
+        int result = type.hashCode();
+
+        result = 31 * result + (int)(term ^ (term >>> 32));
+        result = 31 * result + (int)(idx ^ (idx >>> 32));
+        result = 31 * result + (data != null ? data.hashCode() : 0);
+
+        return result;
     }
 
     /** {@inheritDoc} */
     @Override public boolean equals(Object o) {
         if (this == o)
             return true;
+
         if (o == null || getClass() != o.getClass())
             return false;
 
@@ -74,10 +80,18 @@ public class TestEntry implements Entry {
 
         if (term != entry.term)
             return false;
+
         if (idx != entry.idx)
             return false;
+
         if (type != entry.type)
             return false;
+
         return data != null ? data.equals(entry.data) : entry.data == null;
+    }
+
+    /** {@inheritDoc} */
+    @Override public String toString() {
+        return "TestEntry[type=" + type + ", idx=" + idx + ", term=" + term + ", data=" + data + ']';
     }
 }

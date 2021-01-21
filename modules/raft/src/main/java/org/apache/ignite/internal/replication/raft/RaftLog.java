@@ -22,6 +22,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import org.apache.ignite.internal.replication.raft.storage.Entry;
+import org.apache.ignite.internal.replication.raft.storage.EntryFactory;
 import org.apache.ignite.internal.replication.raft.storage.Storage;
 import org.slf4j.Logger;
 import org.slf4j.helpers.MessageFormatter;
@@ -41,6 +42,9 @@ public class RaftLog {
     // they will be saved into storage.
     private final UnstableRaftLog unstable;
 
+    // Entry factory to estimate entries size.
+    private final EntryFactory entryFactory;
+
     // committed is the highest log position that is known to be in
     // stable storage on a quorum of nodes.
     private long committed;
@@ -57,19 +61,26 @@ public class RaftLog {
     // newLog returns log using the given storage and default options. It
     // recovers the log to the state that it just commits and applies the
     // latest snapshot.
-    public RaftLog(Logger logger, Storage storage) {
-        this(logger, storage, Long.MAX_VALUE);
+    public RaftLog(Logger logger, Storage storage, EntryFactory entryFactory) {
+        this(logger, storage, entryFactory, Long.MAX_VALUE);
     }
 
     // newLogWithSize returns a log using the given storage and max
     // message size.
-    public RaftLog(Logger logger, Storage storage, long maxNextEntriesSize) {
+    public RaftLog(
+        Logger logger,
+        Storage storage,
+        EntryFactory entryFactory,
+        long maxNextEntriesSize
+    ) {
         if (storage == null)
             throw new UnrecoverableException("storage must not be null");
 
         this.logger = logger;
 
         this.storage = storage;
+
+        this.entryFactory = entryFactory;
 
         this.maxNextEntriesSize = maxNextEntriesSize;
 
@@ -374,7 +385,7 @@ public class RaftLog {
                 entries = unstableEntries;
         }
 
-        return Utils.limitSize(entries, maxSize);
+        return Utils.limitSize(entryFactory, entries, maxSize);
     }
 
     // hasPendingSnapshot returns if there is pending snapshot waiting for applying.

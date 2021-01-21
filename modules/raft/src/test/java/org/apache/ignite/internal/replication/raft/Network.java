@@ -18,47 +18,63 @@
 package org.apache.ignite.internal.replication.raft;
 
 import java.util.ArrayDeque;
+import java.util.Collections;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Queue;
 import java.util.UUID;
-import org.apache.ignite.internal.replication.raft.message.AppendEntriesResponse;
+import java.util.function.Consumer;
 import org.apache.ignite.internal.replication.raft.message.Message;
 
 /**
  *
  */
 public class Network {
-    private Map<UUID, RawNode<?>> peers;
+    private final UUID[] ids;
+    private final Map<UUID, Stepper> peers;
 
-    public Network(RawNode<?>... nodes) {
-        peers = new HashMap<>(nodes.length, 1.0f);
-
-        for (RawNode<?> node : nodes)
-            peers.put(node.basicStatus().id(), node);
+    public UUID[] ids() {
+        return ids;
     }
 
-    public void drain(UUID peerId) {
-        Queue<Message> msgs = new ArrayDeque<>();
+    public Network(Stepper... steppers) {
+        peers = new HashMap<>(steppers.length, 1.0f);
 
-        msgs.addAll(peers.get(peerId).readMessages());
+        ids = new UUID[steppers.length];
 
-        drainQueue(msgs);
+        for (int i = 0; i < steppers.length; i++)
+            ids[i] = steppers[i].id();
+
+        for (Stepper node : steppers)
+            peers.put(node.id(), node);
+    }
+
+    public <T extends Stepper> T peer(UUID id) {
+        return (T)peers.get(id);
+    }
+
+    public <T extends Stepper> void action(UUID id, Consumer<T> action) {
+        Stepper stepper = peers.get(id);
+
+        action.accept((T)stepper);
+
+        drainQueue(stepper.readMessages());
     }
 
     public void send(Message msg) {
-        Queue<Message> msgs = new ArrayDeque<>();
-
-        msgs.add(msg);
-
-        drainQueue(msgs);
+        drainQueue(Collections.singletonList(msg));
     }
 
-    private void drainQueue(Queue<Message> msgs) {
+    private void drainQueue(List<Message> init) {
+        Queue<Message> msgs = new ArrayDeque<>();
+
+        msgs.addAll(init);
+
         while (!msgs.isEmpty()) {
             Message polled = msgs.poll();
 
-            RawNode<?> peer = peers.get(polled.to());
+            Stepper peer = peers.get(polled.to());
 
             if (peer != null) {
                 peer.step(polled);

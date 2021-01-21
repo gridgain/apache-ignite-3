@@ -30,15 +30,11 @@ import java.util.UUID;
 import java.util.concurrent.atomic.AtomicBoolean;
 import org.apache.ignite.internal.replication.raft.message.AppendEntriesRequest;
 import org.apache.ignite.internal.replication.raft.message.Message;
-import org.apache.ignite.internal.replication.raft.message.MessageFactory;
 import org.apache.ignite.internal.replication.raft.message.MessageType;
-import org.apache.ignite.internal.replication.raft.message.TestMessageFactory;
 import org.apache.ignite.internal.replication.raft.message.VoteRequest;
 import org.apache.ignite.internal.replication.raft.message.VoteResponse;
 import org.apache.ignite.internal.replication.raft.storage.Entry;
-import org.apache.ignite.internal.replication.raft.storage.EntryFactory;
 import org.apache.ignite.internal.replication.raft.storage.MemoryStorage;
-import org.apache.ignite.internal.replication.raft.storage.TestEntryFactory;
 import org.apache.ignite.internal.replication.raft.storage.UserData;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
@@ -61,23 +57,9 @@ import static org.apache.ignite.internal.replication.raft.StateType.STATE_LEADER
  * Test part uses Step function to generate the scenario. Check part checks
  * outgoing messages and state.
  */
-public class RaftPaperTest {
-    private final MessageFactory msgFactory = new TestMessageFactory();
-    private final EntryFactory entryFactory = new TestEntryFactory();
+public class RaftPaperTest extends AbstractRaftTest {
+    /** */
     private final Comparator<Message> destinationComparator = Comparator.comparing(Message::to);
-
-    private final UUID[] ids = idsBySize(3);
-
-    private static UUID[] idsBySize(int size) {
-        UUID[] ret = new UUID[size];
-
-        for (int i = 0; i < size; i++)
-            ret[i] = UUID.randomUUID();
-
-        Arrays.sort(ret);
-
-        return ret;
-    }
 
     @Test
     public void testFollowerUpdateTermFromMessage() {
@@ -360,7 +342,7 @@ public class RaftPaperTest {
             final UUID nvote;
             final boolean wreject;
 
-            public TestData(UUID vote, UUID nvote, boolean wreject) {
+            TestData(UUID vote, UUID nvote, boolean wreject) {
                 this.vote = vote;
                 this.nvote = nvote;
                 this.wreject = wreject;
@@ -558,7 +540,7 @@ public class RaftPaperTest {
             final Set<Integer> acceptors;
             final boolean wack;
 
-            public TestData(int size, Set<Integer> acceptors, boolean wack) {
+            TestData(int size, Set<Integer> acceptors, boolean wack) {
                 this.size = size;
                 this.acceptors = acceptors;
                 this.wack = wack;
@@ -647,9 +629,7 @@ public class RaftPaperTest {
 
             List<Entry> next = r.raftLog().nextEntries();
 
-            for (int i = 0; i < wents.size(); i++) {
-                Assertions.assertEquals(wents.get(i), next.get(i));
-            }
+            Assertions.assertEquals(wents, next);
         }
     }
 
@@ -672,7 +652,7 @@ public class RaftPaperTest {
             final boolean wReject;
             final long wRejectHint;
 
-            public TestData(long term, long idx, long wIdx, boolean wReject, long wRejectHint) {
+            TestData(long term, long idx, long wIdx, boolean wReject, long wRejectHint) {
                 this.term = term;
                 this.idx = idx;
                 this.wIdx = wIdx;
@@ -731,7 +711,7 @@ public class RaftPaperTest {
             final Entry[] wents;
             final Entry[] wunstable;
 
-            public TestData(long index, long term, Entry[] ents, Entry[] wents, Entry[] wunstable) {
+            TestData(long index, long term, Entry[] ents, Entry[] wents, Entry[] wunstable) {
                 this.index = index;
                 this.term = term;
                 this.ents = ents;
@@ -791,7 +771,7 @@ public class RaftPaperTest {
             final Entry[] ents;
             final long commit;
 
-            public TestData(Entry[] ents, long commit) {
+            TestData(Entry[] ents, long commit) {
                 this.ents = ents;
                 this.commit = commit;
             }
@@ -906,18 +886,15 @@ public class RaftPaperTest {
             // It is necessary to have a three-node cluster.
             // The second may have more up-to-date log than the first one, so the
             // first node needs the vote from the third node to become the leader.
-            Network n = new Network(lead, follower);
+            Network n = new Network(new RawNodeStepper(lead), new RawNodeStepper(follower));
 
-            lead.campaign();
-            n.drain(ids[0]);
+            n.<RawNodeStepper>action(ids[0], s -> s.node().campaign());
 
             // The election occurs in the term after the one we loaded with
             // lead.loadState above.
             n.send(msgFactory.newVoteResponse(ids[2], ids[0], false, term + 1, false));
-            n.drain(ids[0]);
 
-            lead.propose("");
-            n.drain(ids[0]);
+            n.<RawNodeStepper<String>>action(ids[0], s -> s.node().propose(""));
 
             // TODO agoncharuk here was all diff.
             Assertions.assertEquals(lead.raftLog().allEntries(), follower.raftLog().allEntries());
@@ -933,7 +910,7 @@ public class RaftPaperTest {
             private final Entry[] ents;
             private final long wterm;
 
-            public TestData(Entry[] ents, long wterm) {
+            TestData(Entry[] ents, long wterm) {
                 this.ents = ents;
                 this.wterm = wterm;
             }
@@ -1184,47 +1161,5 @@ public class RaftPaperTest {
             req.logIndex() + req.entries().size(),
             false,
             0);
-    }
-
-    private <T> RawNode<T> newTestRaft(UUID[] peers, int election, int heartbeat) {
-        return newTestRaft(election, heartbeat, memoryStorage(peers, new HardState(1, null, 0)));
-    }
-
-    private <T> RawNode<T> newTestRaft(int election, int heartbeat, MemoryStorage memStorage) {
-        long seed = System.currentTimeMillis();
-
-        LoggerFactory.getLogger(getClass().getName()).info("Using seed: {};//", seed);
-
-        return newTestRaft(election, heartbeat, memStorage, new Random(seed));
-    }
-
-    private <T> RawNode<T> newTestRaft(int election, int heartbeat, MemoryStorage memStorage, Random rnd) {
-
-        return new RawNodeBuilder()
-            .setMessageFactory(msgFactory)
-            .setEntryFactory(entryFactory)
-            .setStorage(memStorage)
-            .setRaftConfig(new RaftConfig()
-                .electionTick(election)
-                .heartbeatTick(heartbeat))
-            .setRandom(rnd)
-            .build();
-    }
-
-    private MemoryStorage memoryStorage() {
-        return memoryStorage(ids, new HardState(1, null, 0));
-    }
-
-    private MemoryStorage memoryStorage(UUID[] peers, HardState hs) {
-        return memoryStorage(peers[0], peers, hs);
-    }
-
-    private MemoryStorage memoryStorage(UUID locId, UUID[] peers, HardState hs) {
-        return new MemoryStorage(
-            locId,
-            hs,
-            ConfigState.bootstrap(Arrays.asList(peers), Collections.emptyList()),
-            Collections.emptyList()
-        );
     }
 }
