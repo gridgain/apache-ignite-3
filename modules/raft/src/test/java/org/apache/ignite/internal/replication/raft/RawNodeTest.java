@@ -18,8 +18,10 @@
 package org.apache.ignite.internal.replication.raft;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.UUID;
+import java.util.function.Consumer;
 import java.util.function.Function;
 import org.apache.ignite.internal.replication.raft.message.AppendEntriesRequest;
 import org.apache.ignite.internal.replication.raft.message.Message;
@@ -27,6 +29,7 @@ import org.apache.ignite.internal.replication.raft.message.MessageType;
 import org.apache.ignite.internal.replication.raft.message.VoteResponse;
 import org.apache.ignite.internal.replication.raft.storage.ConfChangeSingle;
 import org.apache.ignite.internal.replication.raft.storage.Entry;
+import org.apache.ignite.internal.replication.raft.storage.MemoryStorage;
 import org.apache.ignite.internal.replication.raft.storage.UserData;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
@@ -353,13 +356,16 @@ public class RawNodeTest extends AbstractRaftTest {
     public void testLearnerPromotion() {
         UUID[] ids = idsBySize(2);
 
-        RawNode<String> n1 = newTestRaft(newTestConfig(10, 1), memoryStorage(ids[0], new UUID[] {ids[0]}, new UUID[] {ids[1]}));
-        RawNode<String> n2 = newTestRaft(newTestConfig(10, 1), memoryStorage(ids[1], new UUID[] {ids[0]}, new UUID[] {ids[1]}));
+        MemoryStorage n1Storage = memoryStorage(ids[0], new UUID[] {ids[0]}, new UUID[] {ids[1]});
+        RawNode<String> n1 = newTestRaft(newTestConfig(10, 1), n1Storage);
+
+        MemoryStorage n2Storage = memoryStorage(ids[1], new UUID[] {ids[0]}, new UUID[] {ids[1]});
+        RawNode<String> n2 = newTestRaft(newTestConfig(10, 1), n2Storage);
 
         n1.becomeFollower(1, null);
         n2.becomeFollower(1, null);
 
-        Network nt = new Network(new RawNodeStepper<>(n1), new RawNodeStepper<>(n2));
+        Network nt = new Network(new RawNodeStepper<>(n1, n1Storage), new RawNodeStepper<>(n2, n2Storage));
 
         Assertions.assertNotEquals(STATE_LEADER, n1.basicStatus().softState().state());
 
@@ -528,4 +534,172 @@ public class RawNodeTest extends AbstractRaftTest {
             }
         }
     }
+
+    @Test
+    public void testVoteFromAnyState() {
+        checkVoteFromAnyState(false);
+    }
+
+    @Test
+    public void testPreVoteFromAnyState() {
+        checkVoteFromAnyState(true);
+    }
+
+    private void checkVoteFromAnyState(boolean preVote) {
+        for (StateType st : StateType.values()) {
+            RawNode<String> r = newTestRaft(ids, 10, 1);
+            Assertions.assertEquals(1, r.basicStatus().hardState().term());
+
+            switch (st) {
+                case STATE_FOLLOWER: {
+                    r.becomeFollower(r.basicStatus().hardState().term(), ids[2]);
+
+                    break;
+                }
+
+                case STATE_PRE_CANDIDATE: {
+                    r.becomePreCandidate();
+
+                    break;
+                }
+
+                case STATE_CANDIDATE: {
+                    r.becomeCandidate();
+
+                    break;
+                }
+
+                case STATE_LEADER: {
+                    r.becomeCandidate();
+
+                    r.becomeLeader();
+
+                    break;
+                }
+            }
+
+            // Note that setting our state above may have advanced r.Term
+            // past its initial value.
+            long origTerm = r.basicStatus().hardState().term();
+            long newTerm = origTerm + 1;
+
+            Message msg = msgFactory.newVoteRequest(
+                ids[1],
+                ids[0],
+                preVote,
+                newTerm,
+                42,
+                newTerm,
+                false
+            );
+
+            r.step(msg);
+
+            List<Message> msgs = r.readMessages();
+
+            Assertions.assertEquals(1, msgs.size());
+            Assertions.assertEquals(MessageType.MsgVoteResp, msgs.get(0).type());
+            VoteResponse res = (VoteResponse)msgs.get(0);
+            Assertions.assertFalse(res.reject());
+
+            BasicStatus bs = r.basicStatus();
+            SoftState softState = bs.softState();
+            HardState hardState = bs.hardState();
+
+            // If this was a real vote, we reset our state and term.
+            if (!preVote) {
+                Assertions.assertEquals(STATE_FOLLOWER, softState.state());
+                Assertions.assertEquals(newTerm, hardState.term());
+                Assertions.assertEquals(ids[1], hardState.vote());
+            } else {
+                // In a prevote, nothing changes.
+                Assertions.assertEquals(st, softState.state());
+                Assertions.assertEquals(origTerm, hardState.term());
+                // if st == StateFollower or StatePreCandidate, r hasn't voted yet.
+                // In StateCandidate or StateLeader, it's voted for itself.
+                Assertions.assertTrue(hardState.vote() == null || hardState.vote().equals(ids[0]),
+                    "For state " + st + " got " + hardState.toString());
+            }
+        }
+    }
+
+    @Test
+    public void testLogReplication() {
+        class NodeAction implements Consumer<RawNodeStepper<String>> {
+            int idx;
+            String propose;
+
+            NodeAction(int idx, String propose) {
+                this.idx = idx;
+                this.propose = propose;
+            }
+
+            @Override public void accept(RawNodeStepper<String> s) {
+                if (propose != null)
+                    s.node().propose(propose);
+                else
+                    s.node().campaign();
+            }
+        }
+
+        class TestData {
+            Network n;
+            List<NodeAction> actions;
+            long wcommmitted;
+
+            TestData(Network n, List<NodeAction> actions, long wcommmitted) {
+                this.n = n;
+                this.actions = actions;
+                this.wcommmitted = wcommmitted;
+            }
+        }
+
+        TestData[] tests = new TestData[] {
+            new TestData(
+                newNetwork(null, entries(), entries()),
+                Arrays.asList(new NodeAction(0, "somedata")),
+                2),
+            new TestData(
+                newNetwork(null, entries(), entries()),
+                Arrays.asList(
+                    new NodeAction(0, "somedata"),
+                    new NodeAction(1, null),
+                    new NodeAction(1, "somedata2")),
+                4)
+        };
+
+        for (TestData tt : tests) {
+            tt.n.<RawNodeStepper<String>>action(tt.n.ids()[0], s -> s.node().campaign());
+
+            for (NodeAction action : tt.actions)
+                tt.n.action(tt.n.ids()[action.idx], action);
+
+            for (UUID peerId : tt.n.ids()) {
+                RawNodeStepper<String> sm = tt.n.peer(peerId);
+
+                Assertions.assertEquals(tt.wcommmitted, sm.node().raftLog().committed());
+
+                List<String> committed = new ArrayList<>();
+
+                for (Entry e : nextEntries(sm.node(), tt.n.storage(peerId))) {
+                    if (e.data() instanceof UserData) {
+                        UserData<String> d = (UserData<String>)e.data();
+
+                        if (d.data() != null)
+                            committed.add(d.data());
+                    }
+                }
+
+                List<String> props = new ArrayList<>();
+
+                for (NodeAction action : tt.actions) {
+                    if (action.propose != null)
+                        props.add(action.propose);
+                }
+
+                Assertions.assertEquals(props, committed);
+            }
+        }
+    }
+
 }

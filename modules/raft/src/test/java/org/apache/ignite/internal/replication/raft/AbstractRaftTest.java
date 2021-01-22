@@ -19,6 +19,7 @@ package org.apache.ignite.internal.replication.raft;
 
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.List;
 import java.util.Random;
 import java.util.UUID;
 import java.util.function.Function;
@@ -48,6 +49,18 @@ public abstract class AbstractRaftTest {
         Arrays.sort(ret);
 
         return ret;
+    }
+
+    // nextEnts returns the appliable entries and updates the applied index
+    protected List<Entry> nextEntries(RawNode<?> r, MemoryStorage s) {
+        // Transfer all unstable entries to "stable" storage.
+        s.append(r.raftLog().unstableEntries());
+        r.raftLog().stableTo(r.raftLog().lastIndex(), r.raftLog().lastTerm());
+
+        List<Entry> ents = r.raftLog().nextEntries();
+        r.raftLog().appliedTo(r.raftLog().committed());
+
+        return ents;
     }
 
     protected RaftConfig newTestConfig(int election, int hearbeat) {
@@ -163,7 +176,7 @@ public abstract class AbstractRaftTest {
                     memStorage,
                     new Random(seed + i));
 
-                steppers[i] = new RawNodeStepper(node);
+                steppers[i] = new RawNodeStepper(node, memStorage);
             }
         }
 

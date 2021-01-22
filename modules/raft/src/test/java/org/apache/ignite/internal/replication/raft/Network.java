@@ -26,6 +26,7 @@ import java.util.Queue;
 import java.util.UUID;
 import java.util.function.Consumer;
 import org.apache.ignite.internal.replication.raft.message.Message;
+import org.apache.ignite.internal.replication.raft.storage.MemoryStorage;
 
 /**
  *
@@ -60,6 +61,10 @@ public class Network {
         action.accept((T)stepper);
 
         drainQueue(stepper.readMessages());
+    }
+
+    public MemoryStorage storage(UUID peerId) {
+        return this.<RawNodeStepper<String>>peer(peerId).storage();
     }
 
     public void send(Message msg) {

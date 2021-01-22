@@ -20,6 +20,7 @@ package org.apache.ignite.internal.replication.raft;
 import java.util.List;
 import java.util.UUID;
 import org.apache.ignite.internal.replication.raft.message.Message;
+import org.apache.ignite.internal.replication.raft.storage.MemoryStorage;
 
 /**
  *
@@ -28,8 +29,12 @@ public class RawNodeStepper<T> implements Stepper {
     /** */
     private RawNode<T> rawNode;
 
-    public RawNodeStepper(RawNode<T> rawNode) {
+    /** */
+    private MemoryStorage memStorage;
+
+    public RawNodeStepper(RawNode<T> rawNode, MemoryStorage memStorage) {
         this.rawNode = rawNode;
+        this.memStorage = memStorage;
     }
 
     /** {@inheritDoc} */
@@ -49,5 +54,9 @@ public class RawNodeStepper<T> implements Stepper {
 
     public RawNode<T> node() {
         return rawNode;
+    }
+
+    public MemoryStorage storage() {
+        return memStorage;
     }
 }

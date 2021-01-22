@@ -34,7 +34,6 @@ import org.apache.ignite.internal.replication.raft.message.HeartbeatResponse;
 import org.apache.ignite.internal.replication.raft.message.InstallSnapshotRequest;
 import org.apache.ignite.internal.replication.raft.message.Message;
 import org.apache.ignite.internal.replication.raft.message.MessageFactory;
-import org.apache.ignite.internal.replication.raft.message.MessageType;
 import org.apache.ignite.internal.replication.raft.message.VoteRequest;
 import org.apache.ignite.internal.replication.raft.message.VoteResponse;
 import org.apache.ignite.internal.replication.raft.storage.ConfChange;
@@ -54,8 +53,6 @@ import static org.apache.ignite.internal.replication.raft.Progress.ProgressState
 import static org.apache.ignite.internal.replication.raft.VoteResult.VoteWon;
 import static org.apache.ignite.internal.replication.raft.message.MessageType.MsgApp;
 import static org.apache.ignite.internal.replication.raft.message.MessageType.MsgHeartbeat;
-import static org.apache.ignite.internal.replication.raft.message.MessageType.MsgPreVote;
-import static org.apache.ignite.internal.replication.raft.message.MessageType.MsgPreVoteResp;
 import static org.apache.ignite.internal.replication.raft.message.MessageType.MsgSnap;
 import static org.apache.ignite.internal.replication.raft.message.MessageType.MsgVote;
 import static org.apache.ignite.internal.replication.raft.message.MessageType.MsgVoteResp;
@@ -510,9 +507,9 @@ public class RawNode<T> {
 
     // ReportSnapshot reports the status of the sent snapshot.
     public void ReportSnapshot(UUID id, SnapshotStatus status) {
-        boolean rej = status == SnapshotStatus.SnapshotFailure;
-
         if (state == StateType.STATE_LEADER) {
+            boolean success = status != SnapshotStatus.SnapshotFailure;
+
             Progress pr = prs.progress(id);
 
             if (pr == null) {
@@ -528,7 +525,7 @@ public class RawNode<T> {
             // MsgAppResp above. In fact, the code there is more correct than the
             // code here and should likely be updated to match (or even better, the
             // logic pulled into a newly created Progress state machine handler).
-            if (!rej) {
+            if (success) {
                 pr.becomeProbe();
 
                 logger.debug("{} snapshot succeeded, resumed sending replication messages to {} [{}]", this.id, id, pr);
@@ -635,7 +632,7 @@ public class RawNode<T> {
         if (m.term() == 0) {
         }
         else if (m.term() > term) {
-            if (m.type() == MsgVote || m.type() == MsgPreVote) {
+            if (m.type() == MsgVote) {
                 VoteRequest req = (VoteRequest)m;
 
                 boolean force = req.campaignTransfer();
@@ -654,10 +651,10 @@ public class RawNode<T> {
             }
 
             // Never change our term in response to a PreVote
-            if (m.type() == MsgPreVote) {
+            if (m.type() == MsgVote && ((VoteRequest)m).preVote()) {
 
             }
-            else if (m.type() == MsgPreVoteResp && !((VoteResponse)m).reject()) {
+            else if (m.type() == MsgVoteResp && ((VoteResponse)m).preVote() && !((VoteResponse)m).reject()) {
                 // We send pre-vote requests with a term in our future. If the
                 // pre-vote is granted, we will increment our term when we get a
                 // quorum. If it is not, the term comes from the node that
@@ -705,7 +702,7 @@ public class RawNode<T> {
                     false,
                     0));
             }
-            else if (m.type() == MsgPreVote) {
+            else if (m.type() == MsgVote && ((VoteRequest)m).preVote()) {
                 VoteRequest req = (VoteRequest)m;
 
                 // Before Pre-Vote enable, there may have candidate with higher term,
@@ -732,8 +729,7 @@ public class RawNode<T> {
         }
 
         switch (m.type()) {
-            case MsgVote:
-            case MsgPreVote: {
+            case MsgVote: {
                 VoteRequest req = (VoteRequest)m;
 
                 // We can vote if this is a repeat of a vote we've already cast...
@@ -741,7 +737,7 @@ public class RawNode<T> {
                     // ...we haven't voted and we don't think there's a leader yet in this term...
                     (vote == null && lead == null) ||
                     // ...or this is a PreVote for a future term...
-                    (m.type() == MsgPreVote && m.term() > term);
+                    (req.preVote() && m.term() > term);
 
                 // ...and we believe the candidate is up to date.
                 if (canVote && raftLog.isUpToDate(req.lastIndex(), req.lastTerm())) {
@@ -784,7 +780,7 @@ public class RawNode<T> {
                             m.term(),
                             /*reject*/false));
 
-                    if (m.type() == MsgVote) {
+                    if (!req.preVote()) {
                         // Only record real votes.
                         electionElapsed = 0;
                         vote = m.from();
@@ -1010,7 +1006,7 @@ public class RawNode<T> {
         logger.debug("{} became candidate at term {}", id, term);
     }
 
-    private void becomePreCandidate() {
+    void becomePreCandidate() {
         if (state == StateType.STATE_LEADER)
             unrecoverable("invalid transition [leader -> pre-candidate]");
 
@@ -1476,7 +1472,7 @@ public class RawNode<T> {
         // Only handle vote responses corresponding to our candidacy (while in
         // StateCandidate, we may get stale MsgPreVoteResp messages in this term from
         // our pre-candidate state).
-        MessageType myVoteRespType = state == StateType.STATE_PRE_CANDIDATE ? MsgPreVoteResp : MsgVoteResp;
+        boolean preVote = state == StateType.STATE_PRE_CANDIDATE;
 
         switch (m.type()) {
             case MsgApp: {
@@ -1503,12 +1499,11 @@ public class RawNode<T> {
                 break;
             }
 
-            case MsgPreVoteResp:
             case MsgVoteResp: {
-                if (m.type() == myVoteRespType) {
-                    VoteResponse res = (VoteResponse)m;
+                VoteResponse res = (VoteResponse)m;
 
-                    PollResult p = poll(res.from(), res.type(), !res.reject());
+                if (res.preVote() == preVote) {
+                    PollResult p = poll(res.from(), res.preVote(), !res.reject());
 
                     logger.info("{} has received {} {} votes and {} vote rejections", id, p.granted(), res.type(), p.rejected());
 
@@ -1683,22 +1678,22 @@ public class RawNode<T> {
         }
 
         long term;
-        MessageType voteMsg;
+        boolean preVote;
 
         if (t == CAMPAIGN_PRE_ELECTION) {
             becomePreCandidate();
-            voteMsg = MsgPreVote;
+            preVote = true;
             // PreVote RPCs are sent for the next term before we've incremented r.Term.
             term = this.term + 1;
         }
         else {
             becomeCandidate();
-            voteMsg = MsgVote;
+            preVote = false;
             term = this.term;
         }
 
         // Vote for ourselves.
-        PollResult p = poll(id, MessageType.voteResponseType(voteMsg), true);
+        PollResult p = poll(id, preVote, true);
 
         if (p.result() == VoteWon) {
             // We won the election after voting for ourselves (which must mean that
@@ -1718,12 +1713,12 @@ public class RawNode<T> {
                 continue;
 
             logger.info("{} [logterm: {}, index: {}] sent {} request to {} at term {}",
-                rmtId, raftLog.lastTerm(), raftLog.lastIndex(), voteMsg, rmtId, term);
+                rmtId, raftLog.lastTerm(), raftLog.lastIndex(), preVote ? "preVote" : "vote", rmtId, term);
 
             send(msgFactory.newVoteRequest(
                 id,
                 rmtId,
-                voteMsg == MsgPreVote,
+                preVote,
                 term,
                 raftLog.lastIndex(),
                 raftLog.lastTerm(),
@@ -1906,13 +1901,15 @@ public class RawNode<T> {
         }
     }
 
-    private PollResult poll(UUID id, MessageType t, boolean v) {
-        if (v)
+    private PollResult poll(UUID id, boolean preVote, boolean voteRes) {
+        String t = preVote ? "preVote" : "vote";
+
+        if (voteRes)
             logger.info("{} received {} from {} at term {}", id, t, id, term);
         else
             logger.info("{} received {} rejection from {} at term {}", id, t, id, term);
 
-        prs.recordVote(id, v);
+        prs.recordVote(id, voteRes);
 
         return prs.tallyVotes();
     }

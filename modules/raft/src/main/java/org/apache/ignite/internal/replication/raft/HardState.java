@@ -54,4 +54,13 @@ public class HardState {
     public boolean isEmpty() {
         return term == 0 && vote == null && committed == 0;
     }
+
+    /** {@inheritDoc} */
+    @Override public String toString() {
+        return "HardState[" +
+            "term=" + term +
+            ", vote=" + vote +
+            ", committed=" + committed +
+            ']';
+    }
 }

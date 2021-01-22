@@ -24,6 +24,9 @@ import java.util.UUID;
  */
 public class TestVoteResponse extends TestBaseMessage implements VoteResponse {
     /** */
+    private final boolean preVote;
+
+    /** */
     private final boolean reject;
 
     public TestVoteResponse(
@@ -33,8 +36,15 @@ public class TestVoteResponse extends TestBaseMessage implements VoteResponse {
         long term,
         boolean reject
     ) {
-        super(preVote ? MessageType.MsgPreVoteResp : MessageType.MsgVoteResp, from, to, term);
+        super(MessageType.MsgVoteResp, from, to, term);
+
+        this.preVote = preVote;
         this.reject = reject;
+    }
+
+    /** {@inheritDoc} */
+    @Override public boolean preVote() {
+        return preVote;
     }
 
     /** {@inheritDoc} */

@@ -28,10 +28,7 @@ public enum MessageType {
     MsgSnap(false),
     MsgHeartbeat(false),
     MsgHeartbeatResp(true),
-    MsgTimeoutNow(false),
-    // TODO agoncharuk pre-vote is already a flag, need to remove the separate message type.
-    MsgPreVote(false),
-    MsgPreVoteResp(true);
+    MsgTimeoutNow(false);
 
     private boolean resp;
 
@@ -41,18 +38,5 @@ public enum MessageType {
 
     public boolean isResponse() {
         return resp;
-    }
-
-    public static MessageType voteResponseType(MessageType type) {
-        switch (type) {
-            case MsgVote:
-                return MsgVoteResp;
-
-            case MsgPreVote:
-                return MsgPreVoteResp;
-
-            default:
-                throw new IllegalArgumentException("Not a vote request: " + type);
-        }
     }
 }

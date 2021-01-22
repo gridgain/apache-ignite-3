@@ -21,9 +21,7 @@ package org.apache.ignite.internal.replication.raft.message;
  *
  */
 public interface VoteRequest extends Message {
-    public default boolean preVote() {
-        return type() == MessageType.MsgPreVote;
-    }
+    public boolean preVote();
 
     long lastIndex();
 

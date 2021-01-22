@@ -886,7 +886,9 @@ public class RaftPaperTest extends AbstractRaftTest {
             // It is necessary to have a three-node cluster.
             // The second may have more up-to-date log than the first one, so the
             // first node needs the vote from the third node to become the leader.
-            Network n = new Network(new RawNodeStepper(lead), new RawNodeStepper(follower));
+            Network n = new Network(
+                new RawNodeStepper(lead, leadStorage),
+                new RawNodeStepper(follower, followerStorage));
 
             n.<RawNodeStepper>action(ids[0], s -> s.node().campaign());
 

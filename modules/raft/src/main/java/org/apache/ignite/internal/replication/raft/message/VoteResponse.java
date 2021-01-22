@@ -21,9 +21,7 @@ package org.apache.ignite.internal.replication.raft.message;
  *
  */
 public interface VoteResponse extends Message {
-    default boolean preVote() {
-        return type() == MessageType.MsgPreVoteResp;
-    }
+    boolean preVote();
 
     boolean reject();
 }
