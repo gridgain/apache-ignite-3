@@ -20,6 +20,7 @@ package org.apache.ignite.internal.replication.raft;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Random;
 import java.util.UUID;
 import java.util.function.Consumer;
 import java.util.function.Function;
@@ -38,6 +39,7 @@ import static org.apache.ignite.internal.replication.raft.StateType.STATE_CANDID
 import static org.apache.ignite.internal.replication.raft.StateType.STATE_FOLLOWER;
 import static org.apache.ignite.internal.replication.raft.StateType.STATE_LEADER;
 import static org.apache.ignite.internal.replication.raft.StateType.STATE_PRE_CANDIDATE;
+import static org.apache.ignite.internal.replication.raft.message.MessageType.MsgApp;
 
 /**
  *
@@ -127,7 +129,7 @@ public class RawNodeTest extends AbstractRaftTest {
         // election, and the first proposal (only one proposal gets sent
         // because we're in probe state).
         Assertions.assertEquals(1, ms.size());
-        Assertions.assertEquals(MessageType.MsgApp, ms.get(0).type());
+        Assertions.assertEquals(MsgApp, ms.get(0).type());
 
         AppendEntriesRequest req = (AppendEntriesRequest)ms.get(0);
 
@@ -147,7 +149,7 @@ public class RawNodeTest extends AbstractRaftTest {
         Assertions.assertEquals(3, ms.size());
 
         for (Message m : ms) {
-            Assertions.assertEquals(MessageType.MsgApp, m.type());
+            Assertions.assertEquals(MsgApp, m.type());
             req = (AppendEntriesRequest)m;
 
             Assertions.assertEquals(2, req.entries().size());
@@ -162,7 +164,7 @@ public class RawNodeTest extends AbstractRaftTest {
 
         Assertions.assertEquals(2, ms.size());
         for (Message m : ms)
-            Assertions.assertEquals(MessageType.MsgApp, m.type());
+            Assertions.assertEquals(MsgApp, m.type());
 
         req = (AppendEntriesRequest)ms.get(0);
         Assertions.assertEquals(2, req.entries().size());
@@ -320,7 +322,7 @@ public class RawNodeTest extends AbstractRaftTest {
         for (TestData tt : tests) {
             UUID[] ids = tt.n.ids();
 
-            tt.n.<RawNodeStepper>action(ids[0], (s) -> s.node().campaign());
+            tt.n.<String>action(ids[0], (s) -> s.node().campaign());
 
             RawNodeStepper s = tt.n.peer(ids[0]);
 
@@ -356,16 +358,18 @@ public class RawNodeTest extends AbstractRaftTest {
     public void testLearnerPromotion() {
         UUID[] ids = idsBySize(2);
 
+        Random rnd = new Random(seed());
+
         MemoryStorage n1Storage = memoryStorage(ids[0], new UUID[] {ids[0]}, new UUID[] {ids[1]});
-        RawNode<String> n1 = newTestRaft(newTestConfig(10, 1), n1Storage);
+        RawNode<String> n1 = newTestRaft(newTestConfig(10, 1), n1Storage, rnd);
 
         MemoryStorage n2Storage = memoryStorage(ids[1], new UUID[] {ids[0]}, new UUID[] {ids[1]});
-        RawNode<String> n2 = newTestRaft(newTestConfig(10, 1), n2Storage);
+        RawNode<String> n2 = newTestRaft(newTestConfig(10, 1), n2Storage, rnd);
 
         n1.becomeFollower(1, null);
         n2.becomeFollower(1, null);
 
-        Network nt = new Network(new RawNodeStepper<>(n1, n1Storage), new RawNodeStepper<>(n2, n2Storage));
+        Network nt = new Network(rnd, new RawNodeStepper<>(n1, n1Storage), new RawNodeStepper<>(n2, n2Storage));
 
         Assertions.assertNotEquals(STATE_LEADER, n1.basicStatus().softState().state());
 
@@ -378,7 +382,7 @@ public class RawNodeTest extends AbstractRaftTest {
         Assertions.assertEquals(STATE_LEADER, n1.basicStatus().softState().state());
         Assertions.assertEquals(STATE_FOLLOWER, n2.basicStatus().softState().state());
 
-        nt.<RawNodeStepper<String>>action(ids[0], s -> s.node().bcastHeartbeat());
+        nt.<String>action(ids[0], s -> s.node().bcastHeartbeat());
 
         n1.applyConfChange(new ConfChangeSingle(ids[1], ConfChangeSingle.ConfChangeType.ConfChangeAddNode));
         n2.applyConfChange(new ConfChangeSingle(ids[1], ConfChangeSingle.ConfChangeType.ConfChangeAddNode));
@@ -388,7 +392,7 @@ public class RawNodeTest extends AbstractRaftTest {
         // n2 start election, should become leader
         n2.randomizedElectionTimeout(n2.electionTimeout());
 
-        nt.<RawNodeStepper<String>>action(ids[1], s -> {
+        nt.<String>action(ids[1], s -> {
             for (int i = 0; i < n2.electionTimeout(); i++)
                 n2.tick();
         });
@@ -443,7 +447,7 @@ public class RawNodeTest extends AbstractRaftTest {
         Network n = newNetwork(cfgFunc, entries(), entries(), entries());
 
         for (UUID campaignerID : n.ids()) {
-            n.<RawNodeStepper<?>>action(campaignerID, s -> s.node().campaign());
+            n.<String>action(campaignerID, s -> s.node().campaign());
 
             for (UUID peer : n.ids()) {
                 RawNodeStepper<String> s = n.peer(peer);
@@ -500,7 +504,7 @@ public class RawNodeTest extends AbstractRaftTest {
             // Node 1 campaigns. The election fails because a quorum of nodes
             // know about the election that already happened at term 2. Node 1's
             // term is pushed ahead to 2.
-            n.<RawNodeStepper<String>>action(n.ids()[0], s -> s.node().campaign());
+            n.<String>action(n.ids()[0], s -> s.node().campaign());
 
             RawNode<String> node = n.<RawNodeStepper<String>>peer(n.ids()[0]).node();
 
@@ -508,7 +512,7 @@ public class RawNodeTest extends AbstractRaftTest {
             Assertions.assertEquals(2, node.basicStatus().hardState().term());
 
             // Node 1 campaigns again with a higher term. This time it succeeds.
-            n.<RawNodeStepper<String>>action(n.ids()[0], s -> s.node().campaign());
+            n.<String>action(n.ids()[0], s -> s.node().campaign());
 
             Assertions.assertEquals(STATE_LEADER, node.basicStatus().softState().state());
             Assertions.assertEquals(3, node.basicStatus().hardState().term());
@@ -669,10 +673,10 @@ public class RawNodeTest extends AbstractRaftTest {
         };
 
         for (TestData tt : tests) {
-            tt.n.<RawNodeStepper<String>>action(tt.n.ids()[0], s -> s.node().campaign());
+            tt.n.<String>action(tt.n.ids()[0], s -> s.node().campaign());
 
             for (NodeAction action : tt.actions)
-                tt.n.action(tt.n.ids()[action.idx], action);
+                tt.n.<String>action(tt.n.ids()[action.idx], action);
 
             for (UUID peerId : tt.n.ids()) {
                 RawNodeStepper<String> sm = tt.n.peer(peerId);
@@ -702,4 +706,149 @@ public class RawNodeTest extends AbstractRaftTest {
         }
     }
 
+    // TestLearnerLogReplication tests that a learner can receive entries from the leader.
+    @Test
+    public void testLearnerLogReplication() {
+        UUID[] ids = idsBySize(2);
+
+        Random rnd = new Random(seed());
+
+        MemoryStorage n1Storage = memoryStorage(ids[0], new UUID[] {ids[0]}, new UUID[] {ids[1]});
+        RawNode<String> n1 = newTestRaft(newTestConfig(10, 1), n1Storage, rnd);
+
+        MemoryStorage n2Storage = memoryStorage(ids[1], new UUID[] {ids[0]}, new UUID[] {ids[1]});
+        RawNode<String> n2 = newTestRaft(newTestConfig(10, 1), n2Storage, rnd);
+
+        Network nt = new Network(rnd, new RawNodeStepper<String>(n1, n1Storage), new RawNodeStepper<String>(n2, n2Storage));
+
+        n1.becomeFollower(1, null);
+        n2.becomeFollower(1, null);
+
+        n1.randomizedElectionTimeout(n1.electionTimeout());
+
+        nt.<String>action(ids[0], s -> {
+            for (int i = 0; i < n1.electionTimeout(); i++)
+                n1.tick();
+        });
+
+        // n1 is leader and n2 is learner
+        Assertions.assertEquals(STATE_LEADER, n1.basicStatus().softState().state());
+        Assertions.assertTrue(n2.isLearner());
+
+        long nextCommitted = n1.raftLog().committed() + 1;
+
+        nt.<String>action(ids[0], s -> s.node().propose("somedata"));
+
+        Assertions.assertEquals(nextCommitted, n1.raftLog().committed());
+        Assertions.assertEquals(n1.raftLog().committed(), n2.raftLog().committed());
+
+        long match = n1.tracker().progress(ids[1]).match();
+        Assertions.assertEquals(n2.raftLog().committed(), match);
+    }
+
+    @Test
+    public void testSingleNodeCommit() {
+        Network tt = newNetwork(null, entries());
+        tt.<String>action(tt.ids()[0], s -> s.node().campaign());
+        tt.<String>action(tt.ids()[0], s -> s.node().propose("some data"));
+        tt.<String>action(tt.ids()[0], s -> s.node().propose("some data"));
+
+        RawNodeStepper<String> sm = tt.peer(tt.ids()[0]);
+
+        Assertions.assertEquals(3, sm.node().raftLog().committed());
+    }
+
+    // TestCannotCommitWithoutNewTermEntry tests the entries cannot be committed
+    // when leader changes, no new proposal comes in and ChangeTerm proposal is
+    // filtered.
+    @Test
+    public void testCannotCommitWithoutNewTermEntry() {
+        Network tt = newNetwork(null, entries(), entries(), entries(), entries(), entries());
+        UUID[] ids = tt.ids();
+
+        tt.<String>action(ids[0], s -> s.node().campaign());
+
+        // 0 cannot reach 2,3,4
+        tt.cut(ids[0], ids[2]);
+        tt.cut(ids[0], ids[3]);
+        tt.cut(ids[0], ids[4]);
+
+        tt.<String>action(ids[0], s -> s.node().propose("some data"));
+        tt.<String>action(ids[0], s -> s.node().propose("some data"));
+
+        {
+            RawNodeStepper<String> st = tt.peer(ids[0]);
+            RawNode<String> sm = st.node();
+
+            Assertions.assertEquals(1, sm.raftLog().committed());
+        }
+
+        // network recovery
+        tt.recover();
+
+        // avoid committing ChangeTerm proposal
+        tt.ignore(MsgApp);
+
+        // elect 2 as the new leader with term 2
+        tt.<RawNodeStepper<String>>action(ids[1], s -> s.node().campaign());
+
+        {
+            // no log entries from previous term should be committed
+            RawNodeStepper<String> st = tt.peer(ids[1]);
+            RawNode<String> sm = st.node();
+
+            Assertions.assertEquals(1, sm.raftLog().committed());
+        }
+
+        tt.recover();
+
+        // send heartbeat; reset wait
+        tt.<String>action(ids[1], s -> s.node().bcastHeartbeat());
+        
+        // append an entry at current term
+        tt.<String>action(ids[1], s -> s.node().propose("some data"));
+
+        {
+            // expect the committed to be advanced
+            RawNodeStepper<String> st = tt.peer(ids[1]);
+            RawNode<String> sm = st.node();
+
+            Assertions.assertEquals(5, sm.raftLog().committed());
+        }
+    }
+
+    // TestCommitWithoutNewTermEntry tests the entries could be committed
+    // when leader changes, no new proposal comes in.
+    @Test
+    public void testCommitWithoutNewTermEntry() {
+        Network tt = newNetwork(null, entries(), entries(), entries(), entries(), entries());
+        UUID[] ids = tt.ids();
+
+        tt.<String>action(ids[0], s -> s.node().campaign());
+
+        // 0 cannot reach 2,3,4
+        tt.cut(ids[0], ids[2]);
+        tt.cut(ids[0], ids[3]);
+        tt.cut(ids[0], ids[4]);
+
+        tt.<String>action(ids[0], s -> s.node().propose("some data"));
+        tt.<String>action(ids[0], s -> s.node().propose("some data"));
+
+        {
+            RawNodeStepper<String> sm = tt.peer(ids[0]);
+            Assertions.assertEquals(1, sm.node().raftLog().committed());
+        }
+
+        // network recovery
+        tt.recover();
+
+        // elect 2 as the new leader with term 2
+        // after append a ChangeTerm entry from the current term, all entries
+        // should be committed
+        tt.<String>action(ids[1], s -> s.node().campaign());
+        {
+            RawNodeStepper<String> sm = tt.peer(ids[0]);
+            Assertions.assertEquals(4, sm.node().raftLog().committed());
+        }
+    }
 }

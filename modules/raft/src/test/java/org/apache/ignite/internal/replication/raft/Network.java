@@ -20,26 +20,36 @@ package org.apache.ignite.internal.replication.raft;
 import java.util.ArrayDeque;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Queue;
+import java.util.Random;
+import java.util.Set;
 import java.util.UUID;
 import java.util.function.Consumer;
 import org.apache.ignite.internal.replication.raft.message.Message;
+import org.apache.ignite.internal.replication.raft.message.MessageType;
 import org.apache.ignite.internal.replication.raft.storage.MemoryStorage;
 
 /**
  *
  */
 public class Network {
+    private Random rnd;
     private final UUID[] ids;
     private final Map<UUID, Stepper> peers;
+
+    private Map<Edge, Double> drop = new HashMap<>();
+    private Set<MessageType> ignore = new HashSet<>();
 
     public UUID[] ids() {
         return ids;
     }
 
-    public Network(Stepper... steppers) {
+    public Network(Random rnd, Stepper... steppers) {
+        this.rnd = rnd;
+
         peers = new HashMap<>(steppers.length, 1.0f);
 
         ids = new UUID[steppers.length];
@@ -55,10 +65,10 @@ public class Network {
         return (T)peers.get(id);
     }
 
-    public <T extends Stepper> void action(UUID id, Consumer<T> action) {
+    public <T> void action(UUID id, Consumer<RawNodeStepper<T>> action) {
         Stepper stepper = peers.get(id);
 
-        action.accept((T)stepper);
+        action.accept((RawNodeStepper<T>)stepper);
 
         drainQueue(stepper.readMessages());
     }
@@ -71,6 +81,23 @@ public class Network {
         drainQueue(Collections.singletonList(msg));
     }
 
+    public void cut(UUID peer1, UUID peer2) {
+        drop(peer1, peer2, 2.d);
+    }
+
+    public void ignore(MessageType msgType) {
+        ignore.add(msgType);
+    }
+
+    public void drop(UUID peer1, UUID peer2, double percentage) {
+        drop.put(new Edge(peer1, peer2), percentage);
+    }
+
+    public void recover() {
+        drop.clear();
+        ignore.clear();
+    }
+
     private void drainQueue(List<Message> init) {
         Queue<Message> msgs = new ArrayDeque<>();
 
@@ -79,13 +106,64 @@ public class Network {
         while (!msgs.isEmpty()) {
             Message polled = msgs.poll();
 
-            Stepper peer = peers.get(polled.to());
+            if (!filtered(polled)) {
+                Stepper peer = peers.get(polled.to());
 
-            if (peer != null) {
-                peer.step(polled);
+                if (peer != null) {
+                    peer.step(polled);
 
-                msgs.addAll(peer.readMessages());
+                    msgs.addAll(peer.readMessages());
+                }
             }
+        }
+    }
+
+    private boolean filtered(Message msg) {
+        if (ignore.contains(msg.type()))
+            return true;
+
+        Edge e = new Edge(msg.from(), msg.to());
+
+        if (drop.containsKey(e)) {
+            double percentage = drop.get(e);
+
+            if (rnd.nextDouble() < percentage) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static class Edge {
+        private final UUID peer1;
+        private final UUID peer2;
+
+        private Edge(UUID peer1, UUID peer2) {
+            this.peer1 = peer1;
+            this.peer2 = peer2;
+        }
+
+        /** {@inheritDoc} */
+        @Override public boolean equals(Object o) {
+            if (this == o)
+                return true;
+
+            if (o == null || getClass() != o.getClass())
+                return false;
+
+            Edge edge = (Edge)o;
+
+            return peer1.equals(edge.peer1) && peer2.equals(edge.peer2);
+        }
+
+        /** {@inheritDoc} */
+        @Override public int hashCode() {
+            int result = peer1.hashCode();
+
+            result = 31 * result + peer2.hashCode();
+
+            return result;
         }
     }
 }

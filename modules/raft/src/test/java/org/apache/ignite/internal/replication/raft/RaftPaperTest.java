@@ -38,7 +38,6 @@ import org.apache.ignite.internal.replication.raft.storage.MemoryStorage;
 import org.apache.ignite.internal.replication.raft.storage.UserData;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
-import org.slf4j.LoggerFactory;
 import org.slf4j.helpers.MessageFormatter;
 
 import static org.apache.ignite.internal.replication.raft.StateType.STATE_CANDIDATE;
@@ -870,33 +869,36 @@ public class RaftPaperTest extends AbstractRaftTest {
             },
         };
 
+        Random rnd = new Random(seed());
+
         for (Entry[] tt : tests) {
             MemoryStorage leadStorage = memoryStorage(ids, new HardState(term, null, ents.length));
 
             leadStorage.append(Arrays.asList(ents));
 
-            RawNode<String> lead = newTestRaft(10, 1, leadStorage);
+            RawNode<String> lead = newTestRaft(10, 1, leadStorage, rnd);
 
             MemoryStorage followerStorage = memoryStorage(ids[1], ids, new HardState(term - 1, null, 0));
 
             followerStorage.append(Arrays.asList(tt));
 
-            RawNode<String> follower = newTestRaft(10, 1, followerStorage);
+            RawNode<String> follower = newTestRaft(10, 1, followerStorage, rnd);
 
             // It is necessary to have a three-node cluster.
             // The second may have more up-to-date log than the first one, so the
             // first node needs the vote from the third node to become the leader.
             Network n = new Network(
+                rnd,
                 new RawNodeStepper(lead, leadStorage),
                 new RawNodeStepper(follower, followerStorage));
 
-            n.<RawNodeStepper>action(ids[0], s -> s.node().campaign());
+            n.<String>action(ids[0], s -> s.node().campaign());
 
             // The election occurs in the term after the one we loaded with
             // lead.loadState above.
             n.send(msgFactory.newVoteResponse(ids[2], ids[0], false, term + 1, false));
 
-            n.<RawNodeStepper<String>>action(ids[0], s -> s.node().propose(""));
+            n.<String>action(ids[0], s -> s.node().propose(""));
 
             // TODO agoncharuk here was all diff.
             Assertions.assertEquals(lead.raftLog().allEntries(), follower.raftLog().allEntries());
@@ -1079,9 +1081,7 @@ public class RaftPaperTest extends AbstractRaftTest {
 
         UUID[] ids = idsBySize(size);
 
-        long seed = System.currentTimeMillis();
-
-        LoggerFactory.getLogger(getClass().getName()).info("Using seed: {}; //", seed);
+        long seed = seed();
 
         for (int k = 0; k < ids.length; k++) {
             MemoryStorage storage = memoryStorage(ids[k], ids, new HardState(1, null, 0));

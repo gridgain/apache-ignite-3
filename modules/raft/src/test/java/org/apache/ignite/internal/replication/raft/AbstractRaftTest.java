@@ -63,6 +63,14 @@ public abstract class AbstractRaftTest {
         return ents;
     }
 
+    protected long seed() {
+        long seed = System.currentTimeMillis();
+
+        LoggerFactory.getLogger(getClass().getName()).info("Using seed: {};//", seed);
+
+        return seed;
+    }
+
     protected RaftConfig newTestConfig(int election, int hearbeat) {
         return new RaftConfig().electionTick(election).heartbeatTick(hearbeat).maxSizePerMsg(Integer.MAX_VALUE);
     }
@@ -86,11 +94,7 @@ public abstract class AbstractRaftTest {
     }
 
     protected <T> RawNode<T> newTestRaft(RaftConfig cfg, MemoryStorage memStorage) {
-        long seed = System.currentTimeMillis();
-
-        LoggerFactory.getLogger(getClass().getName()).info("Using seed: {};//", seed);
-
-        return newTestRaft(cfg, memStorage, new Random(seed));
+        return newTestRaft(cfg, memStorage, new Random(seed()));
     }
 
     protected <T> RawNode<T> newTestRaft(RaftConfig cfg, MemoryStorage memStorage, Random rnd) {
@@ -146,9 +150,7 @@ public abstract class AbstractRaftTest {
         UUID[] ids = idsBySize(bootstraps.length);
         Stepper[] steppers = new Stepper[bootstraps.length];
 
-        long seed = System.currentTimeMillis();
-
-        LoggerFactory.getLogger(getClass().getName()).info("Using seed: {};//", seed);
+        long seed = seed();
 
         for (int i = 0; i < bootstraps.length; i++) {
             NetworkBootstrap bootstrap = bootstraps[i];
@@ -180,7 +182,7 @@ public abstract class AbstractRaftTest {
             }
         }
 
-        return new Network(steppers);
+        return new Network(new Random(seed), steppers);
     }
 
     protected NetworkBootstrap entries(long... terms) {
