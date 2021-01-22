@@ -1067,7 +1067,7 @@ public class RawNode<T> {
     }
 
     // send persists state to stable storage and then sends to its mailbox.
-    private void send(Message m) {
+    public void send(Message m) {
         if (m.term() == 0) {
             // All {pre-,}campaign messages need to have the term set when
             // sending.
