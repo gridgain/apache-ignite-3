@@ -21,11 +21,14 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.Random;
 import java.util.UUID;
+import java.util.function.Function;
 import org.apache.ignite.internal.replication.raft.message.MessageFactory;
 import org.apache.ignite.internal.replication.raft.message.TestMessageFactory;
+import org.apache.ignite.internal.replication.raft.storage.Entry;
 import org.apache.ignite.internal.replication.raft.storage.EntryFactory;
 import org.apache.ignite.internal.replication.raft.storage.MemoryStorage;
 import org.apache.ignite.internal.replication.raft.storage.TestEntryFactory;
+import org.apache.ignite.internal.replication.raft.storage.UserData;
 import org.slf4j.LoggerFactory;
 
 /**
@@ -47,25 +50,26 @@ public abstract class AbstractRaftTest {
         return ret;
     }
 
+    protected RaftConfig newTestConfig(int election, int hearbeat) {
+        return new RaftConfig().electionTick(election).heartbeatTick(hearbeat).maxSizePerMsg(Integer.MAX_VALUE);
+    }
+
     protected <T> RawNode<T> newTestRaft(UUID[] peers, int election, int heartbeat) {
-        return newTestRaft(election, heartbeat, memoryStorage(peers, new HardState(1, null, 0)));
+        return newTestRaft(
+            newTestConfig(election, heartbeat),
+            memoryStorage(peers, new HardState(1, null, 0)));
     }
 
     protected <T> RawNode<T> newTestRaft(int election, int heartbeat, MemoryStorage memStorage) {
-        return newTestRaft(new RaftConfig()
-            .electionTick(election)
-            .heartbeatTick(heartbeat)
-            .maxSizePerMsg(Integer.MAX_VALUE),
+        return newTestRaft(
+            newTestConfig(election, heartbeat),
             memStorage);
     }
 
     protected <T> RawNode<T> newTestRaft(int election, int heartbeat, MemoryStorage memStorage, Random rnd) {
-        RaftConfig cfg = new RaftConfig()
-            .electionTick(election)
-            .heartbeatTick(heartbeat)
-            .maxSizePerMsg(Integer.MAX_VALUE);
-
-        return newTestRaft(cfg, memStorage, rnd);
+        return newTestRaft(
+            newTestConfig(election, heartbeat),
+            memStorage, rnd);
     }
 
     protected <T> RawNode<T> newTestRaft(RaftConfig cfg, MemoryStorage memStorage) {
@@ -99,13 +103,83 @@ public abstract class AbstractRaftTest {
     }
 
     protected MemoryStorage memoryStorage(UUID locId, UUID[] peers, HardState hs) {
+        return memoryStorage(locId, peers, new UUID[0], hs);
+    }
+
+    protected MemoryStorage memoryStorage(
+        UUID locId,
+        UUID[] peers,
+        UUID[] learners
+    ) {
+        return memoryStorage(locId, peers, learners, new HardState(1, null, 0));
+    }
+
+    protected MemoryStorage memoryStorage(
+        UUID locId,
+        UUID[] peers,
+        UUID[] learners,
+        HardState hs
+    ) {
         return new MemoryStorage(
             locId,
             hs,
-            ConfigState.bootstrap(Arrays.asList(peers), Collections.emptyList()),
+            ConfigState.bootstrap(Arrays.asList(peers), Arrays.asList(learners)),
             Collections.emptyList(),
             entryFactory
         );
     }
 
+    protected Network newNetwork(Function<RaftConfig, RaftConfig> cfgFunc, NetworkBootstrap... bootstraps) {
+        UUID[] ids = idsBySize(bootstraps.length);
+        Stepper[] steppers = new Stepper[bootstraps.length];
+
+        long seed = System.currentTimeMillis();
+
+        LoggerFactory.getLogger(getClass().getName()).info("Using seed: {};//", seed);
+
+        for (int i = 0; i < bootstraps.length; i++) {
+            NetworkBootstrap bootstrap = bootstraps[i];
+
+            if (bootstrap == null)
+                // A black hole.
+                steppers[i] = Stepper.blackHole(ids[i]);
+            else {
+                Entry[] entries = bootstrap.entries();
+
+                UUID vote = bootstrap.votedForIdx() < 0 ? null : ids[bootstrap.votedForIdx()];
+
+                MemoryStorage memStorage = memoryStorage(ids[i], ids,
+                    new HardState(bootstrap.term(), vote, 0));
+
+                memStorage.append(Arrays.asList(entries));
+
+                RaftConfig cfg = new RaftConfig().electionTick(10).heartbeatTick(1);
+
+                if (cfgFunc != null)
+                    cfg = cfgFunc.apply(cfg);
+
+                RawNode<?> node = newTestRaft(
+                    cfg,
+                    memStorage,
+                    new Random(seed + i));
+
+                steppers[i] = new RawNodeStepper(node);
+            }
+        }
+
+        return new Network(steppers);
+    }
+
+    protected NetworkBootstrap entries(long... terms) {
+        Entry[] res = new Entry[terms.length];
+
+        for (int i = 0; i < terms.length; i++)
+            res[i] = entryFactory.newEntry(terms[i], i + 1, new UserData<>("test-" + (i + 1)));
+
+        return new NetworkBootstrap(-1, terms.length == 0 ? 1 : terms[terms.length - 1], res);
+    }
+
+    protected NetworkBootstrap votedWithConfig(int votedForIdx, long term) {
+        return new NetworkBootstrap(votedForIdx, term, new Entry[0]);
+    }
 }

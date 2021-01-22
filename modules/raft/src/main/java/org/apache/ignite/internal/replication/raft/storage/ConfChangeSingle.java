@@ -17,13 +17,15 @@
 
 package org.apache.ignite.internal.replication.raft.storage;
 
+import java.util.Collections;
+import java.util.List;
 import java.util.UUID;
 
 /**
  * ConfChangeSingle is an individual configuration change operation. Multiple
  * such operations can be carried out atomically via a ConfChange
  */
-public class ConfChangeSingle {
+public class ConfChangeSingle implements ConfChange {
     public enum ConfChangeType {
         ConfChangeAddNode,
         ConfChangeRemoveNode,
@@ -45,5 +47,15 @@ public class ConfChangeSingle {
 
     public ConfChangeType type() {
         return type;
+    }
+
+    /** {@inheritDoc} */
+    @Override public ConfChangeTransition transition() {
+        return ConfChangeTransition.ConfChangeTransitionAuto;
+    }
+
+    /** {@inheritDoc} */
+    @Override public List<ConfChangeSingle> changes() {
+        return Collections.singletonList(this);
     }
 }

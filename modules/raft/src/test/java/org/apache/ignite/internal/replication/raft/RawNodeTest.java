@@ -18,23 +18,23 @@
 package org.apache.ignite.internal.replication.raft;
 
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.List;
-import java.util.Random;
 import java.util.UUID;
 import java.util.function.Function;
 import org.apache.ignite.internal.replication.raft.message.AppendEntriesRequest;
 import org.apache.ignite.internal.replication.raft.message.Message;
 import org.apache.ignite.internal.replication.raft.message.MessageType;
+import org.apache.ignite.internal.replication.raft.message.VoteResponse;
+import org.apache.ignite.internal.replication.raft.storage.ConfChangeSingle;
 import org.apache.ignite.internal.replication.raft.storage.Entry;
-import org.apache.ignite.internal.replication.raft.storage.MemoryStorage;
 import org.apache.ignite.internal.replication.raft.storage.UserData;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
-import org.slf4j.LoggerFactory;
 
-import static org.apache.ignite.internal.replication.raft.StateType.*;
+import static org.apache.ignite.internal.replication.raft.StateType.STATE_CANDIDATE;
 import static org.apache.ignite.internal.replication.raft.StateType.STATE_FOLLOWER;
+import static org.apache.ignite.internal.replication.raft.StateType.STATE_LEADER;
+import static org.apache.ignite.internal.replication.raft.StateType.STATE_PRE_CANDIDATE;
 
 /**
  *
@@ -176,7 +176,7 @@ public class RawNodeTest extends AbstractRaftTest {
         // with the bug, either because we'd get dropped proposals earlier than we
         // expect them, or because the final tally ends up nonzero. (At the time of
         // writing, the former).
-	    final int maxEntries = 1024;
+        final int maxEntries = 1024;
 
         String testData = "testdata";
 
@@ -199,7 +199,7 @@ public class RawNodeTest extends AbstractRaftTest {
         long term = r.basicStatus().hardState().term();
 
         // Set the two followers to the replicate state. Commit to tail of log.
-	    final int numFollowers = 2;
+        final int numFollowers = 2;
         r.tracker().progress(ids[1]).becomeReplicate();
         r.tracker().progress(ids[2]).becomeReplicate();
 
@@ -326,49 +326,206 @@ public class RawNodeTest extends AbstractRaftTest {
         }
     }
 
-    protected Network newNetwork(Function<RaftConfig, RaftConfig> cfgFunc, Entry[]... startEntries) {
-        UUID[] ids = idsBySize(startEntries.length);
-        Stepper[] steppers = new Stepper[startEntries.length];
+    // TestLearnerElectionTimeout verfies that the leader should not start election even
+    // when times out.
+    @Test
+    public void testLearnerElectionTimeout() {
+        UUID[] ids = idsBySize(2);
 
-        long seed = System.currentTimeMillis();
+        RawNode<String> n1 = newTestRaft(newTestConfig(10, 1), memoryStorage(ids[0], new UUID[] {ids[0]}, new UUID[] {ids[1]}));
+        RawNode<String> n2 = newTestRaft(newTestConfig(10, 1), memoryStorage(ids[1], new UUID[] {ids[0]}, new UUID[] {ids[1]}));
 
-        LoggerFactory.getLogger(getClass().getName()).info("Using seed: {};//", seed);
+        n1.becomeFollower(1, null);
+        n2.becomeFollower(1, null);
 
-        for (int i = 0; i < startEntries.length; i++) {
-            Entry[] entries = startEntries[i];
+        // n2 is learner. Learner should not start election even when times out.
+        n2.randomizedElectionTimeout(n2.electionTimeout());
 
-            if (entries == null)
-                // A black hole.
-                steppers[i] = Stepper.blackHole(ids[i]);
-            else {
-                MemoryStorage memStorage = memoryStorage(ids[i], ids,
-                    new HardState(entries.length > 0 ? entries[entries.length - 1].term() : 1, null, 0));
+        for (int i = 0; i < n2.electionTimeout(); i++)
+            n2.tick();
 
-                memStorage.append(Arrays.asList(entries));
-
-                RaftConfig cfg = new RaftConfig().electionTick(10).heartbeatTick(1);
-
-                if (cfgFunc != null)
-                    cfg = cfgFunc.apply(cfg);
-
-                RawNode<?> node = newTestRaft(
-                    cfg,
-                    memStorage,
-                    new Random(seed + i));
-
-                steppers[i] = new RawNodeStepper(node);
-            }
-        }
-
-        return new Network(steppers);
+        Assertions.assertEquals(STATE_FOLLOWER, n2.basicStatus().softState().state());
     }
 
-    private Entry[] entries(long... terms) {
-        Entry[] res = new Entry[terms.length];
+    // TestLearnerPromotion verifies that the learner should not election until
+    // it is promoted to a normal peer.
+    @Test
+    public void testLearnerPromotion() {
+        UUID[] ids = idsBySize(2);
 
-        for (int i = 0; i < terms.length; i++)
-            res[i] = entryFactory.newEntry(terms[i], i + 1, new UserData<>("test-" + (i + 1)));
+        RawNode<String> n1 = newTestRaft(newTestConfig(10, 1), memoryStorage(ids[0], new UUID[] {ids[0]}, new UUID[] {ids[1]}));
+        RawNode<String> n2 = newTestRaft(newTestConfig(10, 1), memoryStorage(ids[1], new UUID[] {ids[0]}, new UUID[] {ids[1]}));
 
-        return res;
+        n1.becomeFollower(1, null);
+        n2.becomeFollower(1, null);
+
+        Network nt = new Network(new RawNodeStepper<>(n1), new RawNodeStepper<>(n2));
+
+        Assertions.assertNotEquals(STATE_LEADER, n1.basicStatus().softState().state());
+
+        // n1 should become leader
+        n1.randomizedElectionTimeout(n1.electionTimeout());
+        
+        for (int i = 0; i < n1.electionTimeout(); i++)
+            n1.tick();
+
+        Assertions.assertEquals(STATE_LEADER, n1.basicStatus().softState().state());
+        Assertions.assertEquals(STATE_FOLLOWER, n2.basicStatus().softState().state());
+
+        nt.<RawNodeStepper<String>>action(ids[0], s -> s.node().bcastHeartbeat());
+
+        n1.applyConfChange(new ConfChangeSingle(ids[1], ConfChangeSingle.ConfChangeType.ConfChangeAddNode));
+        n2.applyConfChange(new ConfChangeSingle(ids[1], ConfChangeSingle.ConfChangeType.ConfChangeAddNode));
+
+        Assertions.assertFalse(n2.isLearner());
+
+        // n2 start election, should become leader
+        n2.randomizedElectionTimeout(n2.electionTimeout());
+
+        nt.<RawNodeStepper<String>>action(ids[1], s -> {
+            for (int i = 0; i < n2.electionTimeout(); i++)
+                n2.tick();
+        });
+
+        Assertions.assertEquals(STATE_FOLLOWER, n1.basicStatus().softState().state());
+        Assertions.assertEquals(STATE_LEADER, n2.basicStatus().softState().state());
+    }
+
+    /**
+     * testLearnerCanVote checks that a learner can vote when it receives a valid Vote request.
+     *
+     * @see RawNode#stepInternal for why this is necessary and correct behavior.
+     */
+    @Test
+    public void testLearnerCanVote() {
+        RawNode<String> n2 = newTestRaft(
+            newTestConfig(10, 1),
+            memoryStorage(ids[1], new UUID[] {ids[0]}, new UUID[] {ids[1]})
+        );
+
+        n2.becomeFollower(1, null);
+
+        n2.step(msgFactory.newVoteRequest(ids[0], ids[1], false, 2, 11, 11, false));
+
+        List<Message> msgs = n2.readMessages();
+
+        Assertions.assertEquals(1, msgs.size());
+
+        Message msg = msgs.get(0);
+
+        Assertions.assertEquals(MessageType.MsgVoteResp, msg.type());
+        Assertions.assertFalse(((VoteResponse)msg).reject());
+    }
+
+    @Test
+    public void testLeaderCycle() {
+        checkLeaderCycle(false);
+    }
+
+    @Test
+    public void testLeaderCyclePreVote() {
+        checkLeaderCycle(true);
+    }
+
+    // testLeaderCycle verifies that each node in a cluster can campaign
+    // and be elected in turn. This ensures that elections (including
+    // pre-vote) work when not starting from a clean slate (as they do in
+    // TestLeaderElection)
+    protected void checkLeaderCycle(boolean preVote) {
+        Function<RaftConfig, RaftConfig> cfgFunc = preVote ? c -> c.preVote(true) : null;
+
+        Network n = newNetwork(cfgFunc, entries(), entries(), entries());
+
+        for (UUID campaignerID : n.ids()) {
+            n.<RawNodeStepper<?>>action(campaignerID, s -> s.node().campaign());
+
+            for (UUID peer : n.ids()) {
+                RawNodeStepper<String> s = n.peer(peer);
+
+                if (campaignerID.equals(s.id()))
+                    Assertions.assertEquals(STATE_LEADER, s.node().basicStatus().softState().state());
+                else
+                    Assertions.assertEquals(STATE_FOLLOWER, s.node().basicStatus().softState().state());
+            }
+        }
+    }
+
+    // TestLeaderElectionOverwriteNewerLogs tests a scenario in which a
+    // newly-elected leader does *not* have the newest (i.e. highest term)
+    // log entries, and must overwrite higher-term log entries with
+    // lower-term ones.
+    @Test
+    public void testLeaderElectionOverwriteNewerLogs() {
+        checkLeaderElectionOverwriteNewerLogs(false);
+    }
+
+    @Test
+    public void testLeaderElectionOverwriteNewerLogsPreVote() {
+        checkLeaderElectionOverwriteNewerLogs(true);
+    }
+
+    private void checkLeaderElectionOverwriteNewerLogs(boolean preVote) {
+        Function<RaftConfig, RaftConfig> cfgFunc = preVote ? c -> c.preVote(true) : null;
+
+        // This network represents the results of the following sequence of
+        // events:
+        // - Node 1 won the election in term 1.
+        // - Node 1 replicated a log entry to node 2 but died before sending
+        //   it to other nodes.
+        // - Node 3 won the second election in term 2.
+        // - Node 3 wrote an entry to its logs but died without sending it
+        //   to any other nodes.
+        //
+        // At this point, nodes 1, 2, and 3 all have uncommitted entries in
+        // their logs and could win an election at term 3. The winner's log
+        // entry overwrites the losers'. (TestLeaderSyncFollowerLog tests
+        // the case where older log entries are overwritten, so this test
+        // focuses on the case where the newer entries are lost).
+        Network n = newNetwork(
+            cfgFunc,
+            entries(1),                 // Node 1: Won first election
+            entries(1),                 // Node 2: Got logs from node 1
+            entries(2),                 // Node 3: Won second election
+            votedWithConfig(3, 2), // Node 4: Voted but didn't get logs
+            votedWithConfig(3, 2)  // Node 5: Voted but didn't get logs
+        );
+
+        {
+            // Node 1 campaigns. The election fails because a quorum of nodes
+            // know about the election that already happened at term 2. Node 1's
+            // term is pushed ahead to 2.
+            n.<RawNodeStepper<String>>action(n.ids()[0], s -> s.node().campaign());
+
+            RawNode<String> node = n.<RawNodeStepper<String>>peer(n.ids()[0]).node();
+
+            Assertions.assertEquals(STATE_FOLLOWER, node.basicStatus().softState().state());
+            Assertions.assertEquals(2, node.basicStatus().hardState().term());
+
+            // Node 1 campaigns again with a higher term. This time it succeeds.
+            n.<RawNodeStepper<String>>action(n.ids()[0], s -> s.node().campaign());
+
+            Assertions.assertEquals(STATE_LEADER, node.basicStatus().softState().state());
+            Assertions.assertEquals(3, node.basicStatus().hardState().term());
+        }
+
+        // Now all nodes agree on a log entry with term 1 at index 1 (and
+        // term 3 at index 2 which is an empty entry).
+        for (UUID id : n.ids()) {
+            RawNode<String> node = n.<RawNodeStepper<String>>peer(id).node();
+
+            List<Entry> entries = node.raftLog().allEntries();
+
+            Assertions.assertEquals(2, entries.size());
+
+            long[] terms = new long[] {1, 3};
+
+            for (int i = 0; i < entries.size(); i++) {
+                Entry entry = entries.get(i);
+
+                Assertions.assertEquals(Entry.EntryType.ENTRY_DATA, entry.type());
+                Assertions.assertEquals(terms[i], entry.term());
+                Assertions.assertEquals(i + 1, entry.index());
+            }
+        }
     }
 }

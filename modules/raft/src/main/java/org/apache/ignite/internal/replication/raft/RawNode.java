@@ -1278,6 +1278,34 @@ public class RawNode<T> {
         bcastHeartbeatWithCtx(lastCtx);
     }
 
+    List<Message> readMessages() {
+        List<Message> ret = msgs;
+
+        msgs = new ArrayList<>();
+
+        return ret;
+    }
+
+    Tracker tracker() {
+        return prs;
+    }
+
+    RaftLog raftLog() {
+        return raftLog;
+    }
+
+    int electionTimeout() {
+        return electionTimeout;
+    }
+
+    void randomizedElectionTimeout(int timeout) {
+        randomizedElectionTimeout = timeout;
+    }
+
+    boolean isLearner() {
+        return isLearner;
+    }
+
     private void bcastHeartbeatWithCtx(IgniteUuid ctx) {
         prs.foreach((id, progress) -> {
             if (this.id.equals(id))
@@ -1953,21 +1981,5 @@ public class RawNode<T> {
         logger.error(formatMsg, args);
 
         throw new UnrecoverableException(MessageFormatter.arrayFormat(formatMsg, args).getMessage());
-    }
-
-    List<Message> readMessages() {
-        List<Message> ret = msgs;
-
-        msgs = new ArrayList<>();
-
-        return ret;
-    }
-
-    Tracker tracker() {
-        return prs;
-    }
-
-    RaftLog raftLog() {
-        return raftLog;
     }
 }
