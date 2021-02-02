@@ -32,6 +32,8 @@ import org.apache.ignite.internal.replication.raft.storage.ConfChangeSingle;
 import org.apache.ignite.internal.replication.raft.storage.Entry;
 import org.apache.ignite.internal.replication.raft.storage.MemoryStorage;
 import org.apache.ignite.internal.replication.raft.storage.UserData;
+import org.apache.ignite.lang.IgniteUuid;
+import org.apache.ignite.lang.IgniteUuidGenerator;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
@@ -850,5 +852,309 @@ public class RawNodeTest extends AbstractRaftTest {
             RawNodeStepper<String> sm = tt.peer(ids[0]);
             Assertions.assertEquals(4, sm.node().raftLog().committed());
         }
+    }
+
+    @Test
+    public void testReadOnlyOptionSafe() {
+        MemoryStorage aStorage = memoryStorage(ids[0], ids);
+        RawNode<String> a = newTestRaft(10, 1, aStorage);
+
+        MemoryStorage bStorage = memoryStorage(ids[1], ids);
+        RawNode<String> b = newTestRaft(10, 1, bStorage);
+
+        MemoryStorage cStorage = memoryStorage(ids[2], ids);
+        RawNode<String> c = newTestRaft(10, 1, cStorage);
+
+        Network nt = new Network(
+            new Random(seed()),
+            new RawNodeStepper<>(a, aStorage),
+            new RawNodeStepper<>(b, bStorage),
+            new RawNodeStepper<>(c, cStorage));
+
+        b.randomizedElectionTimeout(b.electionTimeout() + 1);
+
+        for (int i = 0; i < b.electionTimeout(); i++) {
+            b.tick();
+        }
+
+        nt.<String>action(ids[0], s -> s.node().campaign());
+        Assertions.assertEquals(STATE_LEADER, a.basicStatus().softState().state());
+
+        IgniteUuidGenerator gen = new IgniteUuidGenerator(UUID.randomUUID(), 1);
+
+        class TestData {
+            RawNode<String> sm;
+            int proposals;
+            long wReadIdx;
+            IgniteUuid wCtx;
+
+            TestData(RawNode<String> sm, int proposals, long wReadIdx, IgniteUuid wCtx) {
+                this.sm = sm;
+                this.proposals = proposals;
+                this.wReadIdx = wReadIdx;
+                this.wCtx = wCtx;
+            }
+        }
+
+        TestData[] tests = new TestData[] {
+            new TestData(a, 10, 11, gen.randomUuid()),
+            new TestData(b, 10, 21, gen.randomUuid()),
+            new TestData(c, 10, 31, gen.randomUuid()),
+            new TestData(a, 10, 41, gen.randomUuid()),
+            new TestData(b, 10, 51, gen.randomUuid()),
+            new TestData(c, 10, 61, gen.randomUuid()),
+        };
+
+        for (TestData tt : tests) {
+            for (int j = 0; j < tt.proposals; j++)
+                nt.<String>action(ids[0], s -> s.node().propose(""));
+
+            RawNode<String> r = tt.sm;
+
+            try {
+                nt.<String>action(r.basicStatus().id(), s -> s.node().requestReadIndex(tt.wCtx));
+                Assertions.assertEquals(STATE_LEADER, r.basicStatus().softState().state());
+
+                Assertions.assertNotEquals(0, r.readStates().size());
+                ReadState rs = r.readStates().get(0);
+                Assertions.assertEquals(tt.wReadIdx, rs.index());
+                Assertions.assertEquals(tt.wCtx, rs.context());
+
+                r.readStates().clear();
+            }
+            catch (NotLeaderException e) {
+                Assertions.assertNotEquals(STATE_LEADER, r.basicStatus().softState().state());
+            }
+        }
+    }
+
+    public void testReadOnlyWithLearner() {
+        UUID[] ids = idsBySize(2);
+        Random rnd = new Random(seed());
+
+        MemoryStorage aStorage = memoryStorage(ids[0], new UUID[] {ids[0]}, new UUID[] {ids[1]});
+        RawNode<String> a = newTestRaft(10, 1, aStorage, rnd);
+
+        MemoryStorage bStorage = memoryStorage(ids[1], new UUID[] {ids[0]}, new UUID[] {ids[1]});
+        RawNode<String> b = newTestRaft(10, 1, bStorage, rnd);
+
+        Network nt = new Network(rnd, new RawNodeStepper<>(a, aStorage), new RawNodeStepper<>(b, bStorage));
+        b.randomizedElectionTimeout(b.electionTimeout() + 1);
+
+        for (int i = 0; i < b.electionTimeout(); i++)
+            b.tick();
+
+        nt.<String>action(ids[0], s -> s.node().campaign());
+        Assertions.assertEquals(STATE_LEADER, a.basicStatus().softState().state());
+
+        IgniteUuidGenerator gen = new IgniteUuidGenerator(UUID.randomUUID(), 1);
+
+        class TestData {
+            RawNode<String> sm;
+            int proposals;
+            long wReadIdx;
+            IgniteUuid wCtx;
+
+            TestData(RawNode<String> sm, int proposals, long wReadIdx, IgniteUuid wCtx) {
+                this.sm = sm;
+                this.proposals = proposals;
+                this.wReadIdx = wReadIdx;
+                this.wCtx = wCtx;
+            }
+        }
+
+        TestData[] tests = new TestData[] {
+            new TestData(a, 10, 11, gen.randomUuid()),
+            new TestData(b, 10, 21, gen.randomUuid()),
+            new TestData(a, 10, 31, gen.randomUuid()),
+            new TestData(b, 10, 41, gen.randomUuid()),
+        };
+
+        for (TestData tt : tests) {
+            for (int j = 0; j < tt.proposals; j++)
+                nt.<String>action(ids[0], s -> s.node().propose(""));
+
+            RawNode<String> r = tt.sm;
+            nt.<String>action(r.basicStatus().id(), s -> s.node().requestReadIndex(tt.wCtx));
+
+            Assertions.assertNotEquals(0, r.readStates().size());
+            ReadState rs = r.readStates().get(0);
+            Assertions.assertEquals(tt.wReadIdx, rs.index());
+            Assertions.assertEquals(tt.wCtx, rs.context());
+
+            r.readStates().clear();
+        }
+    }
+
+    @Test
+    public void TestReadOnlyOptionLease() {
+        RaftConfig cfg = newTestConfig(10, 1).readOnlyOption(ReadOnlyOption.READ_ONLY_LEASE_BASED).checkQuorum(true);
+        Random rnd = new Random(seed());
+
+        MemoryStorage aStorage = memoryStorage(ids[0], ids);
+        RawNode<String> a = newTestRaft(cfg, aStorage, rnd);
+
+        MemoryStorage bStorage = memoryStorage(ids[1], ids);
+        RawNode<String> b = newTestRaft(cfg, bStorage, rnd);
+
+        MemoryStorage cStorage = memoryStorage(ids[2], ids);
+        RawNode<String> c = newTestRaft(cfg, cStorage, rnd);
+
+        Network nt = new Network(rnd,
+            new RawNodeStepper<String>(a, aStorage),
+            new RawNodeStepper<String>(b, bStorage),
+            new RawNodeStepper<String>(c, cStorage));
+
+        b.randomizedElectionTimeout(b.electionTimeout() + 1);
+
+        for (int i = 0; i < b.electionTimeout(); i++)
+            b.tick();
+
+        nt.<String>action(ids[0], s -> s.node().campaign());
+        Assertions.assertEquals(STATE_LEADER, a.basicStatus().softState().state());
+
+        IgniteUuidGenerator gen = new IgniteUuidGenerator(UUID.randomUUID(), 1);
+
+        class TestData {
+            RawNode<String> sm;
+            int proposals;
+            long wReadIdx;
+            IgniteUuid wCtx;
+
+            TestData(RawNode<String> sm, int proposals, long wReadIdx, IgniteUuid wCtx) {
+                this.sm = sm;
+                this.proposals = proposals;
+                this.wReadIdx = wReadIdx;
+                this.wCtx = wCtx;
+            }
+        }
+
+        TestData[] tests = new TestData[] {
+            new TestData(a, 10, 11, gen.randomUuid()),
+            new TestData(b, 10, 21, gen.randomUuid()),
+            new TestData(c, 10, 31, gen.randomUuid()),
+            new TestData(a, 10, 41, gen.randomUuid()),
+            new TestData(b, 10, 51, gen.randomUuid()),
+            new TestData(c, 10, 61, gen.randomUuid()),
+        };
+
+        for (TestData tt : tests) {
+            for (int j = 0; j < tt.proposals; j++)
+                nt.<String>action(ids[0], s -> s.node().propose(""));
+
+            RawNode<String> r = tt.sm;
+            try {
+                nt.<String>action(r.basicStatus().id(), s -> s.node().requestReadIndex(tt.wCtx));
+                Assertions.assertEquals(STATE_LEADER, r.basicStatus().softState().state());
+
+                Assertions.assertNotEquals(0, r.readStates().size());
+                ReadState rs = r.readStates().get(0);
+                Assertions.assertEquals(tt.wReadIdx, rs.index());
+                Assertions.assertEquals(tt.wCtx, rs.context());
+
+                r.readStates().clear();
+            }
+            catch (NotLeaderException e) {
+                Assertions.assertNotEquals(STATE_LEADER, r.basicStatus().softState().state());
+            }
+        }
+    }
+
+    // TestReadOnlyForNewLeader ensures that a leader only accepts MsgReadIndex message
+    // when it commits at least one log entry at it term.
+    @Test
+    public void testReadOnlyForNewLeader() throws Exception {
+        class NodeConfig {
+            UUID id;
+            long committed;
+            long applied;
+            long compactIdx;
+
+            NodeConfig(UUID id, long committed, long applied, long compactIdx) {
+                this.id = id;
+                this.committed = committed;
+                this.applied = applied;
+                this.compactIdx = compactIdx;
+            }
+        }
+
+        NodeConfig[] cfgs = new NodeConfig[] {
+            new NodeConfig(ids[0], 1, 1, 0),
+            new NodeConfig(ids[1], 2, 2, 2),
+            new NodeConfig(ids[2], 2, 2, 2),
+        };
+
+        Random rnd = new Random(seed());
+
+        RawNodeStepper<String>[] peers = new RawNodeStepper[cfgs.length];
+
+        for (int i = 0, cfgsLength = cfgs.length; i < cfgsLength; i++) {
+            NodeConfig c = cfgs[i];
+            MemoryStorage memStorage = memoryStorage(c.id, ids);
+
+            memStorage.append(Arrays.asList(
+                entryFactory.newEntry(1, 1, new UserData<>("")),
+                entryFactory.newEntry(1, 2, new UserData<>("")))
+            );
+
+            memStorage.saveHardState(new HardState(1, null, c.committed));
+
+            if (c.compactIdx != 0)
+                memStorage.compact(c.compactIdx);
+
+            RaftConfig cfg = newTestConfig(10, 1);
+            RawNode<String> raft = newTestRaft(cfg, memStorage, rnd, c.applied);
+
+            peers[i] = new RawNodeStepper<>(raft, memStorage);
+        }
+
+        Network nt = new Network(rnd, peers);
+
+        // Drop MsgApp to forbid peer a to commit any log entry at its term after it becomes leader.
+        nt.ignore(MsgApp);
+
+        // Force peer a to become leader.
+        nt.<String>action(ids[0], s -> s.node().campaign());
+
+        RawNodeStepper<String> st = nt.peer(ids[0]);
+        RawNode<String> r = st.node();
+        Assertions.assertEquals(STATE_LEADER, r.basicStatus().softState().state());
+
+        IgniteUuidGenerator gen = new IgniteUuidGenerator(UUID.randomUUID(), 1);
+
+        // Ensure peer a drops read only request.
+        long wIdx = 4;
+        IgniteUuid wCtx = gen.randomUuid();
+
+        nt.<String>action(ids[0], s -> s.node().requestReadIndex(wCtx));
+
+        Assertions.assertEquals(1, r.readStates().size());
+        ReadState rs = r.readStates().get(0);
+        Assertions.assertEquals(-1, rs.index());
+        Assertions.assertEquals(wCtx, rs.context());
+        r.readStates().clear();
+
+        nt.recover();
+
+        // Force peer a to commit a log entry at its term
+        for (int i = 0; i < r.heartbeatTimeout(); i++)
+            r.tick();
+
+        nt.<String>action(ids[0], s -> s.node().propose(""));
+        Assertions.assertEquals(4, r.raftLog().committed());
+
+        long lastLogTerm = r.raftLog().zeroTermOnErrCompacted(
+            r.raftLog().term(r.raftLog().committed()));
+
+        Assertions.assertEquals(r.basicStatus().hardState().term(), lastLogTerm);
+
+        // Ensure peer a accepts read only request after it commits a entry at its term.
+        nt.<String>action(ids[0], s -> s.node().requestReadIndex(wCtx));
+        Assertions.assertEquals(1, r.readStates().size());
+        rs = r.readStates().get(0);
+        Assertions.assertEquals(wIdx, rs.index());
+        Assertions.assertEquals(wCtx, rs.context());
+
+        r.readStates().clear();
     }
 }

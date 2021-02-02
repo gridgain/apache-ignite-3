@@ -22,7 +22,6 @@ import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
 public class NaiveNodeExample {
-
     @Test
     public void testNaiveNode() throws Exception {
         NaiveNode node = new NaiveNode();

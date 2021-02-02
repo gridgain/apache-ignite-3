@@ -1302,6 +1302,14 @@ public class RawNode<T> {
         return isLearner;
     }
 
+    List<ReadState> readStates() {
+        return readStates;
+    }
+
+    int heartbeatTimeout() {
+        return heartbeatTimeout;
+    }
+
     private void bcastHeartbeatWithCtx(IgniteUuid ctx) {
         prs.foreach((id, progress) -> {
             if (this.id.equals(id))

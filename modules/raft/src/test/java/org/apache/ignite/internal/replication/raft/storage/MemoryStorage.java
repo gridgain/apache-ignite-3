@@ -209,6 +209,33 @@ public class MemoryStorage implements Storage {
         }
     }
 
+    // Compact discards all log entries prior to compactIndex.
+    // It is the application's responsibility to not attempt to compact an index
+    // greater than raftLog.applied.
+    public void compact(long compactIdx) throws CompactionException {
+        memoryStorageLock.lock();
+
+        try {
+            long offset = entries.get(0).index();
+            if (compactIdx <= offset)
+                throw new CompactionException();
+
+            if (compactIdx > lastIndex())
+                unrecoverable("compact {} is out of bound lastindex({})", compactIdx, lastIndex());
+
+            int i = (int)(compactIdx - offset);
+
+            List<Entry> ents = new ArrayList<>(1 + this.entries.size() - i);
+            ents.add(new TestEntry(Entry.EntryType.ENTRY_DATA, this.entries.get(i).term(), this.entries.get(i).index(), null));
+            ents.addAll(this.entries.subList(i + 1, this.entries.size()));
+
+            this.entries = ents;
+        }
+        finally {
+            memoryStorageLock.unlock();
+        }
+    }
+
     // TODO: sanpwc Duplicates org.apache.ignite.internal.replication.raft.RawNode.unrecoverable
     private void unrecoverable(String formatMsg, Object... args) {
         logger.error(formatMsg, args);

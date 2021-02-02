@@ -113,7 +113,7 @@ public class RaftLog {
 
         if (committed < newApplied || newApplied < applied) {
             unrecoverable(
-                "applied({}) is out of range [prevApplied(%d), committed({})]",
+                "applied({}) is out of range [prevApplied({}), committed({})]",
                 newApplied,
                 applied,
                 committed

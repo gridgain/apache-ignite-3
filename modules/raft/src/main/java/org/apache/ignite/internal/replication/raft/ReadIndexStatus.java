@@ -18,6 +18,7 @@
 package org.apache.ignite.internal.replication.raft;
 
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
 import org.apache.ignite.lang.IgniteUuid;
@@ -38,6 +39,8 @@ public class ReadIndexStatus {
     public ReadIndexStatus(long idx, IgniteUuid ctx) {
         this.idx = idx;
         this.ctx = ctx;
+
+        acks = new HashMap<>();
     }
 
     public Map<UUID, Boolean> acks() {

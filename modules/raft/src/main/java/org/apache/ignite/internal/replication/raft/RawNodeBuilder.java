@@ -108,9 +108,10 @@ public class RawNodeBuilder {
         RaftLog raftLog = new RaftLog(logger, storage, entryFactory, cfg.maxCommittedSizePerReady());
 
         // TODO agoncharuk: move to log constructor.
+        raftLog.commitTo(initState.hardState().committed());
+
         if (applied > 0)
             raftLog.appliedTo(applied);
-        raftLog.commitTo(initState.hardState().committed());
 
         RawNode<T> r = new RawNode<T>(
             id,

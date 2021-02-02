@@ -98,12 +98,17 @@ public abstract class AbstractRaftTest {
     }
 
     protected <T> RawNode<T> newTestRaft(RaftConfig cfg, MemoryStorage memStorage, Random rnd) {
+        return newTestRaft(cfg, memStorage, rnd, 0);
+    }
+
+    protected <T> RawNode<T> newTestRaft(RaftConfig cfg, MemoryStorage memStorage, Random rnd, long applied) {
         return new RawNodeBuilder()
             .setMessageFactory(msgFactory)
             .setEntryFactory(entryFactory)
             .setStorage(memStorage)
             .setRaftConfig(cfg)
             .setRandom(rnd)
+            .setApplied(applied)
             .build();
     }
 
@@ -117,6 +122,10 @@ public abstract class AbstractRaftTest {
 
     protected MemoryStorage memoryStorage(UUID[] peers, HardState hs) {
         return memoryStorage(peers[0], peers, hs);
+    }
+
+    protected MemoryStorage memoryStorage(UUID locId, UUID[] peers) {
+        return memoryStorage(locId, peers, new HardState(1, null, 0));
     }
 
     protected MemoryStorage memoryStorage(UUID locId, UUID[] peers, HardState hs) {
