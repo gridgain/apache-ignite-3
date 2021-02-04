@@ -36,7 +36,7 @@ public class TestEntryFactory implements EntryFactory {
     /** {@inheritDoc} */
     @Override public long payloadSize(Entry entry) {
         if (entry.type() == Entry.EntryType.ENTRY_DATA) {
-            UserData<?> data = (UserData<?>)entry.data();
+            UserData<?> data = entry.<UserData<?>>data();
 
             Object d = data.data();
 

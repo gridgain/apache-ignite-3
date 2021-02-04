@@ -513,7 +513,7 @@ public class RaftPaperTest extends AbstractRaftTest {
         List<Entry> entries = r.raftLog().nextEntries();
         Assertions.assertEquals(1, entries.size());
         Assertions.assertEquals(Entry.EntryType.ENTRY_DATA, entries.get(0).type());
-        Assertions.assertEquals("some data", ((UserData<String>)entries.get(0).data()).data());
+        Assertions.assertEquals("some data", entries.get(0).<UserData>data().data());
 
         List<Message> msgs = r.readMessages();
         Collections.sort(msgs, destinationComparator);
@@ -690,10 +690,6 @@ public class RaftPaperTest extends AbstractRaftTest {
                 msgFactory.newAppendEntriesResponse(ids[0], ids[1], 2, tt.wIdx, tt.wReject, tt.wRejectHint),
                 msgs.get(0));
         }
-    }
-
-    private Entry entry(long term, long idx, String data) {
-        return entryFactory.newEntry(term, idx, new UserData<>(data));
     }
 
     // TestFollowerAppendEntries tests that when AppendEntries RPC is valid,
@@ -1143,7 +1139,7 @@ public class RaftPaperTest extends AbstractRaftTest {
 
             Entry entry = req.entries().get(0);
             Assertions.assertEquals(Entry.EntryType.ENTRY_DATA, entry.type(), "not a message to append noop entry");
-            Assertions.assertNull(((UserData<String>)entry.data()).data(), "not a message to append noop entry");
+            Assertions.assertNull(entry.<UserData>data().data(), "not a message to append noop entry");
 
             r.step(acceptAndReply(req));
         }

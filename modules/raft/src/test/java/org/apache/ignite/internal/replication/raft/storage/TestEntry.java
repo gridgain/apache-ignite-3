@@ -53,8 +53,8 @@ public class TestEntry implements Entry {
     }
 
     /** {@inheritDoc} */
-    @Override public LogData data() {
-        return data;
+    @Override public <T extends LogData> T data() {
+        return (T)data;
     }
 
     /** {@inheritDoc} */

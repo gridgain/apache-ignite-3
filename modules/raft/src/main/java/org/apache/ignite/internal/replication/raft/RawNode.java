@@ -1123,7 +1123,7 @@ public class RawNode<T> {
     // maybeCommit attempts to advance the commit index. Returns true if
     // the commit index changed (in which case the caller should call
     // bcastAppend()).
-    private boolean maybeCommit() {
+    boolean maybeCommit() {
         long mci = prs.committed();
 
         return raftLog.maybeCommit(mci, term);

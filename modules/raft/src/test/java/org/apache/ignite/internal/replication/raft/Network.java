@@ -85,6 +85,15 @@ public class Network {
         drop(peer1, peer2, 2.d);
     }
 
+    public void isolate(UUID id) {
+        for (UUID nId : ids) {
+            if (!id.equals(nId)) {
+                drop(id, nId, 1.d);
+                drop(nId, id, 1.d);
+            }
+        }
+    }
+
     public void ignore(MessageType msgType) {
         ignore.add(msgType);
     }

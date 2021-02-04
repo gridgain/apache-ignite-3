@@ -95,7 +95,7 @@ public class MemoryStorage implements Storage {
 
             if (hi > lastIndex() + 1) {
                 unrecoverable(
-                    "entries' hi(%d) is out of bound lastindex(%d)",
+                    "entries' hi({}) is out of bound lastindex({})",
                     hi,
                     lastIndex()
                 );

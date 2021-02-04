@@ -203,6 +203,14 @@ public abstract class AbstractRaftTest {
         return new NetworkBootstrap(-1, terms.length == 0 ? 1 : terms[terms.length - 1], res);
     }
 
+    protected Entry entry(long term, long idx) {
+        return entryFactory.newEntry(term, idx, null);
+    }
+
+    protected Entry entry(long term, long idx, String data) {
+        return entryFactory.newEntry(term, idx, new UserData<>(data));
+    }
+
     protected NetworkBootstrap votedWithConfig(int votedForIdx, long term) {
         return new NetworkBootstrap(votedForIdx, term, new Entry[0]);
     }
