@@ -19,12 +19,15 @@ package org.apache.ignite.internal.replication.raft;
 
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
 import java.util.Random;
 import java.util.UUID;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import org.apache.ignite.internal.replication.raft.message.AppendEntriesRequest;
+import org.apache.ignite.internal.replication.raft.message.AppendEntriesResponse;
+import org.apache.ignite.internal.replication.raft.message.HeartbeatRequest;
 import org.apache.ignite.internal.replication.raft.message.Message;
 import org.apache.ignite.internal.replication.raft.message.MessageType;
 import org.apache.ignite.internal.replication.raft.message.VoteResponse;
@@ -42,6 +45,9 @@ import static org.apache.ignite.internal.replication.raft.StateType.STATE_FOLLOW
 import static org.apache.ignite.internal.replication.raft.StateType.STATE_LEADER;
 import static org.apache.ignite.internal.replication.raft.StateType.STATE_PRE_CANDIDATE;
 import static org.apache.ignite.internal.replication.raft.message.MessageType.MsgApp;
+import static org.apache.ignite.internal.replication.raft.message.MessageType.MsgAppResp;
+import static org.apache.ignite.internal.replication.raft.message.MessageType.MsgHeartbeat;
+import static org.apache.ignite.internal.replication.raft.message.MessageType.MsgHeartbeatResp;
 import static org.apache.ignite.internal.replication.raft.storage.Entry.EntryType.ENTRY_DATA;
 
 /**
@@ -1516,7 +1522,7 @@ public class RawNodeTest extends AbstractRaftTest {
         };
 
         for (TestData tt : tests) {
-            UUID[] ids = new UUID[] {UUID.randomUUID()};
+            UUID[] ids = idsBySize(1);
 
             MemoryStorage storage = memoryStorage(ids, new HardState(tt.smTerm, null, 0));
             storage.append(Arrays.asList(tt.logs));
@@ -1542,5 +1548,298 @@ public class RawNodeTest extends AbstractRaftTest {
 
             Assertions.assertEquals(tt.w, sm.raftLog().committed());
         }
+    }
+
+    @Test
+    public void testPastElectionTimeout() {
+        class TestData {
+            int elapse;
+            double wProbability;
+            boolean round;
+
+            TestData(int elapse, double wProbability, boolean round) {
+                this.elapse = elapse;
+                this.wProbability = wProbability;
+                this.round = round;
+            }
+        }
+
+        TestData[] tests = new TestData[] {
+            new TestData(5, 0, false),
+            new TestData(10, 0.1, true),
+            new TestData(13, 0.4, true),
+            new TestData(15, 0.6, true),
+            new TestData(18, 0.9, true),
+            new TestData(20, 1, false)
+        };
+
+        for (TestData tt : tests) {
+            UUID[] ids = idsBySize(1);
+
+            RawNode<String> sm = newTestRaft(newTestConfig(10, 1), memoryStorage(ids));
+
+            for (int i = 0; i < tt.elapse; i++)
+                sm.tickQuiesced();
+
+            int c = 0;
+
+            for (int j = 0; j < 10000; j++) {
+                sm.resetRandomizedElectionTimeout();
+
+                if (sm.pastElectionTimeout())
+                    c++;
+            }
+
+            double got = c / 10000.;
+
+            if (tt.round)
+                got = Math.floor(got * 10 + 0.5) / 10.;
+
+            Assertions.assertEquals(tt.wProbability, got);
+        }
+    }
+
+    // TestHandleMsgApp ensures:
+    // 1. Reply false if log doesn’t contain an entry at prevLogIndex whose term matches prevLogTerm.
+    // 2. If an existing entry conflicts with a new one (same index but different terms),
+    //    delete the existing entry and all that follow it; append any new entries not already in the log.
+    // 3. If leaderCommit > commitIndex, set commitIndex = min(leaderCommit, index of last new entry).
+    @Test
+    public void testHandleMsgApp() {
+        class TestData {
+            Message m;
+            long wIdx;
+            long wCommit;
+            boolean wReject;
+
+            TestData(Message m, long wIdx, long wCommit, boolean wReject) {
+                this.m = m;
+                this.wIdx = wIdx;
+                this.wCommit = wCommit;
+                this.wReject = wReject;
+            }
+        }
+
+        UUID[] ids = idsBySize(2);
+
+        TestData[] tests = new TestData[] {
+            // Ensure 1
+            new TestData(
+                msgFactory.newAppendEntriesRequest(ids[0], ids[1], 2, 2, 3, Collections.emptyList(), 3),
+                2, 0, true), // previous log mismatch
+            new TestData(msgFactory.newAppendEntriesRequest(ids[0], ids[1], 2, 3, 3, Collections.emptyList(), 3),
+                2, 0, true), // previous log does not exist
+
+            // Ensure 2
+            new TestData(msgFactory.newAppendEntriesRequest(ids[0], ids[1], 2, 1, 1, Collections.emptyList(), 1),
+                2, 1, false),
+            new TestData(msgFactory.newAppendEntriesRequest(ids[0], ids[1], 2, 0, 0, Arrays.asList(entry(2, 1)), 1),
+                1, 1, false),
+            new TestData(msgFactory.newAppendEntriesRequest(ids[0], ids[1], 2, 2, 2, Arrays.asList(entry(2, 3), entry(2, 4)), 3),
+                4, 3, false),
+            new TestData(msgFactory.newAppendEntriesRequest(ids[0], ids[1], 2, 2, 2, Arrays.asList(entry(2, 3)), 4),
+                3, 3, false),
+            new TestData(msgFactory.newAppendEntriesRequest(ids[0], ids[1], 2, 1, 1, Arrays.asList(entry(2, 2)), 4),
+                2, 2, false),
+
+            // Ensure 3
+            new TestData(msgFactory.newAppendEntriesRequest(ids[0], ids[1], 2, 1, 1, Collections.emptyList(), 3),
+                2, 1, false), // match entry 1, commit up to last new entry 1
+            new TestData(msgFactory.newAppendEntriesRequest(ids[0], ids[1], 2, 1, 1, Arrays.asList(entry(2, 2)), 3),
+                2, 2, false), // match entry 1, commit up to last new entry 2
+            new TestData(msgFactory.newAppendEntriesRequest(ids[0], ids[1], 2, 2, 2, Collections.emptyList(), 3),
+                2, 2, false), // match entry 2, commit up to last new entry 2
+            new TestData(msgFactory.newAppendEntriesRequest(ids[0], ids[1], 2, 2, 2, Collections.emptyList(), 4),
+                2, 2, false), // commit up to log.last()
+        };
+
+        for (TestData tt : tests) {
+            MemoryStorage storage = memoryStorage(ids);
+            storage.append(Arrays.asList(entry(1, 1), entry(2, 2)));
+
+            RawNode<String> sm = newTestRaft(newTestConfig(10, 1), storage);
+            sm.becomeFollower(2, null);
+
+            sm.step(tt.m);
+
+            Assertions.assertEquals(tt.wIdx, sm.raftLog().lastIndex());
+            Assertions.assertEquals(tt.wCommit, sm.raftLog().committed());
+
+            List<Message> m = sm.readMessages();
+            Assertions.assertEquals(1, m.size());
+
+            Message msg = m.get(0);
+            Assertions.assertEquals(MsgAppResp, msg.type());
+
+            AppendEntriesResponse res = (AppendEntriesResponse)msg;
+            Assertions.assertEquals(tt.wReject, res.reject());
+        }
+    }
+
+    // TestHandleHeartbeat ensures that the follower commits to the commit in the message.
+    @Test
+    public void testHandleHeartbeat() {
+        long commit = 2;
+
+        UUID[] ids = idsBySize(2);
+
+        class TestData {
+            Message m;
+            long wCommit;
+
+            TestData(Message m, long wCommit) {
+                this.m = m;
+                this.wCommit = wCommit;
+            }
+        }
+
+        TestData[] tests = new TestData[] {
+            new TestData(msgFactory.newHeartbeatRequest(ids[1], ids[0], 2, commit + 1, null), commit + 1),
+            new TestData(msgFactory.newHeartbeatRequest(ids[1], ids[0], 2, commit - 1, null), commit), // do not decrease commit
+        };
+
+        for (TestData tt : tests) {
+            MemoryStorage storage = memoryStorage(ids);
+            storage.append(Arrays.asList(entry(1, 1), entry(2, 2), entry(3, 3)));
+
+            RawNode<String> sm = newTestRaft(newTestConfig(5, 1), storage);
+
+            sm.becomeFollower(2, ids[1]);
+
+            sm.raftLog().commitTo(commit);
+
+            sm.step(tt.m);
+
+            Assertions.assertEquals(tt.wCommit, sm.raftLog().committed());
+
+            List<Message> m = sm.readMessages();
+            Assertions.assertEquals(1, m.size());
+            Assertions.assertEquals(MsgHeartbeatResp, m.get(0).type());
+        }
+    }
+
+    // TestHandleHeartbeatResp ensures that we re-send log entries when we get a heartbeat response.
+    @Test
+    public void testHandleHeartbeatResp() {
+        UUID[] ids = idsBySize(2);
+
+        MemoryStorage storage = memoryStorage(ids);
+        storage.append(Arrays.asList(entry(1, 1), entry(2, 2), entry(3, 3)));
+
+        RawNode<String> sm = newTestRaft(newTestConfig(5, 1), storage);
+
+        sm.becomeCandidate();
+        sm.becomeLeader();
+
+        sm.raftLog().commitTo(sm.raftLog().lastIndex());
+
+        // A heartbeat response from a node that is behind; re-send MsgApp
+        sm.step(msgFactory.newHeartbeatResponse(ids[1], ids[0], 2, null));
+
+        List<Message> msgs = sm.readMessages();
+        Assertions.assertEquals(1, msgs.size());
+        Assertions.assertEquals(MsgApp, msgs.get(0).type());
+
+        // A second heartbeat response generates another MsgApp re-send
+        sm.step(msgFactory.newHeartbeatResponse(ids[1], ids[0], 2, null));
+        msgs = sm.readMessages();
+        Assertions.assertEquals(1, msgs.size());
+        Assertions.assertEquals(MsgApp, msgs.get(0).type());
+
+        AppendEntriesRequest req = (AppendEntriesRequest)msgs.get(0);
+
+        // Once we have an MsgAppResp, heartbeats no longer send MsgApp.
+        sm.step(msgFactory.newAppendEntriesResponse(ids[1], ids[0], 2, req.logIndex() + req.entries().size(), false, 0));
+
+        // Consume the message sent in response to MsgAppResp
+        sm.readMessages();
+
+        sm.step(msgFactory.newHeartbeatResponse(ids[1], ids[0], 2, null));
+        msgs = sm.readMessages();
+
+        Assertions.assertTrue(msgs.isEmpty());
+    }
+
+    // TestRaftFreesReadOnlyMem ensures raft will free read request from
+    // readOnly readIndexQueue and pendingReadIndex map.
+    // related issue: https://github.com/etcd-io/etcd/issues/7571
+    @Test
+    public void testRaftFreesReadOnlyMem() {
+        UUID[] ids = idsBySize(2);
+        RawNode<String> sm = newTestRaft(ids, 5, 1);
+
+        sm.becomeCandidate();
+        sm.becomeLeader();
+
+        sm.raftLog().commitTo(sm.raftLog().lastIndex());
+
+        IgniteUuid ctx = new IgniteUuid(UUID.randomUUID(), 1);
+
+        // leader starts linearizable read request.
+        // more info: raft dissertation 6.4, step 2.
+        sm.requestReadIndex(ctx);
+
+        List<Message> msgs = sm.readMessages();
+        Assertions.assertEquals(1, msgs.size());
+        Assertions.assertEquals(MsgHeartbeat, msgs.get(0).type());
+        Assertions.assertEquals(ctx, ((HeartbeatRequest)msgs.get(0)).context());
+
+        Assertions.assertEquals(1, sm.readOnly().readIndexQueue().size());
+        Assertions.assertEquals(1, sm.readOnly().pendingReadIndex().size());
+        Assertions.assertTrue(sm.readOnly().pendingReadIndex().containsKey(ctx));
+
+        // heartbeat responses from majority of followers (1 in this case)
+        // acknowledge the authority of the leader.
+        // more info: raft dissertation 6.4, step 3.
+        sm.step(msgFactory.newHeartbeatResponse(ids[1], ids[0], 2, ctx));
+        Assertions.assertTrue(sm.readOnly().readIndexQueue().isEmpty());
+        Assertions.assertTrue(sm.readOnly().pendingReadIndex().isEmpty());
+    }
+
+    // TestMsgAppRespWaitReset verifies the resume behavior of a leader
+    // MsgAppResp.
+    @Test
+    public void testMsgAppRespWaitReset() {
+        RawNode<String> sm = newTestRaft(ids, 5, 1);
+        sm.becomeCandidate();
+        sm.becomeLeader();
+
+        // The new leader has just emitted a new Term 4 entry; consume those messages
+        // from the outgoing queue.
+        sm.bcastAppend();
+        sm.readMessages();
+
+        // Node 2 acks the first entry, making it committed.
+        sm.step(msgFactory.newAppendEntriesResponse(ids[1], ids[0], 2, 1, false, 0));
+        Assertions.assertEquals(1, sm.raftLog().committed());
+
+        // Also consume the MsgApp messages that update Commit on the followers.
+        sm.readMessages();
+
+        // A new command is now proposed on node 1.
+        sm.propose("");
+
+        // The command is broadcast to all nodes not in the wait state.
+        // Node 2 left the wait state due to its MsgAppResp, but node 3 is still waiting.
+        List<Message> msgs = sm.readMessages();
+        Assertions.assertEquals(1, msgs.size());
+        Assertions.assertEquals(ids[1], msgs.get(0).to());
+        Assertions.assertEquals(MsgApp, msgs.get(0).type());
+
+        AppendEntriesRequest req = (AppendEntriesRequest)msgs.get(0);
+        Assertions.assertEquals(1, req.entries().size());
+        Assertions.assertEquals(2, req.entries().get(0).index());
+
+        // Now Node 3 acks the first entry. This releases the wait and entry 2 is sent.
+        sm.step(msgFactory.newAppendEntriesResponse(ids[2], ids[0], 2, 1, false, 0));
+
+        msgs = sm.readMessages();
+        Assertions.assertEquals(1, msgs.size());
+        Assertions.assertEquals(ids[2], msgs.get(0).to());
+        Assertions.assertEquals(MsgApp, msgs.get(0).type());
+
+        req = (AppendEntriesRequest)msgs.get(0);
+        Assertions.assertEquals(1, req.entries().size());
+        Assertions.assertEquals(2, req.entries().get(0).index());
     }
 }

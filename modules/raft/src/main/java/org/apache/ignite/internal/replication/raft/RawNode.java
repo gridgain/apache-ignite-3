@@ -908,6 +908,17 @@ public class RawNode<T> {
         return uncommittedSize;
     }
 
+    void resetRandomizedElectionTimeout() {
+        randomizedElectionTimeout = electionTimeout + rnd.nextInt(electionTimeout);
+    }
+
+    // pastElectionTimeout returns true iff r.electionElapsed is greater
+    // than or equal to the randomized election timeout in
+    // [electiontimeout, 2 * electiontimeout - 1].
+    boolean pastElectionTimeout() {
+        return electionElapsed >= randomizedElectionTimeout;
+    }
+
     // increaseUncommittedSize computes the size of the proposed entries and
     // determines whether they would push leader over its maxUncommittedSize limit.
     // If the new entries would exceed the limit, the method returns false. If not,
@@ -1290,6 +1301,10 @@ public class RawNode<T> {
         return raftLog;
     }
 
+    ReadOnly readOnly() {
+        return readOnly;
+    }
+
     int electionTimeout() {
         return electionTimeout;
     }
@@ -1662,10 +1677,6 @@ public class RawNode<T> {
         return pr != null && !pr.isLearner() && !raftLog.hasPendingSnapshot();
     }
 
-    private void resetRandomizedElectionTimeout() {
-        randomizedElectionTimeout = electionTimeout + rnd.nextInt(electionTimeout);
-    }
-
     private int numOfPendingConf(List<Entry> ents) {
         int n = 0;
         for (Entry ent : ents) {
@@ -1920,13 +1931,6 @@ public class RawNode<T> {
         prs.recordVote(id, voteRes);
 
         return prs.tallyVotes();
-    }
-
-    // pastElectionTimeout returns true iff r.electionElapsed is greater
-    // than or equal to the randomized election timeout in
-    // [electiontimeout, 2 * electiontimeout - 1].
-    private boolean pastElectionTimeout() {
-        return electionElapsed >= randomizedElectionTimeout;
     }
 
     /**
