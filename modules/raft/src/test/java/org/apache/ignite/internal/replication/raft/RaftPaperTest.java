@@ -184,7 +184,7 @@ public class RaftPaperTest extends AbstractRaftTest {
         long term = r.basicStatus().hardState().term();
 
         for (int i = 0; i < 10; i++) {
-             ProposeReceipt receipt = r.propose(i + 1);
+            ProposeReceipt receipt = r.propose(i + 1);
 
             Assertions.assertEquals(term, receipt.term());
             // Node commits en empty entry when becomes a leader.

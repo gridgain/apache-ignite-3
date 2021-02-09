@@ -74,7 +74,8 @@ public class MemoryStorage implements Storage {
         this.entryFactory = entryFactory;
 
         // When starting from scratch populate the list with a dummy entry at term zero.
-        this.entries.add(new TestEntry(Entry.EntryType.ENTRY_DATA, 0,0,null));
+        if (entries.isEmpty())
+            this.entries.add(new TestEntry(Entry.EntryType.ENTRY_DATA, 0, 0, null));
     }
 
     /** {@inheritDoc} */

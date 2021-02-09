@@ -128,6 +128,16 @@ public abstract class AbstractRaftTest {
         return memoryStorage(locId, peers, new HardState(1, null, 0));
     }
 
+    protected MemoryStorage memoryStorage(UUID locId, Snapshot s) {
+        return new MemoryStorage(
+            locId,
+            new HardState(1, null, s.metadata().index()),
+            s.metadata().configState(),
+            Arrays.asList(entry(1, s.metadata().index())),
+            entryFactory
+        );
+    }
+
     protected MemoryStorage memoryStorage(UUID locId, UUID[] peers, HardState hs) {
         return memoryStorage(locId, peers, new UUID[0], hs);
     }

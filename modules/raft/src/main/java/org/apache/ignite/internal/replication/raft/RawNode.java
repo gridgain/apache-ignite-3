@@ -212,6 +212,11 @@ public class RawNode<T> {
         return hup(preVote ? CAMPAIGN_PRE_ELECTION : CAMPAIGN_ELECTION);
     }
 
+    public void sendHeartbeat() {
+        if (state == StateType.STATE_LEADER)
+            bcastHeartbeat();
+    }
+
     // Proposes data be appended to the raft log.
     public ProposeReceipt propose(T data) {
         checkValidLeader();
@@ -1675,7 +1680,7 @@ public class RawNode<T> {
 
     // promotable indicates whether state machine can be promoted to leader,
     // which is true when its own id is in progress list.
-    private boolean promotable() {
+    boolean promotable() {
         Progress pr = prs.progress(id);
 
         return pr != null && !pr.isLearner() && !raftLog.hasPendingSnapshot();
