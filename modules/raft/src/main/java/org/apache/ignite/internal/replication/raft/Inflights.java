@@ -18,7 +18,11 @@
 package org.apache.ignite.internal.replication.raft;
 
 /**
- *
+ * Inflights limits the number of MsgApp (represented by the largest index
+ * contained within) sent to followers but not yet acknowledged by them. Callers
+ * use full() to check whether more messages can be sent, call add() whenever
+ * they are sending a new append, and release "quota" via freeLE() whenever an
+ * ack is received.
  */
 public class Inflights {
     // the starting index in the buffer

@@ -27,7 +27,9 @@ import org.apache.ignite.internal.replication.raft.quorum.JointConfig;
 import static org.apache.ignite.internal.replication.raft.VoteResult.VoteWon;
 
 /**
- *
+ * Tracker tracks the currently active configuration and the information
+ * known about the nodes and learners in it. In particular, it tracks the match
+ * index for each peer which in turn allows reasoning about the committed index.
  */
 public class Tracker {
     private TrackerConfig cfg;

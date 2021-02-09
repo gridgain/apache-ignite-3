@@ -464,8 +464,9 @@ public class RaftLog {
         throw new UnrecoverableException(MessageFormatter.arrayFormat(formatMsg, args).getMessage());
     }
 
+    // l.firstIndex <= fromIdx <= toIdx <= l.firstIndex + len(l.entries)
     private void mustCheckOutOfBounds(long fromIdx, long toIdx) throws CompactionException {
-        if (fromIdx < toIdx) {
+        if (fromIdx > toIdx) {
             logger.error(
                 String.format(
                     "invalid slice %d > %d",
