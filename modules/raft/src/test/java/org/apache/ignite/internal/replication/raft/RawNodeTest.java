@@ -30,6 +30,7 @@ import org.apache.ignite.internal.replication.raft.message.AppendEntriesResponse
 import org.apache.ignite.internal.replication.raft.message.HeartbeatRequest;
 import org.apache.ignite.internal.replication.raft.message.Message;
 import org.apache.ignite.internal.replication.raft.message.MessageType;
+import org.apache.ignite.internal.replication.raft.message.VoteRequest;
 import org.apache.ignite.internal.replication.raft.message.VoteResponse;
 import org.apache.ignite.internal.replication.raft.storage.ConfChangeSingle;
 import org.apache.ignite.internal.replication.raft.storage.Entry;
@@ -48,6 +49,7 @@ import static org.apache.ignite.internal.replication.raft.message.MessageType.Ms
 import static org.apache.ignite.internal.replication.raft.message.MessageType.MsgAppResp;
 import static org.apache.ignite.internal.replication.raft.message.MessageType.MsgHeartbeat;
 import static org.apache.ignite.internal.replication.raft.message.MessageType.MsgHeartbeatResp;
+import static org.apache.ignite.internal.replication.raft.message.MessageType.MsgVoteResp;
 import static org.apache.ignite.internal.replication.raft.storage.Entry.EntryType.ENTRY_DATA;
 
 /**
@@ -1841,5 +1843,455 @@ public class RawNodeTest extends AbstractRaftTest {
         req = (AppendEntriesRequest)msgs.get(0);
         Assertions.assertEquals(1, req.entries().size());
         Assertions.assertEquals(2, req.entries().get(0).index());
+    }
+
+    @Test
+    public void testRecvMsgVote() {
+        checkRecvMsgVote(false);
+    }
+
+    @Test
+    public void testRecvMsgPreVote() {
+        checkRecvMsgVote(true);
+    }
+
+    private void checkRecvMsgVote(boolean preVote) {
+        class TestData {
+            StateType state;
+            long idx;
+            long logTerm;
+            UUID voteFor;
+            boolean wReject;
+
+            TestData(StateType state, long idx, long logTerm, UUID voteFor, boolean wReject) {
+                this.state = state;
+                this.idx = idx;
+                this.logTerm = logTerm;
+                this.voteFor = voteFor;
+                this.wReject = wReject;
+            }
+        }
+
+        UUID[] ids = idsBySize(2);
+
+        TestData[] tests = new TestData[] {
+            new TestData(STATE_FOLLOWER, 0, 0, null, true),
+            new TestData(STATE_FOLLOWER, 0, 1, null, true),
+            new TestData(STATE_FOLLOWER, 0, 2, null, true),
+            new TestData(STATE_FOLLOWER, 0, 3, null, false),
+
+            new TestData(STATE_FOLLOWER, 1, 0, null, true),
+            new TestData(STATE_FOLLOWER, 1, 1, null, true),
+            new TestData(STATE_FOLLOWER, 1, 2, null, true),
+            new TestData(STATE_FOLLOWER, 1, 3, null, false),
+
+            new TestData(STATE_FOLLOWER, 2, 0, null, true),
+            new TestData(STATE_FOLLOWER, 2, 1, null, true),
+            new TestData(STATE_FOLLOWER, 2, 2, null, false),
+            new TestData(STATE_FOLLOWER, 2, 3, null, false),
+
+            new TestData(STATE_FOLLOWER, 3, 0, null, true),
+            new TestData(STATE_FOLLOWER, 3, 1, null, true),
+            new TestData(STATE_FOLLOWER, 3, 2, null, false),
+            new TestData(STATE_FOLLOWER, 3, 3, null, false),
+
+            new TestData(STATE_FOLLOWER, 3, 2, ids[1], false),
+            new TestData(STATE_FOLLOWER, 3, 2, ids[0], true),
+
+            new TestData(STATE_LEADER, 3, 3, ids[0], true),
+            new TestData(STATE_PRE_CANDIDATE, 3, 3, ids[0], true),
+            new TestData(STATE_CANDIDATE, 3, 3, ids[0], true),
+        };
+
+        for (int i = 0; i < tests.length; i++) {
+            TestData tt = tests[i];
+
+            MemoryStorage memoryStorage = memoryStorage(ids);
+            memoryStorage.append(Arrays.asList(entry(2, 1), entry(2, 2)));
+
+            long lastTerm = 2;
+            // raft.Term is greater than or equal to raft.raftLog.lastTerm. In this
+            // test we're only testing MsgVote responses when the campaigning node
+            // has a different raft log compared to the recipient node.
+            // Additionally we're verifying behaviour when the recipient node has
+            // already given out its vote for its current term. We're not testing
+            // what the recipient node does when receiving a message with a
+            // different term number, so we simply initialize both term numbers to
+            // be the same.
+            long term = Math.max(lastTerm, tt.logTerm);
+
+            memoryStorage.saveHardState(
+                new HardState(
+                    // Adjust the term as it will be incremented during campaign.
+                    tt.state != STATE_FOLLOWER && tt.state != STATE_PRE_CANDIDATE ? term - 1 : term,
+                    tt.voteFor,
+                    0
+                )
+            );
+
+            RawNode<String> sm = newTestRaft(newTestConfig(10, 1), memoryStorage);
+
+            switch (tt.state) {
+                case STATE_FOLLOWER:
+                    sm.becomeFollower(term, null);
+
+                    break;
+
+                case STATE_CANDIDATE:
+                    sm.becomeCandidate();
+
+                    break;
+
+                case STATE_PRE_CANDIDATE:
+                    sm.becomePreCandidate();
+
+                    break;
+
+                case STATE_LEADER:
+                    sm.becomeCandidate();
+                    sm.becomeLeader();
+
+                    break;
+            }
+
+            Assertions.assertEquals(term, sm.basicStatus().hardState().term(), "Failed for test case " + i);
+            Assertions.assertEquals(tt.state, sm.basicStatus().softState().state(), "Failed for test case " + i);
+
+            sm.step(msgFactory.newVoteRequest(ids[1], ids[0], preVote, term, tt.idx, tt.logTerm, false));
+
+            List<Message> msgs = sm.readMessages();
+            Assertions.assertEquals(1, msgs.size());
+            Assertions.assertEquals(MsgVoteResp, msgs.get(0).type());
+
+            VoteResponse res = (VoteResponse)msgs.get(0);
+            Assertions.assertEquals(preVote, res.preVote());
+            Assertions.assertEquals(tt.wReject, res.reject());
+        }
+    }
+
+    @Test
+    public void testStateTransition() {
+        class TestData {
+            StateType from;
+            StateType to;
+            boolean wAllow;
+            long wTerm;
+            UUID wLead;
+
+            TestData(StateType from, StateType to, boolean wAllow, long wTerm, UUID wLead) {
+                this.from = from;
+                this.to = to;
+                this.wAllow = wAllow;
+                this.wTerm = wTerm;
+                this.wLead = wLead;
+            }
+        }
+
+        UUID[] ids = idsBySize(1);
+
+        TestData[] tests = new TestData[] {
+            new TestData(STATE_FOLLOWER, STATE_FOLLOWER, true, 3, null),
+            new TestData(STATE_FOLLOWER, STATE_PRE_CANDIDATE, true, 2, null),
+            new TestData(STATE_FOLLOWER, STATE_CANDIDATE, true, 3, null),
+            new TestData(STATE_FOLLOWER, STATE_LEADER, false, 2, null),
+
+            new TestData(STATE_PRE_CANDIDATE, STATE_FOLLOWER, true, 2, null),
+            new TestData(STATE_PRE_CANDIDATE, STATE_PRE_CANDIDATE, true, 2, null),
+            new TestData(STATE_PRE_CANDIDATE, STATE_CANDIDATE, true, 3, null),
+            new TestData(STATE_PRE_CANDIDATE, STATE_LEADER, true, 2, ids[0]),
+
+            new TestData(STATE_CANDIDATE, STATE_FOLLOWER, true, 2, null),
+            new TestData(STATE_CANDIDATE, STATE_PRE_CANDIDATE, true, 2, null),
+            new TestData(STATE_CANDIDATE, STATE_CANDIDATE, true, 3, null),
+            new TestData(STATE_CANDIDATE, STATE_LEADER, true, 2, ids[0]),
+
+            new TestData(STATE_LEADER, STATE_FOLLOWER, true, 3, null),
+            new TestData(STATE_LEADER, STATE_PRE_CANDIDATE, false, 2, null),
+            new TestData(STATE_LEADER, STATE_CANDIDATE, false, 3, null),
+            new TestData(STATE_LEADER, STATE_LEADER, true, 2, ids[0]),
+        };
+
+        for (int i = 0; i < tests.length; i++) {
+            TestData tt = tests[i];
+
+            MemoryStorage memoryStorage = memoryStorage(ids);
+            memoryStorage.saveHardState(new HardState(tt.from != STATE_FOLLOWER && tt.from != STATE_PRE_CANDIDATE ?
+                1 :
+                2, null, 0));
+
+            RawNode<String> sm = newTestRaft(newTestConfig(10, 1), memoryStorage);
+
+            switch (tt.from) {
+                case STATE_CANDIDATE:
+                    sm.becomeCandidate();
+
+                    break;
+
+                case STATE_PRE_CANDIDATE:
+                    sm.becomePreCandidate();
+
+                    break;
+
+                case STATE_LEADER:
+                    sm.becomeCandidate();
+                    sm.becomeLeader();
+
+                    break;
+
+                case STATE_FOLLOWER:
+                    sm.becomeFollower(2, null);
+
+                    break;
+            }
+
+            try {
+                switch (tt.to) {
+                    case STATE_CANDIDATE:
+                        sm.becomeCandidate();
+
+                        break;
+
+                    case STATE_PRE_CANDIDATE:
+                        sm.becomePreCandidate();
+
+                        break;
+
+                    case STATE_LEADER:
+                        sm.becomeLeader();
+
+                        break;
+
+                    case STATE_FOLLOWER:
+                        sm.becomeFollower(tt.wTerm, tt.wLead);
+
+                        break;
+                }
+
+                Assertions.assertTrue(tt.wAllow,
+                    "Allowed transition " + tt.from + " -> " + tt.to + " (should be prohibited)"
+                );
+                Assertions.assertEquals(tt.wTerm, sm.basicStatus().hardState().term(), "Failed for test case " + i);
+                Assertions.assertEquals(tt.wLead, sm.basicStatus().softState().lead(), "Failed for test case " + i);
+            }
+            catch (UnrecoverableException e) {
+                Assertions.assertFalse(tt.wAllow,
+                    "Prohibited transition " + tt.from + " -> " + tt.to + " (should be allowed)"
+                );
+            }
+        }
+    }
+
+    @Test
+    public void testAllServerStepdown() {
+        class TestData {
+            StateType state;
+            StateType wState;
+            long wTerm;
+            long wIdx;
+
+            TestData(StateType state, StateType wState, long wTerm, long wIdx) {
+                this.state = state;
+                this.wState = wState;
+                this.wTerm = wTerm;
+                this.wIdx = wIdx;
+            }
+        }
+        
+        TestData[] tests = new TestData[] {
+            new TestData(STATE_FOLLOWER, STATE_FOLLOWER, 3, 0),
+            new TestData(STATE_PRE_CANDIDATE, STATE_FOLLOWER, 3, 0),
+            new TestData(STATE_CANDIDATE, STATE_FOLLOWER, 3, 0),
+            new TestData(STATE_LEADER, STATE_FOLLOWER, 3, 1),
+        };
+
+        long tTerm = 3;
+
+        for (TestData tt : tests) {
+            RawNode<String> sm = newTestRaft(ids, 10, 1);
+
+            switch (tt.state) {
+                case STATE_FOLLOWER:
+                    sm.becomeFollower(1, null);
+
+                    break;
+
+                case STATE_PRE_CANDIDATE:
+                    sm.becomePreCandidate();
+
+                    break;
+
+                case STATE_CANDIDATE:
+                    sm.becomeCandidate();
+
+                    break;
+
+                case STATE_LEADER:
+                    sm.becomeCandidate();
+                    sm.becomeLeader();
+
+                    break;
+            }
+
+            for (boolean vote : new boolean[] {true, false}) {
+                Message msg = vote ?
+                    msgFactory.newVoteRequest(ids[1], ids[0], false, tTerm, 0, tTerm, false) :
+                    msgFactory.newAppendEntriesRequest(ids[1], ids[0], tTerm, 0, tTerm, Collections.emptyList(), 0);
+
+                sm.step(msg);
+
+                Assertions.assertEquals(tt.wState, sm.basicStatus().softState().state());
+                Assertions.assertEquals(tt.wTerm, sm.basicStatus().hardState().term());
+                Assertions.assertEquals(tt.wIdx, sm.raftLog().lastIndex());
+                Assertions.assertEquals(tt.wIdx, sm.raftLog().allEntries().size());
+
+                UUID wLead = vote ? null : ids[1];
+                Assertions.assertEquals(wLead, sm.basicStatus().softState().lead());
+            }
+        }
+    }
+
+    @Test
+    public void testCandidateResetTermMsgHeartbeat() {
+        checkCandidateResetTerm(MsgHeartbeat);
+    }
+
+    @Test
+    public void testCandidateResetTermMsgApp() {
+        checkCandidateResetTerm(MsgApp);
+    }
+
+    // testCandidateResetTerm tests when a candidate receives a
+    // MsgHeartbeat or MsgApp from leader, "Step" resets the term
+    // with leader's and reverts back to follower.
+    private void checkCandidateResetTerm(MessageType mt) {
+        Random rnd = new Random(seed());
+
+        MemoryStorage aStorage = memoryStorage(ids[0], ids);
+        RawNode<String> a = newTestRaft(10, 1, aStorage, rnd);
+
+        MemoryStorage bStorage = memoryStorage(ids[1], ids);
+        RawNode<String> b = newTestRaft(10, 1, bStorage, rnd);
+
+        MemoryStorage cStorage = memoryStorage(ids[2], ids);
+        RawNode<String> c = newTestRaft(10, 1, cStorage, rnd);
+
+        Network nt = new Network(
+            rnd,
+            new RawNodeStepper<String>(a, aStorage),
+            new RawNodeStepper<String>(b, bStorage),
+            new RawNodeStepper<String>(c, cStorage)
+        );
+
+        nt.<String>action(ids[0], s -> s.node().campaign());
+
+        Assertions.assertEquals(STATE_LEADER, a.basicStatus().softState().state());
+        Assertions.assertEquals(STATE_FOLLOWER, b.basicStatus().softState().state());
+        Assertions.assertEquals(STATE_FOLLOWER, c.basicStatus().softState().state());
+
+        // isolate 3 and increase term in rest
+        nt.isolate(ids[2]);
+
+        nt.<String>action(ids[1], s -> s.node().campaign());
+        nt.<String>action(ids[0], s -> s.node().campaign());
+
+        Assertions.assertEquals(STATE_LEADER, a.basicStatus().softState().state());
+        Assertions.assertEquals(STATE_FOLLOWER, b.basicStatus().softState().state());
+
+        // trigger campaign in isolated c
+        c.resetRandomizedElectionTimeout();
+
+        for (int i = 0; i < c.randomizedElectionTimeout(); i++)
+            c.tick();
+
+        Assertions.assertEquals(STATE_CANDIDATE, c.basicStatus().softState().state());
+
+        nt.recover();
+
+        // leader sends to isolated candidate
+        // and expects candidate to revert to follower
+        if (mt == MsgHeartbeat)
+            nt.<String>action(ids[0], s -> s.node().bcastHeartbeat());
+        else
+            // As per testHandleHeartbeatResp, the heartbeat response will trigger the lader to send append request
+            nt.send(msgFactory.newHeartbeatResponse(ids[2], ids[0], a.basicStatus().hardState().term(), null));
+
+        // follower c term is reset with leader's
+        Assertions.assertEquals(STATE_FOLLOWER, c.basicStatus().softState().state());
+        Assertions.assertEquals(a.basicStatus().hardState().term(), c.basicStatus().hardState().term());
+    }
+
+    @Test
+    public void testLeaderStepdownWhenQuorumActive() {
+        RawNode<String> sm = newTestRaft(newTestConfig(5, 1).checkQuorum(true), memoryStorage(ids));
+
+        sm.becomeCandidate();
+        sm.becomeLeader();
+
+        long term = sm.basicStatus().hardState().term();
+
+        for (int i = 0; i < sm.electionTimeout() + 1; i++) {
+            sm.step(msgFactory.newHeartbeatResponse(ids[1], ids[0], term, null));
+
+            sm.tick();
+        }
+
+        Assertions.assertEquals(STATE_LEADER, sm.basicStatus().softState().state());
+    }
+
+    @Test
+    public void testLeaderStepdownWhenQuorumLost() {
+        RawNode<String> sm = newTestRaft(newTestConfig(5, 1).checkQuorum(true), memoryStorage(ids));
+
+        sm.becomeCandidate();
+        sm.becomeLeader();
+
+        for (int i = 0; i < sm.electionTimeout() + 1; i++)
+            sm.tick();
+
+        Assertions.assertEquals(STATE_FOLLOWER, sm.basicStatus().softState().state());
+    }
+
+    @Test
+    public void testLeaderSupersedingWithCheckQuorum() {
+        Random rnd = new Random(seed());
+
+        MemoryStorage aStorage = memoryStorage(ids[0], ids);
+        RawNode<String> a = newTestRaft(newTestConfig(10, 1).checkQuorum(true), aStorage, rnd);
+
+        MemoryStorage bStorage = memoryStorage(ids[1], ids);
+        RawNode<String> b = newTestRaft(newTestConfig(10, 1).checkQuorum(true), bStorage, rnd);
+
+        MemoryStorage cStorage = memoryStorage(ids[2], ids);
+        RawNode<String> c = newTestRaft(newTestConfig(10, 1).checkQuorum(true), cStorage, rnd);
+
+        Network nt = new Network(
+            rnd,
+            new RawNodeStepper<String>(a, aStorage),
+            new RawNodeStepper<String>(b, bStorage),
+            new RawNodeStepper<String>(c, cStorage)
+        );
+
+        b.randomizedElectionTimeout(b.electionTimeout() + 1);
+
+        for (int i = 0; i < b.electionTimeout(); i++)
+            b.tick();
+
+        nt.<String>action(ids[0], s -> s.node().campaign());
+
+        Assertions.assertEquals(STATE_LEADER, a.basicStatus().softState().state());
+        Assertions.assertEquals(STATE_FOLLOWER, c.basicStatus().softState().state());
+
+        nt.<String>action(ids[2], s -> s.node().campaign());
+
+        // Peer b rejected c's vote since its electionElapsed had not reached to electionTimeout
+        Assertions.assertEquals(STATE_CANDIDATE, c.basicStatus().softState().state());
+
+        // Letting b's electionElapsed reach to electionTimeout
+        for (int i = 0; i < b.electionTimeout(); i++)
+            b.tick();
+
+        nt.<String>action(ids[2], s -> s.node().campaign());
+
+        Assertions.assertEquals(STATE_LEADER, c.basicStatus().softState().state());
     }
 }

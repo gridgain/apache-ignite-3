@@ -1313,6 +1313,10 @@ public class RawNode<T> {
         randomizedElectionTimeout = timeout;
     }
 
+    int randomizedElectionTimeout() {
+        return randomizedElectionTimeout;
+    }
+
     boolean isLearner() {
         return isLearner;
     }
