@@ -23,6 +23,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Random;
+import java.util.Set;
 import java.util.UUID;
 import java.util.function.Consumer;
 import java.util.function.Function;
@@ -33,6 +34,7 @@ import org.apache.ignite.internal.replication.raft.message.Message;
 import org.apache.ignite.internal.replication.raft.message.MessageType;
 import org.apache.ignite.internal.replication.raft.message.VoteRequest;
 import org.apache.ignite.internal.replication.raft.message.VoteResponse;
+import org.apache.ignite.internal.replication.raft.storage.ConfChange;
 import org.apache.ignite.internal.replication.raft.storage.ConfChangeSingle;
 import org.apache.ignite.internal.replication.raft.storage.Entry;
 import org.apache.ignite.internal.replication.raft.storage.MemoryStorage;
@@ -51,11 +53,13 @@ import static org.apache.ignite.internal.replication.raft.message.MessageType.Ms
 import static org.apache.ignite.internal.replication.raft.message.MessageType.MsgHeartbeat;
 import static org.apache.ignite.internal.replication.raft.message.MessageType.MsgHeartbeatResp;
 import static org.apache.ignite.internal.replication.raft.message.MessageType.MsgVoteResp;
+import static org.apache.ignite.internal.replication.raft.storage.Entry.EntryType.ENTRY_CONF_CHANGE;
 import static org.apache.ignite.internal.replication.raft.storage.Entry.EntryType.ENTRY_DATA;
 
 /**
  * Intentionally skipped tests:
  * TestProposalByProxy() - we decided not to implement proposal forwarding for now.
+ * TestRaftNodes - tests that TrackerConfig.voters() is sorted, but it's a TreeSet.
  */
 public class RawNodeTest extends AbstractRaftTest {
     @Test
@@ -2811,5 +2815,532 @@ public class RawNodeTest extends AbstractRaftTest {
 
             Assertions.assertEquals(tt.wNext, p.next());
         }
+    }
+
+    @Test
+    public void testSendAppendForProgressProbe() {
+        UUID[] ids = idsBySize(2);
+
+        RawNode<String> r = newTestRaft(ids, 10, 1);
+
+        r.becomeCandidate();
+        r.becomeLeader();
+        r.readMessages();
+
+        r.tracker().progress(ids[1]).becomeProbe();
+
+        // each round is a heartbeat
+        for (int i = 0; i < 3; i++) {
+            if (i == 0) {
+                // we expect that Raft will only send out one MsgApp on the first
+                // loop. After that, the follower is paused until a heartbeat response is
+                // received.
+                r.propose("somedata");
+
+                List<Message> msgs = r.readMessages();
+                Assertions.assertEquals(1, msgs.size());
+                Assertions.assertEquals(MsgApp, msgs.get(0).type());
+
+                AppendEntriesRequest req = (AppendEntriesRequest)msgs.get(0);
+                Assertions.assertEquals(0, req.logIndex());
+            }
+
+            Assertions.assertTrue(r.tracker().progress(ids[1]).probeSent());
+
+            for (int j = 0; j < 10; j++) {
+                r.propose("somedata");
+
+                Assertions.assertTrue(r.readMessages().isEmpty());
+            }
+
+            // do a heartbeat
+            for (int j = 0; j < r.heartbeatTimeout(); j++)
+                r.tick();
+
+            Assertions.assertTrue(r.tracker().progress(ids[1]).probeSent());
+
+            // consume the heartbeat
+            List<Message> msgs = r.readMessages();
+            Assertions.assertEquals(1, msgs.size());
+            Assertions.assertEquals(MsgHeartbeat, msgs.get(0).type());
+        }
+
+        // a heartbeat response will allow another message to be sent
+        r.step(msgFactory.newHeartbeatResponse(ids[1], ids[0], r.basicStatus().hardState().term(), null));
+
+        List<Message> msgs = r.readMessages();
+        Assertions.assertEquals(1, msgs.size());
+        Assertions.assertEquals(MsgApp, msgs.get(0).type());
+
+        AppendEntriesRequest req = (AppendEntriesRequest)msgs.get(0);
+        Assertions.assertEquals(0, req.logIndex());
+        Assertions.assertTrue(r.tracker().progress(ids[1]).probeSent());
+    }
+
+    @Test
+    public void testSendAppendForProgressReplicate() {
+        UUID[] ids = idsBySize(2);
+
+        RawNode<String> r = newTestRaft(ids, 10, 1);
+
+        r.becomeCandidate();
+        r.becomeLeader();
+        r.readMessages();
+
+        r.tracker().progress(ids[1]).becomeReplicate();
+
+        for (int i = 0; i < 10; i++) {
+            r.propose("somedata");
+
+            List<Message> msgs = r.readMessages();
+
+            Assertions.assertEquals(1, msgs.size());
+        }
+    }
+
+    @Test
+    public void testSendAppendForProgressSnapshot() {
+        UUID[] ids = idsBySize(2);
+
+        RawNode<String> r = newTestRaft(ids, 10, 1);
+
+        r.becomeCandidate();
+        r.becomeLeader();
+        r.readMessages();
+
+        r.tracker().progress(ids[1]).becomeSnapshot(10);
+
+        for (int i = 0; i < 10; i++) {
+            r.propose("somedata");
+
+            List<Message> msgs = r.readMessages();
+            Assertions.assertTrue(msgs.isEmpty());
+        }
+    }
+
+    @Test
+    public void testRecvMsgUnreachable() {
+        UUID[] ids = idsBySize(2);
+
+        List<Entry> previousEnts = Arrays.asList(entry(1, 1), entry(1, 2), entry(1, 3));
+
+        MemoryStorage s = memoryStorage(ids);
+        s.append(previousEnts);
+
+        RawNode<String> r = newTestRaft(10, 1, s);
+
+        r.becomeCandidate();
+        r.becomeLeader();
+        r.readMessages();
+
+        // set node 2 to state replicate
+        Progress p = r.tracker().progress(ids[1]);
+        p.maybeUpdate(3);
+        p.becomeReplicate();
+        p.optimisticUpdate(5);
+
+        r.reportUnreachable(ids[1]);
+
+        Assertions.assertEquals(Progress.ProgressState.StateProbe, p.state());
+        Assertions.assertEquals(p.match() + 1, p.next());
+    }
+
+    // TestStepConfig tests that when raft step msgProp in EntryConfChange type,
+    // it appends the entry to log and sets pendingConf to be true.
+    @Test
+    public void testStepConfig() {
+        UUID[] ids = idsBySize(2);
+
+        // a raft that cannot make progress
+        RawNode<String> r = newTestRaft(ids, 10, 1);
+
+        r.becomeCandidate();
+        r.becomeLeader();
+
+        long idx = r.raftLog().lastIndex();
+        r.proposeConfChange(new ConfChangeSingle(UUID.randomUUID(), ConfChangeSingle.ConfChangeType.ConfChangeAddNode));
+
+        Assertions.assertEquals(idx + 1, r.raftLog().lastIndex());
+        Assertions.assertEquals(idx + 1, r.pendingConfIndex());
+    }
+
+    // TestStepIgnoreConfig tests that if raft step the second msgProp in
+    // EntryConfChange type when the first one is uncommitted, the node will set
+    // the proposal to noop and keep its original state.
+    @Test
+    public void testStepIgnoreConfig() throws Exception {
+        UUID[] ids = idsBySize(2);
+
+        // a raft that cannot make progress
+        RawNode<String> r = newTestRaft(ids, 10, 1);
+
+        r.becomeCandidate();
+        r.becomeLeader();
+
+        r.proposeConfChange(new ConfChangeSingle(UUID.randomUUID(), ConfChangeSingle.ConfChangeType.ConfChangeAddNode));
+
+        long idx = r.raftLog().lastIndex();
+
+        long pendingConfIdx = r.pendingConfIndex();
+
+        Assertions.assertThrows(InvalidConfigTransitionException.class, () -> {
+            r.proposeConfChange(new ConfChangeSingle(UUID.randomUUID(), ConfChangeSingle.ConfChangeType.ConfChangeAddNode));
+        });
+
+        List<Entry> entries = r.raftLog().entries(idx + 1, Long.MAX_VALUE);
+        Assertions.assertTrue(entries.isEmpty());
+        Assertions.assertEquals(pendingConfIdx, r.pendingConfIndex());
+    }
+
+    // TestAddNode tests that addNode could update nodes correctly.
+    @Test
+    public void testAddNode() {
+        UUID[] ids = idsBySize(2);
+
+        RawNode<String> r = newTestRaft(new UUID[] {ids[0]}, 10, 1);
+
+        r.applyConfChange(new ConfChangeSingle(ids[1], ConfChangeSingle.ConfChangeType.ConfChangeAddNode));
+
+        Set<UUID> voters = r.tracker().config().voters().ids();
+        Assertions.assertEquals(2, voters.size());
+        Assertions.assertTrue(voters.contains(ids[0]));
+        Assertions.assertTrue(voters.contains(ids[1]));
+    }
+
+    // TestAddLearner tests that addLearner could update nodes correctly.
+    public void testAddLearner() {
+        UUID[] ids = idsBySize(2);
+
+        RawNode<String> r = newTestRaft(new UUID[] {ids[0]}, 10, 1);
+
+        // Add new learner peer.
+        r.applyConfChange(new ConfChangeSingle(ids[1], ConfChangeSingle.ConfChangeType.ConfChangeAddLearnerNode));
+        Assertions.assertFalse(r.isLearner());
+
+        Set<UUID> nodes = r.tracker().config().learners();
+        Assertions.assertEquals(1, nodes.size());
+        Assertions.assertTrue(nodes.contains(ids[1]));
+        Assertions.assertTrue(r.tracker().progress(ids[1]).isLearner());
+
+        // Promote peer to voter.
+        r.applyConfChange(new ConfChangeSingle(ids[1], ConfChangeSingle.ConfChangeType.ConfChangeAddNode));
+        Assertions.assertFalse(r.tracker().progress(ids[1]).isLearner());
+
+        // Demote r.
+        r.applyConfChange(new ConfChangeSingle(ids[0], ConfChangeSingle.ConfChangeType.ConfChangeAddLearnerNode));
+        Assertions.assertTrue(r.tracker().progress(ids[0]).isLearner());
+        Assertions.assertTrue(r.isLearner());
+
+        // Promote r again.
+        r.applyConfChange(new ConfChangeSingle(ids[0], ConfChangeSingle.ConfChangeType.ConfChangeAddNode));
+        Assertions.assertFalse(r.tracker().progress(ids[0]).isLearner());
+        Assertions.assertFalse(r.isLearner());
+    }
+
+    // TestAddNodeCheckQuorum tests that addNode does not trigger a leader election
+    // immediately when checkQuorum is set.
+    @Test
+    public void testAddNodeCheckQuorum() {
+        UUID[] ids = idsBySize(2);
+
+        RawNode<String> r = newTestRaft(newTestConfig(10, 1).checkQuorum(true), memoryStorage(new UUID[] {ids[0]}));
+
+        r.becomeCandidate();
+        r.becomeLeader();
+
+        for (int i = 0; i < r.electionTimeout() - 1; i++)
+            r.tick();
+
+        r.applyConfChange(new ConfChangeSingle(ids[1], ConfChangeSingle.ConfChangeType.ConfChangeAddNode));
+
+        // This tick will reach electionTimeout, which triggers a quorum check.
+        r.tick();
+
+        // Node 1 should still be the leader after a single tick.
+        Assertions.assertEquals(STATE_LEADER, r.basicStatus().softState().state());
+
+        // After another electionTimeout ticks without hearing from node 2,
+        // node 1 should step down.
+        for (int i = 0; i < r.electionTimeout(); i++)
+            r.tick();
+
+        Assertions.assertEquals(STATE_FOLLOWER, r.basicStatus().softState().state());
+    }
+
+    // TestRemoveNode tests that removeNode could update nodes and
+    // and removed list correctly.
+    @Test
+    public void testRemoveNode() {
+        UUID[] ids = idsBySize(2);
+        RawNode<String> r = newTestRaft(ids, 10, 1);
+
+        r.applyConfChange(new ConfChangeSingle(ids[1], ConfChangeSingle.ConfChangeType.ConfChangeRemoveNode));
+
+        Set<UUID> voters = r.tracker().config().voters().ids();
+        Assertions.assertEquals(1, voters.size());
+        Assertions.assertTrue(voters.contains(ids[0]));
+
+        // Removing the remaining voter will throw an exception.
+        Assertions.assertThrows(InvalidConfigTransitionException.class, () -> {
+            r.applyConfChange(new ConfChangeSingle(ids[0], ConfChangeSingle.ConfChangeType.ConfChangeRemoveNode));
+        });
+    }
+
+    // TestRemoveLearner tests that removeNode could update nodes and
+    // and removed list correctly.
+    @Test
+    public void testRemoveLearner() {
+        UUID[] ids = idsBySize(2);
+
+        MemoryStorage memoryStorage = memoryStorage(ids[0], new UUID[] {ids[0]}, new UUID[] {ids[1]});
+
+        RawNode<String> r = newTestRaft(10, 1, memoryStorage);
+        Assertions.assertTrue(r.tracker().progress(ids[1]).isLearner());
+
+        r.applyConfChange(new ConfChangeSingle(ids[1], ConfChangeSingle.ConfChangeType.ConfChangeRemoveNode));
+
+        Set<UUID> voters = r.tracker().config().voters().ids();
+        Assertions.assertEquals(1, voters.size());
+        Assertions.assertTrue(voters.contains(ids[0]));
+
+        Set<UUID> learners = r.tracker().config().learners();
+        Assertions.assertTrue(learners.isEmpty());
+
+        // Removing the remaining voter will throw an exception.
+        Assertions.assertThrows(InvalidConfigTransitionException.class, () -> {
+            r.applyConfChange(new ConfChangeSingle(ids[0], ConfChangeSingle.ConfChangeType.ConfChangeRemoveNode));
+        });
+    }
+
+    @Test
+    public void testPromotable() {
+        UUID[] ids = idsBySize(3);
+
+        for (UUID[] testIds : new UUID[][] {
+            new UUID[] {ids[0]},
+            ids,
+            new UUID[] {},
+            new UUID[] {ids[1], ids[2]}
+        }) {
+            RawNode<String> r = newTestRaft(5, 1, memoryStorage(ids[0], testIds));
+            Assertions.assertEquals(Arrays.binarySearch(testIds, ids[0]) >= 0, r.promotable());
+        }
+    }
+
+    @Test
+    public void testCampaignWhileLeader() {
+        checkCampaignWhileLeader(false);
+    }
+
+    @Test
+    public void testPreCampaignWhileLeader() {
+        checkCampaignWhileLeader(true);
+    }
+
+    private void checkCampaignWhileLeader(boolean preVote) {
+        UUID[] ids = idsBySize(1);
+
+        RawNode<String> r = newTestRaft(newTestConfig(5, 1).preVote(preVote), memoryStorage(ids));
+        Assertions.assertEquals(STATE_FOLLOWER, r.basicStatus().softState().state());
+
+        // We don't call campaign() directly because it comes after the check
+        // for our current state.
+        r.campaign();
+        Assertions.assertEquals(STATE_LEADER, r.basicStatus().softState().state());
+
+        long term = r.basicStatus().hardState().term();
+        r.campaign();
+
+        Assertions.assertEquals(STATE_LEADER, r.basicStatus().softState().state());
+        Assertions.assertEquals(term, r.basicStatus().hardState().term());
+    }
+
+    // TestCommitAfterRemoveNode verifies that pending commands can become
+    // committed when a config change reduces the quorum requirements.
+    @Test
+    public void testCommitAfterRemoveNode() {
+        // Create a cluster with two nodes.
+        UUID[] ids = idsBySize(2);
+
+        MemoryStorage s = memoryStorage(ids);
+        RawNode<String> r = newTestRaft(5, 1, s);
+
+        r.becomeCandidate();
+        r.becomeLeader();
+
+        // Begin to remove the second node.
+        ConfChange cc = new ConfChangeSingle(ids[1], ConfChangeSingle.ConfChangeType.ConfChangeRemoveNode);
+
+        r.proposeConfChange(cc);
+
+        // Stabilize the log and make sure nothing is committed yet.
+        List<Entry> ents = nextEntries(r, s);
+
+        Assertions.assertTrue(ents.isEmpty());
+
+        long ccIndex = r.raftLog().lastIndex();
+
+        // While the config change is pending, make another proposal.
+        r.propose("hello");
+
+        // Node 2 acknowledges the config change, committing it.
+        r.step(msgFactory.newAppendEntriesResponse(ids[1], ids[0], r.basicStatus().hardState().term(), ccIndex, false, 0));
+
+        ents = nextEntries(r, s);
+        Assertions.assertEquals(2, ents.size());
+        Assertions.assertEquals(ENTRY_DATA, ents.get(0).type());
+        Assertions.assertNull(ents.get(0).<UserData>data().data());
+        Assertions.assertEquals(ENTRY_CONF_CHANGE, ents.get(1).type());
+
+        // Apply the config change. This reduces quorum requirements so the
+        // pending command can now commit.
+        r.applyConfChange(cc);
+
+        ents = nextEntries(r, s);
+
+        Assertions.assertEquals(1, ents.size());
+        Assertions.assertEquals(ENTRY_DATA, ents.get(0).type());
+        Assertions.assertEquals("hello", ents.get(0).<UserData>data().data());
+    }
+
+    // TestNewLeaderPendingConfig tests that new leader sets its pendingConfigIndex
+    // based on uncommitted entries.
+    public void testNewLeaderPendingConfig() {
+        UUID[] ids = idsBySize(2);
+
+        for (boolean addEntry : new boolean[] {false, true}) {
+            MemoryStorage s = memoryStorage(ids);
+
+            if (addEntry)
+                s.append(Arrays.asList(entry(1, 1)));
+
+            RawNode<String> r = newTestRaft(ids, 10, 1);
+
+            r.becomeCandidate();
+            r.becomeLeader();
+
+            Assertions.assertEquals(addEntry ? 1 : 0, r.pendingConfIndex());
+        }
+    }
+
+    // TestLeaderTransferToUpToDateNode verifies transferring should succeed
+    // if the transferee has the most up-to-date log entries when transfer starts.
+    @Test
+    public void testLeaderTransferToUpToDateNode() {
+        Network nt = newNetwork(null, entries(), entries(), entries());
+        UUID[] ids = nt.ids();
+
+        nt.<String>action(ids[0], s -> s.node().campaign());
+
+        RawNode<String> lead = nt.<RawNodeStepper<String>>peer(ids[0]).node();
+        Assertions.assertEquals(ids[0], lead.basicStatus().softState().lead());
+        Assertions.assertEquals(STATE_LEADER, lead.basicStatus().softState().state());
+
+        // Transfer leadership to 2.
+        nt.<String>action(ids[0], s -> s.node().transferLeader(ids[1]));
+
+        checkLeaderTransferState(lead, STATE_FOLLOWER, ids[1]);
+
+        // After some log replication, transfer leadership back to 1.
+        nt.<String>action(ids[1], s -> s.node().propose("somedata"));
+
+        nt.<String>action(ids[1], s -> s.node().transferLeader(ids[0]));
+
+        checkLeaderTransferState(lead, STATE_LEADER, ids[0]);
+    }
+
+    // TestLeaderTransferToUpToDateNodeFromFollower verifies that leader transferring can only be invoked
+    // on group leader.
+    @Test
+    public void testLeaderTransferToUpToDateNodeFromFollower() {
+        Network nt = newNetwork(null, entries(), entries(), entries());
+        UUID[] ids = nt.ids();
+        nt.<String>action(ids[0], s -> s.node().campaign());
+
+        RawNode<String> lead = nt.<RawNodeStepper<String>>peer(ids[0]).node();
+        Assertions.assertEquals(ids[0], lead.basicStatus().softState().lead());
+        Assertions.assertEquals(STATE_LEADER, lead.basicStatus().softState().state());
+
+        RawNode<String> follower = nt.<RawNodeStepper<String>>peer(ids[1]).node();
+        Assertions.assertEquals(ids[0], follower.basicStatus().softState().lead());
+        Assertions.assertEquals(STATE_FOLLOWER, follower.basicStatus().softState().state());
+
+        Assertions.assertThrows(NotLeaderException.class, () -> {
+            nt.<String>action(ids[1], s -> s.node().transferLeader(ids[1]));
+        });
+
+        // Check status did not change.
+        Assertions.assertEquals(ids[0], lead.basicStatus().softState().lead());
+        Assertions.assertEquals(STATE_LEADER, lead.basicStatus().softState().state());
+        Assertions.assertEquals(ids[0], follower.basicStatus().softState().lead());
+        Assertions.assertEquals(STATE_FOLLOWER, follower.basicStatus().softState().state());
+    }
+
+    // TestLeaderTransferWithCheckQuorum ensures transferring leader still works
+    // even the current leader is still under its leader lease
+    @Test
+    public void testLeaderTransferWithCheckQuorum() {
+        Network nt = newNetwork(c -> c.checkQuorum(true), entries(), entries(), entries());
+        UUID[] ids = nt.ids();
+
+        for (int i = 0; i < ids.length; i++) {
+            UUID id = ids[i];
+
+            RawNode<String> node = nt.<RawNodeStepper<String>>peer(id).node();
+            node.randomizedElectionTimeout(node.electionTimeout() + i + 1);
+        }
+
+        // Letting peer 2 electionElapsed reach to timeout so that it can vote for peer 1
+        RawNode<String> f = nt.<RawNodeStepper<String>>peer(ids[1]).node();
+
+        for (int i = 0; i < f.electionTimeout(); i++)
+            f.tick();
+
+        nt.<String>action(ids[0], s -> s.node().campaign());
+
+        RawNode<String> lead = nt.<RawNodeStepper<String>>peer(ids[0]).node();
+        Assertions.assertEquals(STATE_LEADER, lead.basicStatus().softState().state());
+        Assertions.assertEquals(ids[0], lead.basicStatus().softState().lead());
+
+        // Transfer leadership to 2.
+        nt.<String>action(ids[0], s -> s.node().transferLeader(ids[1]));
+
+        checkLeaderTransferState(lead, STATE_FOLLOWER, ids[1]);
+
+        // After some log replication, transfer leadership back to 1.
+        nt.<String>action(ids[1], s -> s.node().propose("somedata"));
+
+        nt.<String>action(ids[1], s -> s.node().transferLeader(ids[0]));
+
+        checkLeaderTransferState(lead, STATE_LEADER, ids[0]);
+    }
+
+    @Test
+    public void testLeaderTransferToSlowFollower() {
+        Network nt = newNetwork(null, entries(), entries(), entries());
+        UUID[] ids = nt.ids();
+
+        nt.<String>action(ids[0], s -> s.node().campaign());
+
+        nt.isolate(ids[2]);
+
+        nt.<String>action(ids[0], s -> s.node().propose(""));
+
+        nt.recover();
+
+        RawNode<String> lead = nt.<RawNodeStepper<String>>peer(ids[0]).node();
+        Assertions.assertEquals(1, lead.tracker().progress(ids[2]).match());
+
+        // Transfer leadership to 3 when node 3 is lack of log.
+        nt.<String>action(ids[0], s -> s.node().transferLeader(ids[2]));
+
+        checkLeaderTransferState(lead, STATE_FOLLOWER, ids[2]);
+    }
+
+    private void checkLeaderTransferState(RawNode<String> r, StateType state, UUID lead) {
+        Assertions.assertEquals(state, r.basicStatus().softState().state());
+        Assertions.assertEquals(lead, r.basicStatus().softState().lead());
+
+        Assertions.assertNull(r.basicStatus().leadTransferee());
     }
 }

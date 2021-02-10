@@ -124,7 +124,7 @@ public class RawNode<T> {
     // configuration change (if any). Config changes are only allowed to
     // be proposed if the leader's applied index is greater than this
     // value.
-    private long pendingConfIndex;
+    private long pendingConfIdx;
 
     // an estimate of the size of the uncommitted tail of the Raft log. Used to
     // prevent unbounded log growth. Only maintained by the leader. Reset on
@@ -235,7 +235,7 @@ public class RawNode<T> {
     public ProposeReceipt proposeConfChange(ConfChange cc) {
         checkValidLeader();
 
-        boolean alreadyPending = pendingConfIndex > raftLog.applied();
+        boolean alreadyPending = pendingConfIdx > raftLog.applied();
         boolean alreadyJoint = prs.config().voters().isJoint();
 
         boolean wantsLeaveJoint = cc.changes().isEmpty();
@@ -243,7 +243,7 @@ public class RawNode<T> {
         String refused = null;
 
         if (alreadyPending)
-            refused = String.format("possible unapplied conf change at index %d (applied to %d)", pendingConfIndex,
+            refused = String.format("possible unapplied conf change at index %d (applied to %d)", pendingConfIdx,
                 raftLog.applied());
         else if (alreadyJoint && !wantsLeaveJoint)
             refused = String.format("must transition out of joint config first: %s", prs.config().voters());
@@ -260,7 +260,7 @@ public class RawNode<T> {
 
         assert receipt.startIndex() == receipt.endIndex() : "Invalid receipt for single-entry propose: " + receipt;
 
-        pendingConfIndex = receipt.startIndex();
+        pendingConfIdx = receipt.startIndex();
 
         return receipt;
     }
@@ -428,8 +428,8 @@ public class RawNode<T> {
             raftLog.appliedTo(newApplied);
 
             if (prs.config().autoLeave() &&
-                oldApplied <= pendingConfIndex &&
-                newApplied >= pendingConfIndex &&
+                oldApplied <= pendingConfIdx &&
+                newApplied >= pendingConfIdx &&
                 state == StateType.STATE_LEADER) {
                 // If the current (and most recent, at least for this leader's term)
                 // configuration should be auto-left, initiate that now. We use a
@@ -443,7 +443,7 @@ public class RawNode<T> {
                 if (!appendEntries(Collections.<LogData>singletonList(zeroChange)))
                     unrecoverable("refused un-refusable auto-leaving ConfChange");
 
-                pendingConfIndex = raftLog.lastIndex();
+                pendingConfIdx = raftLog.lastIndex();
                 logger.info("initiating automatic transition out of joint configuration {}", prs.config());
             }
         }
@@ -1059,7 +1059,7 @@ public class RawNode<T> {
         // safe to delay any future proposals until we commit all our
         // pending log entries, and scanning the entire tail of the log
         // could be expensive.
-        pendingConfIndex = raftLog.lastIndex();
+        pendingConfIdx = raftLog.lastIndex();
 
         LogData empty = UserData.empty();
 
@@ -1324,6 +1324,10 @@ public class RawNode<T> {
 
     boolean isLearner() {
         return isLearner;
+    }
+
+    long pendingConfIndex() {
+        return pendingConfIdx;
     }
 
     List<ReadState> readStates() {
@@ -1673,7 +1677,7 @@ public class RawNode<T> {
                 pr.isLearner()
             ));
 
-        pendingConfIndex = 0;
+        pendingConfIdx = 0;
         uncommittedSize = 0;
         readOnly = new ReadOnly(readOnly.option());
     }

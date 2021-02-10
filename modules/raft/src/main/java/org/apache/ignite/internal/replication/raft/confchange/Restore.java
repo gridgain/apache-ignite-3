@@ -95,7 +95,6 @@ public class Restore {
     }
 
     private static RestoreResult chain(Changer chg, List<ChangeOp> ops) {
-
         RestoreResult res = null;
 
         for (ChangeOp op : ops) {
@@ -104,7 +103,7 @@ public class Restore {
             chg = new Changer(res.trackerConfig(), res.progressMap(), chg.lastIndex(), chg.maxInflight());
         }
 
-        return res;
+        return res == null ? chg.identity() : res;
     }
 
     // Restore takes a Changer (which must represent an empty configuration), and

@@ -98,6 +98,6 @@ public class TestMessageFactory implements MessageFactory {
 
     /** {@inheritDoc} */
     @Override public TimeoutNowRequest newTimeoutNowRequest(UUID from, UUID to, long term) {
-        throw new UnsupportedOperationException("Not implemented");
+        return new TestTimeoutNowRequest(from, to, term);
     }
 }
