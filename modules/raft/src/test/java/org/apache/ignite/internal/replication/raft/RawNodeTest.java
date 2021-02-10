@@ -35,6 +35,7 @@ import org.apache.ignite.internal.replication.raft.message.MessageType;
 import org.apache.ignite.internal.replication.raft.message.VoteRequest;
 import org.apache.ignite.internal.replication.raft.message.VoteResponse;
 import org.apache.ignite.internal.replication.raft.storage.ConfChange;
+import org.apache.ignite.internal.replication.raft.storage.ConfChangeJoint;
 import org.apache.ignite.internal.replication.raft.storage.ConfChangeSingle;
 import org.apache.ignite.internal.replication.raft.storage.Entry;
 import org.apache.ignite.internal.replication.raft.storage.MemoryStorage;
@@ -52,6 +53,7 @@ import static org.apache.ignite.internal.replication.raft.message.MessageType.Ms
 import static org.apache.ignite.internal.replication.raft.message.MessageType.MsgAppResp;
 import static org.apache.ignite.internal.replication.raft.message.MessageType.MsgHeartbeat;
 import static org.apache.ignite.internal.replication.raft.message.MessageType.MsgHeartbeatResp;
+import static org.apache.ignite.internal.replication.raft.message.MessageType.MsgTimeoutNow;
 import static org.apache.ignite.internal.replication.raft.message.MessageType.MsgVoteResp;
 import static org.apache.ignite.internal.replication.raft.storage.Entry.EntryType.ENTRY_CONF_CHANGE;
 import static org.apache.ignite.internal.replication.raft.storage.Entry.EntryType.ENTRY_DATA;
@@ -3335,6 +3337,220 @@ public class RawNodeTest extends AbstractRaftTest {
         nt.<String>action(ids[0], s -> s.node().transferLeader(ids[2]));
 
         checkLeaderTransferState(lead, STATE_FOLLOWER, ids[2]);
+    }
+
+    @Test
+    public void testLeaderTransferToSelf() {
+        Network nt = newNetwork(null, entries(), entries(), entries());
+        UUID[] ids = nt.ids();
+
+        nt.<String>action(ids[0], s -> s.node().campaign());
+
+        RawNode<String> lead = nt.<RawNodeStepper<String>>peer(ids[0]).node();
+
+        // Transfer leadership to self, there will be noop.
+        nt.<String>action(ids[0], s -> s.node().transferLeader(ids[0]));
+        checkLeaderTransferState(lead, STATE_LEADER, ids[0]);
+    }
+
+    @Test
+    public void testLeaderTransferToNonExistingNode() {
+        Network nt = newNetwork(null, entries(), entries(), entries());
+        UUID[] ids = nt.ids();
+
+        nt.<String>action(ids[0], s -> s.node().campaign());
+
+        RawNode<String> lead = nt.<RawNodeStepper<String>>peer(ids[0]).node();
+
+        // Transfer leadership to non-existing node, there will be noop.
+        nt.<String>action(ids[0], s -> s.node().transferLeader(UUID.randomUUID()));
+        checkLeaderTransferState(lead, STATE_LEADER, ids[0]);
+    }
+
+    @Test
+    public void testLeaderTransferTimeout() {
+        Network nt = newNetwork(null, entries(), entries(), entries());
+        UUID[] ids = nt.ids();
+
+        nt.<String>action(ids[0], s -> s.node().campaign());
+
+        RawNode<String> lead = nt.<RawNodeStepper<String>>peer(ids[0]).node();
+
+        nt.isolate(ids[2]);
+
+        // Transfer leadership to isolated node, wait for timeout.
+        nt.<String>action(ids[0], s -> s.node().transferLeader(ids[2]));
+        Assertions.assertEquals(ids[2], lead.basicStatus().leadTransferee());
+
+        for (int i = 0; i < lead.heartbeatTimeout(); i++)
+            lead.tick();
+
+        Assertions.assertEquals(ids[2], lead.basicStatus().leadTransferee());
+
+        for (int i = 0; i < lead.electionTimeout() - lead.heartbeatTimeout(); i++)
+            lead.tick();
+
+        checkLeaderTransferState(lead, STATE_LEADER, ids[0]);
+    }
+
+    @Test
+    public void testLeaderTransferIgnoreProposal() {
+        Network nt = newNetwork(null, entries(), entries(), entries());
+        UUID[] ids = nt.ids();
+
+        nt.<String>action(ids[0], s -> s.node().campaign());
+
+        RawNode<String> lead = nt.<RawNodeStepper<String>>peer(ids[0]).node();
+
+        nt.isolate(ids[2]);
+
+        // Transfer leadership to isolated node to let transfer pending, then send proposal.
+        nt.<String>action(ids[0], s -> s.node().transferLeader(ids[2]));
+        Assertions.assertEquals(ids[2], lead.basicStatus().leadTransferee());
+
+        nt.<String>action(ids[0], s -> {
+            Assertions.assertThrows(TransferLeaderException.class, () -> s.node().propose(""));
+            ;
+        });
+
+        Assertions.assertEquals(1, lead.tracker().progress(ids[0]).match());
+    }
+
+    @Test
+    public void testLeaderTransferReceiveHigherTermVote() {
+        Network nt = newNetwork(null, entries(), entries(), entries());
+        UUID[] ids = nt.ids();
+
+        nt.<String>action(ids[0], s -> s.node().campaign());
+
+        RawNode<String> lead = nt.<RawNodeStepper<String>>peer(ids[0]).node();
+
+        nt.isolate(ids[2]);
+
+        // Transfer leadership to isolated node to let transfer pending.
+        nt.<String>action(ids[0], s -> s.node().transferLeader(ids[2]));
+        Assertions.assertEquals(ids[2], lead.basicStatus().leadTransferee());
+
+        nt.<String>action(ids[1], s -> s.node().campaign());
+
+        checkLeaderTransferState(lead, STATE_FOLLOWER, ids[1]);
+    }
+
+    @Test
+    public void testLeaderTransferRemoveNode() {
+        Network nt = newNetwork(null, entries(), entries(), entries());
+        UUID[] ids = nt.ids();
+
+        nt.<String>action(ids[0], s -> s.node().campaign());
+
+        RawNode<String> lead = nt.<RawNodeStepper<String>>peer(ids[0]).node();
+
+        nt.ignore(MsgTimeoutNow);
+
+        // The leadTransferee is removed when leadship transferring.
+        nt.<String>action(ids[0], s -> s.node().transferLeader(ids[2]));
+        Assertions.assertEquals(ids[2], lead.basicStatus().leadTransferee());
+
+        lead.applyConfChange(new ConfChangeSingle(ids[2], ConfChangeSingle.ConfChangeType.ConfChangeRemoveNode));
+
+        checkLeaderTransferState(lead, STATE_LEADER, ids[0]);
+    }
+
+    @Test
+    public void testLeaderTransferDemoteNode() {
+        Network nt = newNetwork(null, entries(), entries(), entries());
+        UUID[] ids = nt.ids();
+
+        nt.<String>action(ids[0], s -> s.node().campaign());
+
+        RawNode<String> lead = nt.<RawNodeStepper<String>>peer(ids[0]).node();
+
+        nt.ignore(MsgTimeoutNow);
+
+        // The leadTransferee is demoted when leadship transferring.
+        nt.<String>action(ids[0], s -> s.node().transferLeader(ids[2]));
+        Assertions.assertEquals(ids[2], lead.basicStatus().leadTransferee());
+
+        lead.applyConfChange(new ConfChangeJoint(Arrays.asList(
+                new ConfChangeSingle(ids[2], ConfChangeSingle.ConfChangeType.ConfChangeRemoveNode),
+                new ConfChangeSingle(ids[2], ConfChangeSingle.ConfChangeType.ConfChangeAddLearnerNode)
+        )));
+
+        // Make the Raft group commit the LeaveJoint entry.
+        lead.applyConfChange(new ConfChangeJoint(Collections.emptyList()));
+
+        checkLeaderTransferState(lead, STATE_LEADER, ids[0]);
+    }
+
+    // TestLeaderTransferBack verifies leadership can transfer back to self when last transfer is pending.
+    @Test
+    public void testLeaderTransferBack() {
+        Network nt = newNetwork(null, entries(), entries(), entries());
+        UUID[] ids = nt.ids();
+
+        nt.<String>action(ids[0], s -> s.node().campaign());
+
+        RawNode<String> lead = nt.<RawNodeStepper<String>>peer(ids[0]).node();
+
+        nt.isolate(ids[2]);
+
+        nt.<String>action(ids[0], s -> s.node().transferLeader(ids[2]));
+        Assertions.assertEquals(ids[2], lead.basicStatus().leadTransferee());
+
+        // Transfer leadership back to self.
+        nt.<String>action(ids[0], s -> s.node().transferLeader(ids[0]));
+
+        checkLeaderTransferState(lead, STATE_LEADER, ids[0]);
+    }
+
+    // TestLeaderTransferSecondTransferToAnotherNode verifies leader can transfer to another node
+    // when last transfer is pending.
+    @Test
+    public void testLeaderTransferSecondTransferToAnotherNode() {
+        Network nt = newNetwork(null, entries(), entries(), entries());
+        UUID[] ids = nt.ids();
+
+        nt.<String>action(ids[0], s -> s.node().campaign());
+
+        RawNode<String> lead = nt.<RawNodeStepper<String>>peer(ids[0]).node();
+
+        nt.isolate(ids[2]);
+
+        nt.<String>action(ids[0], s -> s.node().transferLeader(ids[2]));
+        Assertions.assertEquals(ids[2], lead.basicStatus().leadTransferee());
+
+        // Transfer leadership to another node.
+        nt.<String>action(ids[0], s -> s.node().transferLeader(ids[1]));
+
+        checkLeaderTransferState(lead, STATE_FOLLOWER, ids[1]);
+    }
+
+    // TestLeaderTransferSecondTransferToSameNode verifies second transfer leader request
+    // to the same node should not extend the timeout while the first one is pending.
+    @Test
+    public void testLeaderTransferSecondTransferToSameNode() {
+        Network nt = newNetwork(null, entries(), entries(), entries());
+        UUID[] ids = nt.ids();
+
+        nt.<String>action(ids[0], s -> s.node().campaign());
+
+        RawNode<String> lead = nt.<RawNodeStepper<String>>peer(ids[0]).node();
+
+        nt.isolate(ids[2]);
+
+        nt.<String>action(ids[0], s -> s.node().transferLeader(ids[2]));
+        Assertions.assertEquals(ids[2], lead.basicStatus().leadTransferee());
+
+        for (int i = 0; i < lead.heartbeatTimeout(); i++)
+            lead.tick();
+
+        // Second transfer leadership request to the same node.
+        nt.<String>action(ids[0], s -> s.node().transferLeader(ids[2]));
+
+        for (int i = 0; i < lead.electionTimeout() - lead.heartbeatTimeout(); i++)
+            lead.tick();
+
+        checkLeaderTransferState(lead, STATE_LEADER, ids[0]);
     }
 
     private void checkLeaderTransferState(RawNode<String> r, StateType state, UUID lead) {

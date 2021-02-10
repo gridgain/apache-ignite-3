@@ -17,6 +17,7 @@
 
 package org.apache.ignite.internal.replication.raft;
 
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
@@ -56,8 +57,8 @@ public class Tracker {
         return new ConfigState(
             cfg.voters().incoming(),
             cfg.voters().outgoing(), // VotersOutgoing
-            cfg.learners(),
-            cfg.learnersNext(),
+            cfg.learners() != null ? cfg.learners() : Collections.emptySet(),
+            cfg.learnersNext() != null ? cfg.learnersNext() : Collections.emptySet(),
             cfg.autoLeave()
         );
     }

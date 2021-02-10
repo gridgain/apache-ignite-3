@@ -559,6 +559,8 @@ public class RawNode<T> {
 
             if (pr == null) {
                 logger.debug("{} unknown remote peer {}. Ignored transferring leadership", id, leadTransferee);
+
+                return;
             }
 
             if (pr.isLearner()) {
@@ -881,7 +883,7 @@ public class RawNode<T> {
         }
 
         // If the the leadTransferee was removed or demoted, abort the leadership transfer.
-        if (leadTransferee != null && this.prs.config().voters().ids().contains(leadTransferee))
+        if (leadTransferee != null && !this.prs.config().voters().ids().contains(leadTransferee))
             abortLeaderTransfer();
 
         return cs;
