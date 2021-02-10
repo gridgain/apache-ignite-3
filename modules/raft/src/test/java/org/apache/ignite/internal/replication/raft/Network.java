@@ -18,6 +18,7 @@
 package org.apache.ignite.internal.replication.raft;
 
 import java.util.ArrayDeque;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -71,6 +72,17 @@ public class Network {
         action.accept((RawNodeStepper<T>)stepper);
 
         drainQueue(stepper.readMessages());
+    }
+
+    public void multiAction(Runnable r) {
+        r.run();
+
+        List<Message> msgs = new ArrayList<>();
+
+        for (Stepper s : peers.values())
+            msgs.addAll(s.readMessages());
+
+        drainQueue(msgs);
     }
 
     public MemoryStorage storage(UUID peerId) {

@@ -3553,6 +3553,234 @@ public class RawNodeTest extends AbstractRaftTest {
         checkLeaderTransferState(lead, STATE_LEADER, ids[0]);
     }
 
+    // TestTransferNonMember verifies that when a MsgTimeoutNow arrives at
+    // a node that has been removed from the group, nothing happens.
+    // (previously, if the node also got votes, it would panic as it
+    // transitioned to StateLeader)
+    @Test
+    public void testTransferNonMember() {
+        UUID[] ids = idsBySize(4);
+
+        RawNode<String> r = newTestRaft(5, 1, memoryStorage(ids[0], new UUID[] {ids[1], ids[2], ids[3]}));
+
+        long term = r.basicStatus().hardState().term();
+
+        r.step(msgFactory.newTimeoutNowRequest(ids[1], ids[0], term));
+
+        r.step(msgFactory.newVoteResponse(ids[1], ids[0], false, term, false));
+        r.step(msgFactory.newVoteResponse(ids[2], ids[0], false, term, false));
+
+        Assertions.assertEquals(STATE_FOLLOWER, r.basicStatus().softState().state());
+    }
+
+    // TestNodeWithSmallerTermCanCompleteElection tests the scenario where a node
+    // that has been partitioned away (and fallen behind) rejoins the cluster at
+    // about the same time the leader node gets partitioned away.
+    // Previously the cluster would come to a standstill when run with PreVote
+    // enabled.
+    @Test
+    public void testNodeWithSmallerTermCanCompleteElection() {
+        Random rnd = new Random(seed());
+
+        MemoryStorage n1Storage = memoryStorage(ids[0], ids);
+        RawNode<String> n1 = newTestRaft(newTestConfig(10, 1).preVote(true), n1Storage);
+
+        MemoryStorage n2Storage = memoryStorage(ids[1], ids);
+        RawNode<String> n2 = newTestRaft(newTestConfig(10, 1).preVote(true), n2Storage);
+
+        MemoryStorage n3Storage = memoryStorage(ids[2], ids);
+        RawNode<String> n3 = newTestRaft(newTestConfig(10, 1).preVote(true), n3Storage);
+
+        // cause a network partition to isolate node 3
+        Network nt = new Network(rnd,
+            new RawNodeStepper<>(n1, n1Storage),
+            new RawNodeStepper<>(n2, n2Storage),
+            new RawNodeStepper<>(n3, n3Storage)
+        );
+
+        nt.cut(ids[0], ids[2]);
+        nt.cut(ids[1], ids[2]);
+
+        nt.<String>action(ids[0], s -> s.node().campaign());
+
+        Assertions.assertEquals(STATE_LEADER, n1.basicStatus().softState().state());
+        Assertions.assertEquals(STATE_FOLLOWER, n2.basicStatus().softState().state());
+
+        nt.<String>action(ids[2], s -> s.node().campaign());
+        Assertions.assertEquals(STATE_PRE_CANDIDATE, n3.basicStatus().softState().state());
+
+        nt.<String>action(ids[1], s -> s.node().campaign());
+
+        // check whether the term values are expected
+        // n1.Term == 3
+        // n2.Term == 3
+        // n3.Term == 1
+        Assertions.assertEquals(3, n1.basicStatus().hardState().term());
+        Assertions.assertEquals(3, n2.basicStatus().hardState().term());
+        Assertions.assertEquals(1, n3.basicStatus().hardState().term());
+
+        // check state
+        // n1 == follower
+        // n2 == leader
+        // n3 == pre-candidate
+        Assertions.assertEquals(STATE_FOLLOWER, n1.basicStatus().softState().state());
+        Assertions.assertEquals(STATE_LEADER, n2.basicStatus().softState().state());
+        Assertions.assertEquals(STATE_PRE_CANDIDATE, n3.basicStatus().softState().state());
+
+        // recover the network then immediately isolate b which is currently
+        // the leader, this is to emulate the crash of b.
+        nt.recover();
+        nt.isolate(ids[1]);
+
+        // call for election
+        nt.<String>action(ids[0], s -> s.node().campaign());
+        nt.<String>action(ids[2], s -> s.node().campaign());
+
+        // do we have a leader?
+        Assertions.assertFalse(
+            n1.basicStatus().softState().state() != STATE_LEADER &&
+            n2.basicStatus().softState().state() != STATE_LEADER);
+    }
+
+    // TestPreVoteWithSplitVote verifies that after split vote, cluster can complete
+    // election in next round.
+    @Test
+    public void testPreVoteWithSplitVote() {
+        Random rnd = new Random(seed());
+
+        MemoryStorage n1Storage = memoryStorage(ids[0], ids);
+        RawNode<String> n1 = newTestRaft(newTestConfig(10, 1).preVote(true), n1Storage);
+
+        MemoryStorage n2Storage = memoryStorage(ids[1], ids);
+        RawNode<String> n2 = newTestRaft(newTestConfig(10, 1).preVote(true), n2Storage);
+
+        MemoryStorage n3Storage = memoryStorage(ids[2], ids);
+        RawNode<String> n3 = newTestRaft(newTestConfig(10, 1).preVote(true), n3Storage);
+
+        // cause a network partition to isolate node 3
+        Network nt = new Network(rnd,
+            new RawNodeStepper<>(n1, n1Storage),
+            new RawNodeStepper<>(n2, n2Storage),
+            new RawNodeStepper<>(n3, n3Storage)
+        );
+
+        nt.<String>action(ids[0], s -> s.node().campaign());
+
+        // simulate leader down. followers start split vote.
+        nt.isolate(ids[0]);
+
+        nt.multiAction(() -> {
+            n2.campaign();
+            n3.campaign();
+        });
+
+        // check whether the term values are expected
+        // n2.Term == 3
+        // n3.Term == 3
+        Assertions.assertEquals(3, n2.basicStatus().hardState().term());
+        Assertions.assertEquals(3, n3.basicStatus().hardState().term());
+
+        // check state
+        // n2 == candidate
+        // n3 == candidate
+        Assertions.assertEquals(STATE_CANDIDATE, n2.basicStatus().softState().state());
+        Assertions.assertEquals(STATE_CANDIDATE, n3.basicStatus().softState().state());
+
+        // node 2 election timeout first
+        nt.<String>action(ids[1], s -> s.node().campaign());
+
+        // check whether the term values are expected
+        // n2.Term == 4
+        // n3.Term == 4
+        Assertions.assertEquals(4, n2.basicStatus().hardState().term());
+        Assertions.assertEquals(4, n3.basicStatus().hardState().term());
+
+        // check state
+        // n2 == leader
+        // n3 == follower
+        Assertions.assertEquals(STATE_LEADER, n2.basicStatus().softState().state());
+        Assertions.assertEquals(STATE_FOLLOWER, n3.basicStatus().softState().state());
+    }
+
+    // TestPreVoteWithCheckQuorum ensures that after a node become pre-candidate,
+    // it will checkQuorum correctly.
+    @Test
+    public void testPreVoteWithCheckQuorum() {
+        Random rnd = new Random(seed());
+
+        MemoryStorage n1Storage = memoryStorage(ids[0], ids);
+        RawNode<String> n1 = newTestRaft(newTestConfig(10, 1).preVote(true).checkQuorum(true), n1Storage);
+
+        MemoryStorage n2Storage = memoryStorage(ids[1], ids);
+        RawNode<String> n2 = newTestRaft(newTestConfig(10, 1).preVote(true).checkQuorum(true), n2Storage);
+
+        MemoryStorage n3Storage = memoryStorage(ids[2], ids);
+        RawNode<String> n3 = newTestRaft(newTestConfig(10, 1).preVote(true).checkQuorum(true), n3Storage);
+
+        // cause a network partition to isolate node 3
+        Network nt = new Network(rnd,
+            new RawNodeStepper<>(n1, n1Storage),
+            new RawNodeStepper<>(n2, n2Storage),
+            new RawNodeStepper<>(n3, n3Storage)
+        );
+
+        nt.<String>action(ids[0], s -> s.node().campaign());
+
+        // isolate node 1. node 2 and node 3 have leader info
+        nt.isolate(ids[0]);
+
+        // check state
+        Assertions.assertEquals(STATE_LEADER, n1.basicStatus().softState().state());
+        Assertions.assertEquals(STATE_FOLLOWER, n2.basicStatus().softState().state());
+        Assertions.assertEquals(STATE_FOLLOWER, n3.basicStatus().softState().state());
+
+        // node 2 will ignore node 3's PreVote
+        nt.<String>action(ids[2], s -> s.node().campaign());
+        nt.<String>action(ids[1], s -> s.node().campaign());
+
+        // Do we have a leader?
+        Assertions.assertEquals(STATE_LEADER, n2.basicStatus().softState().state());
+        Assertions.assertEquals(STATE_FOLLOWER, n3.basicStatus().softState().state());
+    }
+
+    // TestLearnerCampaign verifies that a learner won't campaign even if it receives
+    // a MsgHup or MsgTimeoutNow.
+    @Test
+    public void testLearnerCampaign() {
+        Random rnd = new Random(seed());
+        UUID[] ids = idsBySize(2);
+
+        MemoryStorage n1Storage = memoryStorage(ids[0], new UUID[] {ids[0]}, new UUID[] {ids[1]});
+        RawNode<String> n1 = newTestRaft(10, 1, n1Storage, rnd);
+
+        MemoryStorage n2Storage = memoryStorage(ids[1], new UUID[] {ids[0]}, new UUID[] {ids[1]});
+        RawNode<String> n2 = newTestRaft(10, 1, n2Storage, rnd);
+
+        Network nt = new Network(
+            rnd,
+            new RawNodeStepper<>(n1, n1Storage),
+            new RawNodeStepper<>(n2, n2Storage)
+        );
+
+        nt.<String>action(ids[1], s -> s.node().campaign());
+
+        Assertions.assertTrue(n2.isLearner());
+        Assertions.assertEquals(STATE_FOLLOWER, n2.basicStatus().softState().state());
+
+        nt.<String>action(ids[0], s -> s.node().campaign());
+        Assertions.assertEquals(STATE_LEADER, n1.basicStatus().softState().state());
+        Assertions.assertEquals(ids[0], n1.basicStatus().softState().lead());
+
+        // NB: TransferLeader already checks that the recipient is not a learner, but
+        // the check could have happened by the time the recipient becomes a learner,
+        // in which case it will receive MsgTimeoutNow as in this test case and we
+        // verify that it's ignored.
+        nt.send(msgFactory.newTimeoutNowRequest(ids[0], ids[1], n1.basicStatus().hardState().term()));
+
+        Assertions.assertEquals(STATE_FOLLOWER, n2.basicStatus().softState().state());
+        Assertions.assertEquals(STATE_LEADER, n1.basicStatus().softState().state());
+    }
+
     private void checkLeaderTransferState(RawNode<String> r, StateType state, UUID lead) {
         Assertions.assertEquals(state, r.basicStatus().softState().state());
         Assertions.assertEquals(lead, r.basicStatus().softState().lead());
