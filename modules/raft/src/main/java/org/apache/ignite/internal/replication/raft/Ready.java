@@ -17,6 +17,7 @@
 
 package org.apache.ignite.internal.replication.raft;
 
+import java.util.Collection;
 import java.util.List;
 import org.apache.ignite.internal.replication.raft.message.Message;
 import org.apache.ignite.internal.replication.raft.storage.Entry;

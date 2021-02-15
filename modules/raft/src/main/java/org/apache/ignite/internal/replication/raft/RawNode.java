@@ -281,6 +281,7 @@ public class RawNode<T> {
 
         // Reject read only request when this leader has not committed any log entry at its term.
         if (!committedEntryInCurrentTerm()) {
+            // TODO sanpwc: Should we through an exception instead?
             responseToReadIndexReq(reqCtx, -1);
 
             return;
@@ -997,7 +998,8 @@ public class RawNode<T> {
         logger.debug("{} became follower at term {}", id, this.term);
     }
 
-    void becomeCandidate() {
+    // TODO sanpwc: tmp, should be package-private.
+    public void becomeCandidate() {
         if (state == StateType.STATE_LEADER)
             unrecoverable("invalid transition [leader -> candidate]");
 
@@ -1026,7 +1028,8 @@ public class RawNode<T> {
         logger.info("{} became pre-candidate at term {}", id, term);
     }
 
-    void becomeLeader() {
+    // TODO sanpwc: tmp, should be package-private.
+    public void becomeLeader() {
         if (state == StateType.STATE_FOLLOWER)
             unrecoverable("invalid transition [follower -> leader]");
 
@@ -1967,7 +1970,13 @@ public class RawNode<T> {
         return prs;
     }
 
-    RaftLog raftLog() {
+    // TODO sanpwc: tmp, should be package-private.
+    public RaftLog raftLog() {
         return raftLog;
+    }
+
+    // TODO sanpwc: tmp, remove.
+    public boolean isLeader() {
+        return state == StateType.STATE_LEADER;
     }
 }

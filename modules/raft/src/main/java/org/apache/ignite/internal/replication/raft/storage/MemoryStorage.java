@@ -74,6 +74,7 @@ public class MemoryStorage implements Storage {
         this.entryFactory = entryFactory;
 
         // When starting from scratch populate the list with a dummy entry at term zero.
+        // TODO sanpwc: Use dummy entry instead
         this.entries.add(new TestEntry(Entry.EntryType.ENTRY_DATA, 0,0,null));
     }
 

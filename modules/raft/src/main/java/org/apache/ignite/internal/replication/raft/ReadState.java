@@ -30,4 +30,18 @@ public class ReadState {
         this.ctx = ctx;
         this.idx = idx;
     }
+
+    /**
+     * @return Context.
+     */
+    public IgniteUuid context() {
+        return ctx;
+    }
+
+    /**
+     * @return Index.
+     */
+    public long index() {
+        return idx;
+    }
 }

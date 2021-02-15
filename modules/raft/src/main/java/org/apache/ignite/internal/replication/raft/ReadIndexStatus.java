@@ -18,6 +18,7 @@
 package org.apache.ignite.internal.replication.raft;
 
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
 import org.apache.ignite.lang.IgniteUuid;
@@ -33,7 +34,7 @@ public class ReadIndexStatus {
     // instead of a Set<UUID> due to the API of VoteResult. If
     // this becomes performance sensitive enough (doubtful), VoteResult
     // can change to an API that is closer to that of committedIndex.
-    private Map<UUID, Boolean> acks;
+    private Map<UUID, Boolean> acks = new HashMap<>();
 
     public ReadIndexStatus(long idx, IgniteUuid ctx) {
         this.idx = idx;

@@ -17,6 +17,8 @@
 
 package org.apache.ignite.internal.replication.raft.storage;
 
+import org.apache.ignite.internal.replication.raft.common.Operation;
+
 /**
  *
  */
@@ -49,6 +51,10 @@ public class TestEntryFactory implements EntryFactory {
             }
             else if (d instanceof Integer)
                 return 4;
+            else if (d instanceof Operation) {
+                // TODO sanpwc: Implement.
+                return 1;
+            }
             else
                 throw new IllegalArgumentException("Unsupported data: " + data);
         }
