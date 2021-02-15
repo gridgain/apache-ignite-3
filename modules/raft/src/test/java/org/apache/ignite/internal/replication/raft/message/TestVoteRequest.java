@@ -30,6 +30,9 @@ public class TestVoteRequest extends TestBaseMessage implements VoteRequest {
     private final long lastTerm;
 
     /** */
+    private final boolean preVote;
+
+    /** */
     private final boolean campaignTransfer;
 
     public TestVoteRequest(
@@ -41,10 +44,11 @@ public class TestVoteRequest extends TestBaseMessage implements VoteRequest {
         long lastTerm,
         boolean campaignTransfer
     ) {
-        super(preVote ? MessageType.MsgPreVote : MessageType.MsgVote, from, to, term);
+        super(MessageType.MsgVote, from, to, term);
 
         this.lastIdx = lastIdx;
         this.lastTerm = lastTerm;
+        this.preVote = preVote;
         this.campaignTransfer = campaignTransfer;
     }
 
@@ -56,6 +60,11 @@ public class TestVoteRequest extends TestBaseMessage implements VoteRequest {
     /** {@inheritDoc} */
     @Override public long lastTerm() {
         return lastTerm;
+    }
+
+    /** {@inheritDoc} */
+    @Override public boolean preVote() {
+        return preVote;
     }
 
     /** {@inheritDoc} */

@@ -118,4 +118,12 @@ public class ReadOnly {
 
         return null;
     }
+
+    List<IgniteUuid> readIndexQueue() {
+        return readIndexQueue;
+    }
+
+    Map<IgniteUuid, ReadIndexStatus> pendingReadIndex() {
+        return pendingReadIndex;
+    }
 }

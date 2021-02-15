@@ -33,5 +33,5 @@ public interface Entry {
 
     public long index();
 
-    LogData data();
+    <T extends LogData> T data();
 }

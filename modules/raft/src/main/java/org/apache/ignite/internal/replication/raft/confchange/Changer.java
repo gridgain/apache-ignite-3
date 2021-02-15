@@ -206,6 +206,10 @@ public class Changer {
         return checkAndReturn();
     }
 
+    public RestoreResult identity() {
+        return checkAndReturn();
+    }
+
     public long lastIndex() {
         return lastIdx;
     }
@@ -462,9 +466,9 @@ public class Changer {
     private Set<UUID> nullCopy(Set<UUID> src) {
         return src == null ? new HashSet<>() : new HashSet<>(src);
     }
+
     // symdiff returns the cardinality of the symmetric difference between the sets of
     // UUIDs, i.e. len((l - r) union (r - l)).
-
     private int symdiff(Set<UUID> l, Set<UUID> r) {
         int n = 0;
 

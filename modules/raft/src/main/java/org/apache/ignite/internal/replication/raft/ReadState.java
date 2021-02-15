@@ -32,14 +32,14 @@ public class ReadState {
     }
 
     /**
-     * @return Context.
+     * @return
      */
     public IgniteUuid context() {
         return ctx;
     }
 
     /**
-     * @return Index.
+     * @return
      */
     public long index() {
         return idx;

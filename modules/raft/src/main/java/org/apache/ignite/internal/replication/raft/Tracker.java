@@ -17,6 +17,7 @@
 
 package org.apache.ignite.internal.replication.raft;
 
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
@@ -27,7 +28,9 @@ import org.apache.ignite.internal.replication.raft.quorum.JointConfig;
 import static org.apache.ignite.internal.replication.raft.VoteResult.VoteWon;
 
 /**
- *
+ * Tracker tracks the currently active configuration and the information
+ * known about the nodes and learners in it. In particular, it tracks the match
+ * index for each peer which in turn allows reasoning about the committed index.
  */
 public class Tracker {
     private TrackerConfig cfg;
@@ -54,8 +57,8 @@ public class Tracker {
         return new ConfigState(
             cfg.voters().incoming(),
             cfg.voters().outgoing(), // VotersOutgoing
-            cfg.learners(),
-            cfg.learnersNext(),
+            cfg.learners() != null ? cfg.learners() : Collections.emptySet(),
+            cfg.learnersNext() != null ? cfg.learnersNext() : Collections.emptySet(),
             cfg.autoLeave()
         );
     }

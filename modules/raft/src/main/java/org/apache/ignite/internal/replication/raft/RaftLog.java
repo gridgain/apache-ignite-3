@@ -113,7 +113,7 @@ public class RaftLog {
 
         if (committed < newApplied || newApplied < applied) {
             unrecoverable(
-                "applied({}) is out of range [prevApplied(%d), committed({})]",
+                "applied({}) is out of range [prevApplied({}), committed({})]",
                 newApplied,
                 applied,
                 committed
@@ -385,7 +385,10 @@ public class RaftLog {
                 entries = unstableEntries;
         }
 
-        return Utils.limitSize(entryFactory, entries, maxSize);
+        // TODO agoncharuk we need to define a contract here: List.subList will throw a ConcurrentModificationException
+        // when log is shifted, so we would need to make a copy somewhere. Now it's here for safety, but for some calls
+        // the returned list does not escape RawNode.
+        return new ArrayList<>(Utils.limitSize(entryFactory, entries, maxSize));
     }
 
     // hasPendingSnapshot returns if there is pending snapshot waiting for applying.
@@ -461,8 +464,9 @@ public class RaftLog {
         throw new UnrecoverableException(MessageFormatter.arrayFormat(formatMsg, args).getMessage());
     }
 
+    // l.firstIndex <= fromIdx <= toIdx <= l.firstIndex + len(l.entries)
     private void mustCheckOutOfBounds(long fromIdx, long toIdx) throws CompactionException {
-        if (fromIdx < toIdx) {
+        if (fromIdx > toIdx) {
             logger.error(
                 String.format(
                     "invalid slice %d > %d",

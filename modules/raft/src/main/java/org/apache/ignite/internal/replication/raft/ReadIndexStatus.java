@@ -39,6 +39,8 @@ public class ReadIndexStatus {
     public ReadIndexStatus(long idx, IgniteUuid ctx) {
         this.idx = idx;
         this.ctx = ctx;
+
+        acks = new HashMap<>();
     }
 
     public Map<UUID, Boolean> acks() {

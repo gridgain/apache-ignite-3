@@ -76,6 +76,8 @@ public class MemoryStorage implements Storage {
         // When starting from scratch populate the list with a dummy entry at term zero.
         // TODO sanpwc: Use dummy entry instead
         this.entries.add(new TestEntry(Entry.EntryType.ENTRY_DATA, 0,0,null));
+        if (entries.isEmpty())
+            this.entries.add(new TestEntry(Entry.EntryType.ENTRY_DATA, 0, 0, null));
     }
 
     /** {@inheritDoc} */
@@ -96,7 +98,7 @@ public class MemoryStorage implements Storage {
 
             if (hi > lastIndex() + 1) {
                 unrecoverable(
-                    "entries' hi(%d) is out of bound lastindex(%d)",
+                    "entries' hi({}) is out of bound lastindex({})",
                     hi,
                     lastIndex()
                 );
@@ -204,6 +206,33 @@ public class MemoryStorage implements Storage {
                     entries.get(0).index()
                 );
             }
+        }
+        finally {
+            memoryStorageLock.unlock();
+        }
+    }
+
+    // Compact discards all log entries prior to compactIndex.
+    // It is the application's responsibility to not attempt to compact an index
+    // greater than raftLog.applied.
+    public void compact(long compactIdx) throws CompactionException {
+        memoryStorageLock.lock();
+
+        try {
+            long offset = entries.get(0).index();
+            if (compactIdx <= offset)
+                throw new CompactionException();
+
+            if (compactIdx > lastIndex())
+                unrecoverable("compact {} is out of bound lastindex({})", compactIdx, lastIndex());
+
+            int i = (int)(compactIdx - offset);
+
+            List<Entry> ents = new ArrayList<>(1 + this.entries.size() - i);
+            ents.add(new TestEntry(Entry.EntryType.ENTRY_DATA, this.entries.get(i).term(), this.entries.get(i).index(), null));
+            ents.addAll(this.entries.subList(i + 1, this.entries.size()));
+
+            this.entries = ents;
         }
         finally {
             memoryStorageLock.unlock();

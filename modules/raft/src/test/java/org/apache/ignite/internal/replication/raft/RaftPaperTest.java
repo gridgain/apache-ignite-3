@@ -38,7 +38,6 @@ import org.apache.ignite.internal.replication.raft.storage.MemoryStorage;
 import org.apache.ignite.internal.replication.raft.storage.UserData;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
-import org.slf4j.LoggerFactory;
 import org.slf4j.helpers.MessageFormatter;
 
 import static org.apache.ignite.internal.replication.raft.StateType.STATE_CANDIDATE;
@@ -185,7 +184,7 @@ public class RaftPaperTest extends AbstractRaftTest {
         long term = r.basicStatus().hardState().term();
 
         for (int i = 0; i < 10; i++) {
-             ProposeReceipt receipt = r.propose(i + 1);
+            ProposeReceipt receipt = r.propose(i + 1);
 
             Assertions.assertEquals(term, receipt.term());
             // Node commits en empty entry when becomes a leader.
@@ -514,7 +513,7 @@ public class RaftPaperTest extends AbstractRaftTest {
         List<Entry> entries = r.raftLog().nextEntries();
         Assertions.assertEquals(1, entries.size());
         Assertions.assertEquals(Entry.EntryType.ENTRY_DATA, entries.get(0).type());
-        Assertions.assertEquals("some data", ((UserData<String>)entries.get(0).data()).data());
+        Assertions.assertEquals("some data", entries.get(0).<UserData>data().data());
 
         List<Message> msgs = r.readMessages();
         Collections.sort(msgs, destinationComparator);
@@ -693,10 +692,6 @@ public class RaftPaperTest extends AbstractRaftTest {
         }
     }
 
-    private Entry entry(long term, long idx, String data) {
-        return entryFactory.newEntry(term, idx, new UserData<>(data));
-    }
-
     // TestFollowerAppendEntries tests that when AppendEntries RPC is valid,
     // the follower will delete the existing conflict entry and all that follow it,
     // and append any new entries not already in the log.
@@ -870,31 +865,36 @@ public class RaftPaperTest extends AbstractRaftTest {
             },
         };
 
+        Random rnd = new Random(seed());
+
         for (Entry[] tt : tests) {
             MemoryStorage leadStorage = memoryStorage(ids, new HardState(term, null, ents.length));
 
             leadStorage.append(Arrays.asList(ents));
 
-            RawNode<String> lead = newTestRaft(10, 1, leadStorage);
+            RawNode<String> lead = newTestRaft(10, 1, leadStorage, rnd);
 
             MemoryStorage followerStorage = memoryStorage(ids[1], ids, new HardState(term - 1, null, 0));
 
             followerStorage.append(Arrays.asList(tt));
 
-            RawNode<String> follower = newTestRaft(10, 1, followerStorage);
+            RawNode<String> follower = newTestRaft(10, 1, followerStorage, rnd);
 
             // It is necessary to have a three-node cluster.
             // The second may have more up-to-date log than the first one, so the
             // first node needs the vote from the third node to become the leader.
-            Network n = new Network(new RawNodeStepper(lead), new RawNodeStepper(follower));
+            Network n = new Network(
+                rnd,
+                new RawNodeStepper(lead, leadStorage),
+                new RawNodeStepper(follower, followerStorage));
 
-            n.<RawNodeStepper>action(ids[0], s -> s.node().campaign());
+            n.<String>action(ids[0], s -> s.node().campaign());
 
             // The election occurs in the term after the one we loaded with
             // lead.loadState above.
             n.send(msgFactory.newVoteResponse(ids[2], ids[0], false, term + 1, false));
 
-            n.<RawNodeStepper<String>>action(ids[0], s -> s.node().propose(""));
+            n.<String>action(ids[0], s -> s.node().propose(""));
 
             // TODO agoncharuk here was all diff.
             Assertions.assertEquals(lead.raftLog().allEntries(), follower.raftLog().allEntries());
@@ -1077,9 +1077,7 @@ public class RaftPaperTest extends AbstractRaftTest {
 
         UUID[] ids = idsBySize(size);
 
-        long seed = System.currentTimeMillis();
-
-        LoggerFactory.getLogger(getClass().getName()).info("Using seed: {}; //", seed);
+        long seed = seed();
 
         for (int k = 0; k < ids.length; k++) {
             MemoryStorage storage = memoryStorage(ids[k], ids, new HardState(1, null, 0));
@@ -1141,7 +1139,7 @@ public class RaftPaperTest extends AbstractRaftTest {
 
             Entry entry = req.entries().get(0);
             Assertions.assertEquals(Entry.EntryType.ENTRY_DATA, entry.type(), "not a message to append noop entry");
-            Assertions.assertNull(((UserData<String>)entry.data()).data(), "not a message to append noop entry");
+            Assertions.assertNull(entry.<UserData>data().data(), "not a message to append noop entry");
 
             r.step(acceptAndReply(req));
         }

@@ -19,9 +19,6 @@ package org.apache.ignite.internal.replication.raft;
 
 /**
  * The config object contains parameters required to start a Raft group.
- * TODO agoncharuk: Not all fields belong to this class. Most likely we should have an 'initialization'
- * TODO config, which will be used when Raft group is created, and 'regular' config, which is used always.
- * TODO Additionally, the storage (functional) interfaces likely should not be a part of the config.
  */
 public class RaftConfig {
     /**
@@ -92,7 +89,7 @@ public class RaftConfig {
      * {@code checkQuorum} MUST be enabled if {@link ReadOnlyOption#READ_ONLY_LEASE_BASED} is used.
      * TODO agoncharuk: this should be moved to the read-only request so we can change the read guarantees at runtime.
      */
-    private ReadOnlyOption readOnlyOption;
+    private ReadOnlyOption readOnlyOption = ReadOnlyOption.READ_ONLY_SAFE;
 
     /**
      * @return

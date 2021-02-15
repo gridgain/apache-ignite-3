@@ -34,7 +34,6 @@ import org.apache.ignite.internal.replication.raft.message.HeartbeatResponse;
 import org.apache.ignite.internal.replication.raft.message.InstallSnapshotRequest;
 import org.apache.ignite.internal.replication.raft.message.Message;
 import org.apache.ignite.internal.replication.raft.message.MessageFactory;
-import org.apache.ignite.internal.replication.raft.message.MessageType;
 import org.apache.ignite.internal.replication.raft.message.VoteRequest;
 import org.apache.ignite.internal.replication.raft.message.VoteResponse;
 import org.apache.ignite.internal.replication.raft.storage.ConfChange;
@@ -54,8 +53,6 @@ import static org.apache.ignite.internal.replication.raft.Progress.ProgressState
 import static org.apache.ignite.internal.replication.raft.VoteResult.VoteWon;
 import static org.apache.ignite.internal.replication.raft.message.MessageType.MsgApp;
 import static org.apache.ignite.internal.replication.raft.message.MessageType.MsgHeartbeat;
-import static org.apache.ignite.internal.replication.raft.message.MessageType.MsgPreVote;
-import static org.apache.ignite.internal.replication.raft.message.MessageType.MsgPreVoteResp;
 import static org.apache.ignite.internal.replication.raft.message.MessageType.MsgSnap;
 import static org.apache.ignite.internal.replication.raft.message.MessageType.MsgVote;
 import static org.apache.ignite.internal.replication.raft.message.MessageType.MsgVoteResp;
@@ -127,7 +124,7 @@ public class RawNode<T> {
     // configuration change (if any). Config changes are only allowed to
     // be proposed if the leader's applied index is greater than this
     // value.
-    private long pendingConfIndex;
+    private long pendingConfIdx;
 
     // an estimate of the size of the uncommitted tail of the Raft log. Used to
     // prevent unbounded log growth. Only maintained by the leader. Reset on
@@ -215,6 +212,11 @@ public class RawNode<T> {
         return hup(preVote ? CAMPAIGN_PRE_ELECTION : CAMPAIGN_ELECTION);
     }
 
+    public void sendHeartbeat() {
+        if (state == StateType.STATE_LEADER)
+            bcastHeartbeat();
+    }
+
     // Proposes data be appended to the raft log.
     public ProposeReceipt propose(T data) {
         checkValidLeader();
@@ -233,7 +235,7 @@ public class RawNode<T> {
     public ProposeReceipt proposeConfChange(ConfChange cc) {
         checkValidLeader();
 
-        boolean alreadyPending = pendingConfIndex > raftLog.applied();
+        boolean alreadyPending = pendingConfIdx > raftLog.applied();
         boolean alreadyJoint = prs.config().voters().isJoint();
 
         boolean wantsLeaveJoint = cc.changes().isEmpty();
@@ -241,7 +243,7 @@ public class RawNode<T> {
         String refused = null;
 
         if (alreadyPending)
-            refused = String.format("possible unapplied conf change at index %d (applied to %d)", pendingConfIndex,
+            refused = String.format("possible unapplied conf change at index %d (applied to %d)", pendingConfIdx,
                 raftLog.applied());
         else if (alreadyJoint && !wantsLeaveJoint)
             refused = String.format("must transition out of joint config first: %s", prs.config().voters());
@@ -258,7 +260,7 @@ public class RawNode<T> {
 
         assert receipt.startIndex() == receipt.endIndex() : "Invalid receipt for single-entry propose: " + receipt;
 
-        pendingConfIndex = receipt.startIndex();
+        pendingConfIdx = receipt.startIndex();
 
         return receipt;
     }
@@ -427,8 +429,8 @@ public class RawNode<T> {
             raftLog.appliedTo(newApplied);
 
             if (prs.config().autoLeave() &&
-                oldApplied <= pendingConfIndex &&
-                newApplied >= pendingConfIndex &&
+                oldApplied <= pendingConfIdx &&
+                newApplied >= pendingConfIdx &&
                 state == StateType.STATE_LEADER) {
                 // If the current (and most recent, at least for this leader's term)
                 // configuration should be auto-left, initiate that now. We use a
@@ -442,7 +444,7 @@ public class RawNode<T> {
                 if (!appendEntries(Collections.<LogData>singletonList(zeroChange)))
                     unrecoverable("refused un-refusable auto-leaving ConfChange");
 
-                pendingConfIndex = raftLog.lastIndex();
+                pendingConfIdx = raftLog.lastIndex();
                 logger.info("initiating automatic transition out of joint configuration {}", prs.config());
             }
         }
@@ -511,9 +513,9 @@ public class RawNode<T> {
 
     // ReportSnapshot reports the status of the sent snapshot.
     public void ReportSnapshot(UUID id, SnapshotStatus status) {
-        boolean rej = status == SnapshotStatus.SnapshotFailure;
-
         if (state == StateType.STATE_LEADER) {
+            boolean success = status != SnapshotStatus.SnapshotFailure;
+
             Progress pr = prs.progress(id);
 
             if (pr == null) {
@@ -529,7 +531,7 @@ public class RawNode<T> {
             // MsgAppResp above. In fact, the code there is more correct than the
             // code here and should likely be updated to match (or even better, the
             // logic pulled into a newly created Progress state machine handler).
-            if (!rej) {
+            if (success) {
                 pr.becomeProbe();
 
                 logger.debug("{} snapshot succeeded, resumed sending replication messages to {} [{}]", this.id, id, pr);
@@ -558,6 +560,8 @@ public class RawNode<T> {
 
             if (pr == null) {
                 logger.debug("{} unknown remote peer {}. Ignored transferring leadership", id, leadTransferee);
+
+                return;
             }
 
             if (pr.isLearner()) {
@@ -636,7 +640,7 @@ public class RawNode<T> {
         if (m.term() == 0) {
         }
         else if (m.term() > term) {
-            if (m.type() == MsgVote || m.type() == MsgPreVote) {
+            if (m.type() == MsgVote) {
                 VoteRequest req = (VoteRequest)m;
 
                 boolean force = req.campaignTransfer();
@@ -655,10 +659,10 @@ public class RawNode<T> {
             }
 
             // Never change our term in response to a PreVote
-            if (m.type() == MsgPreVote) {
+            if (m.type() == MsgVote && ((VoteRequest)m).preVote()) {
 
             }
-            else if (m.type() == MsgPreVoteResp && !((VoteResponse)m).reject()) {
+            else if (m.type() == MsgVoteResp && ((VoteResponse)m).preVote() && !((VoteResponse)m).reject()) {
                 // We send pre-vote requests with a term in our future. If the
                 // pre-vote is granted, we will increment our term when we get a
                 // quorum. If it is not, the term comes from the node that
@@ -706,7 +710,7 @@ public class RawNode<T> {
                     false,
                     0));
             }
-            else if (m.type() == MsgPreVote) {
+            else if (m.type() == MsgVote && ((VoteRequest)m).preVote()) {
                 VoteRequest req = (VoteRequest)m;
 
                 // Before Pre-Vote enable, there may have candidate with higher term,
@@ -733,8 +737,7 @@ public class RawNode<T> {
         }
 
         switch (m.type()) {
-            case MsgVote:
-            case MsgPreVote: {
+            case MsgVote: {
                 VoteRequest req = (VoteRequest)m;
 
                 // We can vote if this is a repeat of a vote we've already cast...
@@ -742,7 +745,7 @@ public class RawNode<T> {
                     // ...we haven't voted and we don't think there's a leader yet in this term...
                     (vote == null && lead == null) ||
                     // ...or this is a PreVote for a future term...
-                    (m.type() == MsgPreVote && m.term() > term);
+                    (req.preVote() && m.term() > term);
 
                 // ...and we believe the candidate is up to date.
                 if (canVote && raftLog.isUpToDate(req.lastIndex(), req.lastTerm())) {
@@ -785,7 +788,7 @@ public class RawNode<T> {
                             m.term(),
                             /*reject*/false));
 
-                    if (m.type() == MsgVote) {
+                    if (!req.preVote()) {
                         // Only record real votes.
                         electionElapsed = 0;
                         vote = m.from();
@@ -881,7 +884,7 @@ public class RawNode<T> {
         }
 
         // If the the leadTransferee was removed or demoted, abort the leadership transfer.
-        if (leadTransferee != null && this.prs.config().voters().ids().contains(leadTransferee))
+        if (leadTransferee != null && !this.prs.config().voters().ids().contains(leadTransferee))
             abortLeaderTransfer();
 
         return cs;
@@ -911,6 +914,17 @@ public class RawNode<T> {
 
     long uncommittedSize() {
         return uncommittedSize;
+    }
+
+    void resetRandomizedElectionTimeout() {
+        randomizedElectionTimeout = electionTimeout + rnd.nextInt(electionTimeout);
+    }
+
+    // pastElectionTimeout returns true iff r.electionElapsed is greater
+    // than or equal to the randomized election timeout in
+    // [electiontimeout, 2 * electiontimeout - 1].
+    boolean pastElectionTimeout() {
+        return electionElapsed >= randomizedElectionTimeout;
     }
 
     // increaseUncommittedSize computes the size of the proposed entries and
@@ -1012,7 +1026,7 @@ public class RawNode<T> {
         logger.debug("{} became candidate at term {}", id, term);
     }
 
-    private void becomePreCandidate() {
+    void becomePreCandidate() {
         if (state == StateType.STATE_LEADER)
             unrecoverable("invalid transition [leader -> pre-candidate]");
 
@@ -1050,7 +1064,7 @@ public class RawNode<T> {
         // safe to delay any future proposals until we commit all our
         // pending log entries, and scanning the entire tail of the log
         // could be expensive.
-        pendingConfIndex = raftLog.lastIndex();
+        pendingConfIdx = raftLog.lastIndex();
 
         LogData empty = UserData.empty();
 
@@ -1130,7 +1144,7 @@ public class RawNode<T> {
     // maybeCommit attempts to advance the commit index. Returns true if
     // the commit index changed (in which case the caller should call
     // bcastAppend()).
-    private boolean maybeCommit() {
+    boolean maybeCommit() {
         long mci = prs.committed();
 
         return raftLog.maybeCommit(mci, term);
@@ -1279,6 +1293,54 @@ public class RawNode<T> {
         IgniteUuid lastCtx = readOnly.lastPendingRequestCtx();
 
         bcastHeartbeatWithCtx(lastCtx);
+    }
+
+    List<Message> readMessages() {
+        List<Message> ret = msgs;
+
+        msgs = new ArrayList<>();
+
+        return ret;
+    }
+
+    Tracker tracker() {
+        return prs;
+    }
+
+    RaftLog raftLog() {
+        return raftLog;
+    }
+
+    ReadOnly readOnly() {
+        return readOnly;
+    }
+
+    int electionTimeout() {
+        return electionTimeout;
+    }
+
+    void randomizedElectionTimeout(int timeout) {
+        randomizedElectionTimeout = timeout;
+    }
+
+    int randomizedElectionTimeout() {
+        return randomizedElectionTimeout;
+    }
+
+    boolean isLearner() {
+        return isLearner;
+    }
+
+    long pendingConfIndex() {
+        return pendingConfIdx;
+    }
+
+    List<ReadState> readStates() {
+        return readStates;
+    }
+
+    int heartbeatTimeout() {
+        return heartbeatTimeout;
     }
 
     private void bcastHeartbeatWithCtx(IgniteUuid ctx) {
@@ -1451,7 +1513,7 @@ public class RawNode<T> {
         // Only handle vote responses corresponding to our candidacy (while in
         // StateCandidate, we may get stale MsgPreVoteResp messages in this term from
         // our pre-candidate state).
-        MessageType myVoteRespType = state == StateType.STATE_PRE_CANDIDATE ? MsgPreVoteResp : MsgVoteResp;
+        boolean preVote = state == StateType.STATE_PRE_CANDIDATE;
 
         switch (m.type()) {
             case MsgApp: {
@@ -1478,12 +1540,11 @@ public class RawNode<T> {
                 break;
             }
 
-            case MsgPreVoteResp:
             case MsgVoteResp: {
-                if (m.type() == myVoteRespType) {
-                    VoteResponse res = (VoteResponse)m;
+                VoteResponse res = (VoteResponse)m;
 
-                    PollResult p = poll(res.from(), res.type(), !res.reject());
+                if (res.preVote() == preVote) {
+                    PollResult p = poll(res.from(), res.preVote(), !res.reject());
 
                     logger.info("{} has received {} {} votes and {} vote rejections", id, p.granted(), res.type(), p.rejected());
 
@@ -1621,21 +1682,17 @@ public class RawNode<T> {
                 pr.isLearner()
             ));
 
-        pendingConfIndex = 0;
+        pendingConfIdx = 0;
         uncommittedSize = 0;
         readOnly = new ReadOnly(readOnly.option());
     }
 
     // promotable indicates whether state machine can be promoted to leader,
     // which is true when its own id is in progress list.
-    private boolean promotable() {
+    boolean promotable() {
         Progress pr = prs.progress(id);
 
         return pr != null && !pr.isLearner() && !raftLog.hasPendingSnapshot();
-    }
-
-    private void resetRandomizedElectionTimeout() {
-        randomizedElectionTimeout = electionTimeout + rnd.nextInt(electionTimeout);
     }
 
     private int numOfPendingConf(List<Entry> ents) {
@@ -1658,22 +1715,22 @@ public class RawNode<T> {
         }
 
         long term;
-        MessageType voteMsg;
+        boolean preVote;
 
         if (t == CAMPAIGN_PRE_ELECTION) {
             becomePreCandidate();
-            voteMsg = MsgPreVote;
+            preVote = true;
             // PreVote RPCs are sent for the next term before we've incremented r.Term.
             term = this.term + 1;
         }
         else {
             becomeCandidate();
-            voteMsg = MsgVote;
+            preVote = false;
             term = this.term;
         }
 
         // Vote for ourselves.
-        PollResult p = poll(id, MessageType.voteResponseType(voteMsg), true);
+        PollResult p = poll(id, preVote, true);
 
         if (p.result() == VoteWon) {
             // We won the election after voting for ourselves (which must mean that
@@ -1693,12 +1750,12 @@ public class RawNode<T> {
                 continue;
 
             logger.info("{} [logterm: {}, index: {}] sent {} request to {} at term {}",
-                rmtId, raftLog.lastTerm(), raftLog.lastIndex(), voteMsg, rmtId, term);
+                rmtId, raftLog.lastTerm(), raftLog.lastIndex(), preVote ? "preVote" : "vote", rmtId, term);
 
             send(msgFactory.newVoteRequest(
                 id,
                 rmtId,
-                voteMsg == MsgPreVote,
+                preVote,
                 term,
                 raftLog.lastIndex(),
                 raftLog.lastTerm(),
@@ -1881,22 +1938,17 @@ public class RawNode<T> {
         }
     }
 
-    private PollResult poll(UUID id, MessageType t, boolean v) {
-        if (v)
+    private PollResult poll(UUID id, boolean preVote, boolean voteRes) {
+        String t = preVote ? "preVote" : "vote";
+
+        if (voteRes)
             logger.info("{} received {} from {} at term {}", id, t, id, term);
         else
             logger.info("{} received {} rejection from {} at term {}", id, t, id, term);
 
-        prs.recordVote(id, v);
+        prs.recordVote(id, voteRes);
 
         return prs.tallyVotes();
-    }
-
-    // pastElectionTimeout returns true iff r.electionElapsed is greater
-    // than or equal to the randomized election timeout in
-    // [electiontimeout, 2 * electiontimeout - 1].
-    private boolean pastElectionTimeout() {
-        return electionElapsed >= randomizedElectionTimeout;
     }
 
     /**
@@ -1956,18 +2008,6 @@ public class RawNode<T> {
         logger.error(formatMsg, args);
 
         throw new UnrecoverableException(MessageFormatter.arrayFormat(formatMsg, args).getMessage());
-    }
-
-    List<Message> readMessages() {
-        List<Message> ret = msgs;
-
-        msgs = new ArrayList<>();
-
-        return ret;
-    }
-
-    Tracker tracker() {
-        return prs;
     }
 
     // TODO sanpwc: tmp, should be package-private.
