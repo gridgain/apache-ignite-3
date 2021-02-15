@@ -24,7 +24,7 @@ import org.apache.ignite.internal.replication.raft.common.paritioned.GetPartitio
 import org.apache.ignite.internal.replication.raft.common.paritioned.PartitionedOperation;
 import org.apache.ignite.internal.replication.raft.common.paritioned.PutPartitionedOperation;
 import org.apache.ignite.internal.replication.raft.server.AbstractServer;
-import org.apache.ignite.internal.replication.raft.server.ExceptionableFutureTask;
+import org.apache.ignite.internal.replication.raft.common.ExceptionableFutureTask;
 import org.apache.ignite.internal.replication.raft.server.Task;
 import org.apache.ignite.internal.replication.raft.storage.MemoryStorage;
 

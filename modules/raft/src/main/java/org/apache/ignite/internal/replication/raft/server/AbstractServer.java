@@ -31,6 +31,7 @@ import org.apache.ignite.internal.replication.raft.RawNodeBuilder;
 import org.apache.ignite.internal.replication.raft.ReadState;
 import org.apache.ignite.internal.replication.raft.Ready;
 import org.apache.ignite.internal.replication.raft.common.CustomOperation;
+import org.apache.ignite.internal.replication.raft.common.ExceptionableFutureTask;
 import org.apache.ignite.internal.replication.raft.common.NaiveNetworkMock;
 import org.apache.ignite.internal.replication.raft.message.Message;
 import org.apache.ignite.internal.replication.raft.common.Operation;
@@ -53,7 +54,7 @@ public abstract class AbstractServer<T extends CustomOperation> implements Serve
 
     private final Map<IgniteUuid, ExceptionableFutureTask> commonRequestStorage = new ConcurrentHashMap<>();
 
-    private final Map<IgniteUuid, FastTrackRequest> fastTrackRequestStorage = new ConcurrentHashMap<>();
+    private final Map<IgniteUuid, FastTrackProposal> fastTrackRequestStorage = new ConcurrentHashMap<>();
 
     private final ExecutorService fastTrackRequestsExecutor = Executors.newSingleThreadExecutor();
 
@@ -101,7 +102,7 @@ public abstract class AbstractServer<T extends CustomOperation> implements Serve
                         userProposal.result().setException(e);
                     }
 
-                    fastTrackRequestStorage.put(userProposal.id(), new FastTrackRequest(userProposal.result()));
+                    fastTrackRequestStorage.put(userProposal.id(), new FastTrackProposal(userProposal.result()));
                 }
                 else {
                     rawNode.propose(userProposal.data());
@@ -194,7 +195,7 @@ public abstract class AbstractServer<T extends CustomOperation> implements Serve
 
         @Override public void run() {
             for (ReadState state : readStates) {
-                FastTrackRequest fastTrackRequest = fastTrackRequestStorage.get(state.context());
+                FastTrackProposal fastTrackRequest = fastTrackRequestStorage.get(state.context());
 
                 fastTrackRequest.readIndex(state.index());
 
@@ -236,10 +237,10 @@ public abstract class AbstractServer<T extends CustomOperation> implements Serve
         }
 
         @Override public void run() {
-            Iterator<FastTrackRequest> fastTrackRequestIterator = fastTrackRequestStorage.values().iterator();
+            Iterator<FastTrackProposal> fastTrackRequestIterator = fastTrackRequestStorage.values().iterator();
 
             while (fastTrackRequestIterator.hasNext()) {
-                FastTrackRequest fastTrackRequest = fastTrackRequestIterator.next();
+                FastTrackProposal fastTrackRequest = fastTrackRequestIterator.next();
 
                 if (applied >= fastTrackRequest.readIndex()) {
                     fastTrackRequest.result().run();
