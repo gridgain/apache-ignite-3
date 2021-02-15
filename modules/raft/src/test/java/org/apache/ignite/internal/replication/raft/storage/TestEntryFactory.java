@@ -40,7 +40,11 @@ public class TestEntryFactory implements EntryFactory {
         if (entry.type() == Entry.EntryType.ENTRY_DATA) {
             UserData<?> data = entry.<UserData<?>>data();
 
-            Object d = data.data();
+            Object d = null;
+
+            // TODO sanpwc: Investigate.
+            if (data != null)
+                d = data.data();
 
             // Handle special case on empty entry.
             if (d == null)

@@ -1307,7 +1307,8 @@ public class RawNode<T> {
         return prs;
     }
 
-    RaftLog raftLog() {
+    // TODO sanpwc: tmp, should be package-private.
+    public RaftLog raftLog() {
         return raftLog;
     }
 
@@ -2008,11 +2009,6 @@ public class RawNode<T> {
         logger.error(formatMsg, args);
 
         throw new UnrecoverableException(MessageFormatter.arrayFormat(formatMsg, args).getMessage());
-    }
-
-    // TODO sanpwc: tmp, should be package-private.
-    public RaftLog raftLog() {
-        return raftLog;
     }
 
     // TODO sanpwc: tmp, remove.
