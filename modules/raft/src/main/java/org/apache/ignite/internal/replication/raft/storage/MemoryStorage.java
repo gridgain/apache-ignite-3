@@ -27,6 +27,8 @@ import org.apache.ignite.internal.replication.raft.ConfigState;
 import org.apache.ignite.internal.replication.raft.HardState;
 import org.apache.ignite.internal.replication.raft.InitialState;
 import org.apache.ignite.internal.replication.raft.Snapshot;
+import org.apache.ignite.internal.replication.raft.SnapshotMetadata;
+import org.apache.ignite.internal.replication.raft.SnapshotOutOfDateException;
 import org.apache.ignite.internal.replication.raft.SnapshotTemporarilyUnavailableException;
 import org.apache.ignite.internal.replication.raft.UnavailabilityException;
 import org.apache.ignite.internal.replication.raft.UnrecoverableException;
@@ -46,10 +48,10 @@ public class MemoryStorage implements Storage {
     private HardState hardState;
 
     /** */
-    private ConfigState confState;
+    private List<Entry> entries;
 
     /** */
-    private List<Entry> entries;
+    private Snapshot snapshot;
 
     /** */
     private EntryFactory entryFactory;
@@ -69,8 +71,13 @@ public class MemoryStorage implements Storage {
     ) {
         this.id = id;
         this.hardState = hardState;
-        this.confState = confState;
         this.entries = new ArrayList<>(entries);
+
+        this.snapshot = new Snapshot(
+            new SnapshotMetadata(confState, 0, 0),
+            new byte[0]
+        );
+
         this.entryFactory = entryFactory;
 
         // When starting from scratch populate the list with a dummy entry at term zero.
@@ -81,7 +88,7 @@ public class MemoryStorage implements Storage {
 
     /** {@inheritDoc} */
     @Override public InitialState initialState() {
-        return new InitialState(id, hardState, confState);
+        return new InitialState(id, hardState, snapshot.metadata().configState());
     }
 
     /** {@inheritDoc} */
@@ -161,13 +168,12 @@ public class MemoryStorage implements Storage {
         this.hardState = hardState;
     }
 
-    public void saveConfigState(ConfigState confState) {
-        this.confState = confState;
-    }
-
     /** {@inheritDoc} */
     @Override public Snapshot snapshot() throws SnapshotTemporarilyUnavailableException {
-        throw new SnapshotTemporarilyUnavailableException("Snapshot not implemented for memory storage");
+        if (snapshot == null)
+            throw new SnapshotTemporarilyUnavailableException("Snapshot was not taken yet");
+
+        return snapshot;
     }
 
     public void append(List<Entry> entries) {
@@ -232,6 +238,59 @@ public class MemoryStorage implements Storage {
             ents.addAll(this.entries.subList(i + 1, this.entries.size()));
 
             this.entries = ents;
+        }
+        finally {
+            memoryStorageLock.unlock();
+        }
+    }
+
+    // ApplySnapshot overwrites the contents of this Storage object with
+    // those of the given snapshot.
+    public void applySnapshot(Snapshot snap) throws SnapshotOutOfDateException {
+        memoryStorageLock.lock();
+
+        try {
+            //handle check for old snapshot being applied
+            long msIndex = snapshot.metadata().index();
+            long snapIndex = snap.metadata().index();
+
+            if (msIndex >= snapIndex)
+                throw new SnapshotOutOfDateException();
+
+            snapshot = snap;
+            entries = new ArrayList<>();
+            entries.add(entryFactory.newEntry(snap.metadata().term(), snap.metadata().index(), null));
+        }
+        finally {
+            memoryStorageLock.unlock();
+        }
+    }
+
+    // CreateSnapshot makes a snapshot which can be retrieved with Snapshot() and
+    // can be used to reconstruct the state at that point.
+    // If any configuration changes have been made since the last compaction,
+    // the result of the last ApplyConfChange must be passed in.
+    public Snapshot createSnapshot(long i, ConfigState cs, byte[] data) throws SnapshotOutOfDateException {
+        memoryStorageLock.lock();
+        try {
+            if (i <= snapshot.metadata().index())
+                throw new SnapshotOutOfDateException();
+
+            long offset = entries.get(0).index();
+
+            if (i > lastIndex())
+                unrecoverable("snapshot {} is out of bound lastindex({})", i, lastIndex());
+
+            snapshot = new Snapshot(
+                new SnapshotMetadata(
+                    cs == null ? snapshot.metadata().configState() : cs,
+                    i,
+                    entries.get((int)(i - offset)).term()
+                ),
+                data
+            );
+
+            return snapshot;
         }
         finally {
             memoryStorageLock.unlock();

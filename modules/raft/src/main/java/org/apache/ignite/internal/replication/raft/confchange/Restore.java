@@ -87,9 +87,8 @@ public class Restore {
 
         // Same for LearnersNext; these are nodes we want to be learners but which
         // are currently voters in the outgoing config.
-        for (UUID id : cs.learnersNext()) {
+        for (UUID id : cs.learnersNext())
             in.add(new ConfChangeSingle(id, ConfChangeSingle.ConfChangeType.ConfChangeAddLearnerNode));
-        }
 
         return new List[] {out, in};
     }

@@ -83,9 +83,8 @@ public interface MessageFactory {
         UUID from,
         UUID to,
         long term,
-        long snapIdx,
-        long snapTerm,
-        Snapshot snapshot);
+        Snapshot snapshot
+    );
 
     TimeoutNowRequest newTimeoutNowRequest(
         UUID from,

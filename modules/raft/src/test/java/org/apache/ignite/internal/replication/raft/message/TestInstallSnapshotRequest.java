@@ -17,11 +17,23 @@
 
 package org.apache.ignite.internal.replication.raft.message;
 
+import java.util.UUID;
 import org.apache.ignite.internal.replication.raft.Snapshot;
 
 /**
  *
  */
-public interface InstallSnapshotRequest extends Message {
-    Snapshot snapshot();
+public class TestInstallSnapshotRequest extends TestBaseMessage implements InstallSnapshotRequest {
+    /** */
+    private final Snapshot snap;
+
+    public TestInstallSnapshotRequest(UUID from, UUID to, long term, Snapshot snap) {
+        super(MessageType.MsgSnap, from, to, term);
+
+        this.snap = snap;
+    }
+
+    @Override public Snapshot snapshot() {
+        return snap;
+    }
 }

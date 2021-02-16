@@ -28,7 +28,15 @@ import org.apache.ignite.lang.IgniteUuid;
  */
 public class TestMessageFactory implements MessageFactory {
     /** {@inheritDoc} */
-    @Override public VoteRequest newVoteRequest(UUID from, UUID to, boolean preVote, long term, long lastIdx, long lastTerm, boolean campaignTransfer) {
+    @Override public VoteRequest newVoteRequest(
+        UUID from,
+        UUID to,
+        boolean preVote,
+        long term,
+        long lastIdx,
+        long lastTerm,
+        boolean campaignTransfer
+    ) {
         return new TestVoteRequest(
             from,
             to,
@@ -40,7 +48,13 @@ public class TestMessageFactory implements MessageFactory {
     }
 
     /** {@inheritDoc} */
-    @Override public VoteResponse newVoteResponse(UUID from, UUID to, boolean preVote, long term, boolean reject) {
+    @Override public VoteResponse newVoteResponse(
+        UUID from,
+        UUID to,
+        boolean preVote,
+        long term,
+        boolean reject
+    ) {
         return new TestVoteResponse(
             from,
             to,
@@ -50,7 +64,13 @@ public class TestMessageFactory implements MessageFactory {
     }
 
     /** {@inheritDoc} */
-    @Override public HeartbeatRequest newHeartbeatRequest(UUID from, UUID to, long term, long commitIdx, IgniteUuid ctx) {
+    @Override public HeartbeatRequest newHeartbeatRequest(
+        UUID from,
+        UUID to,
+        long term,
+        long commitIdx,
+        IgniteUuid ctx
+    ) {
         return new TestHeartbeatRequest(
             from,
             to,
@@ -60,7 +80,12 @@ public class TestMessageFactory implements MessageFactory {
     }
 
     /** {@inheritDoc} */
-    @Override public HeartbeatResponse newHeartbeatResponse(UUID from, UUID to, long term, IgniteUuid ctx) {
+    @Override public HeartbeatResponse newHeartbeatResponse(
+        UUID from,
+        UUID to,
+        long term,
+        IgniteUuid ctx
+    ) {
         return new TestHeartbeatResponse(
             from,
             to,
@@ -69,7 +94,15 @@ public class TestMessageFactory implements MessageFactory {
     }
 
     /** {@inheritDoc} */
-    @Override public AppendEntriesRequest newAppendEntriesRequest(UUID from, UUID to, long term, long logIdx, long logTerm, List<Entry> entries, long committedIdx) {
+    @Override public AppendEntriesRequest newAppendEntriesRequest(
+        UUID from,
+        UUID to,
+        long term,
+        long logIdx,
+        long logTerm,
+        List<Entry> entries,
+        long committedIdx
+    ) {
         return new TestAppendEntriesRequest(
             from,
             to,
@@ -81,7 +114,14 @@ public class TestMessageFactory implements MessageFactory {
     }
 
     /** {@inheritDoc} */
-    @Override public AppendEntriesResponse newAppendEntriesResponse(UUID from, UUID to, long term, long logIdx, boolean reject, long rejectHint) {
+    @Override public AppendEntriesResponse newAppendEntriesResponse(
+        UUID from,
+        UUID to,
+        long term,
+        long logIdx,
+        boolean reject,
+        long rejectHint
+    ) {
         return new TestAppendEntriesResponse(
             from,
             to,
@@ -92,8 +132,13 @@ public class TestMessageFactory implements MessageFactory {
     }
 
     /** {@inheritDoc} */
-    @Override public InstallSnapshotRequest newInstallSnapshotRequest(UUID from, UUID to, long term, long snapIdx, long snapTerm, Snapshot snapshot) {
-        throw new UnsupportedOperationException("Not implemented");
+    @Override public InstallSnapshotRequest newInstallSnapshotRequest(
+        UUID from,
+        UUID to,
+        long term,
+        Snapshot snapshot
+    ) {
+        return new TestInstallSnapshotRequest(from, to, term, snapshot);
     }
 
     /** {@inheritDoc} */

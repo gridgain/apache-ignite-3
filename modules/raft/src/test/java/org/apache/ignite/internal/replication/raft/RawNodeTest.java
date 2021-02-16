@@ -25,11 +25,13 @@ import java.util.Map;
 import java.util.Random;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import org.apache.ignite.internal.replication.raft.message.AppendEntriesRequest;
 import org.apache.ignite.internal.replication.raft.message.AppendEntriesResponse;
 import org.apache.ignite.internal.replication.raft.message.HeartbeatRequest;
+import org.apache.ignite.internal.replication.raft.message.InstallSnapshotRequest;
 import org.apache.ignite.internal.replication.raft.message.Message;
 import org.apache.ignite.internal.replication.raft.message.MessageType;
 import org.apache.ignite.internal.replication.raft.message.VoteRequest;
@@ -53,6 +55,7 @@ import static org.apache.ignite.internal.replication.raft.message.MessageType.Ms
 import static org.apache.ignite.internal.replication.raft.message.MessageType.MsgAppResp;
 import static org.apache.ignite.internal.replication.raft.message.MessageType.MsgHeartbeat;
 import static org.apache.ignite.internal.replication.raft.message.MessageType.MsgHeartbeatResp;
+import static org.apache.ignite.internal.replication.raft.message.MessageType.MsgSnap;
 import static org.apache.ignite.internal.replication.raft.message.MessageType.MsgTimeoutNow;
 import static org.apache.ignite.internal.replication.raft.message.MessageType.MsgVote;
 import static org.apache.ignite.internal.replication.raft.message.MessageType.MsgVoteResp;
@@ -1606,6 +1609,129 @@ public class RawNodeTest extends AbstractRaftTest {
                 got = Math.floor(got * 10 + 0.5) / 10.;
 
             Assertions.assertEquals(tt.wProbability, got);
+        }
+    }
+
+    /**
+     * Make sure that step function properly handles stale heartbeat and
+     * append entries messages, according to preVote and checkQuorum flags.
+     */
+    @Test
+    public void testStepStaleHeartbeatAppend() {
+        UUID[] ids = idsBySize(2);
+
+        class TestData {
+            boolean checkQuorum;
+            boolean preVote;
+            boolean wResp;
+
+            TestData(boolean checkQuorum, boolean preVote, boolean wResp) {
+                this.checkQuorum = checkQuorum;
+                this.preVote = preVote;
+                this.wResp = wResp;
+            }
+        }
+
+        TestData[] tests = new TestData[] {
+            new TestData(false, false, false),
+            new TestData(true, false, true),
+            new TestData(false, true, true),
+            new TestData(true, true, true),
+        };
+
+        for (TestData tt : tests) {
+            for (StateType state : new StateType[] {STATE_LEADER, STATE_FOLLOWER, STATE_CANDIDATE, STATE_PRE_CANDIDATE}) {
+                if (!tt.preVote && state == STATE_PRE_CANDIDATE)
+                    continue;
+
+                RawNode<String> sm = newTestRaft(newTestConfig(10, 1).preVote(tt.preVote).checkQuorum(tt.checkQuorum),
+                    memoryStorage(ids, new HardState(4, null, 0))
+                );
+
+                switch (state) {
+                    case STATE_FOLLOWER:
+                        break;
+
+                    case STATE_LEADER:
+                        sm.becomeCandidate();
+                        sm.becomeLeader();
+
+                        break;
+
+                    case STATE_PRE_CANDIDATE:
+                        sm.becomePreCandidate();
+
+                        break;
+
+                    case STATE_CANDIDATE:
+                        sm.becomeCandidate();
+
+                        break;
+                }
+
+                sm.step(msgFactory.newHeartbeatRequest(ids[1], ids[0], 3, 0, null));
+                List<Message> msgs = sm.readMessages();
+
+                Assertions.assertEquals(tt.wResp, !msgs.isEmpty());
+
+                sm.step(msgFactory.newAppendEntriesRequest(
+                    ids[1],
+                    ids[0],
+                    3,
+                    2,
+                    2,
+                    Collections.emptyList(),
+                    0));
+
+                msgs = sm.readMessages();
+
+                Assertions.assertEquals(tt.wResp, !msgs.isEmpty());
+
+                // Check that a stale message does not change the node state.
+                Assertions.assertEquals(state, sm.basicStatus().softState().state());
+            }
+        }
+    }
+
+    /**
+     * Tests that a stale pre-vote request is always responded to, and a stale vote request
+     * is always dropped.
+     */
+    @Test
+    public void testStaleVoteRequest() {
+        for (boolean preVote : new boolean[] {false, true}) {
+            for (StateType state : new StateType[] {STATE_LEADER, STATE_FOLLOWER, STATE_CANDIDATE, STATE_PRE_CANDIDATE}) {
+                RawNode<String> sm = newTestRaft(
+                    newTestConfig(10, 1),
+                    memoryStorage(ids, new HardState(4, null, 0))
+                );
+
+                switch (state) {
+                    case STATE_FOLLOWER:
+                        break;
+
+                    case STATE_LEADER:
+                        sm.becomeCandidate();
+                        sm.becomeLeader();
+
+                        break;
+
+                    case STATE_PRE_CANDIDATE:
+                        sm.becomePreCandidate();
+
+                        break;
+
+                    case STATE_CANDIDATE:
+                        sm.becomeCandidate();
+
+                        break;
+                }
+
+                sm.step(msgFactory.newVoteRequest(ids[1], ids[1], preVote, 3, 1, 1, false));
+
+                Assertions.assertEquals(preVote, !sm.readMessages().isEmpty());
+                Assertions.assertEquals(state, sm.basicStatus().softState().state());
+            }
         }
     }
 
@@ -3983,6 +4109,457 @@ public class RawNodeTest extends AbstractRaftTest {
         nt.recover();
 
         return nt;
+    }
+
+    @Test
+    public void testRestore() {
+        Snapshot s = new Snapshot(
+            new SnapshotMetadata(
+                ConfigState.bootstrap(Arrays.asList(ids), Collections.emptyList()),
+                11,
+                11
+            ),
+            new byte[0]
+        );
+
+        MemoryStorage storage = memoryStorage(ids);
+
+        RawNode<String> sm = newTestRaft(10, 1, storage);
+
+        Assertions.assertTrue(sm.restore(s));
+
+        Assertions.assertEquals(s.metadata().index(), sm.raftLog().lastIndex());
+        Assertions.assertEquals(s.metadata().term(), sm.raftLog().term(s.metadata().index()));
+
+        Set<UUID> sg = sm.tracker().config().voters().ids();
+        Assertions.assertEquals(s.metadata().configState().voters(), sg);
+
+        Assertions.assertFalse(sm.restore(s));
+
+        // It should not campaign before actually applying data.
+        for (int i = 0; i < sm.randomizedElectionTimeout(); i++)
+            sm.tick();
+
+        Assertions.assertEquals(STATE_FOLLOWER, sm.basicStatus().softState().state());
+    }
+
+    // TestRestoreWithLearner restores a snapshot which contains learners.
+    @Test
+    public void testRestoreWithLearner() {
+        Snapshot s = new Snapshot(
+            new SnapshotMetadata(
+                ConfigState.bootstrap(Arrays.asList(ids[0], ids[1]), Arrays.asList(ids[2])),
+                11,
+                11
+            ),
+            new byte[0]
+        );
+
+        MemoryStorage storage = memoryStorage(ids[2], new UUID[] {ids[0], ids[1]}, new UUID[] {ids[2]});
+
+        RawNode<String> sm = newTestRaft(8, 2, storage);
+
+        Assertions.assertTrue(sm.restore(s));
+
+        Assertions.assertEquals(s.metadata().index(), sm.raftLog().lastIndex());
+        Assertions.assertEquals(s.metadata().term(), sm.raftLog().term(s.metadata().index()));
+
+        Set<UUID> sg = sm.tracker().config().voters().ids();
+        Assertions.assertEquals(s.metadata().configState().voters(), sg);
+        Assertions.assertEquals(s.metadata().configState().learners(), sm.tracker().config().learners());
+
+        for (UUID learner : s.metadata().configState().voters())
+            Assertions.assertFalse(sm.tracker().progress(learner).isLearner());
+
+        for (UUID learner : s.metadata().configState().learners())
+            Assertions.assertTrue(sm.tracker().progress(learner).isLearner());
+
+        Assertions.assertFalse(sm.restore(s));
+    }
+
+    // TestRestoreVoterToLearner verifies that a normal peer can be downgraded to a
+    // learner through a snapshot. At the time of writing, we don't allow
+    // configuration changes to do this directly, but note that the snapshot may
+    // compress multiple changes to the configuration into one: the voter could have
+    // been removed, then readded as a learner and the snapshot reflects both
+    // changes. In that case, a voter receives a snapshot telling it that it is now
+    // a learner. In fact, the node has to accept that snapshot, or it is
+    // permanently cut off from the Raft log.
+    @Test
+    public void testRestoreVoterToLearner() {
+        Snapshot s = new Snapshot(
+            new SnapshotMetadata(
+                ConfigState.bootstrap(Arrays.asList(ids[0], ids[1]), Arrays.asList(ids[2])),
+                11,
+                11
+            ),
+            new byte[0]
+        );
+
+        MemoryStorage storage = memoryStorage(ids[2], ids);
+
+        RawNode<String> sm = newTestRaft(8, 2, storage);
+
+        Assertions.assertFalse(sm.isLearner());
+        Assertions.assertTrue(sm.restore(s));
+
+        Assertions.assertTrue(sm.isLearner());
+    }
+
+    // TestRestoreLearnerPromotion checks that a learner can become to a follower after
+    // restoring snapshot.
+    @Test
+    public void testRestoreLearnerPromotion() {
+        Snapshot s = new Snapshot(
+            new SnapshotMetadata(
+                ConfigState.bootstrap(Arrays.asList(ids), Collections.emptyList()),
+                11,
+                11
+            ),
+            new byte[0]
+        );
+
+        MemoryStorage storage = memoryStorage(ids[2], new UUID[] {ids[0], ids[1]}, new UUID[] {ids[2]});
+
+        RawNode<String> sm = newTestRaft(10, 1, storage);
+
+        Assertions.assertTrue(sm.isLearner());
+
+        Assertions.assertTrue(sm.restore(s));
+
+        Assertions.assertFalse(sm.isLearner());
+    }
+
+    // TestLearnerReceiveSnapshot tests that a learner can receive a snpahost from leader
+    @Test
+    public void testLearnerReceiveSnapshot() {
+        UUID[] ids = idsBySize(2);
+
+        Random rnd = new Random(seed());
+
+        // restore the state machine from a snapshot so it has a compacted log and a snapshot
+        Snapshot snap = new Snapshot(
+            new SnapshotMetadata(
+                ConfigState.bootstrap(Arrays.asList(ids[0]), Arrays.asList(ids[1])),
+                11,
+                11
+            ),
+            new byte[0]
+        );
+
+        MemoryStorage n1Storage = memoryStorage(ids[0], new UUID[] {ids[0]}, new UUID[] {ids[1]});
+        RawNode<String> n1 = newTestRaft(10, 1, n1Storage, rnd);
+
+        MemoryStorage n2Storage = memoryStorage(ids[1], new UUID[] {ids[0]}, new UUID[] {ids[1]});
+        RawNode<String> n2 = newTestRaft(10, 1, n2Storage, rnd);
+
+        Assertions.assertTrue(n1.restore(snap));
+
+        Ready ready = n1.readyWithoutAccept();
+
+        try {
+            n1Storage.applySnapshot(ready.snapshot());
+        }
+        catch (SnapshotOutOfDateException e) {
+            Assertions.fail(e);
+        }
+
+        n1.advance(ready);
+
+        // Force set n1 appplied index.
+        n1.raftLog().appliedTo(n1.raftLog().committed());
+
+        Network nt = new Network(
+            rnd,
+            new RawNodeStepper<>(n1, n1Storage),
+            new RawNodeStepper<>(n2, n2Storage)
+        );
+
+        n1.randomizedElectionTimeout(n1.electionTimeout());
+
+        for (int i = 0; i < n1.electionTimeout(); i++)
+            n1.tick();
+
+        nt.<String>action(ids[0], s -> s.node().sendHeartbeat());
+
+        Assertions.assertEquals(n1.raftLog().committed(), n2.raftLog().committed());
+    }
+
+    @Test
+    public void testRestoreIgnoreSnapshot() {
+        UUID[] ids = idsBySize(2);
+
+        long commit = 1;
+        List<Entry> previousEnts = Arrays.asList(entry(1, 1), entry(1, 2), entry(1, 3));
+
+        MemoryStorage storage = memoryStorage(ids, new HardState(1, null, commit));
+        storage.append(previousEnts);
+
+        RawNode<String> sm = newTestRaft(10, 1, storage);
+
+        Snapshot s = new Snapshot(
+            new SnapshotMetadata(
+                ConfigState.bootstrap(Arrays.asList(ids), Collections.emptyList()),
+                commit,
+                1
+            ),
+            new byte[0]
+        );
+
+        // ignore snapshot
+        Assertions.assertFalse(sm.restore(s));
+        Assertions.assertEquals(commit, sm.raftLog().committed());
+
+        // ignore snapshot and fast forward commit
+        s = new Snapshot(
+            new SnapshotMetadata(
+                ConfigState.bootstrap(Arrays.asList(ids), Collections.emptyList()),
+                commit + 1,
+                1
+            ),
+            new byte[0]
+        );
+
+        Assertions.assertFalse(sm.restore(s));
+        Assertions.assertEquals(commit + 1, sm.raftLog().committed());
+    }
+
+    @Test
+    public void testProvideSnap() {
+        UUID[] ids = idsBySize(2);
+
+        // restore the state machine from a snapshot so it has a compacted log and a snapshot
+        Snapshot s = new Snapshot(
+            new SnapshotMetadata(
+                ConfigState.bootstrap(Arrays.asList(ids), Collections.emptyList()),
+                11,
+                11
+            ),
+            new byte[0]
+        );
+
+        MemoryStorage storage = memoryStorage(ids[0], new UUID[] {ids[0]});
+
+        RawNode<String> sm = newTestRaft(10, 1, storage);
+
+        Assertions.assertTrue(sm.restore(s));
+
+        sm.becomeCandidate();
+        sm.becomeLeader();
+
+        // force set the next of node 2, so that node 2 needs a snapshot
+        sm.tracker().progress(ids[1]).maybeUpdate(sm.raftLog().firstIndex() - 1);
+
+        sm.step(msgFactory.newAppendEntriesResponse(
+            ids[1],
+            ids[0],
+            sm.basicStatus().hardState().term(),
+            sm.tracker().progress(ids[1]).next() - 1,
+            true,
+            0));
+
+        List<Message> msgs = sm.readMessages();
+        Assertions.assertEquals(1, msgs.size());
+        Assertions.assertEquals(MsgSnap, msgs.get(0).type());
+    }
+
+    @Test
+    public void testIgnoreProvidingSnap() {
+        UUID[] ids = idsBySize(2);
+
+        // restore the state machine from a snapshot so it has a compacted log and a snapshot
+        Snapshot s = new Snapshot(
+            new SnapshotMetadata(
+                ConfigState.bootstrap(Arrays.asList(ids), Collections.emptyList()),
+                11,
+                11
+            ),
+            new byte[0]
+        );
+
+        MemoryStorage storage = memoryStorage(ids[0], ids, new HardState(1, null, 11));
+
+        List<Entry> entries = new ArrayList<>();
+        for (int i = 1; i <= 11; i++)
+            entries.add(entry(1, i));
+
+        storage.append(entries);
+
+        RawNode<String> sm = newTestRaft(10, 1, storage);
+
+        sm.becomeCandidate();
+        sm.becomeLeader();
+
+        // force set the next of node 2, so that node 2 needs a snapshot
+        sm.step(msgFactory.newAppendEntriesResponse(
+            ids[1],
+            ids[0],
+            sm.basicStatus().hardState().term(),
+            11,
+            true,
+            9));
+        sm.readMessages();
+        sm.tracker().progress(ids[1]).probeSent(false);
+
+        try {
+            storage.createSnapshot(11, sm.tracker().configState(), new byte[0]);
+            storage.compact(11);
+        }
+        catch (SnapshotOutOfDateException | CompactionException e) {
+            Assertions.fail(e);
+        }
+
+        Assertions.assertEquals(10, sm.tracker().progress(ids[1]).next());
+        Assertions.assertEquals(Progress.ProgressState.StateProbe, sm.tracker().progress(ids[1]).state());
+
+        // change node 2 to be inactive, expect node 1 ignore sending snapshot to 2
+        sm.tracker().progress(ids[1]).recentActive(false);
+
+        sm.propose("somedata");
+
+        List<Message> msgs = sm.readMessages();
+        Assertions.assertTrue(msgs.isEmpty());
+    }
+
+    @Test
+    public void testRestoreFromSnapMsg() {
+        UUID[] ids = idsBySize(2);
+
+        Snapshot s = new Snapshot(
+            new SnapshotMetadata(
+                ConfigState.bootstrap(Arrays.asList(ids), Collections.emptyList()),
+                11,
+                11
+            ),
+            new byte[0]
+        );
+
+        MemoryStorage storage = memoryStorage(ids[1], ids);
+
+        RawNode<String> sm = newTestRaft(10, 1, storage);
+
+        InstallSnapshotRequest m = msgFactory.newInstallSnapshotRequest(ids[0], ids[1], 2, s);
+
+        sm.step(m);
+
+        Assertions.assertEquals(ids[0], sm.basicStatus().softState().lead());
+        // TODO(bdarnell): what should this test?
+    }
+
+    public void testSlowNodeRestore() {
+        Network nt = newNetwork(null, entries(), entries(), entries());
+        UUID[] ids = nt.ids();
+
+        nt.<String>action(ids[0], s -> s.node().campaign());
+
+        nt.isolate(ids[2]);
+
+        for (int j = 0; j <= 100; j++)
+            nt.<String>action(ids[0], s -> s.node().propose(""));
+
+        RawNode<String> lead = nt.<RawNodeStepper<String>>peer(ids[0]).node();
+
+        MemoryStorage leadStorage = nt.storage(ids[0]);
+
+        nextEntries(lead, leadStorage);
+
+        try {
+            leadStorage.createSnapshot(lead.raftLog().applied(), lead.tracker().configState(), new byte[0]);
+            leadStorage.compact(lead.raftLog().applied());
+        }
+        catch (SnapshotOutOfDateException | CompactionException e) {
+            Assertions.fail(e);
+        }
+
+        nt.recover();
+
+        // send heartbeats so that the leader can learn everyone is active.
+        // node 3 will only be considered as active when node 1 receives a reply from it.
+        while (!lead.tracker().progress(ids[2]).recentActive())
+            nt.<String>action(ids[0], s -> s.node().sendHeartbeat());
+
+        // trigger a snapshot
+        nt.<String>action(ids[0], s -> s.node().propose(""));
+
+        RawNode<String> follower = nt.<RawNodeStepper<String>>peer(ids[2]).node();
+
+        // trigger a commit
+        nt.<String>action(ids[0], s -> s.node().propose(""));
+
+        Assertions.assertEquals(lead.raftLog().committed(), follower.raftLog().committed());
+    }
+
+    @Test
+    public void testLeaderTransferAfterSnapshot() {
+        Network nt = newNetwork(null, entries(), entries(), entries());
+        UUID[] ids = nt.ids();
+
+        nt.<String>action(ids[0], s -> s.node().campaign());
+
+        nt.isolate(ids[2]);
+
+        nt.<String>action(ids[0], s -> s.node().propose(""));
+
+        RawNode<String> lead = nt.<RawNodeStepper<String>>peer(ids[0]).node();
+
+        MemoryStorage leadStorage = nt.storage(ids[0]);
+
+        nextEntries(lead, leadStorage);
+
+        try {
+            leadStorage.createSnapshot(lead.raftLog().applied(), lead.tracker().configState(), new byte[0]);
+            leadStorage.compact(lead.raftLog().applied());
+        }
+        catch (SnapshotOutOfDateException | CompactionException e) {
+            Assertions.fail(e);
+        }
+
+        nt.recover();
+
+        Assertions.assertEquals(1, lead.tracker().progress(ids[2]).match());
+
+        // Used as a container only.
+        AtomicReference<Message> filtered = new AtomicReference<>();
+
+        // Snapshot needs to be applied before sending MsgAppResp
+        Function<Message, Boolean> drop = new Function<Message, Boolean>() {
+            @Override public Boolean apply(Message m) {
+                boolean catchMsg = m.type() == MsgAppResp && !((AppendEntriesResponse)m).reject();
+
+                if (!catchMsg)
+                    return false;
+
+                filtered.set(m);
+
+                return true; // drop;
+            }
+        };
+        nt.filter(ids[2], ids[0], drop);
+
+        // Transfer leadership to 3 when node 3 is lack of snapshot.
+        nt.<String>action(ids[0], s -> s.node().transferLeader(ids[2]));
+        Assertions.assertEquals(STATE_LEADER, lead.basicStatus().softState().state());
+        Assertions.assertNotNull(filtered.get());
+
+        // Apply snapshot and resume progress
+        RawNode<String> follower = nt.<RawNodeStepper<String>>peer(ids[2]).node();
+
+        Ready ready = follower.readyWithoutAccept();
+
+        try {
+            nt.storage(ids[2]).applySnapshot(ready.snapshot());
+        }
+        catch (SnapshotOutOfDateException e) {
+            Assertions.fail(e);
+        }
+
+        follower.advance(ready);
+
+        nt.recover();
+
+        nt.send(filtered.get());
+
+        checkLeaderTransferState(lead, STATE_FOLLOWER, ids[2]);
     }
 
     private void checkLeaderTransferState(RawNode<String> r, StateType state, UUID lead) {

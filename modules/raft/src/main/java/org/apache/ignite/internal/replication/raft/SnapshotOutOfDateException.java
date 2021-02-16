@@ -15,13 +15,13 @@
  * limitations under the License.
  */
 
-package org.apache.ignite.internal.replication.raft.message;
-
-import org.apache.ignite.internal.replication.raft.Snapshot;
+package org.apache.ignite.internal.replication.raft;
 
 /**
- *
+ * This exception is thrown by Storage when a requested index is older than the existing snapshot.
  */
-public interface InstallSnapshotRequest extends Message {
-    Snapshot snapshot();
+public class SnapshotOutOfDateException extends Exception {
+    public SnapshotOutOfDateException() {
+        super("requested index is older than the existing snapshot");
+    }
 }

@@ -635,11 +635,7 @@ public class RawNode<T> {
     // TODO: 24.12.20 Should we rename it? Originally it's an raft.step(Message m).
     private void stepInternal(Message m) {
         // Handle the message term, which may result in our stepping down to a follower.
-
-        // local message
-        if (m.term() == 0) {
-        }
-        else if (m.term() > term) {
+        if (m.term() > term) {
             if (m.type() == MsgVote) {
                 VoteRequest req = (VoteRequest)m;
 
@@ -1223,8 +1219,6 @@ public class RawNode<T> {
                     id,
                     to,
                     term,
-                    snapIdx,
-                    snapTerm,
                     snapshot);
 
                 send(m);
@@ -1240,9 +1234,6 @@ public class RawNode<T> {
                 logger.debug("{} failed to send snapshot to {} because snapshot is temporarily unavailable", id, to);
 
                 return false;
-            }
-            catch (Exception ex) { // TODO agoncharuk: Specific exception should be used here, thrown from raftLog.snapshot()
-                // panic
             }
         }
 
@@ -1845,7 +1836,7 @@ public class RawNode<T> {
     // restore recovers the state machine from a snapshot. It restores the log and the
     // configuration of state machine. If this method returns false, the snapshot was
     // ignored, either because it was obsolete or because of an error.
-    private boolean restore(Snapshot s) {
+    boolean restore(Snapshot s) {
         if (s.metadata().index() <= raftLog.committed())
             return false;
 

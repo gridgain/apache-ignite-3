@@ -123,8 +123,6 @@ public class RaftPaperTest extends AbstractRaftTest {
     // a stale term number, it rejects the request.
     // Our implementation ignores the request instead.
     // Reference: section 5.1
-    // TODO agoncharuk this test looks insufficient. There is plenty of logic in stepInternal,
-    // TODO agoncharuk  need to check that the state is not updated in response to all stale messages.
     @Test
     public void testRejectStaleTermMessage() {
         AtomicBoolean called = new AtomicBoolean();
@@ -896,7 +894,6 @@ public class RaftPaperTest extends AbstractRaftTest {
 
             n.<String>action(ids[0], s -> s.node().propose(""));
 
-            // TODO agoncharuk here was all diff.
             Assertions.assertEquals(lead.raftLog().allEntries(), follower.raftLog().allEntries());
         }
     }
