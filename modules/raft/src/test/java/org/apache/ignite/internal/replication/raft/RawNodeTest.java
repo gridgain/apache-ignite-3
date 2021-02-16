@@ -54,6 +54,7 @@ import static org.apache.ignite.internal.replication.raft.message.MessageType.Ms
 import static org.apache.ignite.internal.replication.raft.message.MessageType.MsgHeartbeat;
 import static org.apache.ignite.internal.replication.raft.message.MessageType.MsgHeartbeatResp;
 import static org.apache.ignite.internal.replication.raft.message.MessageType.MsgTimeoutNow;
+import static org.apache.ignite.internal.replication.raft.message.MessageType.MsgVote;
 import static org.apache.ignite.internal.replication.raft.message.MessageType.MsgVoteResp;
 import static org.apache.ignite.internal.replication.raft.storage.Entry.EntryType.ENTRY_CONF_CHANGE;
 import static org.apache.ignite.internal.replication.raft.storage.Entry.EntryType.ENTRY_DATA;
@@ -1176,7 +1177,7 @@ public class RawNodeTest extends AbstractRaftTest {
     }
 
     @Test
-    public void testDuelingCandidates() throws Exception {
+    public void testDuelingCandidates() {
         Random rnd = new Random(seed());
 
         MemoryStorage aStorage = memoryStorage(ids[0], ids);
@@ -1243,7 +1244,7 @@ public class RawNodeTest extends AbstractRaftTest {
     }
 
     @Test
-    public void testDuelingPreCandidates() throws Exception {
+    public void testDuelingPreCandidates() {
         Random rnd = new Random(seed());
 
         MemoryStorage aStorage = memoryStorage(ids[0], ids);
@@ -3779,6 +3780,209 @@ public class RawNodeTest extends AbstractRaftTest {
 
         Assertions.assertEquals(STATE_FOLLOWER, n2.basicStatus().softState().state());
         Assertions.assertEquals(STATE_LEADER, n1.basicStatus().softState().state());
+    }
+
+    // Tests if unapplied ConfChange is checked before campaign.
+    @Test
+    public void testConfChangeCheckBeforeCampaign() {
+        checkConfChangeCheckBeforeCampaign(false);
+    }
+
+    // Tests if unapplied ConfChangeV2 is checked before campaign.
+    @Test
+    public void testConfChangeJointCheckBeforeCampaign() {
+        checkConfChangeCheckBeforeCampaign(true);
+    }
+
+    // Tests if unapplied ConfChange is checked before campaign.
+    private void checkConfChangeCheckBeforeCampaign(boolean joint) {
+        Network nt = newNetwork(null, entries(), entries(), entries());
+        UUID[] ids = nt.ids();
+
+        RawNode<String> n1 = nt.<RawNodeStepper<String>>peer(ids[0]).node();
+        RawNode<String> n2 = nt.<RawNodeStepper<String>>peer(ids[1]).node();
+
+        nt.<String>action(ids[0], s -> s.node().campaign());
+        Assertions.assertEquals(STATE_LEADER, n1.basicStatus().softState().state());
+
+
+        ConfChange cc = joint ?
+            new ConfChangeJoint(Arrays.asList(new ConfChangeSingle(ids[1], ConfChangeSingle.ConfChangeType.ConfChangeRemoveNode))) :
+            new ConfChangeSingle(ids[1], ConfChangeSingle.ConfChangeType.ConfChangeRemoveNode);
+
+        // Begin to remove the third node.
+        nt.<String>action(ids[0], s -> s.node().proposeConfChange(cc));
+
+        // Trigger campaign in node 2
+        for (int i = 0; i < n2.randomizedElectionTimeout(); i++)
+            n2.tick();
+
+        // It's still follower because committed conf change is not applied.
+        Assertions.assertEquals(STATE_FOLLOWER, n2.basicStatus().softState().state());
+
+        // Transfer leadership to peer 2.
+        nt.<String>action(ids[0], s -> s.node().transferLeader(ids[1]));
+        Assertions.assertEquals(STATE_LEADER, n1.basicStatus().softState().state());
+
+        // It's still follower because committed conf change is not applied.
+        Assertions.assertEquals(STATE_FOLLOWER, n2.basicStatus().softState().state());
+
+        // Abort transfer leader
+        for (int i = 0; i < n1.electionTimeout(); i++)
+            n1.tick();
+
+        // Advance apply
+        nextEntries(n2, nt.storage(n2.basicStatus().id()));
+
+        // Transfer leadership to peer 2 again.
+        nt.<String>action(ids[0], s -> s.node().transferLeader(ids[1]));
+
+        Assertions.assertEquals(STATE_FOLLOWER, n1.basicStatus().softState().state());
+        Assertions.assertEquals(STATE_LEADER, n2.basicStatus().softState().state());
+
+        nextEntries(n1, nt.storage(n1.basicStatus().id()));
+
+        // Trigger campaign in node 2
+        for (int i = 0; i < n1.randomizedElectionTimeout(); i++)
+            n1.tick();
+        Assertions.assertEquals(STATE_CANDIDATE, n1.basicStatus().softState().state());
+    }
+
+    @Test
+    public void testPreVoteMigrationCanCompleteElection() {
+        Network nt = newPreVoteMigrationCluster();
+        UUID[] ids = nt.ids();
+
+        // n1 is leader with term 2
+        // n2 is follower with term 2
+        // n3 is pre-candidate with term 4, and less log
+        RawNode<String> n2 = nt.<RawNodeStepper<String>>peer(ids[1]).node();
+        RawNode<String> n3 = nt.<RawNodeStepper<String>>peer(ids[2]).node();
+
+        // simulate leader down
+        nt.isolate(ids[0]);
+
+        // Call for elections from both n2 and n3.
+        nt.<String>action(ids[1], s -> s.node().campaign());
+        nt.<String>action(ids[2], s -> s.node().campaign());
+
+        // check state
+        // n2.state == Follower
+        // n3.state == PreCandidate
+        Assertions.assertEquals(STATE_FOLLOWER, n2.basicStatus().softState().state());
+        Assertions.assertEquals(STATE_PRE_CANDIDATE, n3.basicStatus().softState().state());
+
+        nt.<String>action(ids[2], s -> s.node().campaign());
+        nt.<String>action(ids[1], s -> s.node().campaign());
+
+        // Do we have a leader?
+        Assertions.assertEquals(STATE_LEADER, n2.basicStatus().softState().state());
+        Assertions.assertEquals(STATE_FOLLOWER, n3.basicStatus().softState().state());
+    }
+
+    @Test
+    public void testPreVoteMigrationWithFreeStuckPreCandidate() {
+        Network nt = newPreVoteMigrationCluster();
+
+        // n1 is leader with term 2
+        // n2 is follower with term 2
+        // n3 is pre-candidate with term 4, and less log
+        RawNode<String> n1 = nt.<RawNodeStepper<String>>peer(ids[0]).node();
+        RawNode<String> n2 = nt.<RawNodeStepper<String>>peer(ids[1]).node();
+        RawNode<String> n3 = nt.<RawNodeStepper<String>>peer(ids[2]).node();
+
+        nt.<String>action(ids[2], s -> s.node().campaign());
+
+        Assertions.assertEquals(STATE_LEADER, n1.basicStatus().softState().state());
+        Assertions.assertEquals(STATE_FOLLOWER, n2.basicStatus().softState().state());
+        Assertions.assertEquals(STATE_PRE_CANDIDATE, n3.basicStatus().softState().state());
+
+        // Pre-Vote again for safety
+        nt.<String>action(ids[2], s -> s.node().campaign());
+
+        Assertions.assertEquals(STATE_LEADER, n1.basicStatus().softState().state());
+        Assertions.assertEquals(STATE_FOLLOWER, n2.basicStatus().softState().state());
+        Assertions.assertEquals(STATE_PRE_CANDIDATE, n3.basicStatus().softState().state());
+
+        nt.send(msgFactory.newHeartbeatRequest(ids[0], ids[2], n1.basicStatus().hardState().term(), 0, null));
+
+        // Disrupt the leader so that the stuck peer is freed
+        Assertions.assertEquals(STATE_FOLLOWER, n1.basicStatus().softState().state());
+        Assertions.assertEquals(n3.basicStatus().hardState().term(), n1.basicStatus().hardState().term());
+    }
+
+    // simulate rolling update a cluster for Pre-Vote. cluster has 3 nodes [n1, n2, n3].
+    // n1 is leader with term 2
+    // n2 is follower with term 2
+    // n3 is partitioned, with term 4 and less log, state is candidate
+    private Network newPreVoteMigrationCluster() {
+        Random rnd = new Random(seed());
+        
+        MemoryStorage n1Storage = memoryStorage(ids[0], ids);
+        RawNode<String> n1 = newTestRaft(newTestConfig(10, 1).preVote(true), n1Storage);
+
+        MemoryStorage n2Storage = memoryStorage(ids[1], ids);
+        RawNode<String> n2 = newTestRaft(newTestConfig(10, 1).preVote(true), n2Storage);
+
+        MemoryStorage n3Storage = memoryStorage(ids[2], ids);
+        RawNode<String> n3 = newTestRaft(newTestConfig(10, 1).preVote(true), n3Storage);
+
+        Network nt = new Network(rnd,
+            new RawNodeStepper<>(n1, n1Storage),
+            new RawNodeStepper<>(n2, n2Storage),
+            new RawNodeStepper<>(n3, n3Storage)
+        );
+
+        nt.<String>action(ids[0], s -> s.node().campaign());
+
+        // Cause a network partition to isolate n3 except pre-vote requests (to move to candidate state).
+        // During campaign, this will allow the node to the candidate state, but it will not be able to proceed.
+        Function<Message, Boolean> drop = new Function<Message, Boolean>() {
+            @Override public Boolean apply(Message msg) {
+                if (msg.type() == MsgVote) {
+                    VoteRequest req = (VoteRequest)msg;
+
+                    return !req.preVote();
+                }
+                else if (msg.type() == MsgVoteResp) {
+                    VoteResponse res = (VoteResponse)msg;
+
+                    return !res.preVote();
+                }
+
+                return true;
+            }
+        };
+
+        nt.filter(ids[2], ids[1], drop);
+        nt.filter(ids[2], ids[0], drop);
+        nt.filter(ids[1], ids[2], drop);
+        nt.filter(ids[0], ids[2], drop);
+
+        nt.<String>action(ids[2], s -> s.node().campaign());
+        nt.<String>action(ids[2], s -> s.node().campaign());
+
+        nt.<String>action(ids[0], s -> s.node().propose("some data"));
+
+        // check state
+        // n1.state == StateLeader
+        // n2.state == StateFollower
+        // n3.state == StateCandidate
+        Assertions.assertEquals(STATE_LEADER, n1.basicStatus().softState().state());
+        Assertions.assertEquals(STATE_FOLLOWER, n2.basicStatus().softState().state());
+        Assertions.assertEquals(STATE_CANDIDATE, n3.basicStatus().softState().state());
+
+        // check term
+        // n1.Term == 2
+        // n2.Term == 2
+        // n3.Term == 4
+        Assertions.assertEquals(2, n1.basicStatus().hardState().term());
+        Assertions.assertEquals(2, n2.basicStatus().hardState().term());
+        Assertions.assertEquals(4, n3.basicStatus().hardState().term());
+
+        nt.recover();
+
+        return nt;
     }
 
     private void checkLeaderTransferState(RawNode<String> r, StateType state, UUID lead) {

@@ -29,6 +29,7 @@ import java.util.Random;
 import java.util.Set;
 import java.util.UUID;
 import java.util.function.Consumer;
+import java.util.function.Function;
 import org.apache.ignite.internal.replication.raft.message.Message;
 import org.apache.ignite.internal.replication.raft.message.MessageType;
 import org.apache.ignite.internal.replication.raft.storage.MemoryStorage;
@@ -42,6 +43,7 @@ public class Network {
     private final Map<UUID, Stepper> peers;
 
     private Map<Edge, Double> drop = new HashMap<>();
+    private Map<Edge, Function<Message, Boolean>> filters = new HashMap<>();
     private Set<MessageType> ignore = new HashSet<>();
 
     public UUID[] ids() {
@@ -97,6 +99,10 @@ public class Network {
         drop(peer1, peer2, 2.d);
     }
 
+    public void filter(UUID from, UUID to, Function<Message, Boolean> filter) {
+        this.filters.put(new Edge(from, to), filter);
+    }
+
     public void isolate(UUID id) {
         for (UUID nId : ids) {
             if (!id.equals(nId)) {
@@ -117,6 +123,7 @@ public class Network {
     public void recover() {
         drop.clear();
         ignore.clear();
+        filters.clear();
     }
 
     private void drainQueue(List<Message> init) {
@@ -144,6 +151,9 @@ public class Network {
             return true;
 
         Edge e = new Edge(msg.from(), msg.to());
+
+        if (filters.getOrDefault(e, m -> false).apply(msg))
+            return true;
 
         if (drop.containsKey(e)) {
             double percentage = drop.get(e);
