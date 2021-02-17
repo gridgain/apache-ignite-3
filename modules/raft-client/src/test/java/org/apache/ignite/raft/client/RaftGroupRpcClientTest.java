@@ -3,10 +3,9 @@ package org.apache.ignite.raft.client;
 import java.util.Collections;
 import java.util.concurrent.Executor;
 import java.util.concurrent.Future;
-import org.apache.ignite.raft.PeerId;
 import org.apache.ignite.raft.State;
+import org.apache.ignite.raft.client.impl.PeerIdImpl;
 import org.apache.ignite.raft.client.impl.RaftGroupRpcClientImpl;
-import org.apache.ignite.raft.client.message.GetLeaderResponseImpl;
 import org.apache.ignite.raft.client.message.RaftClientCommonMessageBuilderFactory;
 import org.apache.ignite.raft.rpc.InvokeCallback;
 import org.apache.ignite.raft.rpc.Message;
@@ -32,7 +31,7 @@ public class RaftGroupRpcClientTest {
     @Mock
     private RpcClient rpcClient;
 
-    private static PeerId leader = new PeerId(new NodeImpl("test"));
+    private static PeerIdImpl leader = new PeerIdImpl(new NodeImpl("test"));
 
     @Test
     public void testCustomMessage() throws Exception {
@@ -72,7 +71,7 @@ public class RaftGroupRpcClientTest {
     private void mockClient() {
         // Mock junk request.
         Mockito.doAnswer(new Answer() {
-            @Override public Object answer(InvocationOnMock invocation) throws Throwable {
+            @Override public Object answer(InvocationOnMock invocation) {
                 InvokeCallback callback = invocation.getArgument(2);
                 Executor executor = invocation.getArgument(3);
 
@@ -84,7 +83,7 @@ public class RaftGroupRpcClientTest {
 
         // Mock get leader request.
         Mockito.doAnswer(new Answer() {
-            @Override public Object answer(InvocationOnMock invocation) throws Throwable {
+            @Override public Object answer(InvocationOnMock invocation) {
                 InvokeCallback callback = invocation.getArgument(2);
                 Executor executor = invocation.getArgument(3);
 

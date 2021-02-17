@@ -1,10 +1,12 @@
 package org.apache.ignite.raft.client.impl;
 
+import java.util.Collections;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
@@ -28,7 +30,7 @@ public class RaftGroupRpcClientImpl implements RaftGroupRpcClient {
     /** Where to ask for initial configuration. */
     private final Set<Node> initialCfgNodes;
 
-    private Map<String, State> states = new ConcurrentHashMap<>();
+    private Map<String, Future<PeerId>> leaders = new ConcurrentHashMap<>();
 
     /**
      * Accepts dependencies in constructor.
@@ -44,7 +46,12 @@ public class RaftGroupRpcClientImpl implements RaftGroupRpcClient {
     }
 
     @Override public State state(String groupId, boolean refresh) {
-        return states.get(groupId);
+        try {
+            return new StateImpl(leaders.get(groupId).get(), Collections.emptyList(), Collections.emptyList());
+        }
+        catch (InterruptedException | ExecutionException e) {
+            throw new RuntimeException(e);
+        }
     }
 
     @Override public Future<RaftClientCommonMessages.AddPeerResponse> addPeer(RaftClientCommonMessages.AddPeerRequest request) {
@@ -101,44 +108,32 @@ public class RaftGroupRpcClientImpl implements RaftGroupRpcClient {
     }
 
     @Override public <R extends Message> Future<R> sendCustom(RaftGroupMessage request) {
-        State newState = new State();
+        Future<PeerId> leaderFut = leaders.computeIfAbsent(request.getGroupId(), gId -> {
+            return refreshLeader(initialCfgNodes.iterator().next(), gId).orTimeout(
+                defaultTimeout,
+                TimeUnit.MILLISECONDS
+            ).thenApply(r -> r.getLeaderId()); // TODO asch search all nodes.
+        });
 
-        State state = states.putIfAbsent(request.getGroupId(), newState);
+        CompletableFuture<R> res = new CompletableFuture<>();
+        res.orTimeout(defaultTimeout, TimeUnit.MILLISECONDS);
 
-        if (state == null)
-            state = newState;
+        try {
+            PeerIdImpl peerId = (PeerIdImpl)leaderFut.get();
 
-        CompletableFuture<R> fut = new CompletableFuture<>();
-
-        fut.orTimeout(defaultTimeout, TimeUnit.MILLISECONDS);
-
-        if (state.getLeader() == null) {
-            synchronized (state) {
-                CompletableFuture<RaftClientCommonMessages.GetLeaderResponse> fut0 =
-                    refreshLeader(initialCfgNodes.iterator().next(), request.getGroupId()); // TODO asch search all nodes.
-
-                try {
-                    RaftClientCommonMessages.GetLeaderResponse resp = fut0.get(defaultTimeout, TimeUnit.MILLISECONDS);
-
-                    state.setLeader(resp.getLeaderId());
+            rpcClient.invokeAsync(peerId.getNode(), request, new InvokeCallback<R>() {
+                @Override public void complete(R response, Throwable err) {
+                    if (err != null)
+                        res.completeExceptionally(err);
+                    else
+                        res.complete(response);
                 }
-                catch (Exception e) {
-                    fut.completeExceptionally(e);
-
-                    return fut;
-                }
-            }
+            }, executor, defaultTimeout);
+        }
+        catch (InterruptedException | ExecutionException e) {
+            res.completeExceptionally(e);
         }
 
-        rpcClient.invokeAsync(state.getLeader().getNode(), request, new InvokeCallback<R>() {
-            @Override public void complete(R response, Throwable err) {
-                if (err != null)
-                    fut.completeExceptionally(err);
-                else
-                    fut.complete(response);
-            }
-        }, executor, defaultTimeout);
-
-        return fut;
+        return res;
     }
 }
