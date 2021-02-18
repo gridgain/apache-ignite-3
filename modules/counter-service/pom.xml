@@ -31,7 +31,7 @@
         <relativePath>../../parent/pom.xml</relativePath>
     </parent>
 
-    <artifactId>ignite-raft-client</artifactId>
+    <artifactId>counter-service</artifactId>
     <version>3.0.0-SNAPSHOT</version>
 
     <dependencies>
@@ -55,7 +55,11 @@
             <artifactId>ignite-lang</artifactId>
             <version>3.0.0-SNAPSHOT</version>
         </dependency>
-
+        <dependency>
+            <groupId>org.apache.ignite</groupId>
+            <artifactId>ignite-raft-server</artifactId>
+            <version>3.0.0-SNAPSHOT</version>
+        </dependency>
 
     </dependencies>
 

@@ -20,6 +20,7 @@ import java.util.List;
 import java.util.concurrent.Future;
 import org.apache.ignite.raft.PeerId;
 import org.apache.ignite.raft.State;
+import org.apache.ignite.raft.client.command.CustomCommand;
 
 /**
  * Raft group client service.
@@ -125,5 +126,5 @@ public interface RaftService {
      * @param done      callback
      * @return a future with result
      */
-    <T, R> Future<CommandResult<R>> command(T command);
+    <T extends CustomCommand, R> Future<R> command(T cmd);
 }
