@@ -1,13 +1,18 @@
 package org.apache.ignite.service;
 
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Random;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Future;
 import java.util.function.Function;
 import java.util.stream.Collectors;
+import java.util.stream.IntStream;
+
 import org.apache.ignite.internal.replication.raft.ConfigState;
 import org.apache.ignite.internal.replication.raft.HardState;
 import org.apache.ignite.internal.replication.raft.RaftConfig;
@@ -36,6 +41,24 @@ public class CounterServiceTest {
         Assertions.assertEquals(10L, cntrSvc.incrementAndGet(10).get());
 
         Assertions.assertEquals(10L, cntrSvc.get().get());
+    }
+
+    @Test
+    public void testPartitionedClient2() throws Exception {
+        RoutingTable routingTbl = new RoutingTable(Map.of(
+            new RaftGroupId(RaftGroupId.GroupType.COUNTER, 0), preparePartitionedGroup()
+        ));
+
+        Thread.sleep(2000);
+
+        CounterService cntrSvc = new CounterService(routingTbl);
+
+        List<CompletableFuture<Long>> futures = new ArrayList<>();
+
+        IntStream.range(1, 101).forEach(i -> {futures.add((CompletableFuture)cntrSvc.incrementAndGet(i));});
+        CompletableFuture.allOf(futures.toArray(CompletableFuture[]::new)).get();
+
+        Assertions.assertEquals(5050L, cntrSvc.get().get());
     }
 
     private static List<Server> preparePartitionedGroup() {
