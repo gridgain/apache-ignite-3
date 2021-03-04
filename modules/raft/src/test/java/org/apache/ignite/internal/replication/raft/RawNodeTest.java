@@ -4367,16 +4367,7 @@ public class RawNodeTest extends AbstractRaftTest {
     public void testIgnoreProvidingSnap() {
         UUID[] ids = idsBySize(2);
 
-        // restore the state machine from a snapshot so it has a compacted log and a snapshot
-        Snapshot s = new Snapshot(
-            new SnapshotMetadata(
-                ConfigState.bootstrap(Arrays.asList(ids), Collections.emptyList()),
-                11,
-                11
-            ),
-            new byte[0]
-        );
-
+        // Make a state machine that has a snapshot and a compacted log
         MemoryStorage storage = memoryStorage(ids[0], ids, new HardState(1, null, 11));
 
         List<Entry> entries = new ArrayList<>();
