@@ -42,6 +42,8 @@
         <module>modules/runner</module>
         <module>modules/raft-client</module>
         <module>modules/lang</module>
+        <module>modules/counter-service</module>
+        <module>modules/raft-server</module>
     </modules>
 
     <build>
