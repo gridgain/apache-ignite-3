@@ -8,6 +8,8 @@ public interface KeyValueStorage {
 
     long revision();
 
+    long updateCounter();
+
     @NotNull
     Entry put(byte[] key, byte[] value);
 

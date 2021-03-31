@@ -12,13 +12,13 @@ import java.util.TreeMap;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.TestOnly;
 
+import static org.apache.ignite.internal.metastorage.server.Value.TOMBSTONE;
+
 /**
  * WARNING: Only for test purposes and only for non-distributed (one static instance) storage.
  */
 public class SimpleInMemoryKeyValueStorage implements KeyValueStorage {
     private static final Comparator<byte[]> LEXICOGRAPHIC_COMPARATOR = Arrays::compare;
-
-    private static final byte[] TOMBSTONE = new byte[0];
 
     private static final long LATEST_REV = -1;
 
@@ -26,9 +26,11 @@ public class SimpleInMemoryKeyValueStorage implements KeyValueStorage {
 
     private NavigableMap<byte[], List<Long>> keysIdx = new TreeMap<>(LEXICOGRAPHIC_COMPARATOR);
 
-    private NavigableMap<Long, NavigableMap<byte[], byte[]>> revsIdx = new TreeMap<>();
+    private NavigableMap<Long, NavigableMap<byte[], Value>> revsIdx = new TreeMap<>();
 
-    private long grev = 0;
+    private long rev;
+
+    private long updCntr;
 
     private final Object mux = new Object();
 
@@ -37,35 +39,45 @@ public class SimpleInMemoryKeyValueStorage implements KeyValueStorage {
     }
 
     @Override public long revision() {
-        return grev;
+        return rev;
+    }
+
+    @Override public long updateCounter() {
+        return updCntr;
     }
 
     @NotNull
-    @Override public Entry put(byte[] key, byte[] val) {
+    @Override public Entry put(byte[] key, byte[] bytes) {
         synchronized (mux) {
-            long crev = ++grev;
+            long curRev = ++rev;
+
+            long curUpdCntr = ++updCntr;
 
             // Update keysIdx.
             List<Long> revs = keysIdx.computeIfAbsent(key, k -> new ArrayList<>());
 
-            long lrev = revs.isEmpty() ? 0 : lastRevision(revs);
+            long lastRev = revs.isEmpty() ? 0 : lastRevision(revs);
 
-            revs.add(crev);
+            revs.add(curRev);
 
             // Update revsIdx.
-            NavigableMap<byte[], byte[]> entries = new TreeMap<>(LEXICOGRAPHIC_COMPARATOR);
+            NavigableMap<byte[], Value> entries = new TreeMap<>(LEXICOGRAPHIC_COMPARATOR);
+
+            Value val = new Value(bytes, curUpdCntr);
 
             entries.put(key, val);
 
-            revsIdx.put(crev, entries);
+            revsIdx.put(curRev, entries);
 
             // Return previous value.
-            if (lrev == 0)
+            if (lastRev == 0)
                 return Entry.empty(key);
 
-            NavigableMap<byte[], byte[]> lastVal = revsIdx.get(lrev);
+            NavigableMap<byte[], Value> lastRevVals = revsIdx.get(lastRev);
 
-            Entry res = new Entry(key, lastVal.get(key), lrev);
+            Value lastVal = lastRevVals.get(key);
+
+            Entry res = new Entry(key, lastVal.bytes(), lastRev, lastVal.updateCounter());
 
             //TODO: notify watchers
 
@@ -158,16 +170,18 @@ public class SimpleInMemoryKeyValueStorage implements KeyValueStorage {
                             //return new AbstractMap.SimpleImmutableEntry<>(key, null);
                         }
 
-                        NavigableMap<byte[], byte[]> vals = revsIdx.get(rev);
+                        NavigableMap<byte[], Value> vals = revsIdx.get(rev);
 
                         if (vals == null || vals.isEmpty()) {
                             throw new IllegalStateException("vals == null || vals.isEmpty()");
                             //return new AbstractMap.SimpleImmutableEntry<>(key, null);
                         }
 
-                        byte[] val = vals.get(key);
+                        Value val = vals.get(key);
 
-                        return val == TOMBSTONE ? Entry.tombstone(key, rev) : new Entry(key, val, rev);
+                        return val.tombstone() ?
+                                Entry.tombstone(key, rev, val.updateCounter()) :
+                                new Entry(key, val.bytes(), rev, val.updateCounter());
                     }
                 }
             };
@@ -178,7 +192,7 @@ public class SimpleInMemoryKeyValueStorage implements KeyValueStorage {
         synchronized (mux) {
             NavigableMap<byte[], List<Long>> compactedKeysIdx = new TreeMap<>(LEXICOGRAPHIC_COMPARATOR);
 
-            NavigableMap<Long, NavigableMap<byte[], byte[]>> compactedRevsIdx = new TreeMap<>();
+            NavigableMap<Long, NavigableMap<byte[], Value>> compactedRevsIdx = new TreeMap<>();
 
             keysIdx.forEach((key, revs) -> compactForKey(key, revs, compactedKeysIdx, compactedRevsIdx));
 
@@ -192,18 +206,18 @@ public class SimpleInMemoryKeyValueStorage implements KeyValueStorage {
             byte[] key,
             List<Long> revs,
             NavigableMap<byte[], List<Long>> compactedKeysIdx,
-            NavigableMap<Long, NavigableMap<byte[], byte[]>> compactedRevsIdx
+            NavigableMap<Long, NavigableMap<byte[], Value>> compactedRevsIdx
     ) {
         Long lrev = lastRevision(revs);
 
-        NavigableMap<byte[], byte[]> kv = revsIdx.get(lrev);
+        NavigableMap<byte[], Value> kv = revsIdx.get(lrev);
 
-        byte[] lastVal = kv.get(key);
+        Value lastVal = kv.get(key);
 
-        if (lastVal != TOMBSTONE) {
+        if (!lastVal.tombstone()) {
             compactedKeysIdx.put(key, listOf(lrev));
 
-            NavigableMap<byte[], byte[]> compactedKv = compactedRevsIdx.computeIfAbsent(
+            NavigableMap<byte[], Value> compactedKv = compactedRevsIdx.computeIfAbsent(
                     lrev,
                     k -> new TreeMap<>(LEXICOGRAPHIC_COMPARATOR)
             );
@@ -227,17 +241,17 @@ public class SimpleInMemoryKeyValueStorage implements KeyValueStorage {
 
         long lrev = rev == LATEST_REV ? lastRevision(revs) : rev;
 
-        NavigableMap<byte[], byte[]> entries = revsIdx.get(lrev);
+        NavigableMap<byte[], Value> entries = revsIdx.get(lrev);
 
         if (entries == null || entries.isEmpty())
             return Entry.empty(key);
 
-        byte[] val = entries.get(key);
+        Value val = entries.get(key);
 
-        if (val == TOMBSTONE)
-            return Entry.tombstone(key, lrev);
+        if (val.tombstone())
+            return Entry.tombstone(key, lrev, val.updateCounter());
 
-        return new Entry(key, val , lrev);
+        return new Entry(key, val.bytes() , lrev, val.updateCounter());
     }
 
     private static boolean isPrefix(byte[] pref, byte[] term) {

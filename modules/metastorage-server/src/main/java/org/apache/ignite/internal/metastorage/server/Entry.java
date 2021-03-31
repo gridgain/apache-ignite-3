@@ -44,20 +44,31 @@ public class Entry {
     final private long rev;
 
     /**
+     * Update counter corresponds to this particular entry.
+     * <p>
+     *     {@code updCntr == 0} for {@link #empty()} entry,
+     *     {@code updCntr > 0} for regular and {@link #tombstone()} entries.
+     * </p>
+     */
+    final private long updCntr;
+
+    /**
      * Constructor.
      *
      * @param key Key bytes. Couldn't be {@code null}.
      * @param val Value bytes. Couldn't be {@code null}.
      * @param rev Revision.
+     * @param updCntr Update counter.
      */
     // TODO: It seems user will never create Entry, so we can reduce constructor scope to protected or package-private and reuse it from two-place private constructor.
-    public Entry(@NotNull byte[] key, @NotNull byte[] val, long rev) {
+    public Entry(@NotNull byte[] key, @NotNull byte[] val, long rev, long updCntr) {
         assert key != null : "key can't be null";
         assert val != null : "value can't be null";
 
         this.key = key;
         this.val = val;
         this.rev = rev;
+        this.updCntr = updCntr;
     }
 
     /**
@@ -65,13 +76,15 @@ public class Entry {
      *
      * @param key Key bytes. Couldn't be {@code null}.
      * @param rev Revision.
+     * @param updCntr Update counter.
      */
-    private Entry(@NotNull byte[] key, long rev) {
+    private Entry(@NotNull byte[] key, long rev, long updCntr) {
         assert key != null : "key can't be null";
 
         this.key = key;
         this.val = null;
         this.rev = rev;
+        this.updCntr = updCntr;
     }
 
     /**
@@ -82,20 +95,22 @@ public class Entry {
      */
     @NotNull
     public static Entry empty(byte[] key) {
-        return new Entry(key, 0);
+        return new Entry(key, 0, 0);
     }
 
     /**
      * Creates an instance of tombstone entry for a given key and a revision.
      *
      * @param key Key bytes. Couldn't be {@code null}.
+     * @param rev Revision.
+     * @param updCntr Update counter.
      * @return Empty entry.
      */
     @NotNull
-    public static Entry tombstone(byte[] key, long rev) {
+    public static Entry tombstone(byte[] key, long rev, long updCntr) {
         assert rev > 0 : "rev must be positive for tombstone entry.";
 
-        return new Entry(key, rev);
+        return new Entry(key, rev, updCntr);
     }
 
     /**
@@ -127,12 +142,20 @@ public class Entry {
     }
 
     /**
+     * Returns a update counter.
+     * @return Update counter.
+     */
+    public long updateCounter() {
+        return updCntr;
+    }
+
+    /**
      * Returns value which denotes whether entry is tombstone or not.
      *
      * @return {@code True} if entry is tombstone, otherwise - {@code false}.
      */
     public boolean tombstone() {
-        return val == null && rev > 0;
+        return val == null && rev > 0 && updCntr > 0;
     }
 
     /**
@@ -141,6 +164,6 @@ public class Entry {
      * @return {@code True} if entry is empty, otherwise - {@code false}.
      */
     public boolean empty() {
-        return val == null && rev == 0;
+        return val == null && rev == 0 && updCntr == 0;
     }
 }

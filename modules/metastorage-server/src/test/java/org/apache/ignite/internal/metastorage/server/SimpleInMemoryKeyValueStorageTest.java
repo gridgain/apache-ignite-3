@@ -31,11 +31,13 @@ class SimpleInMemoryKeyValueStorageTest {
         byte[] val2_2 = kv(2, 2);
 
         assertEquals(0, storage.revision());
+        assertEquals(0, storage.updateCounter());
 
         // Previous entry is empty.
         Entry emptyEntry = storage.put(key1, val1_1);
 
         assertEquals(1, storage.revision());
+        assertEquals(1, storage.updateCounter());
         assertTrue(emptyEntry.empty());
 
         // Entry with rev == 1.
@@ -46,12 +48,15 @@ class SimpleInMemoryKeyValueStorageTest {
         assertArrayEquals(key1, e1_1.key());
         assertArrayEquals(val1_1, e1_1.value());
         assertEquals(1, e1_1.revision());
+        assertEquals(1, e1_1.updateCounter());
         assertEquals(1, storage.revision());
+        assertEquals(1, storage.updateCounter());
 
         // Previous entry is empty.
         emptyEntry = storage.put(key2, val2_2);
 
         assertEquals(2, storage.revision());
+        assertEquals(2, storage.updateCounter());
         assertTrue(emptyEntry.empty());
 
         // Entry with rev == 2.
@@ -62,7 +67,9 @@ class SimpleInMemoryKeyValueStorageTest {
         assertArrayEquals(key2, e2.key());
         assertArrayEquals(val2_2, e2.value());
         assertEquals(2, e2.revision());
+        assertEquals(2, e2.updateCounter());
         assertEquals(2, storage.revision());
+        assertEquals(2, storage.updateCounter());
 
         // Previous entry is not empty.
         e1_1 = storage.put(key1, val1_3);
@@ -72,7 +79,9 @@ class SimpleInMemoryKeyValueStorageTest {
         assertArrayEquals(key1, e1_1.key());
         assertArrayEquals(val1_1, e1_1.value());
         assertEquals(1, e1_1.revision());
+        assertEquals(1, e1_1.updateCounter());
         assertEquals(3, storage.revision());
+        assertEquals(3, storage.updateCounter());
 
         // Entry with rev == 3.
         Entry e1_3 = storage.get(key1);
@@ -82,7 +91,9 @@ class SimpleInMemoryKeyValueStorageTest {
         assertArrayEquals(key1, e1_3.key());
         assertArrayEquals(val1_3, e1_3.value());
         assertEquals(3, e1_3.revision());
+        assertEquals(3, e1_3.updateCounter());
         assertEquals(3, storage.revision());
+        assertEquals(3, storage.updateCounter());
 
         // Remove existing entry.
         Entry e2_2 = storage.remove(key2);
@@ -92,7 +103,9 @@ class SimpleInMemoryKeyValueStorageTest {
         assertArrayEquals(key2, e2_2.key());
         assertArrayEquals(val2_2, e2_2.value());
         assertEquals(2, e2_2.revision());
+        assertEquals(2, e2_2.updateCounter());
         assertEquals(4, storage.revision()); // Storage revision is changed.
+        assertEquals(4, storage.updateCounter());
 
         // Remove already removed entry.
         Entry tombstoneEntry = storage.remove(key2);
@@ -100,11 +113,13 @@ class SimpleInMemoryKeyValueStorageTest {
         assertFalse(tombstoneEntry.empty());
         assertTrue(tombstoneEntry.tombstone());
         assertEquals(4, storage.revision()); // Storage revision is not changed.
+        assertEquals(4, storage.updateCounter());
 
         // Compact and check that tombstones are removed.
         storage.compact();
 
         assertEquals(4, storage.revision());
+        assertEquals(4, storage.updateCounter());
         assertTrue(storage.remove(key2).empty());
         assertTrue(storage.get(key2).empty());
 
@@ -116,7 +131,9 @@ class SimpleInMemoryKeyValueStorageTest {
         assertArrayEquals(key1, e1_3.key());
         assertArrayEquals(val1_3, e1_3.value());
         assertEquals(3, e1_3.revision());
+        assertEquals(3, e1_3.updateCounter());
         assertEquals(5, storage.revision()); // Storage revision is changed.
+        assertEquals(5, storage.updateCounter());
 
         // Remove already removed entry.
         tombstoneEntry = storage.remove(key1);
@@ -124,11 +141,13 @@ class SimpleInMemoryKeyValueStorageTest {
         assertFalse(tombstoneEntry.empty());
         assertTrue(tombstoneEntry.tombstone());
         assertEquals(5, storage.revision()); // // Storage revision is not changed.
+        assertEquals(5, storage.updateCounter());
 
         // Compact and check that tombstones are removed.
         storage.compact();
 
         assertEquals(5, storage.revision());
+        assertEquals(5, storage.updateCounter());
         assertTrue(storage.remove(key1).empty());
         assertTrue(storage.get(key1).empty());
     }
@@ -136,33 +155,40 @@ class SimpleInMemoryKeyValueStorageTest {
     @Test
     void compact() {
         assertEquals(0, storage.revision());
+        assertEquals(0, storage.updateCounter());
 
         // Compact empty.
         storage.compact();
 
         assertEquals(0, storage.revision());
+        assertEquals(0, storage.updateCounter());
 
         // Compact non-empty.
         fill(storage, 1, 1);
 
         assertEquals(1, storage.revision());
+        assertEquals(1, storage.updateCounter());
 
         fill(storage, 2, 2);
 
         assertEquals(3, storage.revision());
+        assertEquals(3, storage.updateCounter());
 
         fill(storage, 3, 3);
 
         assertEquals(6, storage.revision());
+        assertEquals(6, storage.updateCounter());
 
         storage.remove(k(3));
 
         assertEquals(7, storage.revision());
+        assertEquals(7, storage.updateCounter());
         assertTrue(storage.get(k(3)).tombstone());
 
         storage.compact();
 
         assertEquals(7, storage.revision());
+        assertEquals(7, storage.updateCounter());
 
         Entry e1 = storage.get(k(1));
 
@@ -171,6 +197,7 @@ class SimpleInMemoryKeyValueStorageTest {
         assertArrayEquals(k(1), e1.key());
         assertArrayEquals(kv(1,1), e1.value());
         assertEquals(1, e1.revision());
+        assertEquals(1, e1.updateCounter());
 
         Entry e2 = storage.get(k(2));
 
@@ -180,6 +207,7 @@ class SimpleInMemoryKeyValueStorageTest {
         assertArrayEquals(kv(2,2), e2.value());
         assertTrue(storage.get(k(2), 2).empty());
         assertEquals(3, e2.revision());
+        assertEquals(3, e2.updateCounter());
 
         Entry e3 = storage.get(k(3));
 
@@ -200,6 +228,7 @@ class SimpleInMemoryKeyValueStorageTest {
         fill("zoo", storage, expZooMap);
 
         assertEquals(300, storage.revision());
+        assertEquals(300, storage.updateCounter());
 
         assertIterate("key", storage, expKeyMap);
         assertIterate("zoo", storage, expZooMap);
