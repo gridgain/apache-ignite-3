@@ -15,7 +15,7 @@
  * limitations under the License.
  */
 
-package org.apache.ignite.cache.affinity;
+package org.apache.ignite.table.distributed.affinity;
 
 import java.io.Serializable;
 import java.util.ArrayList;
@@ -29,11 +29,11 @@ import java.util.List;
 import java.util.Map;
 import java.util.NoSuchElementException;
 import java.util.UUID;
-import org.jetbrains.annotations.NotNull;
-import org.slf4j.Logger;
 import org.apache.ignite.lang.IgniteBiPredicate;
 import org.apache.ignite.lang.IgniteBiTuple;
 import org.apache.ignite.network.NetworkMember;
+import org.jetbrains.annotations.NotNull;
+import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
@@ -78,9 +78,6 @@ public class RendezvousAffinityFunction implements AffinityFunction, Serializabl
     /** Exclude neighbors flag. */
     private boolean exclNeighbors;
 
-    /** Locally generated cache id. */
-    private int locallyGeneratedId;
-
     /** Exclude neighbors warning. */
     private transient boolean exclNeighborsWarn;
 
@@ -121,26 +118,16 @@ public class RendezvousAffinityFunction implements AffinityFunction, Serializabl
     }
 
     /**
-     * Empty constructor with all defaults.
-     *
-     * @param locallyGeneratedId Cache id.
-     */
-    public RendezvousAffinityFunction(int locallyGeneratedId) {
-        this(locallyGeneratedId, false);
-    }
-
-    /**
      * Initializes affinity with flag to exclude same-host-neighbors from being backups of each other
      * and specified number of backups.
      * <p>
      * Note that {@code affinityBackupFilter} is ignored if {@code excludeNeighbors} is set to {@code true}.
      *
-     * @param locallyGeneratedId Cache id.
      * @param exclNeighbors {@code True} if nodes residing on the same host may not act as backups
      *      of each other.
      */
-    public RendezvousAffinityFunction(int locallyGeneratedId, boolean exclNeighbors) {
-        this(locallyGeneratedId, exclNeighbors, DFLT_PARTITION_COUNT);
+    public RendezvousAffinityFunction(boolean exclNeighbors) {
+        this(exclNeighbors, DFLT_PARTITION_COUNT);
     }
 
     /**
@@ -149,16 +136,14 @@ public class RendezvousAffinityFunction implements AffinityFunction, Serializabl
      * <p>
      * Note that {@code affinityBackupFilter} is ignored if {@code excludeNeighbors} is set to {@code true}.
      *
-     * @param locallyGeneratedId Cache id.
      * @param exclNeighbors {@code True} if nodes residing on the same host may not act as backups
      *      of each other.
      * @param parts Total number of partitions.
      */
     public RendezvousAffinityFunction(
-        int locallyGeneratedId,
         boolean exclNeighbors,
         int parts) {
-        this(locallyGeneratedId, exclNeighbors, parts, null);
+        this(exclNeighbors, parts, null);
     }
 
     /**
@@ -166,7 +151,6 @@ public class RendezvousAffinityFunction implements AffinityFunction, Serializabl
      * <p>
      * Note that {@code affinityBackupFilter} is ignored if {@code excludeNeighbors} is set to {@code true}.
      *
-     * @param locallyGeneratedId Cache id.
      * @param parts Total number of partitions.
      * @param affinityBackupFilter Optional back up filter for nodes. If provided, backups will be selected
      *      from all nodes that pass this filter. First argument for this filter is primary node, and second
@@ -179,26 +163,23 @@ public class RendezvousAffinityFunction implements AffinityFunction, Serializabl
         int parts,
         IgniteBiPredicate<NetworkMember, List<NetworkMember>> affinityBackupFilter
     ) {
-        this(locallyGeneratedId, false, parts, affinityBackupFilter);
+        this(false, parts, affinityBackupFilter);
     }
 
     /**
      * Private constructor.
      *
-     * @param locallyGeneratedId Cache id.
      * @param exclNeighbors Exclude neighbors flag.
      * @param parts Partitions count.
      * @param affinityBackupFilter Backup filter.
      */
     private RendezvousAffinityFunction(
-        int locallyGeneratedId,
         boolean exclNeighbors,
         int parts,
         IgniteBiPredicate<NetworkMember, List<NetworkMember>> affinityBackupFilter
     ) {
         assert parts > 0 : "parts > 0";
 
-        this.locallyGeneratedId = locallyGeneratedId;
         this.exclNeighbors = exclNeighbors;
         this.affinityBackupFilter = affinityBackupFilter;
 
@@ -471,13 +452,13 @@ public class RendezvousAffinityFunction implements AffinityFunction, Serializabl
     }
 
     /** {@inheritDoc} */
-    @Override public List<List<NetworkMember>> assignPartitions(List<NetworkMember> currentTopologySnapshot, int backups) {
+    @Override public List<List<NetworkMember>> assignPartitions(Collection<NetworkMember> currentTopologySnapshot, int backups) {
         List<List<NetworkMember>> assignments = new ArrayList<>(parts);
 
         Map<UUID, Collection<NetworkMember>> neighborhoodCache = exclNeighbors ?
             neighbors(currentTopologySnapshot) : null;
 
-        List<NetworkMember> nodes = currentTopologySnapshot;
+        List<NetworkMember> nodes = new ArrayList<>(currentTopologySnapshot);
 
         for (int i = 0; i < parts; i++) {
             List<NetworkMember> partAssignment = assignPartition(i, nodes, backups, neighborhoodCache);
@@ -485,29 +466,7 @@ public class RendezvousAffinityFunction implements AffinityFunction, Serializabl
             assignments.add(partAssignment);
         }
 
-        return choosePrimary(assignments);
-    }
-
-    /**
-     * @param assignments Affinity assignment.
-     * @return Assignment with chosen primary.
-     */
-    @NotNull private List<List<NetworkMember>> choosePrimary(List<List<NetworkMember>> assignments) {
-        List<List<NetworkMember>> primaryAssignments = new ArrayList<>(parts);
-
-        for (List<NetworkMember> members: assignments) {
-            int primary = safeAbs(locallyGeneratedId % members.size());
-
-            ArrayList<NetworkMember> primaryMembers = new ArrayList<>();
-
-            primaryMembers.add(members.remove(primary));
-
-            primaryMembers.addAll(members);
-
-            primaryAssignments.add(primaryMembers);
-        }
-
-        return primaryAssignments;
+        return assignments;
     }
 
     /**

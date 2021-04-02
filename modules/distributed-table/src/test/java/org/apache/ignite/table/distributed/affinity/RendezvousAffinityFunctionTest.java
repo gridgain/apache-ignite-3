@@ -15,7 +15,7 @@
  * limitations under the License.
  */
 
-package org.apache.ignite.cache.affinity;
+package org.apache.ignite.table.distributed.affinity;
 
 import java.util.ArrayList;
 import java.util.Collection;
@@ -24,17 +24,28 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Random;
 import java.util.function.Function;
+import org.apache.ignite.internal.DistributedTableUtils;
 import org.apache.ignite.network.NetworkMember;
+import org.jetbrains.annotations.NotNull;
 import org.junit.jupiter.api.Test;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import static java.util.Objects.nonNull;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+/**
+ * Test for affinity function.
+ */
 public class RendezvousAffinityFunctionTest {
 
     /** Affinity deviation ratio. */
     public static final double AFFINITY_DEVIATION_RATIO = 0.2;
+
+    /** Logger. */
+    private Logger log = LoggerFactory.getLogger(RendezvousAffinityFunctionTest.class);
 
     @Test
     public void partitionDistribution() {
@@ -44,16 +55,11 @@ public class RendezvousAffinityFunctionTest {
 
         int backups = 3;
 
-        ArrayList<NetworkMember> members = new ArrayList<>(nodes);
-
-        for (int i = 0; i < nodes; i++)
-            members.add(new NetworkMember("Member " + i));
-
-        int cacheId = new Random().nextInt();
+        ArrayList<NetworkMember> members = prepareNetworkTopology(nodes);
 
         assertTrue(parts > nodes, "Partitions should be more that nodes");
 
-        AffinityFunction aff = new RendezvousAffinityFunction(cacheId, false, parts);
+        AffinityFunction aff = new RendezvousAffinityFunction(false, parts);
 
         int ideal = (parts * (backups + 1)) / nodes;
 
@@ -89,6 +95,44 @@ public class RendezvousAffinityFunctionTest {
                     + ", parts=" + compact(memberParts) + ']');
         }
     }
+
+    @NotNull private ArrayList<NetworkMember> prepareNetworkTopology(int nodes) {
+        ArrayList<NetworkMember> members = new ArrayList<>(nodes);
+
+        for (int i = 0; i < nodes; i++)
+            members.add(new NetworkMember("Member " + i));
+        return members;
+    }
+
+    @Test
+    public void serializeAssignment() {
+        int nodes = 50;
+
+        int parts = 10_000;
+
+        int backups = 3;
+
+        ArrayList<NetworkMember> members = prepareNetworkTopology(nodes);
+
+        assertTrue(parts > nodes, "Partitions should be more that nodes");
+
+        List<List<NetworkMember>> assignment = new RendezvousAffinityFunction(false, parts)
+            .assignPartitions(members, backups);
+
+        byte[] assignmentBytes = DistributedTableUtils.toBytes(assignment);
+
+        assertNotNull(assignment);
+
+        log.info("Assignment is serialized successfully [bytes=" + assignmentBytes.length + ']');
+
+        List<List<NetworkMember>> deserializedAssignment = (List<List<NetworkMember>>)DistributedTableUtils.fromBytes(assignmentBytes);
+
+        assertNotNull(deserializedAssignment);
+
+        assertEquals(assignment, deserializedAssignment);
+    }
+
+
 
     /**
      * Returns sorted and compacted string representation of given {@code col}. Two nearby numbers with difference at

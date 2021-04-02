@@ -15,9 +15,10 @@
  * limitations under the License.
  */
 
-package org.apache.ignite.cache.affinity;
+package org.apache.ignite.table.distributed.affinity;
 
 import java.io.Serializable;
+import java.util.Collection;
 import java.util.List;
 import java.util.UUID;
 import org.apache.ignite.network.NetworkMember;
@@ -78,7 +79,7 @@ public interface AffinityFunction extends Serializable {
      * @return Unmodifiable list indexed by partition number. Each element of array is a collection in which
      *      first node is a primary node and other nodes are backup nodes.
      */
-    public List<List<NetworkMember>> assignPartitions(List<NetworkMember> currentTopologySnapshot, int backups);
+    public List<List<NetworkMember>> assignPartitions(Collection<NetworkMember> currentTopologySnapshot, int backups);
 
     /**
      * Removes node from affinity. This method is called when it is safe to remove left node from
