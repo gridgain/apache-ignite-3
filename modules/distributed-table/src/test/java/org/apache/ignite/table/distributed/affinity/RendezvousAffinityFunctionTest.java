@@ -22,14 +22,12 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
-import java.util.Random;
 import java.util.function.Function;
 import org.apache.ignite.internal.DistributedTableUtils;
+import org.apache.ignite.lang.LogWrapper;
 import org.apache.ignite.network.NetworkMember;
 import org.jetbrains.annotations.NotNull;
 import org.junit.jupiter.api.Test;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import static java.util.Objects.nonNull;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -45,7 +43,7 @@ public class RendezvousAffinityFunctionTest {
     public static final double AFFINITY_DEVIATION_RATIO = 0.2;
 
     /** Logger. */
-    private Logger log = LoggerFactory.getLogger(RendezvousAffinityFunctionTest.class);
+    private LogWrapper log = new LogWrapper(RendezvousAffinityFunctionTest.class);
 
     @Test
     public void partitionDistribution() {

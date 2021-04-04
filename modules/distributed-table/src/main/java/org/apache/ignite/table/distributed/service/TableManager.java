@@ -3,15 +3,16 @@ package org.apache.ignite.table.distributed.service;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Timer;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.regex.Pattern;
 import org.apache.ignite.configuration.ConfigurationModule;
 import org.apache.ignite.internal.DistributedTableUtils;
+import org.apache.ignite.internal.table.TableRow;
 import org.apache.ignite.lang.LogWrapper;
 import org.apache.ignite.metastorage.client.MetaStorageService;
 import org.apache.ignite.metastorage.common.Conditions;
@@ -23,7 +24,7 @@ import org.apache.ignite.metastorage.configuration.MetastoreManagerConfiguration
 import org.apache.ignite.network.NetworkCluster;
 import org.apache.ignite.network.NetworkMember;
 import org.apache.ignite.raft.client.Peer;
-import org.apache.ignite.raft.client.message.impl.RaftClientMessageFactory;
+import org.apache.ignite.raft.client.message.RaftClientMessageFactory;
 import org.apache.ignite.raft.client.message.impl.RaftClientMessageFactoryImpl;
 import org.apache.ignite.raft.client.service.RaftGroupService;
 import org.apache.ignite.raft.client.service.impl.RaftGroupServiceImpl;
@@ -31,10 +32,10 @@ import org.apache.ignite.table.distributed.configuration.DistributedTableConfigu
 import org.apache.ignite.table.distributed.configuration.TableView;
 import org.apache.ignite.table.distributed.service.command.GetCommand;
 import org.apache.ignite.table.distributed.service.command.PutCommand;
-import org.apache.ignite.table.distributed.service.command.response.GetResponse;
+import org.apache.ignite.table.distributed.service.command.response.TableRowResponse;
 import org.jetbrains.annotations.NotNull;
 
-public class TableManager<K, V> {
+public class TableManager {
     /** Internal prefix for the metasorage. */
     public static final String INTERNAL_PREFIX = "internal.tables.";
 
@@ -79,35 +80,43 @@ public class TableManager<K, V> {
         if (isLocalNodeHasMetasorage) {
             configurationModule.configurationRegistry()
                 .getConfiguration(DistributedTableConfiguration.KEY).tables()
-            /*.listen(cfg -> {*/;
+                .listen(ctx -> {
+                    HashSet<String> tblNamesToStart = new HashSet<>(ctx.newValue().namedListKeys());
 
-            TableView tableView = null;//get it from listener parameters.
-            long revision = 0;
-            long update = 0;
+                    long revision = ctx.storageRevision();
 
-            UUID tblId = new UUID(revision, update);
+                    if (ctx.oldValue() != null)
+                        tblNamesToStart.removeAll(ctx.oldValue().namedListKeys());
 
-            String tableInternalPrefix = INTERNAL_PREFIX + tblId.toString();
+                    for (String tblName : tblNamesToStart) {
+                        TableView tableView = ctx.newValue().get(tblName);
+                        long update = 0;
 
-            CompletableFuture<Boolean> fut = metaStorageService.invoke(
-                new Key(INTERNAL_PREFIX + tblId.toString()),
-                Conditions.value().eq(null),
-                Operations.put(tableView.name().getBytes(StandardCharsets.UTF_8)),
-                Operations.noop());
+                        UUID tblId = new UUID(revision, update);
 
-            try {
-                if (fut.get()) {
-                    metaStorageService.put(new Key(tableInternalPrefix + ".assignment"), null);
+                        String tableInternalPrefix = INTERNAL_PREFIX + tblId.toString();
 
-                    log.info("Table manager created a table [name={}, revision={}]",
-                        tableView.name(), revision);
-                }
-            }
-            catch (InterruptedException | ExecutionException e) {
-                log.error("Table was not fully initialized [name={}, revision={}]",
-                    tableView.name(), revision, e);
-            }
-//        });
+                        CompletableFuture<Boolean> fut = metaStorageService.invoke(
+                            new Key(INTERNAL_PREFIX + tblId.toString()),
+                            Conditions.value().eq(null),
+                            Operations.put(tableView.name().getBytes(StandardCharsets.UTF_8)),
+                            Operations.noop());
+
+                        try {
+                            if (fut.get()) {
+                                metaStorageService.put(new Key(tableInternalPrefix + ".assignment"), null);
+
+                                log.info("Table manager created a table [name={}, revision={}]",
+                                    tableView.name(), revision);
+                            }
+                        }
+                        catch (InterruptedException | ExecutionException e) {
+                            log.error("Table was not fully initialized [name={}, revision={}]",
+                                tableView.name(), revision, e);
+                        }
+                    }
+                    return CompletableFuture.completedFuture(null);
+                });
         }
 
         String tableInternalPrefix = INTERNAL_PREFIX + "#.assignment";
@@ -137,7 +146,7 @@ public class TableManager<K, V> {
                                     peers.add(new Peer(member));
 
                                 partitionMap.put(p, new RaftGroupServiceImpl("name" + "_part_" + p,
-                                    networkCluster, FACTORY, TIMEOUT, peers, true, DELAY, new Timer()));
+                                    networkCluster, FACTORY, TIMEOUT, peers, true, DELAY));
                             }
 
                             tablePartitionMap.put(tblId, partitionMap);
@@ -158,7 +167,7 @@ public class TableManager<K, V> {
         });
     }
 
-    public void put(UUID tblId, K key, V value) {
+    public TableRow put(UUID tblId, TableRow row) {
         try {
             String name = new String(metaStorageService.get(
                 new Key(INTERNAL_PREFIX + tblId.toString())).get()
@@ -167,29 +176,34 @@ public class TableManager<K, V> {
             int partitions = configurationModule.configurationRegistry().getConfiguration(DistributedTableConfiguration.KEY)
                 .tables().get(name).partitions().value();
 
-            tablePartitionMap.get(tblId).get(key.hashCode() % partitions).run(new PutCommand<>(key, value)).get();
-        }
-        catch (InterruptedException | ExecutionException e) {
-            log.error("Failed to put some value [tblId={}, key={}, val={}]", tblId, key, value);
-        }
-    }
-
-    public Object get(UUID tblId, K key) {
-        try {
-            String name = new String(metaStorageService.get(
-                new Key(INTERNAL_PREFIX + tblId.toString())).get()
-                .value(), StandardCharsets.UTF_8);
-
-            int partitions = configurationModule.configurationRegistry().getConfiguration(DistributedTableConfiguration.KEY)
-                .tables().get(name).partitions().value();
-
-            return tablePartitionMap.get(tblId).get(key.hashCode() % partitions).<GetResponse>run(new GetCommand<>(key)).get()
+            return tablePartitionMap.get(tblId).get(row.keyChunk().hashCode() % partitions).<TableRowResponse>run(new PutCommand(row)).get()
                 .getValue();
         }
         catch (InterruptedException | ExecutionException e) {
-            log.error("Failed to get some value [tblId={}, key={}]", tblId, key);
+            log.error("Failed to put some value [tblId={}, row={}]", tblId, row);
         }
 
+        //TODO: Throw exception.
+        return null;
+    }
+
+    public TableRow get(UUID tblId, TableRow keyRow) {
+        try {
+            String name = new String(metaStorageService.get(
+                new Key(INTERNAL_PREFIX + tblId.toString())).get()
+                .value(), StandardCharsets.UTF_8);
+
+            int partitions = configurationModule.configurationRegistry().getConfiguration(DistributedTableConfiguration.KEY)
+                .tables().get(name).partitions().value();
+
+            return tablePartitionMap.get(tblId).get(keyRow.keyChunk().hashCode() % partitions).<TableRowResponse>run(new GetCommand(keyRow)).get()
+                .getValue();
+        }
+        catch (InterruptedException | ExecutionException e) {
+            log.error("Failed to get some value [tblId={}, keyRow={}]", tblId, keyRow);
+        }
+
+        //TODO: Throw exception.
         return null;
     }
 }

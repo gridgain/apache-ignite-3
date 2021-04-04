@@ -1,13 +1,12 @@
 package org.apache.ignite.table.distributed.service.command;
 
+import org.apache.ignite.internal.table.TableRow;
 import org.apache.ignite.raft.client.WriteCommand;
 
-public class PutCommand<K,V> implements WriteCommand {
-    K key;
-    V value;
+public class PutCommand implements WriteCommand {
+    TableRow row;
 
-    public PutCommand(K key, V value) {
-        this.key = key;
-        this.value = value;
+    public PutCommand(TableRow row) {
+        this.row = row;
     }
 }

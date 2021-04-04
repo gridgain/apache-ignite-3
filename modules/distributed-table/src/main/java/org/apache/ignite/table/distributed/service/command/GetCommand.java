@@ -1,11 +1,12 @@
 package org.apache.ignite.table.distributed.service.command;
 
+import org.apache.ignite.internal.table.TableRow;
 import org.apache.ignite.raft.client.ReadCommand;
 
-public class GetCommand<K> implements ReadCommand {
-    K key;
+public class GetCommand implements ReadCommand {
+    TableRow keyRow;
 
-    public GetCommand(K key) {
-        this.key = key;
+    public GetCommand(TableRow keyRow) {
+        this.keyRow = keyRow;
     }
 }

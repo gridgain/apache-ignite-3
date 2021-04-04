@@ -1,12 +1,16 @@
 package org.apache.ignite.internal;
 
+import java.util.UUID;
 import java.util.function.Consumer;
 import org.apache.ignite.Ignite;
 import org.apache.ignite.configuration.ConfigurationModule;
+import org.apache.ignite.internal.table.TableImpl;
 import org.apache.ignite.lang.LogWrapper;
 import org.apache.ignite.table.Table;
 import org.apache.ignite.table.distributed.configuration.DistributedTableConfiguration;
 import org.apache.ignite.table.distributed.configuration.TableInit;
+import org.apache.ignite.table.distributed.service.TableManager;
+import org.apache.ignite.table.distributed.storage.TableStorageImpl;
 
 /**
  *
@@ -14,6 +18,8 @@ import org.apache.ignite.table.distributed.configuration.TableInit;
 public class IgniteImpl implements Ignite {
 
     private ConfigurationModule configurationModule;
+
+    private TableManager tableManager;
 
     LogWrapper log = new LogWrapper(IgniteImpl.class);
 
@@ -40,6 +46,9 @@ public class IgniteImpl implements Ignite {
 //                    t.initPartitions(tableConfiguration.partitions());
 //                })));
 
-        return null;
+        //TODO: Get it from table manager, when table is prepared to use.
+        UUID tblId = UUID.randomUUID();
+
+        return new TableImpl(new TableStorageImpl(tableManager, tblId));
     }
 }
