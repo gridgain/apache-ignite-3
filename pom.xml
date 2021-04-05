@@ -50,8 +50,8 @@
         <module>modules/runner</module>
         <module>modules/schema</module>
         <module>modules/table</module>
-        <module>modules/distributed-table</module>
-        <module>modules/distributed-table-api</module>
+        <module>modules/affinity</module>
+        <module>modules/affinity-api</module>
         <module>modules/metastorage-api</module>
     </modules>
 </project>
