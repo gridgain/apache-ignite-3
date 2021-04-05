@@ -3,7 +3,6 @@ package org.apache.ignite.table.distributed.service;
 import java.nio.charset.StandardCharsets;
 import java.util.UUID;
 import java.util.concurrent.ExecutionException;
-import java.util.regex.Pattern;
 import org.apache.ignite.configuration.ConfigurationModule;
 import org.apache.ignite.internal.DistributedTableUtils;
 import org.apache.ignite.lang.LogWrapper;
@@ -19,20 +18,36 @@ import org.apache.ignite.table.distributed.configuration.DistributedTableConfigu
 import org.jetbrains.annotations.NotNull;
 
 public class AffinityManager {
-
     /** Tables prefix for the metasorage. */
     public static final String INTERNAL_PREFIX = "internal.tables.";
 
+    /** Meta storage service. */
     private MetaStorageService metaStorageService;
 
+    /** Network cluster. */
     private NetworkCluster networkCluster;
 
+    /** Configuration module. */
     private ConfigurationModule configurationModule;
 
-    private LogWrapper log = new LogWrapper(TableManager.class);
+    /** Logger. */
+    private LogWrapper log = new LogWrapper(TableManagerImpl.class);
 
-    public AffinityManager() {
+    /**
+     * @param configurationModule Configuration module.
+     * @param networkCluster Network cluster.
+     * @param metaStorageService Meta storage service.
+     */
+    public AffinityManager(
+        ConfigurationModule configurationModule,
+        NetworkCluster networkCluster,
+        MetaStorageService metaStorageService
+    ) {
         int startRevision =0;
+
+        this.configurationModule = configurationModule;
+        this.networkCluster = networkCluster;
+        this.metaStorageService = metaStorageService;
 
         String[] metastoragePeerNames = configurationModule.configurationRegistry()
             .getConfiguration(MetastoreManagerConfiguration.KEY).names().value();
@@ -56,7 +71,11 @@ public class AffinityManager {
                 @Override public boolean onUpdate(@NotNull Iterable<WatchEvent> events) {
                     for (WatchEvent evt : events) {
                         if (evt.newEntry().value() == null) {
-                            UUID tblId = UUID.fromString(Pattern.compile("#").matcher(evt.newEntry().key().toString()).group());
+                            String keyTail = evt.newEntry().key().toString().substring(INTERNAL_PREFIX.length());
+
+                            String placeholderValue = keyTail.substring(0, keyTail.indexOf('.'));
+
+                            UUID tblId = UUID.fromString(placeholderValue);
 
                             try {
                                 String name = new String(metaStorageService.get(

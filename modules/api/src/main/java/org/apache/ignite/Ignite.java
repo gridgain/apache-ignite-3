@@ -20,6 +20,7 @@ package org.apache.ignite;
 import java.util.function.Consumer;
 import org.apache.ignite.table.Table;
 import org.apache.ignite.table.distributed.configuration.TableInit;
+import org.apache.ignite.table.manager.TableManager;
 
 /**
  * Ignite cluster interface.
@@ -35,4 +36,9 @@ public interface Ignite {
      * @return Table.
      */
     Table createTable(String name, Consumer<TableInit> tableInitChange);
+
+    /**
+     * @return Table manager.
+     */
+    TableManager tableManager();
 }
