@@ -11,16 +11,20 @@ public interface KeyValueStorage {
     long updateCounter();
 
     @NotNull
-    Entry put(byte[] key, byte[] value);
-
-    @NotNull
     Entry get(byte[] key);
 
     @NotNull
     Entry get(byte[] key, long rev);
 
+    void put(byte[] key, byte[] value);
+
     @NotNull
-    Entry remove(byte[] key);
+    Entry getAndPut(byte[] key, byte[] value);
+
+    void remove(byte[] key);
+
+    @NotNull
+    Entry getAndRemove(byte[] key);
 
     Iterator<Entry> iterate(byte[] key);
 

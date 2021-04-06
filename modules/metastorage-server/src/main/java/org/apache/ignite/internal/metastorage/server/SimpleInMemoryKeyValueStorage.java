@@ -46,49 +46,26 @@ public class SimpleInMemoryKeyValueStorage implements KeyValueStorage {
         return updCntr;
     }
 
-    @NotNull
-    @Override public Entry put(byte[] key, byte[] bytes) {
+    @Override public void put(byte[] key, byte[] value) {
         synchronized (mux) {
-            long curRev = ++rev;
+            doPut(key, value);
+        }
+    }
 
-            long curUpdCntr = ++updCntr;
-
-            // Update keysIdx.
-            List<Long> revs = keysIdx.computeIfAbsent(key, k -> new ArrayList<>());
-
-            long lastRev = revs.isEmpty() ? 0 : lastRevision(revs);
-
-            revs.add(curRev);
-
-            // Update revsIdx.
-            NavigableMap<byte[], Value> entries = new TreeMap<>(LEXICOGRAPHIC_COMPARATOR);
-
-            Value val = new Value(bytes, curUpdCntr);
-
-            entries.put(key, val);
-
-            revsIdx.put(curRev, entries);
+    @NotNull
+    @Override public Entry getAndPut(byte[] key, byte[] bytes) {
+        synchronized (mux) {
+            long lastRev = doPut(key, bytes);
 
             // Return previous value.
-            if (lastRev == 0)
-                return Entry.empty(key);
-
-            NavigableMap<byte[], Value> lastRevVals = revsIdx.get(lastRev);
-
-            Value lastVal = lastRevVals.get(key);
-
-            Entry res = new Entry(key, lastVal.bytes(), lastRev, lastVal.updateCounter());
-
-            //TODO: notify watchers
-
-            return res;
+            return doGetValue(key, lastRev);
         }
     }
 
     @NotNull
     @Override public Entry get(byte[] key) {
         synchronized (mux) {
-            return doGet(key, LATEST_REV);
+            return doGet(key, LATEST_REV, false);
         }
     }
 
@@ -96,19 +73,31 @@ public class SimpleInMemoryKeyValueStorage implements KeyValueStorage {
     @TestOnly
     @Override public Entry get(byte[] key, long rev) {
         synchronized (mux) {
-            return doGet(key, rev);
+            return doGet(key, rev, true);
+        }
+    }
+
+    @Override
+    public void remove(byte[] key) {
+        synchronized (mux) {
+            Entry e = doGet(key, LATEST_REV, false);
+
+            if (e.empty() || e.tombstone())
+                return;
+
+            doPut(key, TOMBSTONE);
         }
     }
 
     @NotNull
-    @Override public Entry remove(byte[] key) {
+    @Override public Entry getAndRemove(byte[] key) {
         synchronized (mux) {
-            Entry e = doGet(key, LATEST_REV);
+            Entry e = doGet(key, LATEST_REV, false);
 
-            if (e.value() == null)
+            if (e.empty() || e.tombstone())
                 return e;
 
-            return put(key, TOMBSTONE);
+            return getAndPut(key, TOMBSTONE);
         }
     }
 
@@ -233,25 +222,91 @@ public class SimpleInMemoryKeyValueStorage implements KeyValueStorage {
      * @param rev Revision.
      * @return Entry for given key.
      */
-    @NotNull private Entry doGet(byte[] key, long rev) {
+    @NotNull
+    private Entry doGet(byte[] key, long rev, boolean exactRev) {
+        assert rev == LATEST_REV && !exactRev || rev > LATEST_REV :
+                "Invalid arguments: [rev=" + rev + ", exactRev=" + exactRev + ']';
+
         List<Long> revs = keysIdx.get(key);
 
         if (revs == null || revs.isEmpty())
             return Entry.empty(key);
 
-        long lrev = rev == LATEST_REV ? lastRevision(revs) : rev;
+        long lastRev;
 
-        NavigableMap<byte[], Value> entries = revsIdx.get(lrev);
+        if (rev == LATEST_REV)
+            lastRev = lastRevision(revs);
+        else
+            lastRev = exactRev ? rev : maxRevision(revs, rev);
 
-        if (entries == null || entries.isEmpty())
+        // lastRev can be -1 if maxRevision return -1.
+        if (lastRev == -1)
             return Entry.empty(key);
 
-        Value val = entries.get(key);
+        return doGetValue(key, lastRev);
+    }
 
-        if (val.tombstone())
-            return Entry.tombstone(key, lrev, val.updateCounter());
+    /**
+     * Returns maximum revision which must be less or equal to {@code upperBoundRev}. If there is no such revision then
+     * {@code -1} will be returned.
+     *
+     * @param revs Revisions list.
+     * @param upperBoundRev Revision upper bound.
+     * @return Appropriate revision or {@code -1} if there is no such revision.
+     */
+    private static long maxRevision(List<Long> revs, long upperBoundRev) {
+        int i = revs.size() - 1;
 
-        return new Entry(key, val.bytes() , lrev, val.updateCounter());
+        for (; i >= 0 ; i--) {
+            long rev = revs.get(i);
+
+            if (rev <= upperBoundRev)
+                return rev;
+        }
+
+        return -1;
+    }
+
+    @NotNull
+    private Entry doGetValue(byte[] key, long lastRev) {
+        if (lastRev == 0)
+            return Entry.empty(key);
+
+        NavigableMap<byte[], Value> lastRevVals = revsIdx.get(lastRev);
+
+        if (lastRevVals == null || lastRevVals.isEmpty())
+            return Entry.empty(key);
+
+        Value lastVal = lastRevVals.get(key);
+
+        if (lastVal.tombstone())
+            return Entry.tombstone(key, lastRev, lastVal.updateCounter());
+
+        return new Entry(key, lastVal.bytes() , lastRev, lastVal.updateCounter());
+    }
+
+    private long doPut(byte[] key, byte[] bytes) {
+        long curRev = ++rev;
+
+        long curUpdCntr = ++updCntr;
+
+        // Update keysIdx.
+        List<Long> revs = keysIdx.computeIfAbsent(key, k -> new ArrayList<>());
+
+        long lastRev = revs.isEmpty() ? 0 : lastRevision(revs);
+
+        revs.add(curRev);
+
+        // Update revsIdx.
+        NavigableMap<byte[], Value> entries = new TreeMap<>(LEXICOGRAPHIC_COMPARATOR);
+
+        Value val = new Value(bytes, curUpdCntr);
+
+        entries.put(key, val);
+
+        revsIdx.put(curRev, entries);
+
+        return lastRev;
     }
 
     private static boolean isPrefix(byte[] pref, byte[] term) {

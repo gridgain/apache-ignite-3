@@ -22,7 +22,212 @@ class SimpleInMemoryKeyValueStorageTest {
     }
 
     @Test
-    void putGetRemoveCompact() {
+    public void put() {
+        byte[] key = k(1);
+        byte[] val = kv(1, 1);
+
+        assertEquals(0, storage.revision());
+        assertEquals(0, storage.updateCounter());
+        assertTrue(storage.get(key).empty());
+
+        storage.put(key, val);
+
+        assertEquals(1, storage.revision());
+        assertEquals(1, storage.updateCounter());
+
+        Entry e = storage.get(key);
+
+        assertFalse(e.empty());
+        assertFalse(e.tombstone());
+        assertEquals(1, e.revision());
+        assertEquals(1, e.updateCounter());
+
+        storage.put(key, val);
+
+        assertEquals(2, storage.revision());
+        assertEquals(2, storage.updateCounter());
+
+        e = storage.get(key);
+
+        assertFalse(e.empty());
+        assertFalse(e.tombstone());
+        assertEquals(2, e.revision());
+        assertEquals(2, e.updateCounter());
+    }
+
+    @Test
+    public void getAndPut() {
+        byte[] key = k(1);
+        byte[] val = kv(1, 1);
+
+        assertEquals(0, storage.revision());
+        assertEquals(0, storage.updateCounter());
+        assertTrue(storage.get(key).empty());
+
+        Entry e = storage.getAndPut(key, val);
+
+        assertEquals(1, storage.revision());
+        assertEquals(1, storage.updateCounter());
+        assertTrue(e.empty());
+        assertFalse(e.tombstone());
+        assertEquals(0, e.revision());
+        assertEquals(0, e.updateCounter());
+
+        e = storage.getAndPut(key, val);
+
+        assertEquals(2, storage.revision());
+        assertEquals(2, storage.updateCounter());
+        assertFalse(e.empty());
+        assertFalse(e.tombstone());
+        assertEquals(1, e.revision());
+        assertEquals(1, e.updateCounter());
+    }
+
+    @Test
+    public void remove() {
+        byte[] key = k(1);
+        byte[] val = kv(1, 1);
+
+        assertEquals(0, storage.revision());
+        assertEquals(0, storage.updateCounter());
+        assertTrue(storage.get(key).empty());
+
+        // Remove non-existent entry.
+        storage.remove(key);
+
+        assertEquals(0, storage.revision());
+        assertEquals(0, storage.updateCounter());
+        assertTrue(storage.get(key).empty());
+
+        storage.put(key, val);
+
+        assertEquals(1, storage.revision());
+        assertEquals(1, storage.updateCounter());
+
+        // Remove existent entry.
+        storage.remove(key);
+
+        assertEquals(2, storage.revision());
+        assertEquals(2, storage.updateCounter());
+
+        Entry e = storage.get(key);
+
+        assertFalse(e.empty());
+        assertTrue(e.tombstone());
+        assertEquals(2, e.revision());
+        assertEquals(2, e.updateCounter());
+
+        // Remove already removed entry (tombstone can't be removed).
+        storage.remove(key);
+
+        assertEquals(2, storage.revision());
+        assertEquals(2, storage.updateCounter());
+
+        e = storage.get(key);
+
+        assertFalse(e.empty());
+        assertTrue(e.tombstone());
+        assertEquals(2, e.revision());
+        assertEquals(2, e.updateCounter());
+    }
+
+    @Test
+    public void getAndRemove() {
+        byte[] key = k(1);
+        byte[] val = kv(1, 1);
+
+        assertEquals(0, storage.revision());
+        assertEquals(0, storage.updateCounter());
+        assertTrue(storage.get(key).empty());
+
+        // Remove non-existent entry.
+        Entry e = storage.getAndRemove(key);
+
+        assertTrue(e.empty());
+        assertEquals(0, storage.revision());
+        assertEquals(0, storage.updateCounter());
+        assertTrue(storage.get(key).empty());
+
+        storage.put(key, val);
+
+        assertEquals(1, storage.revision());
+        assertEquals(1, storage.updateCounter());
+
+        // Remove existent entry.
+        e = storage.getAndRemove(key);
+
+        assertFalse(e.empty());
+        assertFalse(e.tombstone());
+        assertEquals(1, e.revision());
+        assertEquals(1, e.updateCounter());
+        assertEquals(2, storage.revision());
+        assertEquals(2, storage.updateCounter());
+
+        e = storage.get(key);
+
+        assertFalse(e.empty());
+        assertTrue(e.tombstone());
+        assertEquals(2, e.revision());
+        assertEquals(2, e.updateCounter());
+
+        // Remove already removed entry (tombstone can't be removed).
+        e = storage.getAndRemove(key);
+
+        assertFalse(e.empty());
+        assertTrue(e.tombstone());
+        assertEquals(2, e.revision());
+        assertEquals(2, e.updateCounter());
+        assertEquals(2, storage.revision());
+        assertEquals(2, storage.updateCounter());
+
+        e = storage.get(key);
+
+        assertFalse(e.empty());
+        assertTrue(e.tombstone());
+        assertEquals(2, e.revision());
+        assertEquals(2, e.updateCounter());
+    }
+
+    @Test
+    public void getAfterRemove() {
+        byte[] key = k(1);
+        byte[] val = kv(1, 1);
+
+        storage.getAndPut(key, val);
+
+        storage.getAndRemove(key);
+
+        Entry e = storage.get(key);
+
+        assertEquals(2, storage.revision());
+        assertEquals(2, storage.updateCounter());
+        assertEquals(2, e.revision());
+        assertTrue(e.tombstone());
+    }
+
+    @Test
+    public void getAndPutAfterRemove() {
+        byte[] key = k(1);
+
+        byte[] val = kv(1, 1);
+
+        storage.getAndPut(key, val);
+
+        storage.getAndRemove(key);
+
+        Entry e = storage.getAndPut(key, val);
+
+        assertEquals(3, storage.revision());
+
+        assertEquals(3, storage.updateCounter());
+
+        assertEquals(2, e.revision());
+
+        assertTrue(e.tombstone());
+    }
+
+    @Test
+    public void putGetRemoveCompact() {
         byte[] key1 = k(1);
         byte[] val1_1 = kv(1, 1);
         byte[] val1_3 = kv(1, 3);
@@ -34,7 +239,7 @@ class SimpleInMemoryKeyValueStorageTest {
         assertEquals(0, storage.updateCounter());
 
         // Previous entry is empty.
-        Entry emptyEntry = storage.put(key1, val1_1);
+        Entry emptyEntry = storage.getAndPut(key1, val1_1);
 
         assertEquals(1, storage.revision());
         assertEquals(1, storage.updateCounter());
@@ -53,7 +258,7 @@ class SimpleInMemoryKeyValueStorageTest {
         assertEquals(1, storage.updateCounter());
 
         // Previous entry is empty.
-        emptyEntry = storage.put(key2, val2_2);
+        emptyEntry = storage.getAndPut(key2, val2_2);
 
         assertEquals(2, storage.revision());
         assertEquals(2, storage.updateCounter());
@@ -72,7 +277,7 @@ class SimpleInMemoryKeyValueStorageTest {
         assertEquals(2, storage.updateCounter());
 
         // Previous entry is not empty.
-        e1_1 = storage.put(key1, val1_3);
+        e1_1 = storage.getAndPut(key1, val1_3);
 
         assertFalse(e1_1.empty());
         assertFalse(e1_1.tombstone());
@@ -96,7 +301,7 @@ class SimpleInMemoryKeyValueStorageTest {
         assertEquals(3, storage.updateCounter());
 
         // Remove existing entry.
-        Entry e2_2 = storage.remove(key2);
+        Entry e2_2 = storage.getAndRemove(key2);
 
         assertFalse(e2_2.empty());
         assertFalse(e2_2.tombstone());
@@ -108,7 +313,7 @@ class SimpleInMemoryKeyValueStorageTest {
         assertEquals(4, storage.updateCounter());
 
         // Remove already removed entry.
-        Entry tombstoneEntry = storage.remove(key2);
+        Entry tombstoneEntry = storage.getAndRemove(key2);
 
         assertFalse(tombstoneEntry.empty());
         assertTrue(tombstoneEntry.tombstone());
@@ -120,11 +325,11 @@ class SimpleInMemoryKeyValueStorageTest {
 
         assertEquals(4, storage.revision());
         assertEquals(4, storage.updateCounter());
-        assertTrue(storage.remove(key2).empty());
+        assertTrue(storage.getAndRemove(key2).empty());
         assertTrue(storage.get(key2).empty());
 
         // Remove existing entry.
-        e1_3 = storage.remove(key1);
+        e1_3 = storage.getAndRemove(key1);
 
         assertFalse(e1_3.empty());
         assertFalse(e1_3.tombstone());
@@ -136,7 +341,7 @@ class SimpleInMemoryKeyValueStorageTest {
         assertEquals(5, storage.updateCounter());
 
         // Remove already removed entry.
-        tombstoneEntry = storage.remove(key1);
+        tombstoneEntry = storage.getAndRemove(key1);
 
         assertFalse(tombstoneEntry.empty());
         assertTrue(tombstoneEntry.tombstone());
@@ -148,12 +353,12 @@ class SimpleInMemoryKeyValueStorageTest {
 
         assertEquals(5, storage.revision());
         assertEquals(5, storage.updateCounter());
-        assertTrue(storage.remove(key1).empty());
+        assertTrue(storage.getAndRemove(key1).empty());
         assertTrue(storage.get(key1).empty());
     }
 
     @Test
-    void compact() {
+    public void compact() {
         assertEquals(0, storage.revision());
         assertEquals(0, storage.updateCounter());
 
@@ -179,7 +384,7 @@ class SimpleInMemoryKeyValueStorageTest {
         assertEquals(6, storage.revision());
         assertEquals(6, storage.updateCounter());
 
-        storage.remove(k(3));
+        storage.getAndRemove(k(3));
 
         assertEquals(7, storage.revision());
         assertEquals(7, storage.updateCounter());
@@ -218,7 +423,7 @@ class SimpleInMemoryKeyValueStorageTest {
     }
 
     @Test
-    void iterate() {
+    public void iterate() {
         TreeMap<String, String> expFooMap = new TreeMap<>();
         TreeMap<String, String> expKeyMap = new TreeMap<>();
         TreeMap<String, String> expZooMap = new TreeMap<>();
@@ -270,13 +475,13 @@ class SimpleInMemoryKeyValueStorageTest {
 
             byte[] val = valStr.getBytes();
 
-            storage.put(key, val);
+            storage.getAndPut(key, val);
         }
     }
 
     private static void fill(KeyValueStorage storage, int keySuffix, int num) {
         for (int i = 0; i < num; i++)
-            storage.put(k(keySuffix), kv(keySuffix, i + 1));
+            storage.getAndPut(k(keySuffix), kv(keySuffix, i + 1));
     }
 
     private static byte[] k(int k) {
