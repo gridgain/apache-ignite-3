@@ -9,19 +9,22 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
-import org.apache.ignite.configuration.ConfigurationModule;
+import java.util.function.Consumer;
 import org.apache.ignite.configuration.internal.ConfigurationManager;
+import org.apache.ignite.configuration.schemas.metastorage.MetastoreManagerConfiguration;
+import org.apache.ignite.configuration.schemas.runner.LocalConfiguration;
+import org.apache.ignite.configuration.schemas.table.TableInit;
+import org.apache.ignite.configuration.schemas.table.TableView;
+import org.apache.ignite.configuration.schemas.table.TablesConfiguration;
 import org.apache.ignite.internal.DistributedTableUtils;
 import org.apache.ignite.internal.table.TableImpl;
 import org.apache.ignite.internal.table.distributed.storage.TableStorageImpl;
 import org.apache.ignite.lang.LogWrapper;
-import org.apache.ignite.metastorage.client.MetaStorageService;
 import org.apache.ignite.metastorage.common.Conditions;
 import org.apache.ignite.metastorage.common.Key;
 import org.apache.ignite.metastorage.common.Operations;
 import org.apache.ignite.metastorage.common.WatchEvent;
 import org.apache.ignite.metastorage.common.WatchListener;
-import org.apache.ignite.metastorage.configuration.MetastoreManagerConfiguration;
 import org.apache.ignite.metastorage.internal.MetaStorageManager;
 import org.apache.ignite.network.NetworkCluster;
 import org.apache.ignite.network.NetworkMember;
@@ -31,8 +34,6 @@ import org.apache.ignite.raft.client.message.impl.RaftClientMessageFactoryImpl;
 import org.apache.ignite.raft.client.service.RaftGroupService;
 import org.apache.ignite.raft.client.service.impl.RaftGroupServiceImpl;
 import org.apache.ignite.table.Table;
-import org.apache.ignite.table.distributed.configuration.DistributedTableConfiguration;
-import org.apache.ignite.table.distributed.configuration.TableView;
 import org.apache.ignite.table.manager.TableManager;
 import org.jetbrains.annotations.NotNull;
 
@@ -78,12 +79,13 @@ public class TableManagerImpl implements TableManager {
         String[] metastoragePeerNames = configurationMgr.configurationRegistry()
             .getConfiguration(MetastoreManagerConfiguration.KEY).names().value();
 
-        NetworkMember localMember = networkCluster.localMember();
+        String localMemberName = configurationMgr.configurationRegistry().getConfiguration(LocalConfiguration.KEY)
+            .name().value();
 
         boolean isLocalNodeHasMetasorage = false;
 
         for (String name : metastoragePeerNames) {
-            if (name.equals(localMember.name())) {
+            if (name.equals(localMemberName)) {
                 isLocalNodeHasMetasorage = true;
 
                 break;
@@ -92,7 +94,7 @@ public class TableManagerImpl implements TableManager {
 
         if (isLocalNodeHasMetasorage) {
             configurationMgr.configurationRegistry()
-                .getConfiguration(DistributedTableConfiguration.KEY).tables()
+                .getConfiguration(TablesConfiguration.KEY).tables()
                 .listen(ctx -> {
                     HashSet<String> tblNamesToStart = new HashSet<>(ctx.newValue().namedListKeys());
 
@@ -109,7 +111,7 @@ public class TableManagerImpl implements TableManager {
 
                         String tableInternalPrefix = INTERNAL_PREFIX + tblId.toString();
 
-                        CompletableFuture<Boolean> fut = metaStorageMgr.service().invoke(
+                        CompletableFuture<Boolean> fut = metaStorageMgr.invoke(
                             new Key(INTERNAL_PREFIX + tblId.toString()),
                             Conditions.value().eq(null),
                             Operations.put(tableView.name().getBytes(StandardCharsets.UTF_8)),
@@ -117,7 +119,7 @@ public class TableManagerImpl implements TableManager {
 
                         try {
                             if (fut.get()) {
-                                metaStorageMgr.service().put(new Key(tableInternalPrefix + ".assignment"), null);
+                                metaStorageMgr.put(new Key(tableInternalPrefix + ".assignment"), null);
 
                                 log.info("Table manager created a table [name={}, revision={}]",
                                     tableView.name(), revision);
@@ -134,7 +136,7 @@ public class TableManagerImpl implements TableManager {
 
         String tableInternalPrefix = INTERNAL_PREFIX + "#.assignment";
 
-        metaStorageMgr.service().watch(new Key(tableInternalPrefix), startRevision, new WatchListener() {
+        metaStorageMgr.watch(new Key(tableInternalPrefix), startRevision, new WatchListener() {
             @Override public boolean onUpdate(@NotNull Iterable<WatchEvent> events) {
                 for (WatchEvent evt : events) {
                     if (evt.newEntry().value() != null) {
@@ -145,10 +147,10 @@ public class TableManagerImpl implements TableManager {
                         UUID tblId = UUID.fromString(placeholderValue);
 
                         try {
-                            String name = new String(metaStorageMgr.service().get(
+                            String name = new String(metaStorageMgr.get(
                                 new Key(INTERNAL_PREFIX + tblId.toString())).get()
                                 .value(), StandardCharsets.UTF_8);
-                            int partitions = configurationMgr.configurationRegistry().getConfiguration(DistributedTableConfiguration.KEY)
+                            int partitions = configurationMgr.configurationRegistry().getConfiguration(TablesConfiguration.KEY)
                                 .tables().get(name).partitions().value();
 
                             List<List<NetworkMember>> assignment = (List<List<NetworkMember>>)DistributedTableUtils.fromBytes(
@@ -187,6 +189,35 @@ public class TableManagerImpl implements TableManager {
                 log.error("Metastorage listener issue", e);
             }
         });
+    }
+
+    /** {@inheritDoc} */
+    @Override public Table createTable(String name, Consumer<TableInit> tableInitChange) {
+        configurationMgr.configurationRegistry()
+            .getConfiguration(TablesConfiguration.KEY).tables().change(change ->
+            change.create(name, tableInitChange));
+
+//        this.createTable("tbl1", change -> {
+//            change.initReplicas(2);
+//            change.initName("tbl1");
+//            change.initPartitions(1_000);
+//        });
+
+        //TODO: Get it honestly using some future.
+        Table tbl = null;
+
+        while (tbl == null) {
+            try {
+                Thread.sleep(50);
+
+                tbl = table(name);
+            }
+            catch (InterruptedException e) {
+                log.error("Waiting of creation of table was interrupted.", e);
+            }
+        }
+
+        return tbl;
     }
 
     /** {@inheritDoc} */

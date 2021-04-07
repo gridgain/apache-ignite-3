@@ -22,17 +22,16 @@ import java.util.UUID;
 import java.util.concurrent.ExecutionException;
 import org.apache.ignite.baseline.internal.BaselineManager;
 import org.apache.ignite.configuration.internal.ConfigurationManager;
+import org.apache.ignite.configuration.schemas.metastorage.MetastoreManagerConfiguration;
+import org.apache.ignite.configuration.schemas.runner.LocalConfiguration;
+import org.apache.ignite.configuration.schemas.table.TablesConfiguration;
 import org.apache.ignite.internal.affinity.RendezvousAffinityFunction;
 import org.apache.ignite.lang.LogWrapper;
 import org.apache.ignite.lang.util.SerializationUtils;
 import org.apache.ignite.metastorage.common.Key;
 import org.apache.ignite.metastorage.common.WatchEvent;
 import org.apache.ignite.metastorage.common.WatchListener;
-import org.apache.ignite.metastorage.configuration.MetastoreManagerConfiguration;
 import org.apache.ignite.metastorage.internal.MetaStorageManager;
-import org.apache.ignite.network.NetworkCluster;
-import org.apache.ignite.network.NetworkMember;
-import org.apache.ignite.table.distributed.configuration.DistributedTableConfiguration;
 import org.jetbrains.annotations.NotNull;
 
 public class AffinityManager {
@@ -42,45 +41,40 @@ public class AffinityManager {
     /** Meta storage service. */
     private MetaStorageManager metaStorageMgr;
 
-    /** Network cluster. */
-    private NetworkCluster networkCluster;
-
-    /** Configuration module. */
-    private ConfigurationManager configurationMgr;
+    /** Configuration manager. */
+    private final ConfigurationManager configurationMgr;
 
     /** Baseline manager. */
-    private BaselineManager baselineMgr;
+    private final BaselineManager baselineMgr;
 
     /** Logger. */
-    private LogWrapper log = new LogWrapper(AffinityManager.class);
+    private final LogWrapper log = new LogWrapper(AffinityManager.class);
 
     /**
      * @param configurationMgr Configuration module.
-     * @param networkCluster Network cluster.
      * @param metaStorageMgr Meta storage service.
      */
     public AffinityManager(
         ConfigurationManager configurationMgr,
-        NetworkCluster networkCluster,
         MetaStorageManager metaStorageMgr,
         BaselineManager baselineMgr
     ) {
         int startRevision =0;
 
         this.configurationMgr = configurationMgr;
-        this.networkCluster = networkCluster;
         this.metaStorageMgr = metaStorageMgr;
         this.baselineMgr = baselineMgr;
 
         String[] metastoragePeerNames = configurationMgr.configurationRegistry()
             .getConfiguration(MetastoreManagerConfiguration.KEY).names().value();
 
-        NetworkMember localMember = networkCluster.localMember();
+        String localMemberName = configurationMgr.configurationRegistry().getConfiguration(LocalConfiguration.KEY)
+            .name().value();
 
         boolean isLocalNodeHasMetasorage = false;
 
         for (String name : metastoragePeerNames) {
-            if (name.equals(localMember.name())) {
+            if (name.equals(localMemberName)) {
                 isLocalNodeHasMetasorage = true;
 
                 break;
@@ -90,7 +84,7 @@ public class AffinityManager {
         if (isLocalNodeHasMetasorage) {
             String tableInternalPrefix = INTERNAL_PREFIX + "#.assignment";
 
-            metaStorageMgr.service().watch(new Key(tableInternalPrefix), startRevision, new WatchListener() {
+            metaStorageMgr.watch(new Key(tableInternalPrefix), startRevision, new WatchListener() {
                 @Override public boolean onUpdate(@NotNull Iterable<WatchEvent> events) {
                     for (WatchEvent evt : events) {
                         if (evt.newEntry().value() == null) {
@@ -101,22 +95,22 @@ public class AffinityManager {
                             UUID tblId = UUID.fromString(placeholderValue);
 
                             try {
-                                String name = new String(metaStorageMgr.service().get(
+                                String name = new String(metaStorageMgr.get(
                                     new Key(INTERNAL_PREFIX + tblId.toString())).get()
                                     .value(), StandardCharsets.UTF_8);
 
-                                int partitions = configurationMgr.configurationRegistry().getConfiguration(DistributedTableConfiguration.KEY)
+                                int partitions = configurationMgr.configurationRegistry().getConfiguration(TablesConfiguration.KEY)
                                     .tables().get(name).partitions().value();
-                                int backups = configurationMgr.configurationRegistry().getConfiguration(DistributedTableConfiguration.KEY)
-                                    .tables().get(name).backups().value();
+                                int replicas = configurationMgr.configurationRegistry().getConfiguration(TablesConfiguration.KEY)
+                                    .tables().get(name).replicas().value();
 
-                                metaStorageMgr.service().put(evt.newEntry().key(), SerializationUtils.toBytes(
-                                    new RendezvousAffinityFunction(
+                                metaStorageMgr.put(evt.newEntry().key(), SerializationUtils.toBytes(
+                                    RendezvousAffinityFunction.assignPartitions(
+                                        baselineMgr.nodes(),
+                                        partitions,
+                                        replicas,
                                         false,
-                                        partitions
-                                    ).assignPartitions(
-                                        networkCluster.allMembers(),
-                                        backups
+                                        null
                                     ))
                                 );
 

@@ -4,8 +4,8 @@ import java.nio.charset.StandardCharsets;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ExecutionException;
-import org.apache.ignite.configuration.ConfigurationModule;
 import org.apache.ignite.configuration.internal.ConfigurationManager;
+import org.apache.ignite.configuration.schemas.table.TablesConfiguration;
 import org.apache.ignite.internal.storage.TableStorage;
 import org.apache.ignite.internal.table.TableRow;
 import org.apache.ignite.internal.table.distributed.TableManagerImpl;
@@ -13,11 +13,9 @@ import org.apache.ignite.internal.table.distributed.command.GetCommand;
 import org.apache.ignite.internal.table.distributed.command.PutCommand;
 import org.apache.ignite.internal.table.distributed.command.response.TableRowResponse;
 import org.apache.ignite.lang.LogWrapper;
-import org.apache.ignite.metastorage.client.MetaStorageService;
 import org.apache.ignite.metastorage.common.Key;
 import org.apache.ignite.metastorage.internal.MetaStorageManager;
 import org.apache.ignite.raft.client.service.RaftGroupService;
-import org.apache.ignite.table.distributed.configuration.DistributedTableConfiguration;
 
 /**
  * Storage of table rows.
@@ -60,11 +58,11 @@ public class TableStorageImpl implements TableStorage {
     /** {@inheritDoc} */
     public TableRow put(TableRow row) {
         try {
-            String name = new String(metaStorageMgr.service().get(
+            String name = new String(metaStorageMgr.get(
                 new Key(INTERNAL_PREFIX + tblId.toString())).get()
                 .value(), StandardCharsets.UTF_8);
 
-            int partitions = configurationMgr.configurationRegistry().getConfiguration(DistributedTableConfiguration.KEY)
+            int partitions = configurationMgr.configurationRegistry().getConfiguration(TablesConfiguration.KEY)
                 .tables().get(name).partitions().value();
 
             return partitionMap.get(row.keyChunk().hashCode() % partitions).<TableRowResponse>run(new PutCommand(row)).get()
@@ -81,11 +79,11 @@ public class TableStorageImpl implements TableStorage {
     /** {@inheritDoc} */
     public TableRow get(TableRow keyRow) {
         try {
-            String name = new String(metaStorageMgr.service().get(
+            String name = new String(metaStorageMgr.get(
                 new Key(INTERNAL_PREFIX + tblId.toString())).get()
                 .value(), StandardCharsets.UTF_8);
 
-            int partitions = configurationMgr.configurationRegistry().getConfiguration(DistributedTableConfiguration.KEY)
+            int partitions = configurationMgr.configurationRegistry().getConfiguration(TablesConfiguration.KEY)
                 .tables().get(name).partitions().value();
 
             return partitionMap.get(keyRow.keyChunk().hashCode() % partitions).<TableRowResponse>run(new GetCommand(keyRow)).get()

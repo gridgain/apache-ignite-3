@@ -15,28 +15,28 @@
  * limitations under the License.
  */
 
-package org.apache.ignite.rest.configuration;
+package org.apache.ignite.configuration.schemas.runner;
 
-import javax.validation.constraints.Max;
-import javax.validation.constraints.Min;
+import org.apache.ignite.configuration.annotation.ConfigValue;
 import org.apache.ignite.configuration.annotation.ConfigurationRoot;
 import org.apache.ignite.configuration.annotation.Value;
-
-import static org.apache.ignite.rest.RestModule.DFLT_PORT;
+import org.apache.ignite.configuration.schemas.TempConfigurationStorage;
 
 /**
- * Configuration schema for REST endpoint subtree.
+ *
  */
-@ConfigurationRoot(rootName = "rest", storage = InMemoryConfigurationStorage.class)
-public class RestConfigurationSchema {
-    /** */
-    @Min(1024)
-    @Max(0xFFFF)
-    @Value(hasDefault = true)
-    public final int port = DFLT_PORT;
+@SuppressWarnings("PMD.UnusedPrivateField")
+@ConfigurationRoot(rootName = "local", storage = TempConfigurationStorage.class)
+public class LocalConfigurationSchema {
+    /** Uniq local member name. */
+    @Value
+    public String name;
 
     /** */
-    @Min(0)
-    @Value(hasDefault = true)
-    public final int portRange = 0;
+    @ConfigValue
+    private BaselineConfigurationSchema baseline;
+
+    /** */
+    @ConfigValue
+    private DataStorageConfigurationSchema dataStorage;
 }

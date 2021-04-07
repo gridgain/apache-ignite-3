@@ -15,23 +15,21 @@
  * limitations under the License.
  */
 
-package org.apache.ignite.configuration.extended;
+package org.apache.ignite.configuration.schemas.runner;
 
-import org.apache.ignite.configuration.annotation.ConfigValue;
-import org.apache.ignite.configuration.annotation.ConfigurationRoot;
-import org.apache.ignite.rest.configuration.InMemoryConfigurationStorage;
+import javax.validation.constraints.Min;
+import org.apache.ignite.configuration.annotation.Config;
+import org.apache.ignite.configuration.annotation.Value;
 
-/**
- *
- */
-@SuppressWarnings("PMD.UnusedPrivateField")
-@ConfigurationRoot(rootName = "local", storage = InMemoryConfigurationStorage.class)
-public class LocalConfigurationSchema {
+/** */
+@Config
+public class AutoAdjustConfigurationSchema {
     /** */
-    @ConfigValue
-    private BaselineConfigurationSchema baseline;
+    @Value
+    public boolean enabled;
 
     /** */
-    @ConfigValue
-    private DataStorageConfigurationSchema dataStorage;
+    @Value
+    @Min(value = 0, message = "Minimum value is 0")
+    public int timeout;
 }
