@@ -19,13 +19,15 @@ package org.apache.ignite.internal.affinity.ditributed;
 
 import java.nio.charset.StandardCharsets;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import org.apache.ignite.baseline.internal.BaselineManager;
 import org.apache.ignite.configuration.internal.ConfigurationManager;
-import org.apache.ignite.configuration.schemas.metastorage.MetastoreManagerConfiguration;
+import org.apache.ignite.configuration.schemas.runner.ClusterConfiguration;
 import org.apache.ignite.configuration.schemas.runner.LocalConfiguration;
 import org.apache.ignite.configuration.schemas.table.TablesConfiguration;
 import org.apache.ignite.internal.affinity.RendezvousAffinityFunction;
+import org.apache.ignite.lang.IgniteUuid;
 import org.apache.ignite.lang.LogWrapper;
 import org.apache.ignite.lang.util.SerializationUtils;
 import org.apache.ignite.metastorage.common.Key;
@@ -39,7 +41,7 @@ public class AffinityManager {
     public static final String INTERNAL_PREFIX = "internal.tables.";
 
     /** Meta storage service. */
-    private MetaStorageManager metaStorageMgr;
+    private final MetaStorageManager metaStorageMgr;
 
     /** Configuration manager. */
     private final ConfigurationManager configurationMgr;
@@ -50,6 +52,9 @@ public class AffinityManager {
     /** Logger. */
     private final LogWrapper log = new LogWrapper(AffinityManager.class);
 
+    /** Affinity calculate subscription future. */
+    private CompletableFuture<IgniteUuid> affinityCalculateSubscriptionFut = null;
+
     /**
      * @param configurationMgr Configuration module.
      * @param metaStorageMgr Meta storage service.
@@ -59,78 +64,113 @@ public class AffinityManager {
         MetaStorageManager metaStorageMgr,
         BaselineManager baselineMgr
     ) {
-        int startRevision =0;
-
         this.configurationMgr = configurationMgr;
         this.metaStorageMgr = metaStorageMgr;
         this.baselineMgr = baselineMgr;
 
-        String[] metastoragePeerNames = configurationMgr.configurationRegistry()
-            .getConfiguration(MetastoreManagerConfiguration.KEY).names().value();
+//        long startRevision = 0;
 
         String localMemberName = configurationMgr.configurationRegistry().getConfiguration(LocalConfiguration.KEY)
             .name().value();
 
-        boolean isLocalNodeHasMetasorage = false;
+        configurationMgr.configurationRegistry().getConfiguration(ClusterConfiguration.KEY)
+            .metastorageMembers().listen(ctx -> {
+                if (ctx.newValue() != null) {
+                    String[] metastorageMembers = ctx.newValue();
 
-        for (String name : metastoragePeerNames) {
-            if (name.equals(localMemberName)) {
-                isLocalNodeHasMetasorage = true;
+                    boolean isLocalNodeHasMetasorage = false;
 
-                break;
-            }
-        }
+                    for (String name : metastorageMembers) {
+                        if (name.equals(localMemberName)) {
+                            isLocalNodeHasMetasorage = true;
 
-        if (isLocalNodeHasMetasorage) {
-            String tableInternalPrefix = INTERNAL_PREFIX + "#.assignment";
-
-            metaStorageMgr.watch(new Key(tableInternalPrefix), startRevision, new WatchListener() {
-                @Override public boolean onUpdate(@NotNull Iterable<WatchEvent> events) {
-                    for (WatchEvent evt : events) {
-                        if (evt.newEntry().value() == null) {
-                            String keyTail = evt.newEntry().key().toString().substring(INTERNAL_PREFIX.length());
-
-                            String placeholderValue = keyTail.substring(0, keyTail.indexOf('.'));
-
-                            UUID tblId = UUID.fromString(placeholderValue);
-
-                            try {
-                                String name = new String(metaStorageMgr.get(
-                                    new Key(INTERNAL_PREFIX + tblId.toString())).get()
-                                    .value(), StandardCharsets.UTF_8);
-
-                                int partitions = configurationMgr.configurationRegistry().getConfiguration(TablesConfiguration.KEY)
-                                    .tables().get(name).partitions().value();
-                                int replicas = configurationMgr.configurationRegistry().getConfiguration(TablesConfiguration.KEY)
-                                    .tables().get(name).replicas().value();
-
-                                metaStorageMgr.put(evt.newEntry().key(), SerializationUtils.toBytes(
-                                    RendezvousAffinityFunction.assignPartitions(
-                                        baselineMgr.nodes(),
-                                        partitions,
-                                        replicas,
-                                        false,
-                                        null
-                                    ))
-                                );
-
-                                log.info("Affinity manager calculated assignment for the table [name={}, tblId={}]",
-                                    name, tblId);
-                            }
-                            catch (InterruptedException | ExecutionException e) {
-                                log.error("Failed to initialize affinity [key={}]",
-                                    evt.newEntry().key().toString(), e);
-                            }
+                            break;
                         }
                     }
 
-                    return false;
+                    if (isLocalNodeHasMetasorage)
+                        subscribeToCalculateAssignment(ctx.storageRevision());
+                    else
+                        unsubscribeToCalculateAssignment();
+                }
+            return CompletableFuture.completedFuture(null);
+        });
+    }
+
+    /**
+     * Subscribes to metastorage members update.
+     *
+     * @param startRevision Metastorage revision to start subscription.
+     */
+    private void subscribeToCalculateAssignment(long startRevision) {
+        assert affinityCalculateSubscriptionFut == null : "Affinity calculation already subscribed";
+
+        String tableInternalPrefix = INTERNAL_PREFIX + "#.assignment";
+
+        affinityCalculateSubscriptionFut = metaStorageMgr.watch(new Key(tableInternalPrefix), startRevision, new WatchListener() {
+            @Override public boolean onUpdate(@NotNull Iterable<WatchEvent> events) {
+                for (WatchEvent evt : events) {
+                    if (evt.newEntry().value() == null) {
+                        long evtRevision = evt.newEntry().revision();
+
+                        String keyTail = evt.newEntry().key().toString().substring(INTERNAL_PREFIX.length());
+
+                        String placeholderValue = keyTail.substring(0, keyTail.indexOf('.'));
+
+                        UUID tblId = UUID.fromString(placeholderValue);
+
+                        try {
+                            String name = new String(metaStorageMgr.get(
+                                new Key(INTERNAL_PREFIX + tblId.toString()), evtRevision).get()
+                                .value(), StandardCharsets.UTF_8);
+
+                            int partitions = configurationMgr.configurationRegistry().getConfiguration(TablesConfiguration.KEY)
+                                .tables().get(name).partitions().value();
+                            int replicas = configurationMgr.configurationRegistry().getConfiguration(TablesConfiguration.KEY)
+                                .tables().get(name).replicas().value();
+
+                            metaStorageMgr.put(evt.newEntry().key(), SerializationUtils.toBytes(
+                                RendezvousAffinityFunction.assignPartitions(
+                                    baselineMgr.nodes(),
+                                    partitions,
+                                    replicas,
+                                    false,
+                                    null
+                                ))
+                            );
+
+                            log.info("Affinity manager calculated assignment for the table [name={}, tblId={}]",
+                                name, tblId);
+                        }
+                        catch (InterruptedException | ExecutionException e) {
+                            log.error("Failed to initialize affinity [key={}]",
+                                evt.newEntry().key().toString(), e);
+                        }
+                    }
                 }
 
-                @Override public void onError(@NotNull Throwable e) {
-                    log.error("Metastorage listener issue", e);
-                }
-            });
+                return false;
+            }
+
+            @Override public void onError(@NotNull Throwable e) {
+                log.error("Metastorage listener issue", e);
+            }
+        });
+    }
+
+    private void unsubscribeToCalculateAssignment() {
+        if (affinityCalculateSubscriptionFut == null)
+            return;
+
+        try {
+            IgniteUuid subscriptionId = affinityCalculateSubscriptionFut.get();
+
+            metaStorageMgr.stopWatch(subscriptionId);
+
+            affinityCalculateSubscriptionFut = null;
+        }
+        catch (InterruptedException |ExecutionException e) {
+            log.error("Couldn't unsubscribe for Metastorage updates", e);
         }
     }
 }

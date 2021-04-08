@@ -23,7 +23,7 @@ import org.apache.ignite.configuration.annotation.Value;
 import org.apache.ignite.configuration.schemas.TempConfigurationStorage;
 
 /**
- *
+ * Local member configuration schema.
  */
 @SuppressWarnings("PMD.UnusedPrivateField")
 @ConfigurationRoot(rootName = "local", storage = TempConfigurationStorage.class)

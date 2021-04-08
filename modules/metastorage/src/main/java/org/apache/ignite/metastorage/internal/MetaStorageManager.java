@@ -78,6 +78,17 @@ public class MetaStorageManager {
     }
 
     /**
+     * Stops watching metastorage update.
+     *
+     * @param id Subscription id.
+     * @return Future.
+     */
+    @NotNull
+    public CompletableFuture<Void> stopWatch(@NotNull IgniteUuid id) {
+        return service.stopWatch(id);
+    }
+
+    /**
      * Invokes a service operation for metastorage.
      *
      * @param key Key in metastorage.
@@ -95,10 +106,11 @@ public class MetaStorageManager {
      * Gets a metastorage entry by key.
      *
      * @param key Key in metastorage.
+     * @param revision Metastorage update revision.
      * @return Future.
      */
-    public CompletableFuture<Entry> get(@NotNull Key key) {
-        return service.get(key);
+    public CompletableFuture<Entry> get(@NotNull Key key, long revision) {
+        return service.get(key, revision);
     }
 
     /**
