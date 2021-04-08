@@ -32,6 +32,10 @@ public class LocalConfigurationSchema {
     @Value
     public String name;
 
+    /** It is a copy of appropriate property from the cluster configuration. */
+    @Value
+    String[] metastorageMembers;
+
     /** */
     @ConfigValue
     private BaselineConfigurationSchema baseline;

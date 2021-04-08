@@ -20,6 +20,8 @@ package org.apache.ignite.metastorage.internal;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import org.apache.ignite.configuration.internal.ConfigurationManager;
+import org.apache.ignite.configuration.schemas.runner.ClusterConfiguration;
+import org.apache.ignite.configuration.schemas.runner.LocalConfiguration;
 import org.apache.ignite.lang.IgniteUuid;
 import org.apache.ignite.metastorage.client.MetaStorageService;
 import org.apache.ignite.metastorage.common.Condition;
@@ -45,11 +47,24 @@ public class MetaStorageManager {
     public MetaStorageManager(
         NetworkCluster network,
         Loza raftMgr,
-        ConfigurationManager locConfigurationMgr)
-    {
+        ConfigurationManager locConfigurationMgr
+    ) {
         this.network = network;
         this.raftMgr = raftMgr;
         this.locConfigurationMgr = locConfigurationMgr;
+
+        locConfigurationMgr.configurationRegistry().getConfiguration(ClusterConfiguration.KEY)
+            .metastorageMembers().listen(ctx -> {
+            if (ctx.newValue() != null) {
+                String[] metastorageMembers = ctx.newValue();
+
+                locConfigurationMgr.configurationRegistry().getConfiguration(LocalConfiguration.KEY).change(change -> {
+                    change.changeMetastorageMembers(metastorageMembers);
+                });
+            }
+
+            return CompletableFuture.completedFuture(null);
+        });
 
         network.addHandlersProvider(new NetworkHandlersProvider() {
             @Override public NetworkMessageHandler messageHandler() {

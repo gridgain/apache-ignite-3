@@ -23,7 +23,6 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import org.apache.ignite.baseline.internal.BaselineManager;
 import org.apache.ignite.configuration.internal.ConfigurationManager;
-import org.apache.ignite.configuration.schemas.runner.ClusterConfiguration;
 import org.apache.ignite.configuration.schemas.runner.LocalConfiguration;
 import org.apache.ignite.configuration.schemas.table.TablesConfiguration;
 import org.apache.ignite.internal.affinity.RendezvousAffinityFunction;
@@ -68,33 +67,47 @@ public class AffinityManager {
         this.metaStorageMgr = metaStorageMgr;
         this.baselineMgr = baselineMgr;
 
-//        long startRevision = 0;
+        long startRevision = 0;
 
         String localMemberName = configurationMgr.configurationRegistry().getConfiguration(LocalConfiguration.KEY)
             .name().value();
 
-        configurationMgr.configurationRegistry().getConfiguration(ClusterConfiguration.KEY)
+        configurationMgr.configurationRegistry().getConfiguration(LocalConfiguration.KEY)
             .metastorageMembers().listen(ctx -> {
                 if (ctx.newValue() != null) {
-                    String[] metastorageMembers = ctx.newValue();
-
-                    boolean isLocalNodeHasMetasorage = false;
-
-                    for (String name : metastorageMembers) {
-                        if (name.equals(localMemberName)) {
-                            isLocalNodeHasMetasorage = true;
-
-                            break;
-                        }
-                    }
-
-                    if (isLocalNodeHasMetasorage)
+                    if (hasMetastorageLocally(localMemberName, ctx.newValue()))
                         subscribeToCalculateAssignment(ctx.storageRevision());
                     else
                         unsubscribeToCalculateAssignment();
                 }
             return CompletableFuture.completedFuture(null);
         });
+
+        String[] metastorageMembers = configurationMgr.configurationRegistry().getConfiguration(LocalConfiguration.KEY)
+            .metastorageMembers().value();
+
+        if (hasMetastorageLocally(localMemberName, metastorageMembers))
+            subscribeToCalculateAssignment(startRevision);
+    }
+
+    /**
+     * Tests a member has a distributed Metastorage peer.
+     *
+     * @param localMemberName Local member uniq name.
+     * @param metastorageMembers Metastorage members names.
+     * @return True if the member has Metastorage, false otherwise.
+     */
+    private boolean hasMetastorageLocally(String localMemberName, String[] metastorageMembers) {
+        boolean isLocalNodeHasMetasorage = false;
+
+        for (String name : metastorageMembers) {
+            if (name.equals(localMemberName)) {
+                isLocalNodeHasMetasorage = true;
+
+                break;
+            }
+        }
+        return isLocalNodeHasMetasorage;
     }
 
     /**
