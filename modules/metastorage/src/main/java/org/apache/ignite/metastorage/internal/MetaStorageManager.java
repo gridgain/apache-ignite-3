@@ -25,6 +25,7 @@ import org.apache.ignite.configuration.schemas.runner.LocalConfiguration;
 import org.apache.ignite.lang.IgniteUuid;
 import org.apache.ignite.metastorage.client.MetaStorageService;
 import org.apache.ignite.metastorage.common.Condition;
+import org.apache.ignite.metastorage.common.Cursor;
 import org.apache.ignite.metastorage.common.Entry;
 import org.apache.ignite.metastorage.common.Key;
 import org.apache.ignite.metastorage.common.Operation;
@@ -34,6 +35,7 @@ import org.apache.ignite.network.NetworkHandlersProvider;
 import org.apache.ignite.network.NetworkMessageHandler;
 import org.apache.ignite.raft.internal.Loza;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 public class MetaStorageManager {
     private final NetworkCluster network;
@@ -139,6 +141,19 @@ public class MetaStorageManager {
         return service.put(key, value);
     }
 
+    /**
+     * See {@link MetaStorageService#remove(Key)}
+     */
+    public CompletableFuture<Void> remove(@NotNull Key key) {
+        return service.remove(key);
+    }
+
+    /**
+     * See {@link MetaStorageService#range(Key, Key)}
+     */
+    public Cursor<Entry> range(@NotNull Key keyFrom, @Nullable Key keyTo) {
+        return service.range(keyFrom, keyTo);
+    }
 
     public void registerWatch() {
 
@@ -148,4 +163,3 @@ public class MetaStorageManager {
 
     }
 }
-

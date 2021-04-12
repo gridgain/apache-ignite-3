@@ -33,6 +33,8 @@ import org.apache.ignite.configuration.schemas.runner.LocalConfiguration;
 import org.apache.ignite.internal.affinity.ditributed.AffinityManager;
 import org.apache.ignite.internal.table.distributed.TableManagerImpl;
 import org.apache.ignite.internal.vault.VaultManager;
+import org.apache.ignite.internal.vault.impl.VaultServiceImpl;
+import org.apache.ignite.internal.vault.service.VaultService;
 import org.apache.ignite.metastorage.internal.MetaStorageManager;
 import org.apache.ignite.network.Network;
 import org.apache.ignite.network.NetworkCluster;
@@ -75,7 +77,9 @@ public class IgnitionImpl implements Ignition {
         ackBanner();
 
         // Vault Component startup.
-        VaultManager vaultMgr = new VaultManager();
+        VaultService vaultSvc = new VaultServiceImpl();
+
+        VaultManager vaultMgr = new VaultManager(vaultSvc);
 
         boolean cfgBootstrappedFromPds = vaultMgr.bootstrapped();
 

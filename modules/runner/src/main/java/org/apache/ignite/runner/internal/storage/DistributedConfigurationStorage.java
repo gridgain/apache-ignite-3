@@ -18,38 +18,85 @@
 package org.apache.ignite.runner.internal.storage;
 
 import java.io.Serializable;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.atomic.AtomicLong;
 import org.apache.ignite.configuration.storage.ConfigurationStorage;
 import org.apache.ignite.configuration.storage.ConfigurationStorageListener;
 import org.apache.ignite.configuration.storage.Data;
 import org.apache.ignite.configuration.storage.StorageException;
+import org.apache.ignite.lang.util.SerializationUtils;
+import org.apache.ignite.metastorage.common.Cursor;
+import org.apache.ignite.metastorage.common.Entry;
+import org.apache.ignite.metastorage.common.Key;
 import org.apache.ignite.metastorage.internal.MetaStorageManager;
 
 public class DistributedConfigurationStorage implements ConfigurationStorage {
+    // TODO Distributed prefix. Will be replaced when ENUM with configuration type will be presented.
+    // https://issues.apache.org/jira/browse/IGNITE-14476
+    private static String DISTRIBUTED_PREFIX = "distributed";
+
     private final MetaStorageManager metaStorageMgr;
 
     public DistributedConfigurationStorage(MetaStorageManager metaStorageMgr) {
         this.metaStorageMgr = metaStorageMgr;
     }
 
-    @Override public Data readAll() throws StorageException {
-        return null;
+    /** Change listeners. */
+    private List<ConfigurationStorageListener> listeners = new ArrayList<>();
+
+    /** Storage version. */
+    private AtomicLong version = new AtomicLong(0);
+
+    /** {@inheritDoc} */
+    @Override public synchronized Data readAll() throws StorageException {
+
+        Cursor<Entry> cur = metaStorageMgr.range(new Key(DISTRIBUTED_PREFIX + "."), new Key(DISTRIBUTED_PREFIX + (char)('.' + 1)));
+
+        HashMap<String, Serializable> data = new HashMap<>();
+
+        for (Entry entry : cur)
+            data.put(entry.key().toString().replaceFirst(DISTRIBUTED_PREFIX + ".", ""), (Serializable)SerializationUtils.fromBytes(entry.value()));
+
+        // storage revision 0?
+        return new Data(data, version.get(), 0);
     }
 
-    @Override public CompletableFuture<Boolean> write(Map<String, Serializable> newValues, long version) {
-        return null;
+    /** {@inheritDoc} */
+    @Override public synchronized CompletableFuture<Boolean> write(Map<String, Serializable> newValues, long sentVersion) {
+        if (sentVersion != version.get())
+            return CompletableFuture.completedFuture(false);
+
+        for (Map.Entry<String, Serializable> entry : newValues.entrySet()) {
+            Key key = new Key(DISTRIBUTED_PREFIX + "." + entry.getKey());
+
+            if (entry.getValue() != null)
+                metaStorageMgr.put(key, SerializationUtils.toBytes(entry.getValue()));
+            else
+                metaStorageMgr.remove(key);
+        }
+
+        version.incrementAndGet();
+
+        listeners.forEach(listener -> listener.onEntriesChanged(new Data(newValues, version.get(), 0)));
+
+        return CompletableFuture.completedFuture(true);
     }
 
+    /** {@inheritDoc} */
     @Override public void addListener(ConfigurationStorageListener listener) {
-
+        listeners.add(listener);
     }
 
+    /** {@inheritDoc} */
     @Override public void removeListener(ConfigurationStorageListener listener) {
-
+        listeners.remove(listener);
     }
 
+    /** {@inheritDoc} */
     @Override public void notifyApplied(long storageRevision) {
-
     }
 }

@@ -17,11 +17,44 @@
 
 package org.apache.ignite.internal.vault;
 
+import java.util.Iterator;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
+import org.apache.ignite.internal.vault.common.Value;
+import org.apache.ignite.internal.vault.service.VaultService;
 import org.jetbrains.annotations.NotNull;
 
 public class VaultManager {
+    private VaultService vaultService;
+
+    public VaultManager(VaultService vaultService) {
+        this.vaultService = vaultService;
+    }
+
+    public boolean bootstrapped() {
+        return false;
+    }
+
+    public CompletableFuture<Value> get(String key) {
+        return vaultService.get(key);
+    }
+
+    public CompletableFuture<Long> appliedRevision(String key) {
+        return vaultService.appliedRevision(key);
+    }
+
+    public CompletableFuture<Void> put(String key, Value val) {
+        return vaultService.put(key, val);
+    }
+
+    public CompletableFuture<Void> remove(String key) {
+        return vaultService.remove(key);
+    }
+
+    public Iterator<Value> range(String fromKey, String toKey) {
+        return vaultService.range(fromKey, toKey);
+    }
+
     /**
      * Inserts or updates entries with given keys and given values.
      *
@@ -40,9 +73,5 @@ public class VaultManager {
     @NotNull
     CompletableFuture<Long> appliedRevision() {
         return CompletableFuture.completedFuture(0L);
-    }
-
-    public boolean bootstrapped() {
-        return false;
     }
 }
