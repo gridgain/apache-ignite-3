@@ -27,7 +27,6 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import java.util.function.BiConsumer;
 import org.apache.ignite.lang.IgniteLogger;
-import org.apache.ignite.network.Network;
 import org.apache.ignite.network.NetworkCluster;
 import org.apache.ignite.network.NetworkHandlersProvider;
 import org.apache.ignite.network.NetworkMember;
@@ -118,7 +117,7 @@ public class RaftServerImpl implements RaftServer {
                         else if (req instanceof ActionRequest) {
                             ActionRequest req0 = (ActionRequest) req;
 
-                            RaftGroupCommandListener lsnr = listeners.get(req0.groupId());
+                            RaftGroupCommandListener lsnr = RaftServerImpl.this.listeners.get(req0.groupId());
 
                             if (lsnr == null) {
                                 sendError(sender, corellationId, RaftErrorCode.ILLEGAL_STATE);
