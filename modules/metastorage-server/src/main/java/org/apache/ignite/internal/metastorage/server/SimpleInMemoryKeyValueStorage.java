@@ -2,6 +2,7 @@ package org.apache.ignite.internal.metastorage.server;
 
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.Comparator;
 import java.util.Iterator;
 import java.util.List;
@@ -75,6 +76,16 @@ public class SimpleInMemoryKeyValueStorage implements KeyValueStorage {
         synchronized (mux) {
             return doGet(key, rev, true);
         }
+    }
+
+    @Override
+    public @NotNull Collection<Entry> getAll(List<byte[]> keys) {
+        return doGetAll(keys, LATEST_REV);
+    }
+
+    @Override
+    public @NotNull Collection<Entry> getAll(List<byte[]> keys, long revUpperBound) {
+        return doGetAll(keys, revUpperBound);
     }
 
     @Override
@@ -197,22 +208,39 @@ public class SimpleInMemoryKeyValueStorage implements KeyValueStorage {
             NavigableMap<byte[], List<Long>> compactedKeysIdx,
             NavigableMap<Long, NavigableMap<byte[], Value>> compactedRevsIdx
     ) {
-        Long lrev = lastRevision(revs);
+        Long lastRev = lastRevision(revs);
 
-        NavigableMap<byte[], Value> kv = revsIdx.get(lrev);
+        NavigableMap<byte[], Value> kv = revsIdx.get(lastRev);
 
         Value lastVal = kv.get(key);
 
         if (!lastVal.tombstone()) {
-            compactedKeysIdx.put(key, listOf(lrev));
+            compactedKeysIdx.put(key, listOf(lastRev));
 
             NavigableMap<byte[], Value> compactedKv = compactedRevsIdx.computeIfAbsent(
-                    lrev,
+                    lastRev,
                     k -> new TreeMap<>(LEXICOGRAPHIC_COMPARATOR)
             );
 
             compactedKv.put(key, lastVal);
         }
+    }
+
+    @NotNull
+    private Collection<Entry> doGetAll(List<byte[]> keys, long rev) {
+        assert keys != null : "keys list can't be null.";
+        assert !keys.isEmpty() : "keys list can't be empty.";
+        assert rev > 0 : "Revision must be positive.";
+
+        Collection<Entry> res = new ArrayList<>(keys.size());
+
+        synchronized (mux) {
+            for (byte[] key : keys) {
+                res.add(doGet(key, rev, false));
+            }
+        }
+
+        return res;
     }
 
     /**

@@ -1,17 +1,18 @@
 package org.apache.ignite.internal.metastorage.server;
 
+import java.util.Collection;
+import java.util.Iterator;
+import java.util.List;
+import java.util.Map;
+import java.util.TreeMap;
+import java.util.function.Function;
+import java.util.stream.Collectors;
+import org.apache.ignite.metastorage.common.Key;
 import org.jetbrains.annotations.NotNull;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
-import java.util.Iterator;
-import java.util.Map;
-import java.util.TreeMap;
-
-import static org.junit.jupiter.api.Assertions.assertArrayEquals;
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.*;
 
 class SimpleInMemoryKeyValueStorageTest {
     private KeyValueStorage storage;
@@ -53,6 +54,193 @@ class SimpleInMemoryKeyValueStorageTest {
         assertFalse(e.tombstone());
         assertEquals(2, e.revision());
         assertEquals(2, e.updateCounter());
+    }
+
+    @Test
+    void getAll() {
+        byte[] key1 = k(1);
+        byte[] val1 = kv(1, 1);
+
+        byte[] key2 = k(2);
+        byte[] val2_1 = kv(2, 21);
+        byte[] val2_2 = kv(2, 22);
+
+        byte[] key3 = k(3);
+        byte[] val3 = kv(3, 3);
+
+        byte[] key4 = k(4);
+
+        assertEquals(0, storage.revision());
+        assertEquals(0, storage.updateCounter());
+
+        // Regular put.
+        storage.put(key1, val1);
+
+        // Rewrite.
+        storage.put(key2, val2_1);
+        storage.put(key2, val2_2);
+
+        // Remove.
+        storage.put(key3, val3);
+        storage.remove(key3);
+
+        assertEquals(5, storage.revision());
+        assertEquals(5, storage.updateCounter());
+
+        Collection<Entry> entries = storage.getAll(List.of(key1, key2, key3, key4));
+
+        assertEquals(4, entries.size());
+
+        Map<Key, Entry> map =  entries.stream().collect(Collectors.toMap(e -> new Key(e.key()), Function.identity()));
+
+        // Test regular put value.
+        Entry e1 = map.get(new Key(key1));
+
+        assertNotNull(e1);
+        assertEquals(1, e1.revision());
+        assertEquals(1, e1.updateCounter());
+        assertFalse(e1.tombstone());
+        assertFalse(e1.empty());
+        assertArrayEquals(val1, e1.value());
+
+        // Test rewritten value.
+        Entry e2 = map.get(new Key(key2));
+
+        assertNotNull(e2);
+        assertEquals(3, e2.revision());
+        assertEquals(3, e2.updateCounter());
+        assertFalse(e2.tombstone());
+        assertFalse(e2.empty());
+        assertArrayEquals(val2_2, e2.value());
+
+        // Test removed value.
+        Entry e3 = map.get(new Key(key3));
+
+        assertNotNull(e3);
+        assertEquals(5, e3.revision());
+        assertEquals(5, e3.updateCounter());
+        assertTrue(e3.tombstone());
+        assertFalse(e3.empty());
+
+        // Test empty value.
+        Entry e4 = map.get(new Key(key4));
+
+        assertNotNull(e4);
+        assertFalse(e4.tombstone());
+        assertTrue(e4.empty());
+    }
+
+    @Test
+    void getAllWithRevisionBound() {
+        byte[] key1 = k(1);
+        byte[] val1 = kv(1, 1);
+
+        byte[] key2 = k(2);
+        byte[] val2_1 = kv(2, 21);
+        byte[] val2_2 = kv(2, 22);
+
+        byte[] key3 = k(3);
+        byte[] val3 = kv(3, 3);
+
+        byte[] key4 = k(4);
+
+        assertEquals(0, storage.revision());
+        assertEquals(0, storage.updateCounter());
+
+        // Regular put.
+        storage.put(key1, val1);
+
+        // Rewrite.
+        storage.put(key2, val2_1);
+        storage.put(key2, val2_2);
+
+        // Remove.
+        storage.put(key3, val3);
+        storage.remove(key3);
+
+        assertEquals(5, storage.revision());
+        assertEquals(5, storage.updateCounter());
+
+        // Bounded by revision 2.
+        Collection<Entry> entries = storage.getAll(List.of(key1, key2, key3, key4), 2);
+
+        assertEquals(4, entries.size());
+
+        Map<Key, Entry> map =  entries.stream().collect(Collectors.toMap(e -> new Key(e.key()), Function.identity()));
+
+        // Test regular put value.
+        Entry e1 = map.get(new Key(key1));
+
+        assertNotNull(e1);
+        assertEquals(1, e1.revision());
+        assertEquals(1, e1.updateCounter());
+        assertFalse(e1.tombstone());
+        assertFalse(e1.empty());
+        assertArrayEquals(val1, e1.value());
+
+        // Test while not rewritten value.
+        Entry e2 = map.get(new Key(key2));
+
+        assertNotNull(e2);
+        assertEquals(2, e2.revision());
+        assertEquals(2, e2.updateCounter());
+        assertFalse(e2.tombstone());
+        assertFalse(e2.empty());
+        assertArrayEquals(val2_1, e2.value());
+
+        // Values with larger revision don't exist yet.
+        Entry e3 = map.get(new Key(key3));
+
+        assertNotNull(e3);
+        assertTrue(e3.empty());
+
+        Entry e4 = map.get(new Key(key4));
+
+        assertNotNull(e4);
+        assertTrue(e4.empty());
+
+        // Bounded by revision 4.
+        entries = storage.getAll(List.of(key1, key2, key3, key4), 4);
+
+        assertEquals(4, entries.size());
+
+        map =  entries.stream().collect(Collectors.toMap(e -> new Key(e.key()), Function.identity()));
+
+        // Test regular put value.
+        e1 = map.get(new Key(key1));
+
+        assertNotNull(e1);
+        assertEquals(1, e1.revision());
+        assertEquals(1, e1.updateCounter());
+        assertFalse(e1.tombstone());
+        assertFalse(e1.empty());
+        assertArrayEquals(val1, e1.value());
+
+        // Test rewritten value.
+        e2 = map.get(new Key(key2));
+
+        assertNotNull(e2);
+        assertEquals(3, e2.revision());
+        assertEquals(3, e2.updateCounter());
+        assertFalse(e2.tombstone());
+        assertFalse(e2.empty());
+        assertArrayEquals(val2_2, e2.value());
+
+        // Test not removed value.
+        e3 = map.get(new Key(key3));
+
+        assertNotNull(e3);
+        assertEquals(4, e3.revision());
+        assertEquals(4, e3.updateCounter());
+        assertFalse(e3.tombstone());
+        assertFalse(e3.empty());
+        assertArrayEquals(val3, e3.value());
+
+        // Value with larger revision doesn't exist yet.
+        e4 = map.get(new Key(key4));
+
+        assertNotNull(e4);
+        assertTrue(e4.empty());
     }
 
     @Test
@@ -208,7 +396,6 @@ class SimpleInMemoryKeyValueStorageTest {
     @Test
     public void getAndPutAfterRemove() {
         byte[] key = k(1);
-
         byte[] val = kv(1, 1);
 
         storage.getAndPut(key, val);
@@ -218,11 +405,8 @@ class SimpleInMemoryKeyValueStorageTest {
         Entry e = storage.getAndPut(key, val);
 
         assertEquals(3, storage.revision());
-
         assertEquals(3, storage.updateCounter());
-
         assertEquals(2, e.revision());
-
         assertTrue(e.tombstone());
     }
 

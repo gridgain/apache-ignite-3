@@ -52,7 +52,7 @@ public interface MetaStorageService {
      * Retrieves an entry for the given key and the revision upper bound.
      *
      * @param key The key. Couldn't be {@code null}.
-     * @param revUpperBound  The upper bound for entry revisions. Must be positive.
+     * @param revUpperBound The upper bound for entry revisions. Must be positive.
      * @return An entry for the given key and maximum revision limited by {@code revUpperBound}.
      * Couldn't be {@code null}.
      * @throws OperationTimeoutException If the operation is timed out. Will be thrown on getting future result.
@@ -82,7 +82,7 @@ public interface MetaStorageService {
      *
      * @param keys The collection of keys. Couldn't be {@code null} or empty.
      *             Collection elements couldn't be {@code null}.
-     * @param revUpperBound  The upper bound for entry revisions. Must be positive.
+     * @param revUpperBound The upper bound for entry revisions. Must be positive.
      * @return A map of entries for given keys and maximum revision limited by {@code revUpperBound}.
      * Couldn't be {@code null}.
      * @throws OperationTimeoutException If the operation is timed out. Will be thrown on getting future result.
