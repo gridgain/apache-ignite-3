@@ -22,8 +22,11 @@ import java.io.FileReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.stream.Collectors;
-import org.apache.ignite.configuration.ConfigurationModuleImpl;
+import org.apache.ignite.configuration.internal.ConfigurationManager;
+import org.apache.ignite.configuration.schemas.TempConfigurationStorage;
+import org.apache.ignite.configuration.schemas.rest.RestConfiguration;
 import org.apache.ignite.rest.RestModule;
 import org.apache.ignite.utils.IgniteProperties;
 import org.slf4j.Logger;
@@ -72,7 +75,10 @@ public class IgniteRunner {
     public static void main(String[] args) throws IOException, InterruptedException {
         ackBanner();
 
-        ConfigurationModuleImpl confModule = new ConfigurationModuleImpl();
+        ConfigurationManager configurationMgr = new ConfigurationManager(
+            Collections.singletonList(RestConfiguration.KEY),
+            Collections.singletonList( new TempConfigurationStorage())
+        );
 
         RestModule restModule = new RestModule(log);
 
@@ -102,9 +108,14 @@ public class IgniteRunner {
                 bldr.append(str);
             }
 
-            restModule.prepareStart(confModule.configurationRegistry());
+            try {
+                configurationMgr.bootstrap(bldr.toString());
+            }
+            catch (Exception e) {
+                log.warn("Unable to parse user specific configuration, default configuration will be used", e);
+            }
 
-            confModule.bootstrap(bldr.toString());
+            restModule.prepareStart(configurationMgr.configurationRegistry());
         }
         finally {
             if (confReader != null)

@@ -17,11 +17,57 @@
 
 package org.apache.ignite.configuration.internal;
 
+import java.lang.annotation.Annotation;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.HashSet;
+import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.ExecutionException;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
 import org.apache.ignite.configuration.ConfigurationRegistry;
+import org.apache.ignite.configuration.RootKey;
+import org.apache.ignite.configuration.internal.rest.JsonConverter;
+import org.apache.ignite.configuration.storage.ConfigurationStorage;
+import org.apache.ignite.configuration.validation.Validator;
 
-public interface ConfigurationManager {
+public class ConfigurationManager {
 
-    public void bootstrap(String jsonStr);
+    private final ConfigurationRegistry confRegistry;
 
-    public ConfigurationRegistry configurationRegistry();
+    // TODO sanpwc: > Make it immutable.
+    private final Set<ConfigurationStorage> configurationStorages;
+
+    public <A extends Annotation> ConfigurationManager(
+        Collection<RootKey<?, ?>> rootKeys,
+        Map<Class<A>, Set<Validator<A, ?>>> validators,
+        Collection<ConfigurationStorage> configurationStorages
+    ) {
+        this.configurationStorages = new HashSet<>(configurationStorages);
+
+        confRegistry = new ConfigurationRegistry(rootKeys, validators, configurationStorages);
+    }
+
+    public <A extends Annotation> ConfigurationManager(
+        Collection<RootKey<?, ?>> rootKeys,
+        Collection<ConfigurationStorage> configurationStorages
+    ) {
+        this(rootKeys, Collections.emptyMap(), configurationStorages);
+    }
+
+    /**
+     * @param jsonStr
+     */
+    public void bootstrap(String jsonStr) throws InterruptedException, ExecutionException{
+        JsonObject jsonCfg = JsonParser.parseString(jsonStr).getAsJsonObject();
+
+        for (ConfigurationStorage configurationStorage : configurationStorages)
+            confRegistry.change(Collections.emptyList(), JsonConverter.jsonSource(jsonCfg), configurationStorage).get();
+    }
+
+    /** */
+    public ConfigurationRegistry configurationRegistry() {
+        return confRegistry;
+    }
 }

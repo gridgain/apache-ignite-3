@@ -15,22 +15,24 @@
  * limitations under the License.
  */
 
-package org.apache.ignite.configuration.internal;
+package org.apache.ignite.configuration.internal.rest;
 
-import org.apache.ignite.configuration.ConfigurationRegistry;
+import java.io.Reader;
 
-public class AbstractConfigurationManager implements ConfigurationManager{
+/** */
+public interface FormatConverter {
     /** */
-    private final ConfigurationRegistry confRegistry = new ConfigurationRegistry();
-
-    /**
-     * @param jsonStr
-     */
-    public void bootstrap(String jsonStr) {
-    }
+    String convertTo(Object obj);
 
     /** */
-    public ConfigurationRegistry configurationRegistry() {
-        return confRegistry;
-    }
+    String convertTo(String rootName, Object obj);
+
+    /** */
+    String rootName(String source);
+
+    /** */
+    Object convertFrom(String source, String rootName, Class<?> clazz);
+
+    /** */
+    <T> T convertFrom(Reader source, String rootName, Class<T> clazz);
 }
