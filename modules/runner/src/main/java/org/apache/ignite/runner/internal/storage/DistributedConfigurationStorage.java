@@ -23,7 +23,6 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.atomic.AtomicLong;
 import org.apache.ignite.configuration.storage.ConfigurationStorage;
 import org.apache.ignite.configuration.storage.ConfigurationStorageListener;
 import org.apache.ignite.configuration.storage.Data;
@@ -87,12 +86,12 @@ public class DistributedConfigurationStorage implements ConfigurationStorage {
     }
 
     /** {@inheritDoc} */
-    @Override public void addListener(ConfigurationStorageListener listener) {
+    @Override public synchronized void addListener(ConfigurationStorageListener listener) {
         listeners.add(listener);
     }
 
     /** {@inheritDoc} */
-    @Override public void removeListener(ConfigurationStorageListener listener) {
+    @Override public synchronized void removeListener(ConfigurationStorageListener listener) {
         listeners.remove(listener);
     }
 
