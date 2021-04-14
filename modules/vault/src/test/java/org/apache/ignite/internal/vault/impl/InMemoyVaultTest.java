@@ -65,7 +65,6 @@ public class InMemoyVaultTest {
         assertEquals(val, v);
     }
 
-
     @Test
     public void remove() throws ExecutionException, InterruptedException {
         String key = getKey(1);
