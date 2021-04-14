@@ -21,14 +21,18 @@ import java.util.Iterator;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import org.apache.ignite.internal.vault.common.Value;
+import org.apache.ignite.internal.vault.impl.VaultServiceImpl;
 import org.apache.ignite.internal.vault.service.VaultService;
 import org.jetbrains.annotations.NotNull;
 
+/**
+ * Manager for operating with vault.
+ */
 public class VaultManager {
     private VaultService vaultService;
 
-    public VaultManager(VaultService vaultService) {
-        this.vaultService = vaultService;
+    public VaultManager() {
+        this.vaultService = new VaultServiceImpl();
     }
 
     public boolean bootstrapped() {

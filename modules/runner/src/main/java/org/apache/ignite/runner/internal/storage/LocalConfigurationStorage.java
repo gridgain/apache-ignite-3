@@ -48,7 +48,7 @@ public class LocalConfigurationStorage implements ConfigurationStorage {
     private List<ConfigurationStorageListener> listeners = new ArrayList<>();
 
     /** Storage version. */
-    private AtomicLong version = new AtomicLong(0);
+    private Long version;
 
     /** {@inheritDoc} */
     @Override public synchronized Data readAll() throws StorageException {
@@ -65,12 +65,12 @@ public class LocalConfigurationStorage implements ConfigurationStorage {
         }
 
         // storage revision 0?
-        return new Data(data, version.get(), 0);
+        return new Data(data, version, 0);
     }
 
     /** {@inheritDoc} */
     @Override public synchronized CompletableFuture<Boolean> write(Map<String, Serializable> newValues, long sentVersion) {
-        if (sentVersion != version.get())
+        if (sentVersion != version)
             return CompletableFuture.completedFuture(false);
 
         for (Map.Entry<String, Serializable> entry : newValues.entrySet()) {
@@ -82,20 +82,20 @@ public class LocalConfigurationStorage implements ConfigurationStorage {
                 vaultMgr.remove(key);
         }
 
-        version.incrementAndGet();
+        version++;
 
-        listeners.forEach(listener -> listener.onEntriesChanged(new Data(newValues, version.get(), 0)));
+        listeners.forEach(listener -> listener.onEntriesChanged(new Data(newValues, version, 0)));
 
         return CompletableFuture.completedFuture(true);
     }
 
     /** {@inheritDoc} */
-    @Override public void addListener(ConfigurationStorageListener listener) {
+    @Override public synchronized void addListener(ConfigurationStorageListener listener) {
         listeners.add(listener);
     }
 
     /** {@inheritDoc} */
-    @Override public void removeListener(ConfigurationStorageListener listener) {
+    @Override public synchronized void removeListener(ConfigurationStorageListener listener) {
         listeners.remove(listener);
     }
 

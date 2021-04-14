@@ -17,43 +17,42 @@
 
 package org.apache.ignite.internal.vault.common;
 
-import java.io.Serializable;
+import java.util.Comparator;
+import org.jetbrains.annotations.Nullable;
 
-/**
- * Representation of vault entry.
- */
-public class Value implements Serializable {
-    private String key;
+public class Watch {
+    private static final Comparator<String> CMP = CharSequence::compare;
 
-    private byte[] val;
+    @Nullable
+    private String startKey;
 
-    private long revision;
+    @Nullable
+    private String endKey;
 
-    public Value(String key, byte[] val, long revision) {
-        this.key = key;
-        this.val = val;
-        this.revision = revision;
-    }
-
-    public String getKey() {
-        return key;
-    }
-
-    public byte[] value() {
-        return val;
-    }
-
-    public long getRevision() {
-        return revision;
-    }
+    private ValueListener listener;
 
     /**
-     * Returns value which denotes whether entry is empty or not.
-     *
-     * @return {@code True} if entry is empty, otherwise - {@code false}.
+     * @param listener Listener.
      */
-    public boolean empty() {
-        return val == null;
+    public Watch(ValueListener listener) {
+        this.listener = listener;
+    }
+
+    public void startKey(String startKey) {
+        this.startKey = startKey;
+    }
+
+    public void endKey(String endKey) {
+        this.endKey = endKey;
+    }
+
+    public void notify(Value val) {
+        if (startKey != null && CMP.compare(val.getKey(), startKey) < 0)
+            return;
+
+        if (endKey != null && CMP.compare(val.getKey(), endKey) > 0)
+            return;
+
+        listener.onValueChanged(val);
     }
 }
-

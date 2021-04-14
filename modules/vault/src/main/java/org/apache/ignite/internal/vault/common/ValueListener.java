@@ -17,43 +17,14 @@
 
 package org.apache.ignite.internal.vault.common;
 
-import java.io.Serializable;
-
 /**
- * Representation of vault entry.
+ * Vault storage listener for changes.
  */
-public class Value implements Serializable {
-    private String key;
-
-    private byte[] val;
-
-    private long revision;
-
-    public Value(String key, byte[] val, long revision) {
-        this.key = key;
-        this.val = val;
-        this.revision = revision;
-    }
-
-    public String getKey() {
-        return key;
-    }
-
-    public byte[] value() {
-        return val;
-    }
-
-    public long getRevision() {
-        return revision;
-    }
-
+@FunctionalInterface
+public interface ValueListener {
     /**
-     * Returns value which denotes whether entry is empty or not.
-     *
-     * @return {@code True} if entry is empty, otherwise - {@code false}.
+     * Method called when entries in storage change.
+     * @param changedValue Changed value
      */
-    public boolean empty() {
-        return val == null;
-    }
+    void onValueChanged(Value changedValue);
 }
-

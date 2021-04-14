@@ -49,7 +49,7 @@ public class DistributedConfigurationStorage implements ConfigurationStorage {
     private List<ConfigurationStorageListener> listeners = new ArrayList<>();
 
     /** Storage version. */
-    private AtomicLong version = new AtomicLong(0);
+    private Long version;
 
     /** {@inheritDoc} */
     @Override public synchronized Data readAll() throws StorageException {
@@ -62,12 +62,12 @@ public class DistributedConfigurationStorage implements ConfigurationStorage {
             data.put(entry.key().toString().replaceFirst(DISTRIBUTED_PREFIX + ".", ""), (Serializable)SerializationUtils.fromBytes(entry.value()));
 
         // storage revision 0?
-        return new Data(data, version.get(), 0);
+        return new Data(data, version, 0);
     }
 
     /** {@inheritDoc} */
     @Override public synchronized CompletableFuture<Boolean> write(Map<String, Serializable> newValues, long sentVersion) {
-        if (sentVersion != version.get())
+        if (sentVersion != version)
             return CompletableFuture.completedFuture(false);
 
         for (Map.Entry<String, Serializable> entry : newValues.entrySet()) {
@@ -79,9 +79,9 @@ public class DistributedConfigurationStorage implements ConfigurationStorage {
                 metaStorageMgr.remove(key);
         }
 
-        version.incrementAndGet();
+        version++;
 
-        listeners.forEach(listener -> listener.onEntriesChanged(new Data(newValues, version.get(), 0)));
+        listeners.forEach(listener -> listener.onEntriesChanged(new Data(newValues, version, 0)));
 
         return CompletableFuture.completedFuture(true);
     }

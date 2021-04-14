@@ -1,0 +1,211 @@
+package org.apache.ignite.internal.vault.impl;
+
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.Iterator;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.atomic.AtomicInteger;
+import org.apache.ignite.internal.vault.common.Value;
+import org.apache.ignite.internal.vault.common.Watch;
+import org.apache.ignite.internal.vault.service.VaultService;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
+
+public class InMemoyVaultTest {
+
+    private VaultService storage;
+
+    @BeforeEach
+    public void setUp() {
+        storage = new VaultServiceImpl();
+    }
+
+    @Test
+    public void put() throws ExecutionException, InterruptedException {
+        String key = getKey(1);
+        Value val = getValue(key, 1);
+
+        assertNull(storage.get(key).get());
+
+        storage.put(key, val);
+
+        Value v = storage.get(key).get();
+
+        assertFalse(v.empty());
+        assertEquals(val, v);
+
+        storage.put(key, val);
+
+        v = storage.get(key).get();
+
+        assertFalse(v.empty());
+        assertEquals(val, v);
+    }
+
+
+    @Test
+    public void remove() throws ExecutionException, InterruptedException {
+        String key = getKey(1);
+        Value val = getValue(key, 1);
+
+        assertNull(storage.get(key).get());
+
+        // Remove non-existent value.
+        storage.remove(key);
+
+        assertNull(storage.get(key).get());
+
+        storage.put(key, val);
+
+        Value v = storage.get(key).get();
+
+        assertFalse(v.empty());
+        assertEquals(val, v);
+
+        // Remove existent value.
+        storage.remove(key);
+
+        v = storage.get(key).get();
+
+        assertNull(v);
+    }
+
+    @Test
+    public void range() throws ExecutionException, InterruptedException {
+        String key;
+
+        Map<String, Value> values = new HashMap<>();
+
+        for (int i = 0; i < 10; i++) {
+            key = getKey(i);
+
+            values.put(key, getValue(key, i));
+
+            assertNull(storage.get(key).get());
+        }
+
+        values.forEach((k, v) -> storage.put(k, v));
+
+        for (Map.Entry<String, Value> entry : values.entrySet())
+            assertEquals(entry.getValue(), storage.get(entry.getKey()).get());
+
+        Iterator<Value> it = storage.range(getKey(3), getKey(7));
+
+        List<Value> rangeRes = new ArrayList<>();
+
+        it.forEachRemaining(rangeRes::add);
+
+        assertEquals(4, rangeRes.size());
+
+        //Check that we have exact range from "key3" to "key6"
+        for (int i = 3; i < 7; i++)
+            assertEquals(values.get(getKey(i)), rangeRes.get(i - 3));
+    }
+
+    @Test
+    public void watch() throws ExecutionException, InterruptedException {
+        String key;
+
+        Map<String, Value> values = new HashMap<>();
+
+        for (int i = 0; i < 10; i++) {
+            key = getKey(i);
+
+            values.put(key, getValue(key, i));
+        }
+
+        values.forEach((k, v) -> storage.put(k, v));
+
+        for (Map.Entry<String, Value> entry : values.entrySet())
+            assertEquals(entry.getValue(), storage.get(entry.getKey()).get());
+
+        AtomicInteger counter = new AtomicInteger();
+
+        Watch watch = new Watch(changedValue -> counter.incrementAndGet());
+
+        watch.startKey(getKey(3));
+        watch.endKey(getKey(7));
+
+        storage.watch(watch);
+
+        for (int i = 3; i < 7; i++)
+            storage.put(getKey(i), new Value(getKey(i), ("new" + i).getBytes(), -1));
+
+        Thread.sleep(500);
+
+        assertEquals(4, counter.get());
+    }
+
+//
+//    private void assertIterate(String pref,  KeyValueStorage storage, TreeMap<String, String> expMap) {
+//        Iterator<Entry> it = storage.iterate((pref + "_").getBytes());
+//        Iterator<Map.Entry<String, String>> expIt = expMap.entrySet().iterator();
+//
+//        // Order.
+//        while (it.hasNext()) {
+//            Entry entry = it.next();
+//            Map.Entry<String, String> expEntry = expIt.next();
+//
+//            assertEquals(expEntry.getKey(), new String(entry.key()));
+//            assertEquals(expEntry.getValue(), new String(entry.value()));
+//        }
+//
+//        // Range boundaries.
+//        it = storage.iterate((pref + '_').getBytes());
+//
+//        while (it.hasNext()) {
+//            Entry entry = it.next();
+//
+//            assertTrue(expMap.containsKey(new String(entry.key())));
+//        }
+//    }
+//
+//    private static void fill(String pref, KeyValueStorage storage, TreeMap<String, String> expMap) {
+//        for (int i = 0; i < 100; i++) {
+//            String keyStr = pref + '_' + i;
+//
+//            String valStr = "val_" + i;
+//
+//            expMap.put(keyStr, valStr);
+//
+//            byte[] key = keyStr.getBytes();
+//
+//            byte[] val = valStr.getBytes();
+//
+//            storage.getAndPut(key, val);
+//        }
+//    }
+//
+//    private static void fill(KeyValueStorage storage, int keySuffix, int num) {
+//        for (int i = 0; i < num; i++)
+//            storage.getAndPut(k(keySuffix), kv(keySuffix, i + 1));
+//    }
+//
+    private static String getKey(int k) {
+        return ("key" + k);
+    }
+
+    private static Value getValue(String k, int v) {
+        return new Value(k, ("key" + k + '_' + "val" + v).getBytes(), -1);
+    }
+
+//    private static class NoOpWatcher implements Watcher {
+//        @Override public void register(@NotNull Watch watch) {
+//            // No-op.
+//        }
+//
+//        @Override public void notify(@NotNull Entry e) {
+//            // No-op.
+//        }
+//
+//        @Override public void cancel(@NotNull Watch watch) {
+//            // No-op.
+//        }
+//    }
+}

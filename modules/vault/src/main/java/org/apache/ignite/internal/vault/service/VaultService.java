@@ -20,13 +20,16 @@ package org.apache.ignite.internal.vault.service;
 import java.util.Iterator;
 import java.util.concurrent.CompletableFuture;
 import org.apache.ignite.internal.vault.common.Value;
+import org.apache.ignite.internal.vault.common.Watch;
+import org.apache.ignite.lang.IgniteUuid;
+import org.jetbrains.annotations.NotNull;
 
 /**
  * Defines interface for access to a vault service.
  */
 public interface VaultService {
     /**
-     * Read key from vault storage.
+     * Read key from vault storage or {@code null} if this storage contains no mapping for the key.
      *
      * @param key Key.
      */
@@ -58,4 +61,22 @@ public interface VaultService {
      * Returns a view of the portion of vault whose keys range from fromKey, inclusive, to toKey, exclusive.
      */
     Iterator<Value> range(String fromKey, String toKey);
+
+    /**
+     * Subscribes on vault storage updates for the given key.
+     *
+     * @param watch Watch which will notify for each update.
+     * @return Subscription identifier. Could be used in {@link #stopWatch} method in order to cancel subscription.
+     */
+    @NotNull
+    CompletableFuture<IgniteUuid> watch(@NotNull Watch watch);
+
+    /**
+     * Cancels subscription for the given identifier.
+     *
+     * @param id Subscription identifier.
+     * @return Completed future in case of operation success. Couldn't be {@code null}.
+     */
+    @NotNull
+    CompletableFuture<Void> stopWatch(@NotNull IgniteUuid id);
 }
