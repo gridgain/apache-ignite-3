@@ -56,4 +56,3 @@ public class Value implements Serializable {
         return val == null;
     }
 }
-

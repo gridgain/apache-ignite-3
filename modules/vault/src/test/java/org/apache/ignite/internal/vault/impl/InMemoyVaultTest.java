@@ -1,3 +1,20 @@
+/*
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the "License"); you may not use this file except in compliance with
+ * the License.  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package org.apache.ignite.internal.vault.impl;
 
 import java.util.ArrayList;
@@ -142,51 +159,6 @@ public class InMemoyVaultTest {
         assertEquals(4, counter.get());
     }
 
-//
-//    private void assertIterate(String pref,  KeyValueStorage storage, TreeMap<String, String> expMap) {
-//        Iterator<Entry> it = storage.iterate((pref + "_").getBytes());
-//        Iterator<Map.Entry<String, String>> expIt = expMap.entrySet().iterator();
-//
-//        // Order.
-//        while (it.hasNext()) {
-//            Entry entry = it.next();
-//            Map.Entry<String, String> expEntry = expIt.next();
-//
-//            assertEquals(expEntry.getKey(), new String(entry.key()));
-//            assertEquals(expEntry.getValue(), new String(entry.value()));
-//        }
-//
-//        // Range boundaries.
-//        it = storage.iterate((pref + '_').getBytes());
-//
-//        while (it.hasNext()) {
-//            Entry entry = it.next();
-//
-//            assertTrue(expMap.containsKey(new String(entry.key())));
-//        }
-//    }
-//
-//    private static void fill(String pref, KeyValueStorage storage, TreeMap<String, String> expMap) {
-//        for (int i = 0; i < 100; i++) {
-//            String keyStr = pref + '_' + i;
-//
-//            String valStr = "val_" + i;
-//
-//            expMap.put(keyStr, valStr);
-//
-//            byte[] key = keyStr.getBytes();
-//
-//            byte[] val = valStr.getBytes();
-//
-//            storage.getAndPut(key, val);
-//        }
-//    }
-//
-//    private static void fill(KeyValueStorage storage, int keySuffix, int num) {
-//        for (int i = 0; i < num; i++)
-//            storage.getAndPut(k(keySuffix), kv(keySuffix, i + 1));
-//    }
-//
     private static String getKey(int k) {
         return ("key" + k);
     }
@@ -194,18 +166,4 @@ public class InMemoyVaultTest {
     private static Value getValue(String k, int v) {
         return new Value(k, ("key" + k + '_' + "val" + v).getBytes(), -1);
     }
-
-//    private static class NoOpWatcher implements Watcher {
-//        @Override public void register(@NotNull Watch watch) {
-//            // No-op.
-//        }
-//
-//        @Override public void notify(@NotNull Entry e) {
-//            // No-op.
-//        }
-//
-//        @Override public void cancel(@NotNull Watch watch) {
-//            // No-op.
-//        }
-//    }
 }
