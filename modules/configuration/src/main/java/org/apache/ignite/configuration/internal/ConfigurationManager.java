@@ -36,7 +36,6 @@ public class ConfigurationManager {
 
     private final ConfigurationRegistry confRegistry;
 
-    // TODO sanpwc: > Make it immutable.
     private final Set<ConfigurationStorage> configurationStorages;
 
     public <A extends Annotation> ConfigurationManager(
@@ -44,7 +43,7 @@ public class ConfigurationManager {
         Map<Class<A>, Set<Validator<A, ?>>> validators,
         Collection<ConfigurationStorage> configurationStorages
     ) {
-        this.configurationStorages = new HashSet<>(configurationStorages);
+        this.configurationStorages = Set.copyOf(configurationStorages);
 
         confRegistry = new ConfigurationRegistry(rootKeys, validators, configurationStorages);
     }

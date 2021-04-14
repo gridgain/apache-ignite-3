@@ -151,8 +151,8 @@ public class IgnitionImpl implements Ignition {
             locConfigurationMgr
         );
 
-        // TODO sanpwc: > Add distributed root keys.
-        // TODO sanpwc: > Bootstrap distributed configuration.
+        // TODO sanpwc: Add distributed root keys.
+        // TODO sanpwc: Bootstrap distributed configuration.
         configurationStorages.add(new DistributedConfigurationStorage(metaStorageMgr));
 
         // Start configuration manager.
