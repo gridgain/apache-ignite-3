@@ -29,6 +29,8 @@ public interface KeyValueStorage {
     @NotNull
     Entry getAndPut(byte[] key, byte[] value);
 
+    void putAll(List<byte[]> keys, List<byte[]> values);
+
     void remove(byte[] key);
 
     @NotNull

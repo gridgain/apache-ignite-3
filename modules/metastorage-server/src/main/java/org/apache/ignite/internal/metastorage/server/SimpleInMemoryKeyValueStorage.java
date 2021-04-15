@@ -63,6 +63,13 @@ public class SimpleInMemoryKeyValueStorage implements KeyValueStorage {
         }
     }
 
+    @Override
+    public void putAll(List<byte[]> keys, List<byte[]> values) {
+        synchronized (mux) {
+
+        }
+    }
+
     @NotNull
     @Override public Entry get(byte[] key) {
         synchronized (mux) {
