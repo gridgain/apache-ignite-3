@@ -88,6 +88,7 @@ public class DistributedConfigurationStorage implements ConfigurationStorage {
     /** {@inheritDoc} */
     @Override public synchronized void addListener(ConfigurationStorageListener listener) {
         listeners.add(listener);
+        metaStorageMgr.watchByP()
     }
 
     /** {@inheritDoc} */

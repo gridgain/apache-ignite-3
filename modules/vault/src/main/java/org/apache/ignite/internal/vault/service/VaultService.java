@@ -21,7 +21,9 @@ import java.util.Iterator;
 import java.util.concurrent.CompletableFuture;
 import org.apache.ignite.internal.vault.common.Value;
 import org.apache.ignite.internal.vault.common.Watch;
+import org.apache.ignite.lang.ByteArray;
 import org.apache.ignite.lang.IgniteUuid;
+import org.apache.ignite.metastorage.common.Key;
 import org.jetbrains.annotations.NotNull;
 
 /**
@@ -33,14 +35,14 @@ public interface VaultService {
      *
      * @param key Key.
      */
-    CompletableFuture<Value> get(String key);
+    CompletableFuture<Value> get(ByteArray key);
 
     /**
      * Returns revision for value for specified key or returns -1 if revision for value is not specified.
      *
      * @param key Vault key.
      */
-    CompletableFuture<Long> appliedRevision(String key);
+    CompletableFuture<Long> appliedRevision(ByteArray key);
 
     /**
      * Write value with key to vault.
@@ -48,19 +50,19 @@ public interface VaultService {
      * @param key Vault key.
      * @param val Value.
      */
-    CompletableFuture<Void> put(String key, Value val);
+    CompletableFuture<Void> put(ByteArray key, Value val);
 
     /**
      * Remove value with key from vault.
      *
      * @param key Vault key.
      */
-    CompletableFuture<Void> remove(String key);
+    CompletableFuture<Void> remove(ByteArray key);
 
     /**
      * Returns a view of the portion of vault whose keys range from fromKey, inclusive, to toKey, exclusive.
      */
-    Iterator<Value> range(String fromKey, String toKey);
+    Iterator<Value> range(ByteArray fromKey, ByteArray toKey);
 
     /**
      * Subscribes on vault storage updates for the given key.

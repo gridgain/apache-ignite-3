@@ -22,6 +22,7 @@ import java.util.TreeMap;
 import java.util.concurrent.CompletableFuture;
 import org.apache.ignite.internal.vault.common.*;
 import org.apache.ignite.internal.vault.service.VaultService;
+import org.apache.ignite.lang.ByteArray;
 import org.apache.ignite.lang.IgniteUuid;
 import org.jetbrains.annotations.NotNull;
 
@@ -30,7 +31,7 @@ import org.jetbrains.annotations.NotNull;
  */
 public class VaultServiceImpl implements VaultService {
     /** Map to store values. */
-    private TreeMap<String, Value> storage = new TreeMap<>();
+    private TreeMap<ByteArray, Value> storage = new TreeMap<>();
 
     private final Object mux = new Object();
 
@@ -41,14 +42,14 @@ public class VaultServiceImpl implements VaultService {
     }
 
     /** {@inheritDoc} */
-    @Override public CompletableFuture<Value> get(String key) {
+    @Override public CompletableFuture<Value> get(ByteArray key) {
         synchronized (mux) {
-            return CompletableFuture.completedFuture(storage.get(key));
+            return CompletableFuture.completedFuture(storage.get(key.toString()));
         }
     }
 
     /** {@inheritDoc} */
-    @Override public CompletableFuture<Long> appliedRevision(String key) {
+    @Override public CompletableFuture<Long> appliedRevision(ByteArray key) {
         synchronized (mux) {
             return CompletableFuture.completedFuture(storage.get(key).getRevision());
         }
