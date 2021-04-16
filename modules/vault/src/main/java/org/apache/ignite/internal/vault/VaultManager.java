@@ -17,7 +17,30 @@
 
 package org.apache.ignite.internal.vault;
 
+import java.util.Map;
+import java.util.concurrent.CompletableFuture;
+import org.jetbrains.annotations.NotNull;
+
 public class VaultManager {
+    /**
+     * Inserts or updates entries with given keys and given values.
+     *
+     * @param vals The map of keys and corresponding values. Couldn't be {@code null} or empty.
+     * @param appliedRevision Revision for entries
+     * @return Completed future.
+     */
+    @NotNull
+    CompletableFuture<Void> putAll(@NotNull Map<String, byte[]> vals, long appliedRevision) {
+        return CompletableFuture.allOf();
+    }
+
+    /**
+     * @return Applied revision for {@link VaultManager#putAll} operation.
+     */
+    @NotNull
+    CompletableFuture<Long> appliedRevision() {
+        return CompletableFuture.completedFuture(0L);
+    }
 
     public boolean bootstrapped() {
         return false;
