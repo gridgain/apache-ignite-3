@@ -18,12 +18,13 @@
 package org.apache.ignite.internal.vault.service;
 
 import java.util.Iterator;
+import java.util.Map;
 import java.util.concurrent.CompletableFuture;
-import org.apache.ignite.internal.vault.common.Value;
+import org.apache.ignite.internal.vault.VaultManager;
+import org.apache.ignite.internal.vault.common.VaultEntry;
 import org.apache.ignite.internal.vault.common.Watch;
 import org.apache.ignite.lang.ByteArray;
 import org.apache.ignite.lang.IgniteUuid;
-import org.apache.ignite.metastorage.common.Key;
 import org.jetbrains.annotations.NotNull;
 
 /**
@@ -35,14 +36,7 @@ public interface VaultService {
      *
      * @param key Key.
      */
-    CompletableFuture<Value> get(ByteArray key);
-
-    /**
-     * Returns revision for value for specified key or returns -1 if revision for value is not specified.
-     *
-     * @param key Vault key.
-     */
-    CompletableFuture<Long> appliedRevision(ByteArray key);
+    CompletableFuture<VaultEntry> get(ByteArray key);
 
     /**
      * Write value with key to vault.
@@ -50,7 +44,7 @@ public interface VaultService {
      * @param key Vault key.
      * @param val Value.
      */
-    CompletableFuture<Void> put(ByteArray key, Value val);
+    CompletableFuture<Void> put(ByteArray key, byte[] val);
 
     /**
      * Remove value with key from vault.
@@ -62,7 +56,7 @@ public interface VaultService {
     /**
      * Returns a view of the portion of vault whose keys range from fromKey, inclusive, to toKey, exclusive.
      */
-    Iterator<Value> range(ByteArray fromKey, ByteArray toKey);
+    Iterator<VaultEntry> range(ByteArray fromKey, ByteArray toKey);
 
     /**
      * Subscribes on vault storage updates for the given key.
@@ -81,4 +75,20 @@ public interface VaultService {
      */
     @NotNull
     CompletableFuture<Void> stopWatch(@NotNull IgniteUuid id);
+
+    /**
+     * Inserts or updates entries with given keys and given values.
+     *
+     * @param vals The map of keys and corresponding values. Couldn't be {@code null} or empty.
+     * @param revision Revision for entries
+     * @return Completed future.
+     */
+    @NotNull
+    CompletableFuture<Void> putAll(@NotNull Map<ByteArray, byte[]> vals, long revision);
+
+    /**
+     * @return Applied revision for {@link VaultService#putAll} operation.
+     */
+    @NotNull
+    CompletableFuture<Long> appliedRevision();
 }

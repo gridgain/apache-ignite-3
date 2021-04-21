@@ -14,44 +14,49 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.apache.ignite.configuration.storage;
+
+package org.apache.ignite.internal.vault.common;
 
 import java.io.Serializable;
-import java.util.Map;
+import org.apache.ignite.lang.ByteArray;
+import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 /**
- * Represents data in configuration storage.
+ * Representation of vault entry.
  */
-public class Data {
-    /** Values. */
-    private final Map<String, Serializable> values;
+public class VaultEntry implements Entry, Serializable {
+    /** Key. */
+    private ByteArray key;
 
-    /** Configuration storage version. */
-    private final long cfgVersion;
+    /** Value. */
+    private byte[] val;
 
     /**
-     * Constructor.
-     * @param values Values.
-     * @param cfgVersion Version.
+     * @param key Key.
+     * @param val Value.
      */
-    public Data(Map<String, Serializable> values, long cfgVersion) {
-        this.values = values;
-        this.cfgVersion = cfgVersion;
+    public VaultEntry(ByteArray key, byte[] val) {
+        this.key = key;
+        this.val = val;
+    }
+
+    /** {@inheritDoc} */
+    @Override public @NotNull ByteArray key() {
+        return key;
+    }
+
+    /** {@inheritDoc} */
+    @Override public @Nullable byte[] value() {
+        return val;
     }
 
     /**
-     * Get values.
-     * @return Values.
+     * Returns value which denotes whether entry is empty or not.
+     *
+     * @return {@code True} if entry is empty, otherwise - {@code false}.
      */
-    public Map<String, Serializable> values() {
-        return values;
-    }
-
-    /**
-     * Get version.
-     * @return version.
-     */
-    public long cfgVersion() {
-        return cfgVersion;
+    public boolean empty() {
+        return val == null;
     }
 }

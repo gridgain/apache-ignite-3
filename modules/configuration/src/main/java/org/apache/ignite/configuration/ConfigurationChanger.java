@@ -371,7 +371,7 @@ public final class ConfigurationChanger {
 
         ConfigurationStorage storage = storageInstances.get(storageType);
 
-        long storageRevision = changedEntries.storageRevision();
+        long storageRevision = changedEntries.cfgVersion();
 
         // This will also be updated during the metastorage integration.
         notificator.notify(

@@ -17,9 +17,14 @@
 
 package org.apache.ignite.internal.vault.impl;
 
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Iterator;
+import java.util.Map;
 import java.util.TreeMap;
 import java.util.concurrent.CompletableFuture;
+import java.util.stream.Collectors;
+import org.apache.ignite.internal.util.IgniteUtils;
 import org.apache.ignite.internal.vault.common.*;
 import org.apache.ignite.internal.vault.service.VaultService;
 import org.apache.ignite.lang.ByteArray;
@@ -31,7 +36,11 @@ import org.jetbrains.annotations.NotNull;
  */
 public class VaultServiceImpl implements VaultService {
     /** Map to store values. */
-    private TreeMap<ByteArray, Value> storage = new TreeMap<>();
+    private TreeMap<ByteArray, byte[]> storage = new TreeMap<>();
+
+    private static ByteArray APPLIED_REV = ByteArray.fromString("applied_revision");
+
+    private long appliedRevision = 0;
 
     private final Object mux = new Object();
 
@@ -42,35 +51,32 @@ public class VaultServiceImpl implements VaultService {
     }
 
     /** {@inheritDoc} */
-    @Override public CompletableFuture<Value> get(ByteArray key) {
+    @Override public CompletableFuture<VaultEntry> get(ByteArray key) {
         synchronized (mux) {
-            return CompletableFuture.completedFuture(storage.get(key.toString()));
+            return CompletableFuture.completedFuture(new VaultEntry(key, storage.get(key)));
         }
     }
 
     /** {@inheritDoc} */
-    @Override public CompletableFuture<Long> appliedRevision(ByteArray key) {
+    @Override public CompletableFuture<Long> appliedRevision() {
         synchronized (mux) {
-            return CompletableFuture.completedFuture(storage.get(key).getRevision());
+            return CompletableFuture.completedFuture(IgniteUtils.bytesToLong(storage.get(APPLIED_REV), 0));
         }
     }
 
     /** {@inheritDoc} */
-    @Override public CompletableFuture<Void> put(String key, Value val) {
+    @Override public CompletableFuture<Void> put(ByteArray key, byte[] val) {
         synchronized (mux) {
-            if (storage.containsKey(key) && storage.get(key).getRevision() != -1 && storage.get(key).getRevision() >= val.getRevision())
-                return CompletableFuture.allOf();
-
             storage.put(key, val);
 
-            watcher.notify(val);
+            watcher.notify(new VaultEntry(key, val));
 
             return CompletableFuture.allOf();
         }
     }
 
     /** {@inheritDoc} */
-    @Override public CompletableFuture<Void> remove(String key) {
+    @Override public CompletableFuture<Void> remove(ByteArray key) {
         synchronized (mux) {
             storage.remove(key);
 
@@ -79,19 +85,42 @@ public class VaultServiceImpl implements VaultService {
     }
 
     /** {@inheritDoc} */
-    @Override public Iterator<Value> range(String fromKey, String toKey) {
+    @Override public Iterator<VaultEntry> range(ByteArray fromKey, ByteArray toKey) {
         synchronized (mux) {
-            return storage.subMap(fromKey, toKey).values().iterator();
+            return new ArrayList<>(storage.subMap(fromKey, toKey).entrySet())
+                .stream()
+                .map(e -> new VaultEntry(e.getKey(), e.getValue()))
+                .iterator();
         }
     }
 
+    /** {@inheritDoc} */
     @Override public @NotNull CompletableFuture<IgniteUuid> watch(@NotNull Watch watch) {
-        return watcher.register(watch);
+        synchronized (mux) {
+            return watcher.register(watch);
+        }
     }
 
+    /** {@inheritDoc} */
     @Override public @NotNull CompletableFuture<Void> stopWatch(@NotNull IgniteUuid id) {
-        watcher.cancel(id);
+        synchronized (mux) {
+            watcher.cancel(id);
 
-        return CompletableFuture.allOf();
+            return CompletableFuture.allOf();
+        }
+    }
+
+    /** {@inheritDoc} */
+    @Override public @NotNull CompletableFuture<Void> putAll(@NotNull Map<ByteArray, byte[]> vals, long revision) {
+        synchronized (mux) {
+            if (revision < appliedRevision)
+                return CompletableFuture.allOf();
+
+            storage.putAll(vals);
+
+            this.appliedRevision = revision;
+
+            return CompletableFuture.allOf();
+        }
     }
 }

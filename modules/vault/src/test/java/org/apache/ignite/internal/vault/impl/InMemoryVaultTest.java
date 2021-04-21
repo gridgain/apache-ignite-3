@@ -24,9 +24,10 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.atomic.AtomicInteger;
-import org.apache.ignite.internal.vault.common.Value;
+import org.apache.ignite.internal.vault.common.VaultEntry;
 import org.apache.ignite.internal.vault.common.Watch;
 import org.apache.ignite.internal.vault.service.VaultService;
+import org.apache.ignite.lang.ByteArray;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -45,75 +46,75 @@ public class InMemoryVaultTest {
 
     @Test
     public void put() throws ExecutionException, InterruptedException {
-        String key = getKey(1);
-        Value val = getValue(key, 1);
+        ByteArray key = getKey(1);
+        byte[] val = getValue(key, 1);
 
-        assertNull(storage.get(key).get());
+        assertNull(storage.get(key).get().value());
 
         storage.put(key, val);
 
-        Value v = storage.get(key).get();
+        VaultEntry v = storage.get(key).get();
 
         assertFalse(v.empty());
-        assertEquals(val, v);
+        assertEquals(val, v.value());
 
         storage.put(key, val);
 
         v = storage.get(key).get();
 
         assertFalse(v.empty());
-        assertEquals(val, v);
+        assertEquals(val, v.value());
     }
 
     @Test
     public void remove() throws ExecutionException, InterruptedException {
-        String key = getKey(1);
-        Value val = getValue(key, 1);
+        ByteArray key = getKey(1);
+        byte[] val = getValue(key, 1);
 
-        assertNull(storage.get(key).get());
+        assertNull(storage.get(key).get().value());
 
         // Remove non-existent value.
         storage.remove(key);
 
-        assertNull(storage.get(key).get());
+        assertNull(storage.get(key).get().value());
 
         storage.put(key, val);
 
-        Value v = storage.get(key).get();
+        VaultEntry v = storage.get(key).get();
 
         assertFalse(v.empty());
-        assertEquals(val, v);
+        assertEquals(val, v.value());
 
         // Remove existent value.
         storage.remove(key);
 
         v = storage.get(key).get();
 
-        assertNull(v);
+        assertNull(v.value());
     }
 
     @Test
     public void range() throws ExecutionException, InterruptedException {
-        String key;
+        ByteArray key;
 
-        Map<String, Value> values = new HashMap<>();
+        Map<ByteArray, byte[]> values = new HashMap<>();
 
         for (int i = 0; i < 10; i++) {
             key = getKey(i);
 
             values.put(key, getValue(key, i));
 
-            assertNull(storage.get(key).get());
+            assertNull(storage.get(key).get().value());
         }
 
         values.forEach((k, v) -> storage.put(k, v));
 
-        for (Map.Entry<String, Value> entry : values.entrySet())
-            assertEquals(entry.getValue(), storage.get(entry.getKey()).get());
+        for (Map.Entry<ByteArray, byte[]> entry : values.entrySet())
+            assertEquals(entry.getValue(), storage.get(entry.getKey()).get().value());
 
-        Iterator<Value> it = storage.range(getKey(3), getKey(7));
+        Iterator<VaultEntry> it = storage.range(getKey(3), getKey(7));
 
-        List<Value> rangeRes = new ArrayList<>();
+        List<VaultEntry> rangeRes = new ArrayList<>();
 
         it.forEachRemaining(rangeRes::add);
 
@@ -121,14 +122,14 @@ public class InMemoryVaultTest {
 
         //Check that we have exact range from "key3" to "key6"
         for (int i = 3; i < 7; i++)
-            assertEquals(values.get(getKey(i)), rangeRes.get(i - 3));
+            assertEquals(values.get(getKey(i)), rangeRes.get(i - 3).value());
     }
 
     @Test
     public void watch() throws ExecutionException, InterruptedException {
-        String key;
+        ByteArray key;
 
-        Map<String, Value> values = new HashMap<>();
+        Map<ByteArray, byte[]> values = new HashMap<>();
 
         for (int i = 0; i < 10; i++) {
             key = getKey(i);
@@ -138,8 +139,8 @@ public class InMemoryVaultTest {
 
         values.forEach((k, v) -> storage.put(k, v));
 
-        for (Map.Entry<String, Value> entry : values.entrySet())
-            assertEquals(entry.getValue(), storage.get(entry.getKey()).get());
+        for (Map.Entry<ByteArray, byte[]> entry : values.entrySet())
+            assertEquals(entry.getValue(), storage.get(entry.getKey()).get().value());
 
         AtomicInteger counter = new AtomicInteger();
 
@@ -151,18 +152,18 @@ public class InMemoryVaultTest {
         storage.watch(watch);
 
         for (int i = 3; i < 7; i++)
-            storage.put(getKey(i), new Value(getKey(i), ("new" + i).getBytes(), -1));
+            storage.put(getKey(i), ("new" + i).getBytes());
 
         Thread.sleep(500);
 
         assertEquals(4, counter.get());
     }
 
-    private static String getKey(int k) {
-        return ("key" + k);
+    private static ByteArray getKey(int k) {
+        return ByteArray.fromString("key" + k);
     }
 
-    private static Value getValue(String k, int v) {
-        return new Value(k, ("key" + k + '_' + "val" + v).getBytes(), -1);
+    private static byte[] getValue(ByteArray k, int v) {
+        return ("key" + k + '_' + "val" + v).getBytes();
     }
 }

@@ -24,7 +24,7 @@ import org.jetbrains.annotations.NotNull;
 public interface Watcher {
     CompletableFuture<IgniteUuid> register(@NotNull Watch watch);
 
-    void notify(@NotNull Value val);
+    void notify(@NotNull VaultEntry val);
 
     void cancel(@NotNull IgniteUuid uuid);
 }

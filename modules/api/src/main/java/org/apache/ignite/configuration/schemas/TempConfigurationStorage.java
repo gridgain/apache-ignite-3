@@ -28,7 +28,7 @@ public class TempConfigurationStorage implements ConfigurationStorage {
 
     /** {@inheritDoc} */
     @Override public synchronized Data readAll() throws StorageException {
-        return new Data(new HashMap<>(map), version.get(), 0);
+        return new Data(new HashMap<>(map), version.get());
     }
 
     /** {@inheritDoc} */
@@ -45,7 +45,7 @@ public class TempConfigurationStorage implements ConfigurationStorage {
 
         this.version.incrementAndGet();
 
-        listeners.forEach(listener -> listener.onEntriesChanged(new Data(newValues, this.version.get(), 0)));
+        listeners.forEach(listener -> listener.onEntriesChanged(new Data(newValues, this.version.get())));
 
         return CompletableFuture.completedFuture(true);
     }

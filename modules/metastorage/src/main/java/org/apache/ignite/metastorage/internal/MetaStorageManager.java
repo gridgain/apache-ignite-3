@@ -131,6 +131,13 @@ public class MetaStorageManager {
     }
 
     /**
+     * See {@link MetaStorageService#get(Key)}
+     */
+    public CompletableFuture<Entry> get(@NotNull Key key) {
+        return service.get(key);
+    }
+
+    /**
      * Puts an entry to metastorage.
      *
      * @param key Key in metastorage.
@@ -161,5 +168,20 @@ public class MetaStorageManager {
 
     public void deployWatches() {
 
+    }
+
+    /**
+     * Will be done in the ticket IGNITE-14446
+     */
+    public synchronized CompletableFuture<Long> registerWatchByPrefix(@Nullable Key key,
+        @NotNull WatchListener lsnr) {
+        return CompletableFuture.completedFuture(0L);
+    }
+
+    /**
+     * Will be done in the ticket IGNITE-14446
+     */
+    public synchronized CompletableFuture<Void> unregisterWatch(long id) {
+        return CompletableFuture.allOf();
     }
 }

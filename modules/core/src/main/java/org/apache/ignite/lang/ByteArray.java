@@ -78,6 +78,19 @@ public final class ByteArray implements Comparable<ByteArray>{
         return Arrays.compare(this.arr, other.arr);
     }
 
+    /**
+     * Compares two {@code ByteArray} values.
+     * The value returned is identical to what would be returned by:
+     * <pre>
+     *    x.compareTo(y)
+     * </pre>
+     *
+     * where x and y are {@code ByteArray}'s
+     */
+    public static int compare(ByteArray x, ByteArray y) {
+        return Arrays.compare(x.arr, y.arr);
+    }
+
     /** {@inheritDoc} */
     @Override public String toString() {
         return new String(arr, StandardCharsets.UTF_8);

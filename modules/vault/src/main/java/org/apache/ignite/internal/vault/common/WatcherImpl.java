@@ -31,7 +31,7 @@ import org.apache.ignite.lang.IgniteUuid;
 import org.jetbrains.annotations.NotNull;
 
 public class WatcherImpl implements Watcher {
-    private final BlockingQueue<Value> queue = new LinkedBlockingQueue<>();
+    private final BlockingQueue<VaultEntry> queue = new LinkedBlockingQueue<>();
 
     private final Map<IgniteUuid, Watch> watches = new HashMap<>();
 
@@ -57,7 +57,7 @@ public class WatcherImpl implements Watcher {
         }
     }
 
-    @Override public void notify(@NotNull Value val) {
+    @Override public void notify(@NotNull VaultEntry val) {
         queue.offer(val);
     }
 
@@ -95,7 +95,7 @@ public class WatcherImpl implements Watcher {
         @Override public void run() {
             while (!stop) {
                 try {
-                    Value val = queue.poll(100, TimeUnit.MILLISECONDS);
+                    VaultEntry val = queue.poll(100, TimeUnit.MILLISECONDS);
 
                     if (val != null) {
                         synchronized (mux) {

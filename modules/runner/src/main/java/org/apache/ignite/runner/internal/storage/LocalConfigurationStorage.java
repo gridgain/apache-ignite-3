@@ -24,13 +24,13 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.atomic.AtomicLong;
 import org.apache.ignite.configuration.storage.ConfigurationStorage;
 import org.apache.ignite.configuration.storage.ConfigurationStorageListener;
 import org.apache.ignite.configuration.storage.Data;
 import org.apache.ignite.configuration.storage.StorageException;
 import org.apache.ignite.internal.vault.VaultManager;
-import org.apache.ignite.internal.vault.common.Value;
+import org.apache.ignite.internal.vault.common.VaultEntry;
+import org.apache.ignite.lang.ByteArray;
 import org.apache.ignite.lang.util.SerializationUtils;
 
 public class LocalConfigurationStorage implements ConfigurationStorage {
@@ -52,20 +52,19 @@ public class LocalConfigurationStorage implements ConfigurationStorage {
 
     /** {@inheritDoc} */
     @Override public synchronized Data readAll() throws StorageException {
-        Iterator<Value> iter =
-            vaultMgr.range(LOCAL_PREFIX + ".", LOCAL_PREFIX + (char)('.' + 1));
+        Iterator<VaultEntry> iter =
+            vaultMgr.range(ByteArray.fromString(LOCAL_PREFIX + "."), ByteArray.fromString(LOCAL_PREFIX + (char)('.' + 1)));
 
         HashMap<String, Serializable> data = new HashMap<>();
 
         while (iter.hasNext()) {
-            Value val = iter.next();
+            VaultEntry val = iter.next();
 
-            data.put(val.getKey().replaceFirst(LOCAL_PREFIX + ".", ""),
+            data.put(val.key().toString().replaceFirst(LOCAL_PREFIX + ".", ""),
                 (Serializable)SerializationUtils.fromBytes(val.value()));
         }
 
-        // storage revision 0?
-        return new Data(data, version, 0);
+        return new Data(data, version);
     }
 
     /** {@inheritDoc} */
@@ -74,17 +73,17 @@ public class LocalConfigurationStorage implements ConfigurationStorage {
             return CompletableFuture.completedFuture(false);
 
         for (Map.Entry<String, Serializable> entry : newValues.entrySet()) {
-            String key = LOCAL_PREFIX + "." + entry.getKey();
+            ByteArray key = ByteArray.fromString(LOCAL_PREFIX + "." + entry.getKey());
 
             if (entry.getValue() != null)
-                vaultMgr.put(key, new Value(key, SerializationUtils.toBytes(entry.getValue()), -1));
+                vaultMgr.put(key, SerializationUtils.toBytes(entry.getValue()));
             else
                 vaultMgr.remove(key);
         }
 
         version++;
 
-        listeners.forEach(listener -> listener.onEntriesChanged(new Data(newValues, version, 0)));
+        listeners.forEach(listener -> listener.onEntriesChanged(new Data(newValues, version)));
 
         return CompletableFuture.completedFuture(true);
     }

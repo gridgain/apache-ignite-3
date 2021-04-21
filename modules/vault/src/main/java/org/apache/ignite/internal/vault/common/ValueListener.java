@@ -24,7 +24,7 @@ package org.apache.ignite.internal.vault.common;
 public interface ValueListener {
     /**
      * Method called when entries in storage change.
-     * @param changedValue Changed value
+     * @param changedEntry Changed value
      */
-    void onValueChanged(Value changedValue);
+    void onValueChanged(VaultEntry changedEntry);
 }

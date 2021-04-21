@@ -18,16 +18,17 @@
 package org.apache.ignite.internal.vault.common;
 
 import java.util.Comparator;
+import org.apache.ignite.lang.ByteArray;
 import org.jetbrains.annotations.Nullable;
 
 public class Watch {
-    private static final Comparator<String> CMP = CharSequence::compare;
+    private static final Comparator<ByteArray> CMP = ByteArray::compare;
 
     @Nullable
-    private String startKey;
+    private ByteArray startKey;
 
     @Nullable
-    private String endKey;
+    private ByteArray endKey;
 
     private ValueListener listener;
 
@@ -38,19 +39,19 @@ public class Watch {
         this.listener = listener;
     }
 
-    public void startKey(String startKey) {
+    public void startKey(ByteArray startKey) {
         this.startKey = startKey;
     }
 
-    public void endKey(String endKey) {
+    public void endKey(ByteArray endKey) {
         this.endKey = endKey;
     }
 
-    public void notify(Value val) {
-        if (startKey != null && CMP.compare(val.getKey(), startKey) < 0)
+    public void notify(VaultEntry val) {
+        if (startKey != null && CMP.compare(val.key(), startKey) < 0)
             return;
 
-        if (endKey != null && CMP.compare(val.getKey(), endKey) > 0)
+        if (endKey != null && CMP.compare(val.key(), endKey) > 0)
             return;
 
         listener.onValueChanged(val);

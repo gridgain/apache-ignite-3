@@ -17,42 +17,30 @@
 
 package org.apache.ignite.internal.vault.common;
 
-import java.io.Serializable;
+import org.apache.ignite.lang.ByteArray;
+import org.apache.ignite.metastorage.common.Key;
+import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 /**
- * Representation of vault entry.
+ * Represents a vault unit as entry with key and value, where
+ * <ul>
+ *     <li>key - an unique entry's key. Keys are comparable in lexicographic manner and represented as an {@link ByteArray}.</li>
+ *     <li>value - a data which is associated with a key and represented as an array of bytes.</ul>
+ * </ul>
  */
-public class Value implements Serializable {
-    private String key;
-
-    private byte[] val;
-
-    private long revision;
-
-    public Value(String key, byte[] val, long revision) {
-        this.key = key;
-        this.val = val;
-        this.revision = revision;
-    }
-
-    public String getKey() {
-        return key;
-    }
-
-    public byte[] value() {
-        return val;
-    }
-
-    public long getRevision() {
-        return revision;
-    }
+public interface Entry {
+    /**
+     * Returns a key.
+     *
+     * @return The key.
+     */
+    @NotNull ByteArray key();
 
     /**
-     * Returns value which denotes whether entry is empty or not.
+     * Returns a value. Could be {@code null} for empty entry.
      *
-     * @return {@code True} if entry is empty, otherwise - {@code false}.
+     * @return Value.
      */
-    public boolean empty() {
-        return val == null;
-    }
+    @Nullable byte[] value();
 }

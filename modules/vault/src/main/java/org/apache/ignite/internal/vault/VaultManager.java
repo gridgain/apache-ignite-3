@@ -20,9 +20,10 @@ package org.apache.ignite.internal.vault;
 import java.util.Iterator;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
-import org.apache.ignite.internal.vault.common.Value;
+import org.apache.ignite.internal.vault.common.VaultEntry;
 import org.apache.ignite.internal.vault.impl.VaultServiceImpl;
 import org.apache.ignite.internal.vault.service.VaultService;
+import org.apache.ignite.lang.ByteArray;
 import org.jetbrains.annotations.NotNull;
 
 /**
@@ -39,43 +40,35 @@ public class VaultManager {
         return false;
     }
 
-    public CompletableFuture<Value> get(String key) {
+    public CompletableFuture<VaultEntry> get(ByteArray key) {
         return vaultService.get(key);
     }
 
-    public CompletableFuture<Long> appliedRevision(String key) {
-        return vaultService.appliedRevision(key);
-    }
-
-    public CompletableFuture<Void> put(String key, Value val) {
+    public CompletableFuture<Void> put(ByteArray key, byte[] val) {
         return vaultService.put(key, val);
     }
 
-    public CompletableFuture<Void> remove(String key) {
+    public CompletableFuture<Void> remove(ByteArray key) {
         return vaultService.remove(key);
     }
 
-    public Iterator<Value> range(String fromKey, String toKey) {
+    public Iterator<VaultEntry> range(ByteArray fromKey, ByteArray toKey) {
         return vaultService.range(fromKey, toKey);
     }
 
     /**
-     * Inserts or updates entries with given keys and given values.
-     *
-     * @param vals The map of keys and corresponding values. Couldn't be {@code null} or empty.
-     * @param appliedRevision Revision for entries
-     * @return Completed future.
+     * See {@link VaultService#putAll}
      */
     @NotNull
-    CompletableFuture<Void> putAll(@NotNull Map<String, byte[]> vals, long appliedRevision) {
-        return CompletableFuture.allOf();
+    public CompletableFuture<Void> putAll(@NotNull Map<ByteArray, byte[]> vals, long revision) {
+        return vaultService.putAll(vals, revision);
     }
 
     /**
-     * @return Applied revision for {@link VaultManager#putAll} operation.
+     * See {@link VaultService#appliedRevision()}
      */
     @NotNull
-    CompletableFuture<Long> appliedRevision() {
-        return CompletableFuture.completedFuture(0L);
+    public CompletableFuture<Long> appliedRevision() {
+        return vaultService.appliedRevision();
     }
 }

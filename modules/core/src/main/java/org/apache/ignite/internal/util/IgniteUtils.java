@@ -113,4 +113,63 @@ public class IgniteUtils {
     public static <K, V> LinkedHashMap<K, V> newLinkedHashMap(int expSize) {
         return new LinkedHashMap<>(capacity(expSize));
     }
+
+    /**
+     * Constructs {@code long} from byte array.
+     *
+     * @param bytes Array of bytes.
+     * @param off Offset in {@code bytes} array.
+     * @return Long value.
+     */
+    public static long bytesToLong(byte[] bytes, int off) {
+        assert bytes != null;
+
+        int bytesCnt = Long.SIZE >> 3;
+
+        if (off + bytesCnt > bytes.length)
+            bytesCnt = bytes.length - off;
+
+        long res = 0;
+
+        for (int i = 0; i < bytesCnt; i++) {
+            int shift = bytesCnt - i - 1 << 3;
+
+            res |= (0xffL & bytes[off++]) << shift;
+        }
+
+        return res;
+    }
+
+    /**
+     * Converts primitive {@code long} type to byte array.
+     *
+     * @param l Long value.
+     * @return Array of bytes.
+     */
+    public static byte[] longToBytes(long l) {
+        return toBytes(l, new byte[8], 0, 8);
+    }
+
+    /**
+     * Converts primitive {@code long} type to byte array and stores it in specified
+     * byte array. The highest byte in the value is the first byte in result array.
+     *
+     * @param l Unsigned long value.
+     * @param bytes Bytes array to write result to.
+     * @param off Offset in the target array to write result to.
+     * @param limit Limit of bytes to write into output.
+     * @return Number of bytes overwritten in {@code bytes} array.
+     */
+    private static byte[] toBytes(long l, byte[] bytes, int off, int limit) {
+        assert bytes != null;
+        assert limit <= 8;
+        assert bytes.length >= off + limit;
+
+        for (int i = limit - 1; i >= 0; i--) {
+            bytes[off + i] = (byte)(l & 0xFF);
+            l >>>= 8;
+        }
+
+        return bytes;
+    }
 }
