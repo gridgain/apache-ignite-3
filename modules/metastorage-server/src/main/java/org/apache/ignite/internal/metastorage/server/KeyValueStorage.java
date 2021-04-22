@@ -31,10 +31,20 @@ public interface KeyValueStorage {
 
     void putAll(List<byte[]> keys, List<byte[]> values);
 
+    @NotNull
+    Collection<Entry> getAndPutAll(List<byte[]> keys, List<byte[]> values);
+
     void remove(byte[] key);
 
     @NotNull
     Entry getAndRemove(byte[] key);
+
+    void removeAll(List<byte[]> key);
+
+    @NotNull
+    Collection<Entry> getAndRemoveAll(List<byte[]> keys);
+
+    Iterator<Entry> range(byte[] keyFrom, byte[] keyTo);
 
     Iterator<Entry> iterate(byte[] key);
 

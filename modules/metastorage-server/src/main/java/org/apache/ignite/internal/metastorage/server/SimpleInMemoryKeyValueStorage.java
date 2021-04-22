@@ -1,15 +1,9 @@
 package org.apache.ignite.internal.metastorage.server;
 
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Collection;
-import java.util.Comparator;
-import java.util.Iterator;
-import java.util.List;
-import java.util.Map;
-import java.util.NavigableMap;
-import java.util.NoSuchElementException;
-import java.util.TreeMap;
+import java.util.*;
+import java.util.function.Consumer;
+
+import org.apache.ignite.metastorage.common.Cursor;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.TestOnly;
 
@@ -24,6 +18,8 @@ public class SimpleInMemoryKeyValueStorage implements KeyValueStorage {
     private static final long LATEST_REV = -1;
 
     private final Watcher watcher;
+
+    private final List<Cursor<Entry>> rangeCursors = new ArrayList<>();
 
     private NavigableMap<byte[], List<Long>> keysIdx = new TreeMap<>(LEXICOGRAPHIC_COMPARATOR);
 
@@ -66,8 +62,25 @@ public class SimpleInMemoryKeyValueStorage implements KeyValueStorage {
     @Override
     public void putAll(List<byte[]> keys, List<byte[]> values) {
         synchronized (mux) {
+            long curRev = rev + 1;
 
+            doPutAll(curRev, keys, values);
         }
+    }
+
+    @Override
+    public @NotNull Collection<Entry> getAndPutAll(List<byte[]> keys, List<byte[]> values) {
+        Collection<Entry> res;
+
+        synchronized (mux) {
+            long curRev = rev + 1;
+
+            res = doGetAll(keys, curRev);
+
+            doPutAll(curRev, keys, values);
+        }
+
+        return res;
     }
 
     @NotNull
@@ -117,6 +130,69 @@ public class SimpleInMemoryKeyValueStorage implements KeyValueStorage {
 
             return getAndPut(key, TOMBSTONE);
         }
+    }
+
+    @Override
+    public void removeAll(List<byte[]> keys) {
+        synchronized (mux) {
+            long curRev = rev + 1;
+
+            List<byte[]> existingKeys = new ArrayList<>(keys.size());
+
+            List<byte[]> vals = new ArrayList<>(keys.size());
+
+            for (int i = 0; i < keys.size(); i++) {
+                byte[] key = keys.get(i);
+
+                Entry e = doGet(key, LATEST_REV, false);
+
+                if (e.empty() || e.tombstone())
+                    continue;
+
+                existingKeys.add(key);
+
+                vals.add(TOMBSTONE);
+            }
+
+            doPutAll(curRev, existingKeys, vals);
+        }
+    }
+
+    @Override
+    public @NotNull Collection<Entry> getAndRemoveAll(List<byte[]> keys) {
+        Collection<Entry> res = new ArrayList<>(keys.size());
+
+        synchronized (mux) {
+            long curRev = rev + 1;
+
+            List<byte[]> existingKeys = new ArrayList<>(keys.size());
+
+            List<byte[]> vals = new ArrayList<>(keys.size());
+
+            for (int i = 0; i < keys.size(); i++) {
+                byte[] key = keys.get(i);
+
+                Entry e = doGet(key, LATEST_REV, false);
+
+                res.add(e);
+
+                if (e.empty() || e.tombstone())
+                    continue;
+
+                existingKeys.add(key);
+
+                vals.add(TOMBSTONE);
+            }
+
+            doPutAll(curRev, existingKeys, vals);
+        }
+
+        return res;
+    }
+
+    @Override
+    public Iterator<Entry> range(byte[] keyFrom, byte[] keyTo) {
+        return null;
     }
 
     @Override public Iterator<Entry> iterate(byte[] keyFrom) {
@@ -237,7 +313,7 @@ public class SimpleInMemoryKeyValueStorage implements KeyValueStorage {
     private Collection<Entry> doGetAll(List<byte[]> keys, long rev) {
         assert keys != null : "keys list can't be null.";
         assert !keys.isEmpty() : "keys list can't be empty.";
-        assert rev > 0 : "Revision must be positive.";
+        assert rev > 0 || rev == LATEST_REV: "Revision must be positive.";
 
         Collection<Entry> res = new ArrayList<>(keys.size());
 
@@ -344,6 +420,39 @@ public class SimpleInMemoryKeyValueStorage implements KeyValueStorage {
         return lastRev;
     }
 
+    private long doPutAll(long curRev, List<byte[]> keys, List<byte[]> bytesList) {
+        synchronized (mux) {
+            // Update revsIdx.
+            NavigableMap<byte[], Value> entries = new TreeMap<>(LEXICOGRAPHIC_COMPARATOR);
+
+            for (int i = 0; i < keys.size(); i++) {
+                byte[] key = keys.get(i);
+
+                byte[] bytes = bytesList.get(i);
+
+                long curUpdCntr = ++updCntr;
+
+                // Update keysIdx.
+                List<Long> revs = keysIdx.computeIfAbsent(key, k -> new ArrayList<>());
+
+                long lastRev = revs.isEmpty() ? 0 : lastRevision(revs);
+
+                revs.add(curRev);
+
+                Value val = new Value(bytes, curUpdCntr);
+
+                entries.put(key, val);
+
+                revsIdx.put(curRev, entries);
+            }
+
+            rev = curRev;
+
+            return curRev;
+        }
+    }
+
+
     private static boolean isPrefix(byte[] pref, byte[] term) {
         if (pref.length > term.length)
             return false;
@@ -368,4 +477,59 @@ public class SimpleInMemoryKeyValueStorage implements KeyValueStorage {
         return res;
     }
 
+    private class RangeCursor implements Cursor<Entry> {
+        private final byte[] keyFrom;
+        private final byte[] keyTo;
+        private final long rev;
+        private byte[] curKey;
+
+        public RangeCursor(byte[] keyFrom, byte[] keyTo, long rev) {
+            this.keyFrom = keyFrom;
+            this.keyTo = keyTo;
+            this.rev = rev;
+        }
+
+        @Override public void close() throws Exception {
+
+        }
+
+        @NotNull
+        @Override public Iterator<Entry> iterator() {
+            return new Iterator<Entry>() {
+                @Override public boolean hasNext() {
+                    synchronized (mux) {
+                        byte[] key = keysIdx.ceilingKey(curKey);
+
+                        return key != null;
+                    }
+                }
+
+                @Override public Entry next() {
+                    synchronized (mux) {
+                        Map.Entry<byte[], List<Long>> e = keysIdx.ceilingEntry(curKey);
+
+                        if (e == null)
+                            throw new NoSuchElementException();
+
+                        List<Long> revs = e.getValue();
+
+                        assert revs != null && !revs.isEmpty() :
+                                "Revisions should not be empty: [revs=" + revs + ']';
+
+                        //lastRevision(re)
+
+                        return null;
+                    }
+                }
+            };
+        }
+
+        @Override public void forEach(Consumer<? super Entry> action) {
+            Cursor.super.forEach(action);
+        }
+
+        @Override public Spliterator<Entry> spliterator() {
+            return Cursor.super.spliterator();
+        }
+    }
 }
