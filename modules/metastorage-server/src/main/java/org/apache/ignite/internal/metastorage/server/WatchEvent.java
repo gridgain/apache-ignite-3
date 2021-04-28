@@ -17,28 +17,38 @@
 
 package org.apache.ignite.internal.metastorage.server;
 
-import org.jetbrains.annotations.NotNull;
+import java.util.Collection;
+import java.util.List;
 
-public class Value {
-    public static final byte[] TOMBSTONE = new byte[0];
+public class WatchEvent {
+    private final List<EntryEvent> entryEvts;
 
-    private final byte[] bytes;
-    private final long updCntr;
+    private final boolean batch;
 
-    public Value(@NotNull byte[] bytes, long updCntr) {
-        this.bytes = bytes;
-        this.updCntr = updCntr;
+    /**
+     * Constructs an watch event with given entry events collection.
+     *
+     * @param entryEvts Events for entries corresponding to an update under one revision.
+     */
+    public WatchEvent(List<EntryEvent> entryEvts) {
+        assert entryEvts != null && !entryEvts.isEmpty();
+
+        this.batch = entryEvts.size() > 1;
+        this.entryEvts = entryEvts;
     }
 
-    public byte[] bytes() {
-        return bytes;
+    public boolean batch() {
+        return batch;
     }
 
-    public long updateCounter() {
-        return updCntr;
+    public Collection<EntryEvent> entryEvents() {
+        return entryEvts;
     }
 
-    boolean tombstone() {
-        return bytes == TOMBSTONE;
+    public EntryEvent entryEvent() {
+        if (batch)
+            throw new IllegalStateException("Watch event represents a batch of events.");
+
+        return entryEvts.get(0);
     }
 }

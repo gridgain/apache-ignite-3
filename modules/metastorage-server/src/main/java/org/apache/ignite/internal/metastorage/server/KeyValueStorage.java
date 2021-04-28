@@ -1,13 +1,28 @@
+/*
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the "License"); you may not use this file except in compliance with
+ * the License.  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package org.apache.ignite.internal.metastorage.server;
 
+import java.util.Collection;
+import java.util.List;
+import org.apache.ignite.metastorage.common.Cursor;
 import org.jetbrains.annotations.NotNull;
 
-import java.util.Collection;
-import java.util.Iterator;
-import java.util.List;
-
 public interface KeyValueStorage {
-
     long revision();
 
     long updateCounter();
@@ -44,11 +59,15 @@ public interface KeyValueStorage {
     @NotNull
     Collection<Entry> getAndRemoveAll(List<byte[]> keys);
 
-    Iterator<Entry> range(byte[] keyFrom, byte[] keyTo);
+    Cursor<Entry> range(byte[] keyFrom, byte[] keyTo);
 
-    Iterator<Entry> iterate(byte[] key);
+    Cursor<Entry> range(byte[] keyFrom, byte[] keyTo, long revUpperBound);
 
-    //Iterator<Entry> iterate(long rev);
+    Cursor<WatchEvent> watch(byte[] keyFrom, byte[] keyTo, long rev);
+
+    Cursor<WatchEvent> watch(byte[] key, long rev);
+
+    Cursor<WatchEvent> watch(Collection<byte[]> keys, long rev);
 
     void compact();
 }

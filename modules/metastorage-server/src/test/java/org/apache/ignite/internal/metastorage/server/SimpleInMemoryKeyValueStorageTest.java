@@ -1,17 +1,34 @@
+/*
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the "License"); you may not use this file except in compliance with
+ * the License.  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package org.apache.ignite.internal.metastorage.server;
 
 import java.util.Collection;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
-import java.util.TreeMap;
-import java.util.function.Function;
+import java.util.NoSuchElementException;
 import java.util.stream.Collectors;
+import org.apache.ignite.metastorage.common.Cursor;
 import org.apache.ignite.metastorage.common.Key;
-import org.jetbrains.annotations.NotNull;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+import static java.util.function.Function.identity;
 import static org.junit.jupiter.api.Assertions.*;
 
 class SimpleInMemoryKeyValueStorageTest {
@@ -19,7 +36,7 @@ class SimpleInMemoryKeyValueStorageTest {
 
     @BeforeEach
     public void setUp() {
-        storage = new SimpleInMemoryKeyValueStorage(new NoOpWatcher());
+        storage = new SimpleInMemoryKeyValueStorage();
     }
 
     @Test
@@ -91,7 +108,7 @@ class SimpleInMemoryKeyValueStorageTest {
 
         assertEquals(4, entries.size());
 
-        Map<Key, Entry> map =  entries.stream().collect(Collectors.toMap(e -> new Key(e.key()), Function.identity()));
+        Map<Key, Entry> map =  entries.stream().collect(Collectors.toMap(e -> new Key(e.key()), identity()));
 
         // Test regular put value.
         Entry e1 = map.get(new Key(key1));
@@ -166,7 +183,7 @@ class SimpleInMemoryKeyValueStorageTest {
 
         assertEquals(4, entries.size());
 
-        Map<Key, Entry> map =  entries.stream().collect(Collectors.toMap(e -> new Key(e.key()), Function.identity()));
+        Map<Key, Entry> map =  entries.stream().collect(Collectors.toMap(e -> new Key(e.key()), identity()));
 
         // Test regular put value.
         Entry e1 = map.get(new Key(key1));
@@ -204,7 +221,7 @@ class SimpleInMemoryKeyValueStorageTest {
 
         assertEquals(4, entries.size());
 
-        map =  entries.stream().collect(Collectors.toMap(e -> new Key(e.key()), Function.identity()));
+        map =  entries.stream().collect(Collectors.toMap(e -> new Key(e.key()), identity()));
 
         // Test regular put value.
         e1 = map.get(new Key(key1));
@@ -308,7 +325,7 @@ class SimpleInMemoryKeyValueStorageTest {
 
         assertEquals(4, entries.size());
 
-        Map<Key, Entry> map =  entries.stream().collect(Collectors.toMap(e -> new Key(e.key()), Function.identity()));
+        Map<Key, Entry> map =  entries.stream().collect(Collectors.toMap(e -> new Key(e.key()), identity()));
 
         // Test regular put value.
         Entry e1 = map.get(new Key(key1));
@@ -382,7 +399,7 @@ class SimpleInMemoryKeyValueStorageTest {
 
         assertEquals(3, entries.size());
 
-        Map<Key, Entry> map =  entries.stream().collect(Collectors.toMap(e -> new Key(e.key()), Function.identity()));
+        Map<Key, Entry> map =  entries.stream().collect(Collectors.toMap(e -> new Key(e.key()), identity()));
 
         // Test regular put value.
         Entry e1 = map.get(new Key(key1));
@@ -417,7 +434,7 @@ class SimpleInMemoryKeyValueStorageTest {
 
         assertEquals(4, entries.size());
 
-        map =  entries.stream().collect(Collectors.toMap(e -> new Key(e.key()), Function.identity()));
+        map =  entries.stream().collect(Collectors.toMap(e -> new Key(e.key()), identity()));
 
         // Test regular put value.
         e1 = map.get(new Key(key1));
@@ -601,7 +618,7 @@ class SimpleInMemoryKeyValueStorageTest {
 
         assertEquals(4, entries.size());
 
-        Map<Key, Entry> map =  entries.stream().collect(Collectors.toMap(e -> new Key(e.key()), Function.identity()));
+        Map<Key, Entry> map =  entries.stream().collect(Collectors.toMap(e -> new Key(e.key()), identity()));
 
         // Test regular put value.
         Entry e1 = map.get(new Key(key1));
@@ -676,7 +693,7 @@ class SimpleInMemoryKeyValueStorageTest {
 
         assertEquals(4, entries.size());
 
-        Map<Key, Entry> map =  entries.stream().collect(Collectors.toMap(e -> new Key(e.key()), Function.identity()));
+        Map<Key, Entry> map =  entries.stream().collect(Collectors.toMap(e -> new Key(e.key()), identity()));
 
         // Test regular put value.
         Entry e1 = map.get(new Key(key1));
@@ -719,7 +736,7 @@ class SimpleInMemoryKeyValueStorageTest {
 
         assertEquals(4, entries.size());
 
-        map =  entries.stream().collect(Collectors.toMap(e -> new Key(e.key()), Function.identity()));
+        map =  entries.stream().collect(Collectors.toMap(e -> new Key(e.key()), identity()));
 
         // Test regular put value.
         e1 = map.get(new Key(key1));
@@ -987,60 +1004,377 @@ class SimpleInMemoryKeyValueStorageTest {
     }
 
     @Test
-    public void iterate() {
-        TreeMap<String, String> expFooMap = new TreeMap<>();
-        TreeMap<String, String> expKeyMap = new TreeMap<>();
-        TreeMap<String, String> expZooMap = new TreeMap<>();
+    public void rangeCursor() {
+        byte[] key1 = k(1);
+        byte[] val1 = kv(1, 1);
 
-        fill("foo", storage, expFooMap);
-        fill("key", storage, expKeyMap);
-        fill("zoo", storage, expZooMap);
+        byte[] key2 = k(2);
+        byte[] val2 = kv(2, 2);
 
-        assertEquals(300, storage.revision());
-        assertEquals(300, storage.updateCounter());
+        byte[] key3 = k(3);
+        byte[] val3 = kv(3, 3);
 
-        assertIterate("key", storage, expKeyMap);
-        assertIterate("zoo", storage, expZooMap);
-        assertIterate("foo", storage, expFooMap);
+
+        assertEquals(0, storage.revision());
+        assertEquals(0, storage.updateCounter());
+
+        storage.putAll(List.of(key1, key2, key3), List.of(val1, val2, val3));
+
+        assertEquals(1, storage.revision());
+        assertEquals(3, storage.updateCounter());
+
+        // Range for latest revision without max bound.
+        Cursor<Entry> cur = storage.range(key1, null);
+
+        Iterator<Entry> it = cur.iterator();
+
+        assertTrue(it.hasNext());
+
+        Entry e1 = it.next();
+
+        assertFalse(e1.empty());
+        assertFalse(e1.tombstone());
+        assertArrayEquals(key1, e1.key());
+        assertArrayEquals(val1, e1.value());
+        assertEquals(1, e1.revision());
+        assertEquals(1, e1.updateCounter());
+
+        assertTrue(it.hasNext());
+
+        Entry e2 = it.next();
+
+        assertFalse(e2.empty());
+        assertFalse(e2.tombstone());
+        assertArrayEquals(key2, e2.key());
+        assertArrayEquals(val2, e2.value());
+        assertEquals(1, e2.revision());
+        assertEquals(2, e2.updateCounter());
+
+        // Deliberately don't call it.hasNext()
+
+        Entry e3 = it.next();
+
+        assertFalse(e3.empty());
+        assertFalse(e3.tombstone());
+        assertArrayEquals(key3, e3.key());
+        assertArrayEquals(val3, e3.value());
+        assertEquals(1, e3.revision());
+        assertEquals(3, e3.updateCounter());
+
+        assertFalse(it.hasNext());
+
+        try {
+            it.next();
+
+            fail();
+        }
+        catch (NoSuchElementException e) {
+            System.out.println();
+            // No-op.
+        }
+
+        // Range for latest revision with max bound.
+        cur = storage.range(key1, key3);
+
+        it = cur.iterator();
+
+        assertTrue(it.hasNext());
+
+        e1 = it.next();
+
+        assertFalse(e1.empty());
+        assertFalse(e1.tombstone());
+        assertArrayEquals(key1, e1.key());
+        assertArrayEquals(val1, e1.value());
+        assertEquals(1, e1.revision());
+        assertEquals(1, e1.updateCounter());
+
+        assertTrue(it.hasNext());
+
+        e2 = it.next();
+
+        assertFalse(e2.empty());
+        assertFalse(e2.tombstone());
+        assertArrayEquals(key2, e2.key());
+        assertArrayEquals(val2, e2.value());
+        assertEquals(1, e2.revision());
+        assertEquals(2, e2.updateCounter());
+
+        assertFalse(it.hasNext());
+
+        try {
+            it.next();
+
+            fail();
+        }
+        catch (NoSuchElementException e) {
+            System.out.println();
+            // No-op.
+        }
     }
 
-    private void assertIterate(String pref,  KeyValueStorage storage, TreeMap<String, String> expMap) {
-        Iterator<Entry> it = storage.iterate((pref + "_").getBytes());
-        Iterator<Map.Entry<String, String>> expIt = expMap.entrySet().iterator();
+    @Test
+    public void watchCursorForRange() {
+        byte[] key1 = k(1);
+        byte[] val1_1 = kv(1, 11);
 
-        // Order.
-        while (it.hasNext()) {
-            Entry entry = it.next();
-            Map.Entry<String, String> expEntry = expIt.next();
+        byte[] key2 = k(2);
+        byte[] val2_1 = kv(2, 21);
+        byte[] val2_2 = kv(2, 22);
 
-            assertEquals(expEntry.getKey(), new String(entry.key()));
-            assertEquals(expEntry.getValue(), new String(entry.value()));
-        }
+        byte[] key3 = k(3);
+        byte[] val3_1 = kv(3, 31);
 
-        // Range boundaries.
-        it = storage.iterate((pref + '_').getBytes());
+        assertEquals(0, storage.revision());
+        assertEquals(0, storage.updateCounter());
 
-        while (it.hasNext()) {
-            Entry entry = it.next();
+        // Watch for all updates starting from revision 2.
+        Cursor<WatchEvent> cur = storage.watch(key1, null, 2);
 
-            assertTrue(expMap.containsKey(new String(entry.key())));
-        }
+        Iterator<WatchEvent> it = cur.iterator();
+
+        assertFalse(it.hasNext());
+        assertNull(it.next());
+
+        storage.putAll(List.of(key1, key2), List.of(val1_1, val2_1));
+
+        assertEquals(1, storage.revision());
+        assertEquals(2, storage.updateCounter());
+
+        // Revision is less than 2.
+        assertFalse(it.hasNext());
+        assertNull(it.next());
+
+        storage.putAll(List.of(key2, key3), List.of(val2_2, val3_1));
+
+        assertEquals(2, storage.revision());
+        assertEquals(4, storage.updateCounter());
+
+        // Revision is 2.
+        assertTrue(it.hasNext());
+
+        WatchEvent watchEvent = it.next();
+
+        assertTrue(watchEvent.batch());
+
+        Map<Key, EntryEvent> map = watchEvent.entryEvents().stream()
+                .collect(Collectors.toMap(evt -> new Key(evt.entry().key()), identity()));
+
+        assertEquals(2, map.size());
+
+        // First update under revision.
+        EntryEvent e2 = map.get(new Key(key2));
+
+        assertNotNull(e2);
+
+        Entry oldEntry2 = e2.oldEntry();
+
+        assertFalse(oldEntry2.empty());
+        assertFalse(oldEntry2.tombstone());
+        assertEquals(1, oldEntry2.revision());
+        assertEquals(2, oldEntry2.updateCounter());
+        assertArrayEquals(key2, oldEntry2.key());
+        assertArrayEquals(val2_1, oldEntry2.value());
+
+        Entry newEntry2 = e2.entry();
+
+        assertFalse(newEntry2.empty());
+        assertFalse(newEntry2.tombstone());
+        assertEquals(2, newEntry2.revision());
+        assertEquals(3, newEntry2.updateCounter());
+        assertArrayEquals(key2, newEntry2.key());
+        assertArrayEquals(val2_2, newEntry2.value());
+
+        // Second update under revision.
+        EntryEvent e3 = map.get(new Key(key3));
+
+        assertNotNull(e3);
+
+        Entry oldEntry3 = e3.oldEntry();
+
+        assertTrue(oldEntry3.empty());
+        assertFalse(oldEntry3.tombstone());
+        assertArrayEquals(key3, oldEntry3.key());
+
+        Entry newEntry3 = e3.entry();
+
+        assertFalse(newEntry3.empty());
+        assertFalse(newEntry3.tombstone());
+        assertEquals(2, newEntry3.revision());
+        assertEquals(4, newEntry3.updateCounter());
+        assertArrayEquals(key3, newEntry3.key());
+        assertArrayEquals(val3_1, newEntry3.value());
+
+        assertFalse(it.hasNext());
+
+        storage.remove(key1);
+
+        assertTrue(it.hasNext());
+
+        watchEvent = it.next();
+
+        assertFalse(watchEvent.batch());
+
+        EntryEvent e1 = watchEvent.entryEvent();
+
+        Entry oldEntry1 = e1.oldEntry();
+
+        assertFalse(oldEntry1.empty());
+        assertFalse(oldEntry1.tombstone());
+        assertEquals(1, oldEntry1.revision());
+        assertEquals(1, oldEntry1.updateCounter());
+        assertArrayEquals(key1, oldEntry1.key());
+        assertArrayEquals(val1_1, oldEntry1.value());
+
+        Entry newEntry1 = e1.entry();
+
+        assertFalse(newEntry1.empty());
+        assertTrue(newEntry1.tombstone());
+        assertEquals(3, newEntry1.revision());
+        assertEquals(5, newEntry1.updateCounter());
+        assertArrayEquals(key1, newEntry1.key());
+        assertNull(newEntry1.value());
+
+        assertFalse(it.hasNext());
     }
 
-    private static void fill(String pref, KeyValueStorage storage, TreeMap<String, String> expMap) {
-        for (int i = 0; i < 100; i++) {
-            String keyStr = pref + '_' + i;
 
-            String valStr = "val_" + i;
+    @Test
+    public void watchCursorForKey() {
+        byte[] key1 = k(1);
+        byte[] val1_1 = kv(1, 11);
+        byte[] val1_2 = kv(1, 12);
 
-            expMap.put(keyStr, valStr);
+        byte[] key2 = k(2);
+        byte[] val2_1 = kv(2, 21);
+        byte[] val2_2 = kv(2, 22);
 
-            byte[] key = keyStr.getBytes();
 
-            byte[] val = valStr.getBytes();
+        assertEquals(0, storage.revision());
+        assertEquals(0, storage.updateCounter());
 
-            storage.getAndPut(key, val);
-        }
+        Cursor<WatchEvent> cur = storage.watch(key1, 1);
+
+        Iterator<WatchEvent> it = cur.iterator();
+
+        assertFalse(it.hasNext());
+        assertNull(it.next());
+
+        storage.putAll(List.of(key1, key2), List.of(val1_1, val2_1));
+
+        assertEquals(1, storage.revision());
+        assertEquals(2, storage.updateCounter());
+
+        assertTrue(it.hasNext());
+
+        WatchEvent watchEvent = it.next();
+
+        assertFalse(watchEvent.batch());
+
+        EntryEvent e1 = watchEvent.entryEvent();
+
+        Entry oldEntry1 = e1.oldEntry();
+
+        assertTrue(oldEntry1.empty());
+        assertFalse(oldEntry1.tombstone());
+
+        Entry newEntry1 = e1.entry();
+
+        assertFalse(newEntry1.empty());
+        assertFalse(newEntry1.tombstone());
+        assertEquals(1, newEntry1.revision());
+        assertEquals(1, newEntry1.updateCounter());
+        assertArrayEquals(key1, newEntry1.key());
+        assertArrayEquals(val1_1, newEntry1.value());
+
+        assertFalse(it.hasNext());
+
+        storage.put(key2, val2_2);
+
+        assertFalse(it.hasNext());
+
+        storage.put(key1, val1_2);
+
+        assertTrue(it.hasNext());
+
+        watchEvent = it.next();
+
+        assertFalse(watchEvent.batch());
+
+        e1 = watchEvent.entryEvent();
+
+        oldEntry1 = e1.oldEntry();
+
+        assertFalse(oldEntry1.empty());
+        assertFalse(oldEntry1.tombstone());
+        assertEquals(1, oldEntry1.revision());
+        assertEquals(1, oldEntry1.updateCounter());
+        assertArrayEquals(key1, newEntry1.key());
+        assertArrayEquals(val1_1, newEntry1.value());
+
+         newEntry1 = e1.entry();
+
+        assertFalse(newEntry1.empty());
+        assertFalse(newEntry1.tombstone());
+        assertEquals(3, newEntry1.revision());
+        assertEquals(4, newEntry1.updateCounter());
+        assertArrayEquals(key1, newEntry1.key());
+        assertArrayEquals(val1_2, newEntry1.value());
+
+        assertFalse(it.hasNext());
+    }
+
+    @Test
+    public void watchCursorForKeys() {
+        byte[] key1 = k(1);
+        byte[] val1_1 = kv(1, 11);
+        byte[] val1_2 = kv(1, 12);
+
+        byte[] key2 = k(2);
+        byte[] val2_1 = kv(2, 21);
+        byte[] val2_2 = kv(2, 22);
+
+        byte[] key3 = k(3);
+        byte[] val3_1 = kv(3, 31);
+        byte[] val3_2 = kv(3, 32);
+
+
+        assertEquals(0, storage.revision());
+        assertEquals(0, storage.updateCounter());
+
+        Cursor<WatchEvent> cur = storage.watch(List.of(key1, key2), 1);
+
+        Iterator<WatchEvent> it = cur.iterator();
+
+        assertFalse(it.hasNext());
+        assertNull(it.next());
+
+        storage.putAll(List.of(key1, key2, key3), List.of(val1_1, val2_1, val3_1));
+
+        assertEquals(1, storage.revision());
+        assertEquals(3, storage.updateCounter());
+
+        assertTrue(it.hasNext());
+
+        WatchEvent watchEvent = it.next();
+
+        assertTrue(watchEvent.batch());
+
+        assertFalse(it.hasNext());
+
+        storage.put(key2, val2_2);
+
+        assertTrue(it.hasNext());
+
+        watchEvent = it.next();
+
+        assertFalse(watchEvent.batch());
+
+        assertFalse(it.hasNext());
+
+        storage.put(key3, val3_2);
+
+        assertFalse(it.hasNext());
     }
 
     private static void fill(KeyValueStorage storage, int keySuffix, int num) {
@@ -1054,19 +1388,5 @@ class SimpleInMemoryKeyValueStorageTest {
 
     private static byte[] kv(int k, int v) {
         return ("key" + k + '_' + "val" + v).getBytes();
-    }
-
-    private static class NoOpWatcher implements Watcher {
-        @Override public void register(@NotNull Watch watch) {
-            // No-op.
-        }
-
-        @Override public void notify(@NotNull Entry e) {
-            // No-op.
-        }
-
-        @Override public void cancel(@NotNull Watch watch) {
-            // No-op.
-        }
     }
 }

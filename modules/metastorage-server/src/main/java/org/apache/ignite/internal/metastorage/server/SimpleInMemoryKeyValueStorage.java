@@ -1,8 +1,34 @@
+/*
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the "License"); you may not use this file except in compliance with
+ * the License.  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package org.apache.ignite.internal.metastorage.server;
 
-import java.util.*;
-import java.util.function.Consumer;
-
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collection;
+import java.util.Comparator;
+import java.util.Iterator;
+import java.util.List;
+import java.util.Map;
+import java.util.NavigableMap;
+import java.util.NoSuchElementException;
+import java.util.TreeMap;
+import java.util.TreeSet;
+import java.util.function.Predicate;
 import org.apache.ignite.metastorage.common.Cursor;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.TestOnly;
@@ -13,15 +39,11 @@ import static org.apache.ignite.internal.metastorage.server.Value.TOMBSTONE;
  * WARNING: Only for test purposes and only for non-distributed (one static instance) storage.
  */
 public class SimpleInMemoryKeyValueStorage implements KeyValueStorage {
-    private static final Comparator<byte[]> LEXICOGRAPHIC_COMPARATOR = Arrays::compare;
+    private static final Comparator<byte[]> CMP = Arrays::compare;
 
     private static final long LATEST_REV = -1;
 
-    private final Watcher watcher;
-
-    private final List<Cursor<Entry>> rangeCursors = new ArrayList<>();
-
-    private NavigableMap<byte[], List<Long>> keysIdx = new TreeMap<>(LEXICOGRAPHIC_COMPARATOR);
+    private NavigableMap<byte[], List<Long>> keysIdx = new TreeMap<>(CMP);
 
     private NavigableMap<Long, NavigableMap<byte[], Value>> revsIdx = new TreeMap<>();
 
@@ -30,10 +52,6 @@ public class SimpleInMemoryKeyValueStorage implements KeyValueStorage {
     private long updCntr;
 
     private final Object mux = new Object();
-
-    public SimpleInMemoryKeyValueStorage(Watcher watcher) {
-        this.watcher = watcher;
-    }
 
     @Override public long revision() {
         return rev;
@@ -141,9 +159,7 @@ public class SimpleInMemoryKeyValueStorage implements KeyValueStorage {
 
             List<byte[]> vals = new ArrayList<>(keys.size());
 
-            for (int i = 0; i < keys.size(); i++) {
-                byte[] key = keys.get(i);
-
+            for (byte[] key : keys) {
                 Entry e = doGet(key, LATEST_REV, false);
 
                 if (e.empty() || e.tombstone())
@@ -169,9 +185,7 @@ public class SimpleInMemoryKeyValueStorage implements KeyValueStorage {
 
             List<byte[]> vals = new ArrayList<>(keys.size());
 
-            for (int i = 0; i < keys.size(); i++) {
-                byte[] key = keys.get(i);
-
+            for (byte[] key : keys) {
                 Entry e = doGet(key, LATEST_REV, false);
 
                 res.add(e);
@@ -190,90 +204,45 @@ public class SimpleInMemoryKeyValueStorage implements KeyValueStorage {
         return res;
     }
 
-    @Override
-    public Iterator<Entry> range(byte[] keyFrom, byte[] keyTo) {
-        return null;
+    @Override public Cursor<Entry> range(byte[] keyFrom, byte[] keyTo) {
+        return new RangeCursor(keyFrom, keyTo, rev);
     }
 
-    @Override public Iterator<Entry> iterate(byte[] keyFrom) {
-        synchronized (mux) {
-            NavigableMap<byte[], List<Long>> tailMap = keysIdx.tailMap(keyFrom, true);
-
-            final Iterator<Map.Entry<byte[], List<Long>>> it = tailMap.entrySet().iterator();
-
-            return new Iterator<>() {
-                private Map.Entry<byte[], List<Long>> curr;
-                private boolean hasNext;
-
-                private void advance() {
-                    if (it.hasNext()) {
-                        Map.Entry<byte[], List<Long>> e = it.next();
-
-                        byte[] key = e.getKey();
-
-                        if (!isPrefix(keyFrom, key))
-                            hasNext = false;
-                        else {
-                            curr = e;
-
-                            hasNext = true;
-                        }
-                    } else
-                        hasNext = false;
-                }
-
-                @Override
-                public boolean hasNext() {
-                    synchronized (mux) {
-                        if (curr == null)
-                            advance();
-
-                        return hasNext;
-                    }
-                }
-
-                @Override
-                public Entry next() {
-                    synchronized (mux) {
-                        if (!hasNext())
-                            throw new NoSuchElementException();
-
-                        Map.Entry<byte[], List<Long>> e = curr;
-
-                        curr = null;
-
-                        byte[] key = e.getKey();
-
-                        List<Long> revs = e.getValue();
-
-                        long rev = revs == null || revs.isEmpty() ? 0 : lastRevision(revs);
-
-                        if (rev == 0) {
-                            throw new IllegalStateException("rev == 0");
-                            //return new AbstractMap.SimpleImmutableEntry<>(key, null);
-                        }
-
-                        NavigableMap<byte[], Value> vals = revsIdx.get(rev);
-
-                        if (vals == null || vals.isEmpty()) {
-                            throw new IllegalStateException("vals == null || vals.isEmpty()");
-                            //return new AbstractMap.SimpleImmutableEntry<>(key, null);
-                        }
-
-                        Value val = vals.get(key);
-
-                        return val.tombstone() ?
-                                Entry.tombstone(key, rev, val.updateCounter()) :
-                                new Entry(key, val.bytes(), rev, val.updateCounter());
-                    }
-                }
-            };
-        }
+    @Override public Cursor<Entry> range(byte[] keyFrom, byte[] keyTo, long revUpperBound) {
+        return new RangeCursor(keyFrom, keyTo, revUpperBound);
     }
+
+    @Override public Cursor<WatchEvent> watch(byte[] keyFrom, byte[] keyTo, long rev) {
+        assert keyFrom != null;
+        assert rev > 0;
+
+        return new WatchCursor(rev, k ->
+            CMP.compare(keyFrom, k) <= 0 && (keyTo == null || CMP.compare(k, keyTo) < 0)
+        );
+    }
+
+    @Override public Cursor<WatchEvent> watch(byte[] key, long rev) {
+        assert key != null;
+        assert rev > 0;
+
+        return new WatchCursor(rev, k -> CMP.compare(k, key) == 0);
+    }
+
+    @Override public Cursor<WatchEvent> watch(Collection<byte[]> keys, long rev) {
+        assert keys != null && !keys.isEmpty();
+        assert rev > 0;
+
+        TreeSet<byte[]> keySet = new TreeSet<>(CMP);
+
+        keySet.addAll(keys);
+
+        return new WatchCursor(rev, keySet::contains);
+    }
+
 
     @Override public void compact() {
         synchronized (mux) {
-            NavigableMap<byte[], List<Long>> compactedKeysIdx = new TreeMap<>(LEXICOGRAPHIC_COMPARATOR);
+            NavigableMap<byte[], List<Long>> compactedKeysIdx = new TreeMap<>(CMP);
 
             NavigableMap<Long, NavigableMap<byte[], Value>> compactedRevsIdx = new TreeMap<>();
 
@@ -302,7 +271,7 @@ public class SimpleInMemoryKeyValueStorage implements KeyValueStorage {
 
             NavigableMap<byte[], Value> compactedKv = compactedRevsIdx.computeIfAbsent(
                     lastRev,
-                    k -> new TreeMap<>(LEXICOGRAPHIC_COMPARATOR)
+                    k -> new TreeMap<>(CMP)
             );
 
             compactedKv.put(key, lastVal);
@@ -409,7 +378,7 @@ public class SimpleInMemoryKeyValueStorage implements KeyValueStorage {
         revs.add(curRev);
 
         // Update revsIdx.
-        NavigableMap<byte[], Value> entries = new TreeMap<>(LEXICOGRAPHIC_COMPARATOR);
+        NavigableMap<byte[], Value> entries = new TreeMap<>(CMP);
 
         Value val = new Value(bytes, curUpdCntr);
 
@@ -423,7 +392,7 @@ public class SimpleInMemoryKeyValueStorage implements KeyValueStorage {
     private long doPutAll(long curRev, List<byte[]> keys, List<byte[]> bytesList) {
         synchronized (mux) {
             // Update revsIdx.
-            NavigableMap<byte[], Value> entries = new TreeMap<>(LEXICOGRAPHIC_COMPARATOR);
+            NavigableMap<byte[], Value> entries = new TreeMap<>(CMP);
 
             for (int i = 0; i < keys.size(); i++) {
                 byte[] key = keys.get(i);
@@ -452,19 +421,6 @@ public class SimpleInMemoryKeyValueStorage implements KeyValueStorage {
         }
     }
 
-
-    private static boolean isPrefix(byte[] pref, byte[] term) {
-        if (pref.length > term.length)
-            return false;
-
-        for (int i = 0; i < pref.length - 1; i++) {
-            if (pref[i] != term[i])
-                return false;
-        }
-
-        return true;
-    }
-
     private static long lastRevision(List<Long> revs) {
         return revs.get(revs.size() - 1);
     }
@@ -481,55 +437,184 @@ public class SimpleInMemoryKeyValueStorage implements KeyValueStorage {
         private final byte[] keyFrom;
         private final byte[] keyTo;
         private final long rev;
-        private byte[] curKey;
+        private Entry nextRetEntry;
+        private byte[] lastRetKey;
+        private boolean finished;
 
-        public RangeCursor(byte[] keyFrom, byte[] keyTo, long rev) {
+        RangeCursor(byte[] keyFrom, byte[] keyTo, long rev) {
             this.keyFrom = keyFrom;
             this.keyTo = keyTo;
             this.rev = rev;
         }
 
         @Override public void close() throws Exception {
-
+            // TODO: implement.
         }
 
         @NotNull
         @Override public Iterator<Entry> iterator() {
-            return new Iterator<Entry>() {
+            return new Iterator<>() {
                 @Override public boolean hasNext() {
                     synchronized (mux) {
-                        byte[] key = keysIdx.ceilingKey(curKey);
+                        while (true) {
+                            if (finished)
+                                return false;
 
-                        return key != null;
+                            if (nextRetEntry != null)
+                                return true;
+
+                            byte[] key = lastRetKey;
+
+                            while (!finished || nextRetEntry == null) {
+                                Map.Entry<byte[], List<Long>> e =
+                                        key == null ? keysIdx.ceilingEntry(keyFrom) : keysIdx.higherEntry(key);
+
+                                if (e == null) {
+                                    finished = true;
+
+                                    break;
+                                }
+
+                                key = e.getKey();
+
+                                if (keyTo != null && CMP.compare(key, keyTo) >= 0) {
+                                    finished = true;
+
+                                    break;
+                                }
+
+                                List<Long> revs = e.getValue();
+
+                                assert revs != null && !revs.isEmpty() :
+                                        "Revisions should not be empty: [revs=" + revs + ']';
+
+                                long lastRev = maxRevision(revs, rev);
+
+                                if (lastRev == -1)
+                                    continue;
+
+                                Entry entry = doGetValue(key, lastRev);
+
+                                assert !entry.empty() : "Iterator should not return empty entry.";
+
+                                nextRetEntry = entry;
+
+                                break;
+                            }
+                        }
                     }
                 }
 
                 @Override public Entry next() {
                     synchronized (mux) {
-                        Map.Entry<byte[], List<Long>> e = keysIdx.ceilingEntry(curKey);
+                        while (true) {
+                            if (finished)
+                                throw new NoSuchElementException();
 
-                        if (e == null)
-                            throw new NoSuchElementException();
+                            if (nextRetEntry != null) {
+                                Entry e = nextRetEntry;
 
-                        List<Long> revs = e.getValue();
+                                nextRetEntry = null;
 
-                        assert revs != null && !revs.isEmpty() :
-                                "Revisions should not be empty: [revs=" + revs + ']';
+                                lastRetKey = e.key();
 
-                        //lastRevision(re)
-
-                        return null;
+                                return e;
+                            } else
+                                hasNext();
+                        }
                     }
                 }
             };
         }
+    }
 
-        @Override public void forEach(Consumer<? super Entry> action) {
-            Cursor.super.forEach(action);
+    private class WatchCursor implements Cursor<WatchEvent> {
+        private final Predicate<byte[]> p;
+        private long lastRetRev;
+        private long nextRetRev = -1;
+
+        WatchCursor(long rev, Predicate<byte[]> p) {
+            this.p = p;
+            this.lastRetRev = rev - 1;
         }
 
-        @Override public Spliterator<Entry> spliterator() {
-            return Cursor.super.spliterator();
+        @Override public void close() throws Exception {
+            // TODO: implement
+        }
+
+        @NotNull
+        @Override public Iterator<WatchEvent> iterator() {
+            return new Iterator<>() {
+                @Override public boolean hasNext() {
+                    synchronized (mux) {
+                        if (nextRetRev != -1)
+                            return true;
+
+                        while (true) {
+                            long curRev = lastRetRev + 1;
+
+                            NavigableMap<byte[], Value> entries = revsIdx.get(curRev);
+
+                            if (entries == null)
+                                return false;
+
+                            for (byte[] key : entries.keySet()) {
+                                if (p.test(key)) {
+                                    nextRetRev = curRev;
+
+                                    return true;
+                                }
+                            }
+
+                            lastRetRev++;
+                        }
+                    }
+                }
+
+                @Override public WatchEvent next() {
+                    synchronized (mux) {
+                        while (true) {
+                            if (nextRetRev != -1) {
+                                NavigableMap<byte[], Value> entries = revsIdx.get(nextRetRev);
+
+                                if (entries == null)
+                                    return null;
+
+                                List<EntryEvent> evts = new ArrayList<>(entries.size());
+
+                                for (Map.Entry<byte[], Value> e : entries.entrySet()) {
+                                    byte[] key = e.getKey();
+
+                                    Value val = e.getValue();
+
+                                    if (p.test(key)) {
+                                        Entry newEntry;
+
+                                        if (val.tombstone())
+                                            newEntry = Entry.tombstone(key, nextRetRev, val.updateCounter());
+                                        else
+                                            newEntry = new Entry(key, val.bytes(), nextRetRev, val.updateCounter());
+
+                                        Entry oldEntry = doGet(key, nextRetRev - 1, false);
+
+                                        evts.add(new EntryEvent(oldEntry, newEntry));
+                                    }
+                                }
+
+                                if (evts.isEmpty())
+                                    continue;
+
+                                lastRetRev = nextRetRev;
+
+                                nextRetRev = -1;
+
+                                return new WatchEvent(evts);
+                            } else if (!hasNext())
+                                return null;
+                        }
+                    }
+                }
+            };
         }
     }
 }

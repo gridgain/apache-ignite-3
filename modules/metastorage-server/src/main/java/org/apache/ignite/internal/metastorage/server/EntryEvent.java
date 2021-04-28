@@ -17,28 +17,42 @@
 
 package org.apache.ignite.internal.metastorage.server;
 
-import org.jetbrains.annotations.NotNull;
+/**
+ * Represent an change event for particular key and entry.
+ */
+public class EntryEvent {
+    /** Old (previous) entry. */
+    private final Entry oldEntry;
 
-public class Value {
-    public static final byte[] TOMBSTONE = new byte[0];
+    /** New (current) entry. */
+    private final Entry entry;
 
-    private final byte[] bytes;
-    private final long updCntr;
-
-    public Value(@NotNull byte[] bytes, long updCntr) {
-        this.bytes = bytes;
-        this.updCntr = updCntr;
+    /**
+     * Constructs event with given old and new entries.
+     *
+     * @param oldEntry Old entry.
+     * @param curEntry New entry.
+     */
+    EntryEvent(Entry oldEntry, Entry curEntry) {
+        this.oldEntry = oldEntry;
+        this.entry = curEntry;
     }
 
-    public byte[] bytes() {
-        return bytes;
+    /**
+     * Returns old entry.
+     *
+     * @return Old entry.
+     */
+    public Entry oldEntry() {
+        return oldEntry;
     }
 
-    public long updateCounter() {
-        return updCntr;
-    }
-
-    boolean tombstone() {
-        return bytes == TOMBSTONE;
+    /**
+     * Rreturns new entry.
+     *
+     * @return New entry.
+     */
+    public Entry entry() {
+        return entry;
     }
 }
