@@ -31,11 +31,13 @@ import org.apache.ignite.lang.IgniteInternalCheckedException;
 import org.apache.ignite.lang.IgniteInternalException;
 import org.apache.ignite.lang.IgniteUuid;
 import org.apache.ignite.metastorage.client.MetaStorageService;
+import org.apache.ignite.metastorage.common.CompactedException;
 import org.apache.ignite.metastorage.common.Condition;
 import org.apache.ignite.metastorage.common.Cursor;
 import org.apache.ignite.metastorage.common.Entry;
 import org.apache.ignite.metastorage.common.Key;
 import org.apache.ignite.metastorage.common.Operation;
+import org.apache.ignite.metastorage.common.OperationTimeoutException;
 import org.apache.ignite.metastorage.common.WatchListener;
 import org.apache.ignite.network.ClusterService;
 import org.jetbrains.annotations.NotNull;
@@ -331,6 +333,27 @@ import org.jetbrains.annotations.Nullable;
      */
     public @NotNull Cursor<Entry> range(@NotNull Key keyFrom, @Nullable Key keyTo, long revUpperBound) {
         return metaStorageSvc.range(keyFrom, keyTo, revUpperBound);
+    }
+
+    /**
+     * Retrieves entries for the given key range in lexicographic order.
+     * Entries will be filtered out by the current applied revision as an upper bound
+     *
+     * @param keyFrom Start key of range (inclusive). Couldn't be {@code null}.
+     * @param keyTo End key of range (exclusive). Could be {@code null}.
+     * @return Cursor built upon entries corresponding to the given range and revision.
+     * @throws OperationTimeoutException If the operation is timed out.
+     * @throws CompactedException If the desired revisions are removed from the storage due to a compaction.
+     * @see Key
+     * @see Entry
+     */
+    public @NotNull Cursor<Entry> rangeWithAppliedRevision(@NotNull Key keyFrom, @Nullable Key keyTo) {
+        try {
+            return metaStorageSvc.range(keyFrom, keyTo, vaultMgr.appliedRevision());
+        }
+        catch (IgniteInternalCheckedException e) {
+            throw new IgniteInternalException(e);
+        }
     }
 
     /**
