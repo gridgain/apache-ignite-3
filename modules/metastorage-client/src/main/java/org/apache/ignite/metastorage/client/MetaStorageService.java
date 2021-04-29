@@ -218,6 +218,11 @@ public interface MetaStorageService {
     CompletableFuture<Boolean> invoke(@NotNull Key key, @NotNull Condition condition,
                                       @NotNull Operation success, @NotNull Operation failure);
 
+    // TODO: remove when https://issues.apache.org/jira/browse/IGNITE-14269: will be ready.
+    @NotNull
+    CompletableFuture<Boolean> invoke(@NotNull Condition condition,
+        @NotNull Collection<Operation> success, @NotNull Collection<Operation> failure);
+
     /**
      * Updates an entry for the given key conditionally.
      *

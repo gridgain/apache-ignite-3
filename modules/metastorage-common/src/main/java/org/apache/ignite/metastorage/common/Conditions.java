@@ -24,14 +24,21 @@ package org.apache.ignite.metastorage.common;
  * @see Condition
  */
 public final class Conditions {
+
+    private Key key;
+
+    private Conditions(Key key) {
+        this.key = key;
+    }
+
     /**
      * Creates condition on entry revision.
      *
      * @return Condition on entry revision.
      * @see Condition.RevisionCondition
      */
-    public static Condition.RevisionCondition revision() {
-        return new Condition.RevisionCondition();
+    public Condition.RevisionCondition revision() {
+        return new Condition.RevisionCondition(key);
     }
 
     /**
@@ -40,8 +47,12 @@ public final class Conditions {
      * @return Condition on entry value.
      * @see Condition.ValueCondition
      */
-    public static Condition.ValueCondition value() {
+    public Condition.ValueCondition value() {
         return new Condition.ValueCondition();
+    }
+
+    public static Conditions key(Key key) {
+        return new Conditions(key);
     }
 
     /**

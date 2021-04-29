@@ -316,6 +316,11 @@ import org.jetbrains.annotations.Nullable;
         return metaStorageSvc.invoke(key, cond, success, failure);
     }
 
+    public @NotNull CompletableFuture<Boolean> invoke(@NotNull Condition cond,
+        @NotNull Collection<Operation> success, @NotNull Collection<Operation> failure) {
+        return metaStorageSvc.invoke(cond, success, failure);
+    }
+
     /**
      * @see MetaStorageService#getAndInvoke(Key, Condition, Operation, Operation)
      */
