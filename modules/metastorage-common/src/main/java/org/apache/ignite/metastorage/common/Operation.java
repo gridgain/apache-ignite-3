@@ -23,7 +23,7 @@ package org.apache.ignite.metastorage.common;
 public final class Operation {
     /** Actual operation implementation. */
     @SuppressWarnings({"FieldCanBeLocal", "unused"})
-    private final InnerOp upd;
+    public final InnerOp upd;
 
     /**
      * Constructs an operation which wraps the actual operation implementation.
@@ -51,7 +51,7 @@ public final class Operation {
      */
     public static final class PutOp implements InnerOp {
         /** Value. */
-        private final byte[] val;
+        public final byte[] val;
 
         /**
          * Constructs operation of type <i>put</i>.

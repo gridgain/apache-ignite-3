@@ -18,6 +18,7 @@
 package org.apache.ignite.metastorage.client;
 
 import java.util.Collection;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import org.apache.ignite.lang.IgniteUuid;
@@ -26,6 +27,8 @@ import org.apache.ignite.metastorage.common.Condition;
 import org.apache.ignite.metastorage.common.Cursor;
 import org.apache.ignite.metastorage.common.Entry;
 import org.apache.ignite.metastorage.common.Key;
+import org.apache.ignite.metastorage.common.MetastoreEvent;
+import org.apache.ignite.metastorage.common.MetastoreEventListener;
 import org.apache.ignite.metastorage.common.Operation;
 import org.apache.ignite.metastorage.common.OperationTimeoutException;
 import org.apache.ignite.metastorage.common.WatchListener;
@@ -219,6 +222,19 @@ public interface MetaStorageService {
                                       @NotNull Operation success, @NotNull Operation failure);
 
     /**
+     * Updates multiple entries for the given key conditionally. The condition is applied to the first key.
+     *
+     * @param keys
+     * @param conditions
+     * @param success
+     * @param failure
+     * @param evtMarker Event marker.
+     * @return
+     */
+    CompletableFuture<Boolean> invoke(@NotNull List<Key> keys, @NotNull Condition condition,
+                                      @NotNull List<Operation> success, @NotNull List<Operation> failure, int evtMarker);
+
+    /**
      * Updates an entry for the given key conditionally.
      *
      * <p>Conditional update could be treated as <i>if(condition)-then(success)-else(failure)</i> expression.</p>
@@ -341,5 +357,17 @@ public interface MetaStorageService {
      */
     @NotNull
     CompletableFuture<Void> compact();
+
+    void addMetastoreListener(MetastoreEventListener lsnt);
+
+    /**
+     * Uses polling for simplicity.
+     * Idempotent event processing.
+     * @param fromRev
+     * @return
+     */
+    List<MetastoreEvent> fetch(long fromRev);
+
+    void discard(long fromRev, long toRev);
 }
 

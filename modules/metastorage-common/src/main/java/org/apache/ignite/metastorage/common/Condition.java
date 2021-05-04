@@ -297,6 +297,9 @@ public final class Condition {
 
         /** {@inheritDoc} */
         @Override public boolean test(Entry e) {
+            if (val == null && e == null)
+                return true;
+
             int res = Arrays.compare(e.value(), val);
 
             return type.test(res);
