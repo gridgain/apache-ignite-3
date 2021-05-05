@@ -38,16 +38,13 @@ public class MetaStorageServiceEventsTest {
     /** */
     private static final int CHANGE_AFFINITY_EVT_MARKER = 2;
 
-    /** Configured tables list. */
+    /** Table configurations. */
     private static final String TABLE_CONFIG_PREFIX = "config.tables.";
-
-    /** Table versions. */
-    private static final String TABLE_VERSION_PREFIX = "version.tables.";
 
     /** Tables name to id map. */
     private static final String TABLE_ID_PREFIX = "id.tables.";
 
-    /** Table change versions. */
+    /** Table change versions. Guards table metadata updates. */
     private static final String TABLE_CHANGE_PREFIX = "meta.tables.";
 
     /** Calculated affinity list. */
@@ -73,14 +70,15 @@ public class MetaStorageServiceEventsTest {
                         String keyStr = new String(newEntry.key().bytes());
 
                         if (keyStr.startsWith(TABLE_CONFIG_PREFIX)) {
-                            ctx.addEvent(new TableCreatedEvent(revision, (TableConfig) fromBytes(newEntry.value())));
+                            TableConfig tableConfig = (TableConfig) fromBytes(newEntry.value());
+                            ctx.addEvent(new TableCreatedEvent(revision, tableConfig.getTableName()));
                         }
                     }
                     else if (newEntry != null && oldEntry != null) { // A table is updated.
                         String keyStr = new String(newEntry.key().bytes());
 
                         if (keyStr.startsWith(TABLE_CONFIG_PREFIX)) {
-                            ctx.addEvent(new TableChangedEvent(revision, (TableConfig) fromBytes(oldEntry.value()), (TableConfig) fromBytes(newEntry.value())));
+                            ctx.addEvent(new TableChangedEvent(revision, ((TableConfig) fromBytes(newEntry.value())).getTableName()));
                         }
                     }
                     else if (newEntry == null && oldEntry != null) { // A table is deleted.
@@ -175,18 +173,22 @@ public class MetaStorageServiceEventsTest {
         List<MetastoreEvent> events2 = metaStorageService.fetch(0);
         assertEquals(2, events2.size());
 
-        setBackups(tableName, 1);
+        processEvents(events2);
 
         List<MetastoreEvent> events3 = metaStorageService.fetch(0);
-        assertEquals(3, events3.size());
-        processEvents(events3);
+        assertEquals(2, events3.size());
+
+        setBackups(tableName, 1);
 
         List<MetastoreEvent> events4 = metaStorageService.fetch(0);
-        assertEquals(4, events4.size());
+        assertEquals(3, events4.size());
+        processEvents(events4);
+
+        List<MetastoreEvent> events5 = metaStorageService.fetch(0);
+        assertEquals(4, events5.size());
     }
 
     @Test
-    @Disabled("This scenario is broken")
     public void testCreateChangeStart() throws InterruptedException, ExecutionException {
         final String tableName = "testTable";
 
@@ -197,24 +199,18 @@ public class MetaStorageServiceEventsTest {
 
         assertEquals(2, events.size());
 
-        processEvents(events);
+        processEvents(events.subList(0, 1));
 
         List<MetastoreEvent> events2 = metaStorageService.fetch(0);
         assertEquals(3, events2.size());
-
         processEvents(events2);
 
-        // Table is started, can now retry.
-        setBackups(tableName, 1);
-
         List<MetastoreEvent> events3 = metaStorageService.fetch(0);
-        assertEquals(4, events3.size());
-
+        assertEquals(3, events3.size());
         processEvents(events3);
 
         List<MetastoreEvent> events4 = metaStorageService.fetch(0);
-
-        assertEquals(5, events4.size());
+        assertEquals(3, events4.size());
     }
 
     private void processEvents(List<MetastoreEvent> events) {
@@ -222,25 +218,32 @@ public class MetaStorageServiceEventsTest {
             if (event instanceof TableCreatedEvent) { // This is create table event.
                 TableCreatedEvent event0 = (TableCreatedEvent) event;
 
-                String tblName = event0.getConfig().getTableName();
-
-                long tblId = event.getRevision(); // Metastore revision is unique.
-
-                // Calculate affinity
-                List<List<String>> affinity = event0.getConfig().getBackups() == 2 ?
-                    List.of(List.of("node1", "node2"), List.of("node2", "node3"), List.of("node1", "node3")) :
-                    List.of(List.of("node1"), List.of("node2"), List.of("node3"));
-
-                // Set schema.
-                String schema = event0.getConfig().getSchema();
-
                 try {
+                    // Read latest config to start (will merge all pending change events)
+                    Entry cfgEntry = metaStorageService.get(new Key(TABLE_CONFIG_PREFIX + event0.getTableName())).get();
+
+                    long rev = cfgEntry.revision();
+
+                    TableConfig actualCfg = (TableConfig) fromBytes(cfgEntry.value());
+
+                    String tblName = actualCfg.getTableName();
+
+                    long tblId = event0.getRevision();
+
+                    // Calculate affinity
+                    List<List<String>> affinity = actualCfg.getBackups() == 2 ?
+                        List.of(List.of("node1", "node2"), List.of("node2", "node3"), List.of("node1", "node3")) :
+                        List.of(List.of("node1"), List.of("node2"), List.of("node3"));
+
+                    // Set schema.
+                    String schema = actualCfg.getSchema();
+
                     Key changeVerKey = new Key(TABLE_CHANGE_PREFIX + tblId); // Table change id, used for CAS.
                     Key nameToIdKey = new Key(TABLE_ID_PREFIX + tblName); // For resolving table id by name.
                     Key affKey = new Key(TABLE_AFFINITY_PREFIX + tblId); // Affinity key.
                     Key schemaKey = new Key(TABLE_SCHEMA_PREFIX + tblId); // Schema key.
 
-                    UUID changeId = UUID.randomUUID(); // Value doesn't matter.
+                    long changeId = rev; // The revision number of configuration change.
 
                     metaStorageService.invoke(
                         List.of(changeVerKey, nameToIdKey, affKey, schemaKey),
@@ -250,45 +253,58 @@ public class MetaStorageServiceEventsTest {
                         TABLE_CREATE_EVT_MARKER).get();
                 }
                 catch (Exception e) {
-                    break;
+                    LOG.error("Failed to process event", e);
+
+                    continue;
                 }
             }
             else if (event instanceof TableChangedEvent) {
                 TableChangedEvent event0 = (TableChangedEvent) event;
 
-                if (event0.oldConfig.getBackups() != event0.newConfig.getBackups()) {
-                    try {
-                        Entry idEntry = metaStorageService.get(new Key(TABLE_ID_PREFIX + event0.newConfig.getTableName()), event0.getRevision()).get();
+                try {
+                    Entry idEntry = metaStorageService.get(new Key(TABLE_ID_PREFIX + event0.getTableName()), event0.getRevision()).get();
 
-                        if (idEntry == null) {
-                            LOG.warn("Table \"{0}\" is not started yet, retry later", event0.newConfig.getTableName());
+                    if (idEntry == null) {
+                        LOG.warn("Table \"{0}\" is not started yet, event is ignored", event0.getTableName());
 
-                            continue; // Ignore and continue - table not started.
-                        }
-
-                        long tblId = (long) fromBytes(idEntry.value());
-
-                        // Recalculate affinity
-                        List<List<String>> newAffinity = event0.newConfig.getBackups() == 2 ?
-                            List.of(List.of("node1", "node2"), List.of("node2", "node3"), List.of("node1", "node3")) :
-                            List.of(List.of("node1"), List.of("node2"), List.of("node3"));
-
-                        Key changeVerKey = new Key(TABLE_CHANGE_PREFIX + tblId); // Table change id, used for CAS.
-                        Key affKey = new Key(TABLE_AFFINITY_PREFIX + tblId); // Affinity key.
-
-                        Entry entry = metaStorageService.get(changeVerKey, event0.getRevision()).get();
-
-                        UUID changeId = UUID.randomUUID(); // Value doesn't matter.
-
-                        metaStorageService.invoke(
-                            List.of(changeVerKey, affKey),
-                            Conditions.revision().eq(entry.revision()),
-                            List.of(put(toBytes(changeId)), put(toBytes(newAffinity))),
-                            List.of(noop(), noop()),
-                            CHANGE_AFFINITY_EVT_MARKER).get();
-                    } catch (Exception e) {
-                        // TODO handle error.
+                        continue; // Ignore and continue - table not started.
                     }
+
+                    long tblId = (long) fromBytes(idEntry.value());
+
+                    Key changeVerKey = new Key(TABLE_CHANGE_PREFIX + tblId); // Table change id, used for CAS.
+                    Key affKey = new Key(TABLE_AFFINITY_PREFIX + tblId); // Affinity key.
+
+                    Entry changeEntry = metaStorageService.get(changeVerKey, event0.getRevision()).get();
+
+                    // Actual configurations are read from metastore.
+                    Entry oldCfgEntry = metaStorageService.get(new Key(TABLE_CONFIG_PREFIX + event0.getTableName()), changeEntry.revision()).get();
+                    Entry newCfgEntry = metaStorageService.get(new Key(TABLE_CONFIG_PREFIX + event0.getTableName()), event0.getRevision()).get();
+
+                    TableConfig oldCfg = (TableConfig) fromBytes(oldCfgEntry.value());
+                    TableConfig newCfg = (TableConfig) fromBytes(newCfgEntry.value());
+
+                    if (oldCfg.getBackups() == newCfg.getBackups()) {
+                        LOG.warn("Configuration has not changed, event is ignored");
+
+                        continue;
+                    }
+
+                    // Recalculate affinity
+                    List<List<String>> newAffinity = newCfg.getBackups() == 2 ?
+                        List.of(List.of("node1", "node2"), List.of("node2", "node3"), List.of("node1", "node3")) :
+                        List.of(List.of("node1"), List.of("node2"), List.of("node3"));
+
+                    long changeId = event0.getRevision(); // The revision number of configuration change.
+
+                    metaStorageService.invoke(
+                        List.of(changeVerKey, affKey),
+                        Conditions.revision().eq(changeEntry.revision()),
+                        List.of(put(toBytes(changeId)), put(toBytes(newAffinity))),
+                        List.of(noop(), noop()),
+                        CHANGE_AFFINITY_EVT_MARKER).get();
+                } catch (Exception e) {
+                    // TODO handle error.
                 }
             }
             else if (event instanceof TableStartedEvent) {
@@ -347,15 +363,15 @@ public class MetaStorageServiceEventsTest {
     }
 
     private static class TableCreatedEvent extends MetastoreEvent {
-        private final TableConfig config;
+        private final String tableName;
 
-        TableCreatedEvent(long revision, TableConfig config) {
+        TableCreatedEvent(long revision, String tableName) {
             super(revision);
-            this.config = config;
+            this.tableName = tableName;
         }
 
-        public TableConfig getConfig() {
-            return config;
+        public String getTableName() {
+            return tableName;
         }
 
         @Override public String toString() {
@@ -364,22 +380,15 @@ public class MetaStorageServiceEventsTest {
     }
 
     private static class TableChangedEvent extends MetastoreEvent {
-        private final TableConfig oldConfig;
+        private final String tableName;
 
-        private final TableConfig newConfig;
-
-        TableChangedEvent(long revision, TableConfig oldConfig, TableConfig newConfig) {
+        TableChangedEvent(long revision, String tableName) {
             super(revision);
-            this.oldConfig = oldConfig;
-            this.newConfig = newConfig;
+            this.tableName = tableName;
         }
 
-        public TableConfig getOldConfig() {
-            return oldConfig;
-        }
-
-        public TableConfig getNewConfig() {
-            return newConfig;
+        public String getTableName() {
+            return tableName;
         }
 
         @Override public String toString() {
@@ -473,6 +482,10 @@ public class MetaStorageServiceEventsTest {
                 @Nullable byte[] val = prevEntry.value();
 
                 TableConfig cfg = (TableConfig) fromBytes(val);
+
+                if (cfg.getBackups() == newBackups)
+                    return CompletableFuture.completedFuture(false);
+
                 cfg.setBackups(newBackups);
 
                 return metaStorageService.invoke(

@@ -216,7 +216,7 @@ public class TestMetaStorageService implements MetaStorageService, MetastoreEven
         }
 
         @Override public String toString() {
-            return new String(data) + "-" + version;
+            return new String(data) + ":" + version;
         }
 
         @Override public boolean equals(Object o) {
@@ -262,7 +262,7 @@ public class TestMetaStorageService implements MetaStorageService, MetastoreEven
         }
 
         @Override public String toString() {
-            return new String(key.bytes()) + "-" + ByteUtils.fromBytes(value) + "-" + revision;
+            return new String(key.bytes()) + ":" + ByteUtils.fromBytes(value) + ":" + revision;
         }
 
         @Override public boolean equals(Object o) {
