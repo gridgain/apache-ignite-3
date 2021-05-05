@@ -228,7 +228,7 @@ public interface MetaStorageService {
      * @param conditions
      * @param success
      * @param failure
-     * @param evtMarker Event marker.
+     * @param evtMarker Event marker. // TODO can have some kind of event transforming closure here.
      * @return
      */
     CompletableFuture<Boolean> invoke(@NotNull List<Key> keys, @NotNull Condition condition,
