@@ -367,16 +367,16 @@ public interface MetaStorageService {
     void addMetastoreListener(MetastoreEventListener lsnt);
 
     /**
-     * Fetches all events from from revision.
-     * @param fromRev Start from the revision.
+     * Fetches all events starting from revision.
+     * @param rev The revision.
      * @return List of events.
      */
-    List<MetastoreEvent> fetch(long fromRev);
+    List<MetastoreEvent> fetch(long rev);
 
     /**
-     * Discard not needed events.
-     * @param upperRev Upper revision (inclusive).
+     * Discard not needed events up to revision.
+     * @param rev The revision (inclusive).
      */
-    void discard(long upperRev);
+    void discard(long rev);
 }
 

@@ -185,18 +185,18 @@ public class TestMetaStorageService implements MetaStorageService, MetastoreEven
         listeners.add(lsnt);
     }
 
-    @Override public List<MetastoreEvent> fetch(long fromRev) {
+    @Override public List<MetastoreEvent> fetch(long rev) {
         List<MetastoreEvent> copy = new ArrayList<>();
 
         for (MetastoreEvent event : events) {
-            if (event.getRevision() >= fromRev)
+            if (event.getRevision() >= rev)
                 copy.add(event);
         }
 
         return copy;
     }
 
-    @Override public void discard(long upperRev) {
+    @Override public void discard(long rev) {
         // TODO
     }
 
