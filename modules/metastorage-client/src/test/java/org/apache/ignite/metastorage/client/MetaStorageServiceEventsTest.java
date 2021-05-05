@@ -45,10 +45,10 @@ public class MetaStorageServiceEventsTest {
     /** Table change versions. Guards table metadata updates. */
     private static final String TABLE_CHANGE_PREFIX = "tables.meta.";
 
-    /** Calculated affinity list. */
+    /** Table affinity. */
     private static final String TABLE_AFFINITY_PREFIX = "tables.affinity.";
 
-    /** Table schemas list. */
+    /** Table schemas. */
     private static final String TABLE_SCHEMA_PREFIX = "tables.schema.";
 
     private TestMetaStorageService metaStorageService;
