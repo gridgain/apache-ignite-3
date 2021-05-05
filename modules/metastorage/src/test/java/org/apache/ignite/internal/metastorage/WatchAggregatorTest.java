@@ -18,6 +18,7 @@
 package org.apache.ignite.internal.metastorage;
 
 import java.nio.charset.StandardCharsets;
+import java.util.Collections;
 import java.util.List;
 import org.apache.ignite.internal.metastorage.watch.WatchAggregator;
 import org.apache.ignite.lang.ByteArray;
@@ -28,6 +29,9 @@ import org.apache.ignite.metastorage.client.WatchListener;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
@@ -49,19 +53,20 @@ public class WatchAggregatorTest {
                 entry("1", "value1n", 1)
         );
 
-        var watchEvent1 = new WatchEvent(entryEvt1);
-
         var entryEvt2 = new EntryEvent(
                 entry("2", "value2", 1),
                 entry("2", "value2n", 1)
         );
 
-        var watchEvent2 = new WatchEvent(entryEvt2);
-
         watchAggregator.watch(1, (v1, v2) -> {}).get().listener().onUpdate(new WatchEvent(List.of(entryEvt1, entryEvt2)));
 
-        verify(lsnr1).onUpdate(watchEvent1);
-        verify(lsnr2).onUpdate(watchEvent2);
+        var watchEvt1Res = ArgumentCaptor.forClass(WatchEvent.class);
+        verify(lsnr1).onUpdate(watchEvt1Res.capture());
+        assertEquals(Collections.singletonList(entryEvt1), watchEvt1Res.getValue().entryEvents());
+
+        var watchEvt2Res = ArgumentCaptor.forClass(WatchEvent.class);
+        verify(lsnr2).onUpdate(watchEvt2Res.capture());
+        assertEquals(Collections.singletonList(entryEvt2), watchEvt2Res.getValue().entryEvents());
     }
 
     @Test
