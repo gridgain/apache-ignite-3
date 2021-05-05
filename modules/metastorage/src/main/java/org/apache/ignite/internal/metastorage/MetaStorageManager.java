@@ -18,7 +18,6 @@
 package org.apache.ignite.internal.metastorage;
 
 import java.util.Collection;
-import java.util.Collections;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
@@ -32,14 +31,13 @@ import org.apache.ignite.lang.IgniteInternalCheckedException;
 import org.apache.ignite.lang.IgniteInternalException;
 import org.apache.ignite.lang.IgniteUuid;
 import org.apache.ignite.metastorage.client.MetaStorageService;
-import org.apache.ignite.metastorage.common.CompactedException;
-import org.apache.ignite.metastorage.common.Condition;
-import org.apache.ignite.metastorage.common.Cursor;
-import org.apache.ignite.metastorage.common.Entry;
-import org.apache.ignite.metastorage.common.Key;
-import org.apache.ignite.metastorage.common.Operation;
-import org.apache.ignite.metastorage.common.OperationTimeoutException;
-import org.apache.ignite.metastorage.common.WatchListener;
+import org.apache.ignite.metastorage.client.CompactedException;
+import org.apache.ignite.metastorage.client.Condition;
+import org.apache.ignite.internal.util.Cursor;
+import org.apache.ignite.metastorage.client.Entry;
+import org.apache.ignite.metastorage.client.Operation;
+import org.apache.ignite.metastorage.client.OperationTimeoutException;
+import org.apache.ignite.metastorage.client.WatchListener;
 import org.apache.ignite.network.ClusterService;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -155,7 +153,7 @@ import org.jetbrains.annotations.Nullable;
      * subscription
      */
     public synchronized CompletableFuture<Long> registerWatch(
-        @Nullable Key key,
+        @Nullable ByteArray key,
         @NotNull WatchListener lsnr
     ) {
         return waitForReDeploy(watchAggregator.add(key, lsnr));
@@ -170,7 +168,7 @@ import org.jetbrains.annotations.Nullable;
      * subscription
      */
     public synchronized CompletableFuture<Long> registerWatchByPrefix(
-        @Nullable Key key,
+        @Nullable ByteArray key,
         @NotNull WatchListener lsnr
     ) {
         return waitForReDeploy(watchAggregator.addPrefix(key, lsnr));
@@ -185,7 +183,7 @@ import org.jetbrains.annotations.Nullable;
      * subscription
      */
     public synchronized CompletableFuture<Long> registerWatch(
-        @NotNull Collection<Key> keys,
+        @NotNull Collection<ByteArray> keys,
         @NotNull WatchListener lsnr
     ) {
         return waitForReDeploy(watchAggregator.add(keys, lsnr));
@@ -200,8 +198,8 @@ import org.jetbrains.annotations.Nullable;
      * @return future with id of registered watch.
      */
     public synchronized CompletableFuture<Long> registerWatch(
-        @NotNull Key from,
-        @NotNull Key to,
+        @NotNull ByteArray from,
+        @NotNull ByteArray to,
         @NotNull WatchListener lsnr
     ) {
         return waitForReDeploy(watchAggregator.add(from, to, lsnr));
@@ -222,129 +220,117 @@ import org.jetbrains.annotations.Nullable;
     }
 
     /**
-     * @see MetaStorageService#get(Key)
+     * @see MetaStorageService#get(ByteArray)
      */
-    public @NotNull CompletableFuture<Entry> get(@NotNull Key key) {
+    public @NotNull CompletableFuture<Entry> get(@NotNull ByteArray key) {
         return metaStorageSvc.get(key);
     }
 
     /**
-     * @see MetaStorageService#get(Key, long)
+     * @see MetaStorageService#get(ByteArray, long)
      */
-    public @NotNull CompletableFuture<Entry> get(@NotNull Key key, long revUpperBound) {
+    public @NotNull CompletableFuture<Entry> get(@NotNull ByteArray key, long revUpperBound) {
         return metaStorageSvc.get(key, revUpperBound);
     }
 
     /**
      * @see MetaStorageService#getAll(Collection)
      */
-    public @NotNull CompletableFuture<Map<Key, Entry>> getAll(Collection<Key> keys) {
+    public @NotNull CompletableFuture<Map<ByteArray, Entry>> getAll(Collection<ByteArray> keys) {
         return metaStorageSvc.getAll(keys);
     }
 
     /**
      * @see MetaStorageService#getAll(Collection, long)
      */
-    public @NotNull CompletableFuture<Map<Key, Entry>> getAll(Collection<Key> keys, long revUpperBound) {
+    public @NotNull CompletableFuture<Map<ByteArray, Entry>> getAll(Collection<ByteArray> keys, long revUpperBound) {
         return metaStorageSvc.getAll(keys, revUpperBound);
     }
 
     /**
-     * @see MetaStorageService#put(Key, byte[])
+     * @see MetaStorageService#put(ByteArray, byte[])
      */
-    public @NotNull CompletableFuture<Void> put(@NotNull Key key, byte[] val) {
+    public @NotNull CompletableFuture<Void> put(@NotNull ByteArray key, byte[] val) {
         return metaStorageSvc.put(key, val);
     }
 
     /**
-     * @see MetaStorageService#getAndPut(Key, byte[])
+     * @see MetaStorageService#getAndPut(ByteArray, byte[])
      */
-    public @NotNull CompletableFuture<Entry> getAndPut(@NotNull Key key, byte[] val) {
+    public @NotNull CompletableFuture<Entry> getAndPut(@NotNull ByteArray key, byte[] val) {
         return metaStorageSvc.getAndPut(key, val);
     }
 
     /**
      * @see MetaStorageService#putAll(Map)
      */
-    public @NotNull CompletableFuture<Void> putAll(@NotNull Map<Key, byte[]> vals) {
+    public @NotNull CompletableFuture<Void> putAll(@NotNull Map<ByteArray, byte[]> vals) {
         return metaStorageSvc.putAll(vals);
     }
 
     /**
      * @see MetaStorageService#getAndPutAll(Map)
      */
-    public @NotNull CompletableFuture<Map<Key, Entry>> getAndPutAll(@NotNull Map<Key, byte[]> vals) {
+    public @NotNull CompletableFuture<Map<ByteArray, Entry>> getAndPutAll(@NotNull Map<ByteArray, byte[]> vals) {
         return metaStorageSvc.getAndPutAll(vals);
     }
 
     /**
-     * @see MetaStorageService#remove(Key)
+     * @see MetaStorageService#remove(ByteArray)
      */
-    public @NotNull CompletableFuture<Void> remove(@NotNull Key key) {
+    public @NotNull CompletableFuture<Void> remove(@NotNull ByteArray key) {
         return metaStorageSvc.remove(key);
     }
 
     /**
-     * @see MetaStorageService#getAndRemove(Key)
+     * @see MetaStorageService#getAndRemove(ByteArray)
      */
-    public @NotNull CompletableFuture<Entry> getAndRemove(@NotNull Key key) {
+    public @NotNull CompletableFuture<Entry> getAndRemove(@NotNull ByteArray key) {
         return metaStorageSvc.getAndRemove(key);
     }
 
     /**
      * @see MetaStorageService#removeAll(Collection)
      */
-    public @NotNull CompletableFuture<Void> removeAll(@NotNull Collection<Key> keys) {
+    public @NotNull CompletableFuture<Void> removeAll(@NotNull Collection<ByteArray> keys) {
         return metaStorageSvc.removeAll(keys);
     }
 
     /**
      * @see MetaStorageService#getAndRemoveAll(Collection)
      */
-    public @NotNull CompletableFuture<Map<Key, Entry>> getAndRemoveAll(@NotNull Collection<Key> keys) {
+    public @NotNull CompletableFuture<Map<ByteArray, Entry>> getAndRemoveAll(@NotNull Collection<ByteArray> keys) {
         return metaStorageSvc.getAndRemoveAll(keys);
     }
 
     /**
      * Invoke with single success/failure operation.
      *
-     * @see MetaStorageService#invoke(Condition, Collection, Collection)
+     * @see MetaStorageService#invoke(Condition, Operation, Operation)
      */
     public @NotNull CompletableFuture<Boolean> invoke(
         @NotNull Condition cond,
         @NotNull Operation success,
         @NotNull Operation failure
-    ) {
-        return metaStorageSvc.invoke(cond, Collections.singletonList(success), Collections.singletonList(failure));
-    }
-
-    /**
-     * @see MetaStorageService#invoke(Condition, Collection, Collection)
-     */
-    public @NotNull CompletableFuture<Boolean> invoke(
-        @NotNull Condition cond,
-        @NotNull Collection<Operation> success,
-        @NotNull Collection<Operation> failure
     ) {
         return metaStorageSvc.invoke(cond, success, failure);
     }
 
     /**
-     * @see MetaStorageService#getAndInvoke(Key, Condition, Operation, Operation)
+     * @see MetaStorageService#invoke(Condition, Collection, Collection)
      */
-    public @NotNull CompletableFuture<Entry> getAndInvoke(
-        @NotNull Key key,
-        @NotNull Condition cond,
-        @NotNull Operation success,
-        @NotNull Operation failure
+    public @NotNull CompletableFuture<Boolean> invoke(
+            @NotNull Condition cond,
+            @NotNull Collection<Operation> success,
+            @NotNull Collection<Operation> failure
     ) {
-        return metaStorageSvc.getAndInvoke(key, cond, success, failure);
+        return metaStorageSvc.invoke(cond, success, failure);
     }
 
     /**
-     * @see MetaStorageService#range(Key, Key, long)
+     * @see MetaStorageService#range(ByteArray, ByteArray, long)
      */
-    public @NotNull Cursor<Entry> range(@NotNull Key keyFrom, @Nullable Key keyTo, long revUpperBound) {
+    public @NotNull Cursor<Entry> range(@NotNull ByteArray keyFrom, @Nullable ByteArray keyTo, long revUpperBound) {
         return metaStorageSvc.range(keyFrom, keyTo, revUpperBound);
     }
 
@@ -358,10 +344,10 @@ import org.jetbrains.annotations.Nullable;
      * @return Cursor built upon entries corresponding to the given range and applied revision.
      * @throws OperationTimeoutException If the operation is timed out.
      * @throws CompactedException If the desired revisions are removed from the storage due to a compaction.
-     * @see Key
+     * @see ByteArray
      * @see Entry
      */
-    public @NotNull Cursor<Entry> rangeWithAppliedRevision(@NotNull Key keyFrom, @Nullable Key keyTo) {
+    public @NotNull Cursor<Entry> rangeWithAppliedRevision(@NotNull ByteArray keyFrom, @Nullable ByteArray keyTo) {
         try {
             return metaStorageSvc.range(keyFrom, keyTo, vaultMgr.appliedRevision());
         }
@@ -371,9 +357,9 @@ import org.jetbrains.annotations.Nullable;
     }
 
     /**
-     * @see MetaStorageService#range(Key, Key)
+     * @see MetaStorageService#range(ByteArray, ByteArray)
      */
-    public @NotNull Cursor<Entry> range(@NotNull Key keyFrom, @Nullable Key keyTo) {
+    public @NotNull Cursor<Entry> range(@NotNull ByteArray keyFrom, @Nullable ByteArray keyTo) {
         return metaStorageSvc.range(keyFrom, keyTo);
     }
 
@@ -425,13 +411,14 @@ import org.jetbrains.annotations.Nullable;
      * @param revision associated revision.
      * @return future, which will be completed when store action finished.
      */
-    private CompletableFuture<Void> storeEntries(Collection<IgniteBiTuple<Key, byte[]>> entries, long revision) {
+    private CompletableFuture<Void> storeEntries(Collection<IgniteBiTuple<ByteArray, byte[]>> entries, long revision) {
         try {
             return vaultMgr.putAll(entries.stream().collect(
                 Collectors.toMap(
-                    e -> ByteArray.fromString(e.getKey().toString()),
-                    IgniteBiTuple::getValue)),
-                revision);
+                        e -> ByteArray.fromString(e.getKey().toString()),
+                        IgniteBiTuple::getValue)
+                    ),
+                    revision);
         }
         catch (IgniteInternalCheckedException e) {
             throw new IgniteInternalException("Couldn't put entries with considered revision.", e);

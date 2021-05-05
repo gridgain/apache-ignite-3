@@ -19,7 +19,7 @@ package org.apache.ignite.internal.metastorage.server;
 
 import java.util.Collection;
 import java.util.List;
-import org.apache.ignite.metastorage.common.Cursor;
+import org.apache.ignite.internal.util.Cursor;
 import org.jetbrains.annotations.NotNull;
 
 public interface KeyValueStorage {
@@ -58,6 +58,8 @@ public interface KeyValueStorage {
 
     @NotNull
     Collection<Entry> getAndRemoveAll(List<byte[]> keys);
+
+    boolean invoke(Condition condition, Collection<Operation> success, Collection<Operation> failure);
 
     Cursor<Entry> range(byte[] keyFrom, byte[] keyTo);
 

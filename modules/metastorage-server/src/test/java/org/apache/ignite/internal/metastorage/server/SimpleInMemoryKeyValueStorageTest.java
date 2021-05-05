@@ -23,13 +23,19 @@ import java.util.List;
 import java.util.Map;
 import java.util.NoSuchElementException;
 import java.util.stream.Collectors;
-import org.apache.ignite.metastorage.common.Cursor;
-import org.apache.ignite.metastorage.common.Key;
+import org.apache.ignite.internal.util.Cursor;
+import org.apache.ignite.lang.ByteArray;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import static java.util.function.Function.identity;
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.fail;
 
 class SimpleInMemoryKeyValueStorageTest {
     private KeyValueStorage storage;
@@ -108,10 +114,10 @@ class SimpleInMemoryKeyValueStorageTest {
 
         assertEquals(4, entries.size());
 
-        Map<Key, Entry> map =  entries.stream().collect(Collectors.toMap(e -> new Key(e.key()), identity()));
+        Map<ByteArray, Entry> map =  entries.stream().collect(Collectors.toMap(e -> new ByteArray(e.key()), identity()));
 
         // Test regular put value.
-        Entry e1 = map.get(new Key(key1));
+        Entry e1 = map.get(new ByteArray(key1));
 
         assertNotNull(e1);
         assertEquals(1, e1.revision());
@@ -121,7 +127,7 @@ class SimpleInMemoryKeyValueStorageTest {
         assertArrayEquals(val1, e1.value());
 
         // Test rewritten value.
-        Entry e2 = map.get(new Key(key2));
+        Entry e2 = map.get(new ByteArray(key2));
 
         assertNotNull(e2);
         assertEquals(3, e2.revision());
@@ -131,7 +137,7 @@ class SimpleInMemoryKeyValueStorageTest {
         assertArrayEquals(val2_2, e2.value());
 
         // Test removed value.
-        Entry e3 = map.get(new Key(key3));
+        Entry e3 = map.get(new ByteArray(key3));
 
         assertNotNull(e3);
         assertEquals(5, e3.revision());
@@ -140,7 +146,7 @@ class SimpleInMemoryKeyValueStorageTest {
         assertFalse(e3.empty());
 
         // Test empty value.
-        Entry e4 = map.get(new Key(key4));
+        Entry e4 = map.get(new ByteArray(key4));
 
         assertNotNull(e4);
         assertFalse(e4.tombstone());
@@ -183,10 +189,10 @@ class SimpleInMemoryKeyValueStorageTest {
 
         assertEquals(4, entries.size());
 
-        Map<Key, Entry> map =  entries.stream().collect(Collectors.toMap(e -> new Key(e.key()), identity()));
+        Map<ByteArray, Entry> map =  entries.stream().collect(Collectors.toMap(e -> new ByteArray(e.key()), identity()));
 
         // Test regular put value.
-        Entry e1 = map.get(new Key(key1));
+        Entry e1 = map.get(new ByteArray(key1));
 
         assertNotNull(e1);
         assertEquals(1, e1.revision());
@@ -196,7 +202,7 @@ class SimpleInMemoryKeyValueStorageTest {
         assertArrayEquals(val1, e1.value());
 
         // Test while not rewritten value.
-        Entry e2 = map.get(new Key(key2));
+        Entry e2 = map.get(new ByteArray(key2));
 
         assertNotNull(e2);
         assertEquals(2, e2.revision());
@@ -206,12 +212,12 @@ class SimpleInMemoryKeyValueStorageTest {
         assertArrayEquals(val2_1, e2.value());
 
         // Values with larger revision don't exist yet.
-        Entry e3 = map.get(new Key(key3));
+        Entry e3 = map.get(new ByteArray(key3));
 
         assertNotNull(e3);
         assertTrue(e3.empty());
 
-        Entry e4 = map.get(new Key(key4));
+        Entry e4 = map.get(new ByteArray(key4));
 
         assertNotNull(e4);
         assertTrue(e4.empty());
@@ -221,10 +227,10 @@ class SimpleInMemoryKeyValueStorageTest {
 
         assertEquals(4, entries.size());
 
-        map =  entries.stream().collect(Collectors.toMap(e -> new Key(e.key()), identity()));
+        map =  entries.stream().collect(Collectors.toMap(e -> new ByteArray(e.key()), identity()));
 
         // Test regular put value.
-        e1 = map.get(new Key(key1));
+        e1 = map.get(new ByteArray(key1));
 
         assertNotNull(e1);
         assertEquals(1, e1.revision());
@@ -234,7 +240,7 @@ class SimpleInMemoryKeyValueStorageTest {
         assertArrayEquals(val1, e1.value());
 
         // Test rewritten value.
-        e2 = map.get(new Key(key2));
+        e2 = map.get(new ByteArray(key2));
 
         assertNotNull(e2);
         assertEquals(3, e2.revision());
@@ -244,7 +250,7 @@ class SimpleInMemoryKeyValueStorageTest {
         assertArrayEquals(val2_2, e2.value());
 
         // Test not removed value.
-        e3 = map.get(new Key(key3));
+        e3 = map.get(new ByteArray(key3));
 
         assertNotNull(e3);
         assertEquals(4, e3.revision());
@@ -254,7 +260,7 @@ class SimpleInMemoryKeyValueStorageTest {
         assertArrayEquals(val3, e3.value());
 
         // Value with larger revision doesn't exist yet.
-        e4 = map.get(new Key(key4));
+        e4 = map.get(new ByteArray(key4));
 
         assertNotNull(e4);
         assertTrue(e4.empty());
@@ -325,10 +331,10 @@ class SimpleInMemoryKeyValueStorageTest {
 
         assertEquals(4, entries.size());
 
-        Map<Key, Entry> map =  entries.stream().collect(Collectors.toMap(e -> new Key(e.key()), identity()));
+        Map<ByteArray, Entry> map =  entries.stream().collect(Collectors.toMap(e -> new ByteArray(e.key()), identity()));
 
         // Test regular put value.
-        Entry e1 = map.get(new Key(key1));
+        Entry e1 = map.get(new ByteArray(key1));
 
         assertNotNull(e1);
         assertEquals(4, e1.revision());
@@ -338,7 +344,7 @@ class SimpleInMemoryKeyValueStorageTest {
         assertArrayEquals(val1, e1.value());
 
         // Test rewritten value.
-        Entry e2 = map.get(new Key(key2));
+        Entry e2 = map.get(new ByteArray(key2));
 
         assertNotNull(e2);
         assertEquals(4, e2.revision());
@@ -348,7 +354,7 @@ class SimpleInMemoryKeyValueStorageTest {
         assertArrayEquals(val2_2, e2.value());
 
         // Test removed value.
-        Entry e3 = map.get(new Key(key3));
+        Entry e3 = map.get(new ByteArray(key3));
 
         assertNotNull(e3);
         assertEquals(4, e3.revision());
@@ -357,7 +363,7 @@ class SimpleInMemoryKeyValueStorageTest {
         assertFalse(e3.empty());
 
         // Test empty value.
-        Entry e4 = map.get(new Key(key4));
+        Entry e4 = map.get(new ByteArray(key4));
 
         assertNotNull(e4);
         assertFalse(e4.tombstone());
@@ -399,10 +405,10 @@ class SimpleInMemoryKeyValueStorageTest {
 
         assertEquals(3, entries.size());
 
-        Map<Key, Entry> map =  entries.stream().collect(Collectors.toMap(e -> new Key(e.key()), identity()));
+        Map<ByteArray, Entry> map =  entries.stream().collect(Collectors.toMap(e -> new ByteArray(e.key()), identity()));
 
         // Test regular put value.
-        Entry e1 = map.get(new Key(key1));
+        Entry e1 = map.get(new ByteArray(key1));
 
         assertNotNull(e1);
         assertEquals(0, e1.revision());
@@ -411,7 +417,7 @@ class SimpleInMemoryKeyValueStorageTest {
         assertTrue(e1.empty());
 
         // Test rewritten value.
-        Entry e2 = map.get(new Key(key2));
+        Entry e2 = map.get(new ByteArray(key2));
 
         assertNotNull(e2);
         assertEquals(1, e2.revision());
@@ -421,7 +427,7 @@ class SimpleInMemoryKeyValueStorageTest {
         assertArrayEquals(val2_1, e2.value());
 
         // Test removed value.
-        Entry e3 = map.get(new Key(key3));
+        Entry e3 = map.get(new ByteArray(key3));
 
         assertNotNull(e3);
         assertEquals(3, e3.revision());
@@ -434,10 +440,10 @@ class SimpleInMemoryKeyValueStorageTest {
 
         assertEquals(4, entries.size());
 
-        map =  entries.stream().collect(Collectors.toMap(e -> new Key(e.key()), identity()));
+        map =  entries.stream().collect(Collectors.toMap(e -> new ByteArray(e.key()), identity()));
 
         // Test regular put value.
-        e1 = map.get(new Key(key1));
+        e1 = map.get(new ByteArray(key1));
 
         assertNotNull(e1);
         assertEquals(4, e1.revision());
@@ -447,7 +453,7 @@ class SimpleInMemoryKeyValueStorageTest {
         assertArrayEquals(val1, e1.value());
 
         // Test rewritten value.
-        e2 = map.get(new Key(key2));
+        e2 = map.get(new ByteArray(key2));
 
         assertNotNull(e2);
         assertEquals(4, e2.revision());
@@ -457,7 +463,7 @@ class SimpleInMemoryKeyValueStorageTest {
         assertArrayEquals(val2_2, e2.value());
 
         // Test removed value.
-        e3 = map.get(new Key(key3));
+        e3 = map.get(new ByteArray(key3));
 
         assertNotNull(e3);
         assertEquals(4, e3.revision());
@@ -466,7 +472,7 @@ class SimpleInMemoryKeyValueStorageTest {
         assertFalse(e3.empty());
 
         // Test empty value.
-        Entry e4 = map.get(new Key(key4));
+        Entry e4 = map.get(new ByteArray(key4));
 
         assertNotNull(e4);
         assertFalse(e4.tombstone());
@@ -618,10 +624,10 @@ class SimpleInMemoryKeyValueStorageTest {
 
         assertEquals(4, entries.size());
 
-        Map<Key, Entry> map =  entries.stream().collect(Collectors.toMap(e -> new Key(e.key()), identity()));
+        Map<ByteArray, Entry> map =  entries.stream().collect(Collectors.toMap(e -> new ByteArray(e.key()), identity()));
 
         // Test regular put value.
-        Entry e1 = map.get(new Key(key1));
+        Entry e1 = map.get(new ByteArray(key1));
 
         assertNotNull(e1);
         assertEquals(6, e1.revision());
@@ -630,7 +636,7 @@ class SimpleInMemoryKeyValueStorageTest {
         assertFalse(e1.empty());
 
         // Test rewritten value.
-        Entry e2 = map.get(new Key(key2));
+        Entry e2 = map.get(new ByteArray(key2));
 
         assertNotNull(e2);
         assertEquals(6, e2.revision());
@@ -639,7 +645,7 @@ class SimpleInMemoryKeyValueStorageTest {
         assertFalse(e2.empty());
 
         // Test removed value.
-        Entry e3 = map.get(new Key(key3));
+        Entry e3 = map.get(new ByteArray(key3));
 
         assertNotNull(e3);
         assertEquals(5, e3.revision());
@@ -648,7 +654,7 @@ class SimpleInMemoryKeyValueStorageTest {
         assertFalse(e3.empty());
 
         // Test empty value.
-        Entry e4 = map.get(new Key(key4));
+        Entry e4 = map.get(new ByteArray(key4));
 
         assertNotNull(e4);
         assertFalse(e4.tombstone());
@@ -693,10 +699,10 @@ class SimpleInMemoryKeyValueStorageTest {
 
         assertEquals(4, entries.size());
 
-        Map<Key, Entry> map =  entries.stream().collect(Collectors.toMap(e -> new Key(e.key()), identity()));
+        Map<ByteArray, Entry> map =  entries.stream().collect(Collectors.toMap(e -> new ByteArray(e.key()), identity()));
 
         // Test regular put value.
-        Entry e1 = map.get(new Key(key1));
+        Entry e1 = map.get(new ByteArray(key1));
 
         assertNotNull(e1);
         assertEquals(1, e1.revision());
@@ -706,7 +712,7 @@ class SimpleInMemoryKeyValueStorageTest {
 
 
         // Test rewritten value.
-        Entry e2 = map.get(new Key(key2));
+        Entry e2 = map.get(new ByteArray(key2));
 
         assertNotNull(e2);
         assertEquals(3, e2.revision());
@@ -716,7 +722,7 @@ class SimpleInMemoryKeyValueStorageTest {
 
 
         // Test removed value.
-        Entry e3 = map.get(new Key(key3));
+        Entry e3 = map.get(new ByteArray(key3));
 
         assertNotNull(e3);
         assertEquals(5, e3.revision());
@@ -725,7 +731,7 @@ class SimpleInMemoryKeyValueStorageTest {
         assertFalse(e3.empty());
 
         // Test empty value.
-        Entry e4 = map.get(new Key(key4));
+        Entry e4 = map.get(new ByteArray(key4));
 
         assertNotNull(e4);
         assertFalse(e4.tombstone());
@@ -736,10 +742,10 @@ class SimpleInMemoryKeyValueStorageTest {
 
         assertEquals(4, entries.size());
 
-        map =  entries.stream().collect(Collectors.toMap(e -> new Key(e.key()), identity()));
+        map =  entries.stream().collect(Collectors.toMap(e -> new ByteArray(e.key()), identity()));
 
         // Test regular put value.
-        e1 = map.get(new Key(key1));
+        e1 = map.get(new ByteArray(key1));
 
         assertNotNull(e1);
         assertEquals(6, e1.revision());
@@ -748,7 +754,7 @@ class SimpleInMemoryKeyValueStorageTest {
         assertFalse(e1.empty());
 
         // Test rewritten value.
-        e2 = map.get(new Key(key2));
+        e2 = map.get(new ByteArray(key2));
 
         assertNotNull(e2);
         assertEquals(6, e2.revision());
@@ -757,7 +763,7 @@ class SimpleInMemoryKeyValueStorageTest {
         assertFalse(e2.empty());
 
         // Test removed value.
-        e3 = map.get(new Key(key3));
+        e3 = map.get(new ByteArray(key3));
 
         assertNotNull(e3);
         assertEquals(5, e3.revision());
@@ -766,7 +772,7 @@ class SimpleInMemoryKeyValueStorageTest {
         assertFalse(e3.empty());
 
         // Test empty value.
-        e4 = map.get(new Key(key4));
+        e4 = map.get(new ByteArray(key4));
 
         assertNotNull(e4);
         assertFalse(e4.tombstone());
@@ -936,6 +942,553 @@ class SimpleInMemoryKeyValueStorageTest {
         assertEquals(5, storage.updateCounter());
         assertTrue(storage.getAndRemove(key1).empty());
         assertTrue(storage.get(key1).empty());
+    }
+
+    @Test
+    public void invokeWithRevisionCondition_successBranch() {
+        byte[] key1 = k(1);
+        byte[] val1_1 = kv(1, 11);
+        byte[] val1_2 = kv(1, 12);
+
+        byte[] key2 = k(2);
+        byte[] val2 = kv(2, 2);
+
+        byte[] key3 = k(3);
+        byte[] val3 = kv(3, 3);
+
+        assertEquals(0, storage.revision());
+        assertEquals(0, storage.updateCounter());
+
+        storage.put(key1, val1_1);
+
+        assertEquals(1, storage.revision());
+        assertEquals(1, storage.updateCounter());
+
+        boolean branch = storage.invoke(
+                new RevisionCondition(RevisionCondition.Type.EQUAL, key1, 1),
+                List.of(
+                        new Operation(Operation.Type.PUT, key1, val1_2),
+                        new Operation(Operation.Type.PUT, key2, val2)
+                ),
+                List.of(new Operation(Operation.Type.PUT, key3, val3))
+        );
+
+        // "Success" branch is applied.
+        assertTrue(branch);
+        assertEquals(2, storage.revision());
+        assertEquals(3, storage.updateCounter());
+
+        Entry e1 = storage.get(key1);
+
+        assertFalse(e1.empty());
+        assertFalse(e1.tombstone());
+        assertEquals(2, e1.revision());
+        assertEquals(2, e1.updateCounter());
+        assertArrayEquals(val1_2, e1.value());
+
+        Entry e2 = storage.get(key2);
+
+        assertFalse(e2.empty());
+        assertFalse(e2.tombstone());
+        assertEquals(2, e2.revision());
+        assertEquals(3, e2.updateCounter());
+        assertArrayEquals(val2, e2.value());
+
+        // "Failure" branch isn't applied.
+        Entry e3 = storage.get(key3);
+
+        assertTrue(e3.empty());
+    }
+
+    @Test
+    public void invokeWithRevisionCondition_failureBranch() {
+        byte[] key1 = k(1);
+        byte[] val1_1 = kv(1, 11);
+        byte[] val1_2 = kv(1, 12);
+
+        byte[] key2 = k(2);
+        byte[] val2 = kv(2, 2);
+
+        byte[] key3 = k(3);
+        byte[] val3 = kv(3, 3);
+
+        assertEquals(0, storage.revision());
+        assertEquals(0, storage.updateCounter());
+
+        storage.put(key1, val1_1);
+
+        assertEquals(1, storage.revision());
+        assertEquals(1, storage.updateCounter());
+
+        boolean branch = storage.invoke(
+                new RevisionCondition(RevisionCondition.Type.EQUAL, key1, 2),
+                List.of(new Operation(Operation.Type.PUT, key3, val3)),
+                List.of(
+                        new Operation(Operation.Type.PUT, key1, val1_2),
+                        new Operation(Operation.Type.PUT, key2, val2)
+                )
+        );
+
+        // "Failure" branch is applied.
+        assertFalse(branch);
+        assertEquals(2, storage.revision());
+        assertEquals(3, storage.updateCounter());
+
+        Entry e1 = storage.get(key1);
+
+        assertFalse(e1.empty());
+        assertFalse(e1.tombstone());
+        assertEquals(2, e1.revision());
+        assertEquals(2, e1.updateCounter());
+        assertArrayEquals(val1_2, e1.value());
+
+        Entry e2 = storage.get(key2);
+
+        assertFalse(e2.empty());
+        assertFalse(e2.tombstone());
+        assertEquals(2, e2.revision());
+        assertEquals(3, e2.updateCounter());
+        assertArrayEquals(val2, e2.value());
+
+        // "Success" branch isn't applied.
+        Entry e3 = storage.get(key3);
+
+        assertTrue(e3.empty());
+    }
+
+    @Test
+    public void invokeWithExistsCondition_successBranch() {
+        byte[] key1 = k(1);
+        byte[] val1_1 = kv(1, 11);
+        byte[] val1_2 = kv(1, 12);
+
+        byte[] key2 = k(2);
+        byte[] val2 = kv(2, 2);
+
+        byte[] key3 = k(3);
+        byte[] val3 = kv(3, 3);
+
+        assertEquals(0, storage.revision());
+        assertEquals(0, storage.updateCounter());
+
+        storage.put(key1, val1_1);
+
+        assertEquals(1, storage.revision());
+        assertEquals(1, storage.updateCounter());
+
+        boolean branch = storage.invoke(
+                new ExistenceCondition(ExistenceCondition.Type.EXISTS, key1),
+                List.of(
+                        new Operation(Operation.Type.PUT, key1, val1_2),
+                        new Operation(Operation.Type.PUT, key2, val2)
+                ),
+                List.of(new Operation(Operation.Type.PUT, key3, val3))
+        );
+
+        // "Success" branch is applied.
+        assertTrue(branch);
+        assertEquals(2, storage.revision());
+        assertEquals(3, storage.updateCounter());
+
+        Entry e1 = storage.get(key1);
+
+        assertFalse(e1.empty());
+        assertFalse(e1.tombstone());
+        assertEquals(2, e1.revision());
+        assertEquals(2, e1.updateCounter());
+        assertArrayEquals(val1_2, e1.value());
+
+        Entry e2 = storage.get(key2);
+
+        assertFalse(e2.empty());
+        assertFalse(e2.tombstone());
+        assertEquals(2, e2.revision());
+        assertEquals(3, e2.updateCounter());
+        assertArrayEquals(val2, e2.value());
+
+        // "Failure" branch isn't applied.
+        Entry e3 = storage.get(key3);
+
+        assertTrue(e3.empty());
+    }
+
+    @Test
+    public void invokeWithExistsCondition_failureBranch() {
+        byte[] key1 = k(1);
+        byte[] val1_1 = kv(1, 11);
+        byte[] val1_2 = kv(1, 12);
+
+        byte[] key2 = k(2);
+        byte[] val2 = kv(2, 2);
+
+        byte[] key3 = k(3);
+        byte[] val3 = kv(3, 3);
+
+        assertEquals(0, storage.revision());
+        assertEquals(0, storage.updateCounter());
+
+        storage.put(key1, val1_1);
+
+        assertEquals(1, storage.revision());
+        assertEquals(1, storage.updateCounter());
+
+        boolean branch = storage.invoke(
+                new ExistenceCondition(ExistenceCondition.Type.EXISTS, key3),
+                List.of(new Operation(Operation.Type.PUT, key3, val3)),
+                List.of(
+                        new Operation(Operation.Type.PUT, key1, val1_2),
+                        new Operation(Operation.Type.PUT, key2, val2)
+                )
+        );
+
+        // "Failure" branch is applied.
+        assertFalse(branch);
+        assertEquals(2, storage.revision());
+        assertEquals(3, storage.updateCounter());
+
+        Entry e1 = storage.get(key1);
+
+        assertFalse(e1.empty());
+        assertFalse(e1.tombstone());
+        assertEquals(2, e1.revision());
+        assertEquals(2, e1.updateCounter());
+        assertArrayEquals(val1_2, e1.value());
+
+        Entry e2 = storage.get(key2);
+
+        assertFalse(e2.empty());
+        assertFalse(e2.tombstone());
+        assertEquals(2, e2.revision());
+        assertEquals(3, e2.updateCounter());
+        assertArrayEquals(val2, e2.value());
+
+        // "Success" branch isn't applied.
+        Entry e3 = storage.get(key3);
+
+        assertTrue(e3.empty());
+    }
+
+    @Test
+    public void invokeWithNotExistsCondition_successBranch() {
+        byte[] key1 = k(1);
+        byte[] val1_1 = kv(1, 11);
+        byte[] val1_2 = kv(1, 12);
+
+        byte[] key2 = k(2);
+        byte[] val2 = kv(2, 2);
+
+        byte[] key3 = k(3);
+        byte[] val3 = kv(3, 3);
+
+        assertEquals(0, storage.revision());
+        assertEquals(0, storage.updateCounter());
+
+        storage.put(key1, val1_1);
+
+        assertEquals(1, storage.revision());
+        assertEquals(1, storage.updateCounter());
+
+        boolean branch = storage.invoke(
+                new ExistenceCondition(ExistenceCondition.Type.NOT_EXISTS, key2),
+                List.of(
+                        new Operation(Operation.Type.PUT, key1, val1_2),
+                        new Operation(Operation.Type.PUT, key2, val2)
+                ),
+                List.of(new Operation(Operation.Type.PUT, key3, val3))
+        );
+
+        // "Success" branch is applied.
+        assertTrue(branch);
+        assertEquals(2, storage.revision());
+        assertEquals(3, storage.updateCounter());
+
+        Entry e1 = storage.get(key1);
+
+        assertFalse(e1.empty());
+        assertFalse(e1.tombstone());
+        assertEquals(2, e1.revision());
+        assertEquals(2, e1.updateCounter());
+        assertArrayEquals(val1_2, e1.value());
+
+        Entry e2 = storage.get(key2);
+
+        assertFalse(e2.empty());
+        assertFalse(e2.tombstone());
+        assertEquals(2, e2.revision());
+        assertEquals(3, e2.updateCounter());
+        assertArrayEquals(val2, e2.value());
+
+        // "Failure" branch isn't applied.
+        Entry e3 = storage.get(key3);
+
+        assertTrue(e3.empty());
+    }
+
+    @Test
+    public void invokeWithNotExistsCondition_failureBranch() {
+        byte[] key1 = k(1);
+        byte[] val1_1 = kv(1, 11);
+        byte[] val1_2 = kv(1, 12);
+
+        byte[] key2 = k(2);
+        byte[] val2 = kv(2, 2);
+
+        byte[] key3 = k(3);
+        byte[] val3 = kv(3, 3);
+
+        assertEquals(0, storage.revision());
+        assertEquals(0, storage.updateCounter());
+
+        storage.put(key1, val1_1);
+
+        assertEquals(1, storage.revision());
+        assertEquals(1, storage.updateCounter());
+
+        boolean branch = storage.invoke(
+                new ExistenceCondition(ExistenceCondition.Type.NOT_EXISTS, key1),
+                List.of(new Operation(Operation.Type.PUT, key3, val3)),
+                List.of(
+                        new Operation(Operation.Type.PUT, key1, val1_2),
+                        new Operation(Operation.Type.PUT, key2, val2)
+                )
+        );
+
+        // "Failure" branch is applied.
+        assertFalse(branch);
+        assertEquals(2, storage.revision());
+        assertEquals(3, storage.updateCounter());
+
+        Entry e1 = storage.get(key1);
+
+        assertFalse(e1.empty());
+        assertFalse(e1.tombstone());
+        assertEquals(2, e1.revision());
+        assertEquals(2, e1.updateCounter());
+        assertArrayEquals(val1_2, e1.value());
+
+        Entry e2 = storage.get(key2);
+
+        assertFalse(e2.empty());
+        assertFalse(e2.tombstone());
+        assertEquals(2, e2.revision());
+        assertEquals(3, e2.updateCounter());
+        assertArrayEquals(val2, e2.value());
+
+        // "Success" branch isn't applied.
+        Entry e3 = storage.get(key3);
+
+        assertTrue(e3.empty());
+    }
+
+    @Test
+    public void invokeWithValueCondition_successBranch() {
+        byte[] key1 = k(1);
+        byte[] val1_1 = kv(1, 11);
+        byte[] val1_2 = kv(1, 12);
+
+        byte[] key2 = k(2);
+        byte[] val2 = kv(2, 2);
+
+        byte[] key3 = k(3);
+        byte[] val3 = kv(3, 3);
+
+        assertEquals(0, storage.revision());
+        assertEquals(0, storage.updateCounter());
+
+        storage.put(key1, val1_1);
+
+        assertEquals(1, storage.revision());
+        assertEquals(1, storage.updateCounter());
+
+        boolean branch = storage.invoke(
+                new ValueCondition(ValueCondition.Type.EQUAL, key1, val1_1),
+                List.of(
+                        new Operation(Operation.Type.PUT, key1, val1_2),
+                        new Operation(Operation.Type.PUT, key2, val2)
+                ),
+                List.of(new Operation(Operation.Type.PUT, key3, val3))
+        );
+
+        // "Success" branch is applied.
+        assertTrue(branch);
+        assertEquals(2, storage.revision());
+        assertEquals(3, storage.updateCounter());
+
+        Entry e1 = storage.get(key1);
+
+        assertFalse(e1.empty());
+        assertFalse(e1.tombstone());
+        assertEquals(2, e1.revision());
+        assertEquals(2, e1.updateCounter());
+        assertArrayEquals(val1_2, e1.value());
+
+        Entry e2 = storage.get(key2);
+
+        assertFalse(e2.empty());
+        assertFalse(e2.tombstone());
+        assertEquals(2, e2.revision());
+        assertEquals(3, e2.updateCounter());
+        assertArrayEquals(val2, e2.value());
+
+        // "Failure" branch isn't applied.
+        Entry e3 = storage.get(key3);
+
+        assertTrue(e3.empty());
+    }
+
+    @Test
+    public void invokeWithValueCondition_failureBranch() {
+        byte[] key1 = k(1);
+        byte[] val1_1 = kv(1, 11);
+        byte[] val1_2 = kv(1, 12);
+
+        byte[] key2 = k(2);
+        byte[] val2 = kv(2, 2);
+
+        byte[] key3 = k(3);
+        byte[] val3 = kv(3, 3);
+
+        assertEquals(0, storage.revision());
+        assertEquals(0, storage.updateCounter());
+
+        storage.put(key1, val1_1);
+
+        assertEquals(1, storage.revision());
+        assertEquals(1, storage.updateCounter());
+
+        boolean branch = storage.invoke(
+                new ValueCondition(ValueCondition.Type.EQUAL, key1, val1_2),
+                List.of(new Operation(Operation.Type.PUT, key3, val3)),
+                List.of(
+                        new Operation(Operation.Type.PUT, key1, val1_2),
+                        new Operation(Operation.Type.PUT, key2, val2)
+                )
+        );
+
+        // "Failure" branch is applied.
+        assertFalse(branch);
+        assertEquals(2, storage.revision());
+        assertEquals(3, storage.updateCounter());
+
+        Entry e1 = storage.get(key1);
+
+        assertFalse(e1.empty());
+        assertFalse(e1.tombstone());
+        assertEquals(2, e1.revision());
+        assertEquals(2, e1.updateCounter());
+        assertArrayEquals(val1_2, e1.value());
+
+        Entry e2 = storage.get(key2);
+
+        assertFalse(e2.empty());
+        assertFalse(e2.tombstone());
+        assertEquals(2, e2.revision());
+        assertEquals(3, e2.updateCounter());
+        assertArrayEquals(val2, e2.value());
+
+        // "Success" branch isn't applied.
+        Entry e3 = storage.get(key3);
+
+        assertTrue(e3.empty());
+    }
+
+    @Test
+    public void invokeOperations() {
+        byte[] key1 = k(1);
+        byte[] val1 = kv(1, 1);
+
+        byte[] key2 = k(2);
+        byte[] val2 = kv(2, 2);
+
+        byte[] key3 = k(3);
+        byte[] val3 = kv(3, 3);
+
+        assertEquals(0, storage.revision());
+        assertEquals(0, storage.updateCounter());
+
+        storage.put(key1, val1);
+
+        assertEquals(1, storage.revision());
+        assertEquals(1, storage.updateCounter());
+
+        // No-op.
+        boolean branch = storage.invoke(
+                new ValueCondition(ValueCondition.Type.EQUAL, key1, val1),
+                List.of(new Operation(Operation.Type.NO_OP, null, null)),
+                List.of(new Operation(Operation.Type.NO_OP, null, null))
+        );
+
+        assertTrue(branch);
+
+        // No updates.
+        assertEquals(1, storage.revision());
+        assertEquals(1, storage.updateCounter());
+
+        // Put.
+        branch = storage.invoke(
+                new ValueCondition(ValueCondition.Type.EQUAL, key1, val1),
+                List.of(
+                        new Operation(Operation.Type.PUT, key2, val2),
+                        new Operation(Operation.Type.PUT, key3, val3)
+                ),
+                List.of(new Operation(Operation.Type.NO_OP, null, null))
+        );
+
+        assertTrue(branch);
+
+        // +1 for revision, +2 for update counter.
+        assertEquals(2, storage.revision());
+        assertEquals(3, storage.updateCounter());
+
+        Entry e2 = storage.get(key2);
+
+        assertFalse(e2.empty());
+        assertFalse(e2.tombstone());
+        assertEquals(2, e2.revision());
+        assertEquals(2, e2.updateCounter());
+        assertArrayEquals(key2, e2.key());
+        assertArrayEquals(val2, e2.value());
+
+        Entry e3 = storage.get(key3);
+
+        assertFalse(e3.empty());
+        assertFalse(e3.tombstone());
+        assertEquals(2, e3.revision());
+        assertEquals(3, e3.updateCounter());
+        assertArrayEquals(key3, e3.key());
+        assertArrayEquals(val3, e3.value());
+
+        // Remove.
+        branch = storage.invoke(
+                new ValueCondition(ValueCondition.Type.EQUAL, key1, val1),
+                List.of(
+                        new Operation(Operation.Type.REMOVE, key2, null),
+                        new Operation(Operation.Type.REMOVE, key3, null)
+                ),
+                List.of(new Operation(Operation.Type.NO_OP, null, null))
+        );
+
+        assertTrue(branch);
+
+        // +1 for revision, +2 for update counter.
+        assertEquals(3, storage.revision());
+        assertEquals(5, storage.updateCounter());
+
+        e2 = storage.get(key2);
+
+        assertFalse(e2.empty());
+        assertTrue(e2.tombstone());
+        assertEquals(3, e2.revision());
+        assertEquals(4, e2.updateCounter());
+        assertArrayEquals(key2, e2.key());
+
+        e3 = storage.get(key3);
+
+        assertFalse(e3.empty());
+        assertTrue(e3.tombstone());
+        assertEquals(3, e3.revision());
+        assertEquals(5, e3.updateCounter());
+        assertArrayEquals(key3, e3.key());
     }
 
     @Test
@@ -1155,15 +1708,15 @@ class SimpleInMemoryKeyValueStorageTest {
 
         WatchEvent watchEvent = it.next();
 
-        assertTrue(watchEvent.batch());
+        assertFalse(watchEvent.single());
 
-        Map<Key, EntryEvent> map = watchEvent.entryEvents().stream()
-                .collect(Collectors.toMap(evt -> new Key(evt.entry().key()), identity()));
+        Map<ByteArray, EntryEvent> map = watchEvent.entryEvents().stream()
+                .collect(Collectors.toMap(evt -> new ByteArray(evt.entry().key()), identity()));
 
         assertEquals(2, map.size());
 
         // First update under revision.
-        EntryEvent e2 = map.get(new Key(key2));
+        EntryEvent e2 = map.get(new ByteArray(key2));
 
         assertNotNull(e2);
 
@@ -1186,7 +1739,7 @@ class SimpleInMemoryKeyValueStorageTest {
         assertArrayEquals(val2_2, newEntry2.value());
 
         // Second update under revision.
-        EntryEvent e3 = map.get(new Key(key3));
+        EntryEvent e3 = map.get(new ByteArray(key3));
 
         assertNotNull(e3);
 
@@ -1213,7 +1766,7 @@ class SimpleInMemoryKeyValueStorageTest {
 
         watchEvent = it.next();
 
-        assertFalse(watchEvent.batch());
+        assertTrue(watchEvent.single());
 
         EntryEvent e1 = watchEvent.entryEvent();
 
@@ -1269,7 +1822,7 @@ class SimpleInMemoryKeyValueStorageTest {
 
         WatchEvent watchEvent = it.next();
 
-        assertFalse(watchEvent.batch());
+        assertTrue(watchEvent.single());
 
         EntryEvent e1 = watchEvent.entryEvent();
 
@@ -1299,7 +1852,7 @@ class SimpleInMemoryKeyValueStorageTest {
 
         watchEvent = it.next();
 
-        assertFalse(watchEvent.batch());
+        assertTrue(watchEvent.single());
 
         e1 = watchEvent.entryEvent();
 
@@ -1328,7 +1881,6 @@ class SimpleInMemoryKeyValueStorageTest {
     public void watchCursorForKeys() {
         byte[] key1 = k(1);
         byte[] val1_1 = kv(1, 11);
-        byte[] val1_2 = kv(1, 12);
 
         byte[] key2 = k(2);
         byte[] val2_1 = kv(2, 21);
@@ -1358,7 +1910,7 @@ class SimpleInMemoryKeyValueStorageTest {
 
         WatchEvent watchEvent = it.next();
 
-        assertTrue(watchEvent.batch());
+        assertFalse(watchEvent.single());
 
         assertFalse(it.hasNext());
 
@@ -1368,7 +1920,7 @@ class SimpleInMemoryKeyValueStorageTest {
 
         watchEvent = it.next();
 
-        assertFalse(watchEvent.batch());
+        assertTrue(watchEvent.single());
 
         assertFalse(it.hasNext());
 

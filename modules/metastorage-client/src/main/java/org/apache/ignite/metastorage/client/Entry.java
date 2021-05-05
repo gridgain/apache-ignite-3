@@ -15,28 +15,39 @@
  * limitations under the License.
  */
 
-package org.apache.ignite.metastorage.common;
+package org.apache.ignite.metastorage.client;
 
+import org.apache.ignite.lang.ByteArray;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 /**
- * The listener which receives and handles watch updates.
+ * Represents a storage unit as entry with key, value and revision, where
+ * <ul>
+ *     <li>key - an unique entry's key. Keys are comparable in lexicographic manner.</li>
+ *     <li>value - a data which is associated with a key and represented as an array of bytes.</li>
+ *     <li>revision - a number which denotes a version of whole meta storage. Each change increments the revision.</li>
+ * </ul>
  */
-public interface WatchListener {
+public interface Entry {
     /**
-     * The method will be called on each meta storage update.
+     * Returns a key.
      *
-     * @param events A single event or a batch. The batch always contains updates for specific revision.
-     * @return {@code True} if listener must continue event handling. If returns {@code false} then the listener and
-     * corresponding watch will be unregistered.
+     * @return The key.
      */
-    boolean onUpdate(@NotNull Iterable<WatchEvent> events);
+    @NotNull ByteArray key();
 
     /**
-     * The method will be called in case of an error occurred. The listener and corresponding watch will be
-     * unregistered.
+     * Returns a value. Could be {@code null} for empty entry.
      *
-     * @param e Exception.
+     * @return Value.
      */
-    void onError(@NotNull Throwable e);
+    @Nullable byte[] value();
+
+    /**
+     * Returns a revision.
+     *
+     * @return Revision.
+     */
+    long revision();
 }

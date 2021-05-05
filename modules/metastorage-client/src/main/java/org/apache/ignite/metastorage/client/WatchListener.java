@@ -15,44 +15,28 @@
  * limitations under the License.
  */
 
-package org.apache.ignite.metastorage.common;
+package org.apache.ignite.metastorage.client;
+
+import org.jetbrains.annotations.NotNull;
 
 /**
- * Watch event which can be processed by {@link WatchListener}.
+ * The listener which receives and handles watch updates.
  */
-public final class WatchEvent {
-    /** Old (previous) entry */
-    private final Entry oldEntry;
-
-    /** New (updated) entry. */
-    private final Entry newEntry;
+public interface WatchListener {
+    /**
+     * The method will be called on each meta storage update.
+     *
+     * @param evt A single event or a batch. The batch always contains updates for specific revision.
+     * @return {@code True} if listener must continue event handling. If returns {@code false} then the listener and
+     * corresponding watch will be unregistered.
+     */
+    boolean onUpdate(@NotNull WatchEvent evt);
 
     /**
-     * Constructs an event with given old and new entries.
+     * The method will be called in case of an error occurred. The listener and corresponding watch will be
+     * unregistered.
      *
-     * @param oldEntry Old entry.
-     * @param newEntry New entry/
+     * @param e Exception.
      */
-    public WatchEvent(Entry oldEntry, Entry newEntry) {
-        this.oldEntry = oldEntry;
-        this.newEntry = newEntry;
-    }
-
-    /**
-     * Returns old entry.
-     *
-     * @return Old entry.
-     */
-    public Entry oldEntry() {
-        return oldEntry;
-    }
-
-    /**
-     * Returns new entry.
-     *
-     * @return New entry.
-     */
-    public Entry newEntry() {
-        return newEntry;
-    }
+    void onError(@NotNull Throwable e);
 }

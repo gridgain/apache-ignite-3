@@ -15,44 +15,15 @@
  * limitations under the License.
  */
 
-package org.apache.ignite.internal.metastorage.server;
+package org.apache.ignite.internal.util;
+
+import java.util.Iterator;
 
 /**
- * Represent an update event for particular key and entry.
+ * Closeable cursor.
+ *
+ * @param <T> Type of elements.
  */
-public class EntryEvent {
-    /** Old (previous) entry. */
-    private final Entry oldEntry;
+public interface Cursor<T> extends Iterator<T>, Iterable<T>, AutoCloseable {
 
-    /** New (current) entry. */
-    private final Entry entry;
-
-    /**
-     * Constructs event with given old and new entries.
-     *
-     * @param oldEntry Old entry.
-     * @param curEntry New entry.
-     */
-    EntryEvent(Entry oldEntry, Entry curEntry) {
-        this.oldEntry = oldEntry;
-        this.entry = curEntry;
-    }
-
-    /**
-     * Returns old entry.
-     *
-     * @return Old entry.
-     */
-    public Entry oldEntry() {
-        return oldEntry;
-    }
-
-    /**
-     * Rreturns new entry.
-     *
-     * @return New entry.
-     */
-    public Entry entry() {
-        return entry;
-    }
 }

@@ -15,7 +15,9 @@
  * limitations under the License.
  */
 
-package org.apache.ignite.internal.metastorage.server;
+package org.apache.ignite.metastorage.client;
+
+import org.jetbrains.annotations.NotNull;
 
 import java.util.Collection;
 import java.util.List;
@@ -35,6 +37,10 @@ public class WatchEvent {
 
         this.single = entryEvts.size() == 1;
         this.entryEvts = entryEvts;
+    }
+
+    public WatchEvent(@NotNull EntryEvent entryEvt) {
+        this(List.of(entryEvt));
     }
 
     public boolean single() {

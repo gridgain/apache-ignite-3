@@ -15,13 +15,30 @@
  * limitations under the License.
  */
 
-package org.apache.ignite.metastorage.common;
+package org.apache.ignite.internal.metastorage.server;
+
+import org.jetbrains.annotations.NotNull;
 
 /**
- * Closeable cursor.
- *
- * @param <T>
+ * An abstract condition which could be applied to an entry identified by the key.
  */
-//TODO: Should be replaced by common entity from org.ignite.lang or org.ignite.core package.
-public interface Cursor<T> extends Iterable<T>, AutoCloseable {
+public abstract class AbstractCondition implements Condition {
+    /** Entry key. */
+    @NotNull
+    private final byte[] key;
+
+    /**
+     * Constructs a condition with the given entry key.
+     *
+     * @param key Key identifies an entry which the condition will applied to.
+     */
+    public AbstractCondition(@NotNull byte[] key) {
+        this.key = key;
+    }
+
+    /** {@inheritDoc} */
+    @NotNull
+    @Override public byte[] key() {
+        return key;
+    }
 }

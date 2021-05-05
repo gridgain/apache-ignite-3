@@ -29,7 +29,7 @@ import java.util.NoSuchElementException;
 import java.util.TreeMap;
 import java.util.TreeSet;
 import java.util.function.Predicate;
-import org.apache.ignite.metastorage.common.Cursor;
+import org.apache.ignite.internal.util.Cursor;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.TestOnly;
 
@@ -63,14 +63,22 @@ public class SimpleInMemoryKeyValueStorage implements KeyValueStorage {
 
     @Override public void put(byte[] key, byte[] value) {
         synchronized (mux) {
-            doPut(key, value);
+            long curRev = rev + 1;
+
+            doPut(key, value, curRev);
+
+            rev = curRev;
         }
     }
 
     @NotNull
     @Override public Entry getAndPut(byte[] key, byte[] bytes) {
         synchronized (mux) {
-            long lastRev = doPut(key, bytes);
+            long curRev = rev + 1;
+
+            long lastRev = doPut(key, bytes, curRev);
+
+            rev = curRev;
 
             // Return previous value.
             return doGetValue(key, lastRev);
@@ -129,13 +137,22 @@ public class SimpleInMemoryKeyValueStorage implements KeyValueStorage {
     @Override
     public void remove(byte[] key) {
         synchronized (mux) {
-            Entry e = doGet(key, LATEST_REV, false);
+            long curRev = rev + 1;
 
-            if (e.empty() || e.tombstone())
-                return;
-
-            doPut(key, TOMBSTONE);
+            if (doRemove(key, curRev))
+                rev = curRev;
         }
+    }
+
+    private boolean doRemove(byte[] key, long curRev) {
+        Entry e = doGet(key, LATEST_REV, false);
+
+        if (e.empty() || e.tombstone())
+            return false;
+
+        doPut(key, TOMBSTONE, curRev);
+
+        return true;
     }
 
     @NotNull
@@ -202,6 +219,47 @@ public class SimpleInMemoryKeyValueStorage implements KeyValueStorage {
         }
 
         return res;
+    }
+
+    @Override public boolean invoke(Condition condition, Collection<Operation> success, Collection<Operation> failure) {
+        synchronized (mux) {
+            Entry e = get(condition.key());
+
+            boolean branch = condition.test(e);
+
+            Collection<Operation> ops = branch ? success : failure;
+
+            long curRev = rev + 1;
+
+            boolean modified = false;
+
+            for (Operation op : ops) {
+                switch (op.type()) {
+                    case PUT:
+                        doPut(op.key(), op.value(), curRev);
+
+                        modified = true;
+
+                        break;
+
+                    case REMOVE:
+                        modified |= doRemove(op.key(), curRev);
+
+                        break;
+
+                    case NO_OP:
+                        break;
+
+                    default:
+                        throw new IllegalArgumentException("Unknown operation type: " + op.type());
+                }
+            }
+
+            if (modified)
+                rev = curRev;
+
+            return branch;
+        }
     }
 
     @Override public Cursor<Entry> range(byte[] keyFrom, byte[] keyTo) {
@@ -365,9 +423,7 @@ public class SimpleInMemoryKeyValueStorage implements KeyValueStorage {
         return new Entry(key, lastVal.bytes() , lastRev, lastVal.updateCounter());
     }
 
-    private long doPut(byte[] key, byte[] bytes) {
-        long curRev = ++rev;
-
+    private long doPut(byte[] key, byte[] bytes, long curRev) {
         long curUpdCntr = ++updCntr;
 
         // Update keysIdx.
@@ -378,13 +434,25 @@ public class SimpleInMemoryKeyValueStorage implements KeyValueStorage {
         revs.add(curRev);
 
         // Update revsIdx.
-        NavigableMap<byte[], Value> entries = new TreeMap<>(CMP);
+        //NavigableMap<byte[], Value> entries = new TreeMap<>(CMP);
 
         Value val = new Value(bytes, curUpdCntr);
 
-        entries.put(key, val);
+        //entries.put(key, val);
 
-        revsIdx.put(curRev, entries);
+        //revsIdx.put(curRev, entries);
+
+        revsIdx.compute(
+                curRev,
+                (rev, entries) -> {
+                    if (entries == null)
+                        entries = new TreeMap<>(CMP);
+
+                    entries.put(key, val);
+
+                    return entries;
+                }
+        );
 
         return lastRev;
     }
@@ -437,6 +505,7 @@ public class SimpleInMemoryKeyValueStorage implements KeyValueStorage {
         private final byte[] keyFrom;
         private final byte[] keyTo;
         private final long rev;
+        private final Iterator<Entry> it;
         private Entry nextRetEntry;
         private byte[] lastRetKey;
         private boolean finished;
@@ -445,14 +514,32 @@ public class SimpleInMemoryKeyValueStorage implements KeyValueStorage {
             this.keyFrom = keyFrom;
             this.keyTo = keyTo;
             this.rev = rev;
+            this.it = createIterator();
         }
 
+        /** {@inheritDoc} */
+        @Override public boolean hasNext() {
+            return it.hasNext();
+        }
+
+        /** {@inheritDoc} */
+        @Override public Entry next() {
+            return it.next();
+        }
+
+        /** {@inheritDoc} */
         @Override public void close() throws Exception {
             // TODO: implement.
         }
 
+        /** {@inheritDoc} */
         @NotNull
         @Override public Iterator<Entry> iterator() {
+            return it;
+        }
+
+        @NotNull
+        Iterator<Entry> createIterator() {
             return new Iterator<>() {
                 @Override public boolean hasNext() {
                     synchronized (mux) {
@@ -530,20 +617,39 @@ public class SimpleInMemoryKeyValueStorage implements KeyValueStorage {
 
     private class WatchCursor implements Cursor<WatchEvent> {
         private final Predicate<byte[]> p;
+        private final Iterator<WatchEvent> it;
         private long lastRetRev;
         private long nextRetRev = -1;
 
         WatchCursor(long rev, Predicate<byte[]> p) {
             this.p = p;
             this.lastRetRev = rev - 1;
+            this.it = createIterator();
         }
 
+        /** {@inheritDoc} */
+        @Override public boolean hasNext() {
+            return it.hasNext();
+        }
+
+        /** {@inheritDoc} */
+        @Override public WatchEvent next() {
+            return it.next();
+        }
+
+        /** {@inheritDoc} */
         @Override public void close() throws Exception {
-            // TODO: implement
+            // TODO: implement.
+        }
+
+        /** {@inheritDoc} */
+        @NotNull
+        @Override public Iterator<WatchEvent> iterator() {
+            return it;
         }
 
         @NotNull
-        @Override public Iterator<WatchEvent> iterator() {
+        Iterator<WatchEvent> createIterator() {
             return new Iterator<>() {
                 @Override public boolean hasNext() {
                     synchronized (mux) {

@@ -15,7 +15,9 @@
  * limitations under the License.
  */
 
-package org.apache.ignite.metastorage.common;
+package org.apache.ignite.metastorage.client;
+
+import org.jetbrains.annotations.Nullable;
 
 /**
  * Defines operation for meta storage conditional update (invoke).
@@ -37,37 +39,33 @@ public final class Operation {
     /**
      * Represents operation of type <i>remove</i>.
      */
-    public static final class RemoveOp implements InnerOp {
-        /** Key. */
-        private final Key key;
-
+    public static final class RemoveOp extends AbstractOp {
         /**
-         * Creates a new remove operation for the given {@code key}.
+         * Default no-op constructor.
          *
-         * @param key Key.
+         * @param key Identifies an entry which operation will be applied to.
          */
-        RemoveOp(Key key) {
-            this.key = key;
+        RemoveOp(byte[] key) {
+            super(key);
         }
     }
 
     /**
      * Represents operation of type <i>put</i>.
      */
-    public static final class PutOp implements InnerOp {
-        /** Key. */
-        private final Key key;
-
+    public static final class PutOp extends AbstractOp {
         /** Value. */
         private final byte[] val;
 
         /**
          * Constructs operation of type <i>put</i>.
          *
+         * @param key Identifies an entry which operation will be applied to.
          * @param val The value to which the entry should be updated.
          */
-        PutOp(Key key, byte[] val) {
-            this.key = key;
+        PutOp(byte[] key, byte[] val) {
+            super(key);
+
             this.val = val;
         }
     }
@@ -75,12 +73,12 @@ public final class Operation {
     /**
      * Represents operation of type <i>no-op</i>.
      */
-    public static final class NoOp implements InnerOp {
+    public static final class NoOp extends AbstractOp {
         /**
          * Default no-op constructor.
          */
         NoOp() {
-            // No-op.
+            super(null);
         }
     }
 
@@ -88,6 +86,19 @@ public final class Operation {
      * Defines operation interface.
      */
     private interface InnerOp {
-        // Marker interface.
+        @Nullable byte[] key();
+    }
+
+    private static class AbstractOp implements InnerOp {
+        @Nullable private final byte[] key;
+
+        public AbstractOp(@Nullable byte[] key) {
+            this.key = key;
+        }
+
+        @Nullable
+        @Override public byte[] key() {
+            return key;
+        }
     }
 }

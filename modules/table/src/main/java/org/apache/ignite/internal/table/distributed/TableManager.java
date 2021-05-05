@@ -50,11 +50,7 @@ import org.apache.ignite.internal.util.ByteUtils;
 import org.apache.ignite.internal.vault.VaultManager;
 import org.apache.ignite.lang.ByteArray;
 import org.apache.ignite.lang.IgniteLogger;
-import org.apache.ignite.metastorage.common.Conditions;
-import org.apache.ignite.metastorage.common.Key;
-import org.apache.ignite.metastorage.common.Operations;
-import org.apache.ignite.metastorage.common.WatchEvent;
-import org.apache.ignite.metastorage.common.WatchListener;
+import org.apache.ignite.metastorage.client.*;
 import org.apache.ignite.network.ClusterNode;
 import org.apache.ignite.raft.client.service.RaftGroupService;
 import org.apache.ignite.table.Table;
@@ -81,9 +77,9 @@ public class TableManager extends Producer<TableEvent, TableEventParameters> imp
     private CompletableFuture<Long> tableCreationSubscriptionFut;
 
     /** Tables. */
-    private Map<String, TableImpl> tables = new ConcurrentHashMap<>();
+    private final Map<String, TableImpl> tables = new ConcurrentHashMap<>();
 
-    /*
+    /**
      * @param configurationMgr Configuration manager.
      * @param metaStorageMgr Meta storage manager.
      * @param schemaManager Schema manager.
@@ -123,9 +119,9 @@ public class TableManager extends Producer<TableEvent, TableEventParameters> imp
 
         String tableInternalPrefix = INTERNAL_PREFIX + "assignment.";
 
-        tableCreationSubscriptionFut = metaStorageMgr.registerWatchByPrefix(new Key(tableInternalPrefix), new WatchListener() {
-            @Override public boolean onUpdate(@NotNull Iterable<WatchEvent> events) {
-                for (WatchEvent evt : events) {
+        tableCreationSubscriptionFut = metaStorageMgr.registerWatchByPrefix(new ByteArray(tableInternalPrefix), new WatchListener() {
+            @Override public boolean onUpdate(@NotNull WatchEvent watchEvt) {
+                for (EntryEvent evt : watchEvt.entryEvents()) {
                     String placeholderValue = evt.newEntry().key().toString().substring(tableInternalPrefix.length() - 1);
 
                     String name = new String(vaultManager.get(ByteArray.fromString(INTERNAL_PREFIX + placeholderValue))
@@ -228,7 +224,7 @@ public class TableManager extends Producer<TableEvent, TableEventParameters> imp
         configurationMgr.configurationRegistry().getConfiguration(TablesConfiguration.KEY)
             .tables().listen(ctx -> {
             Set<String> tablesToStart = ctx.newValue().namedListKeys() == null ?
-                Collections.EMPTY_SET : ctx.newValue().namedListKeys();
+                Collections.emptySet() : ctx.newValue().namedListKeys();
 
             tablesToStart.removeAll(ctx.oldValue().namedListKeys());
 
@@ -242,18 +238,19 @@ public class TableManager extends Producer<TableEvent, TableEventParameters> imp
 
                 UUID tblId = new UUID(revision, update);
 
-                var key = new Key(INTERNAL_PREFIX + tblId.toString());
+                var key = new ByteArray(INTERNAL_PREFIX + tblId);
+
                 futs.add(metaStorageMgr.invoke(
-                    Conditions.key(key).value().eq(null),
+                    Conditions.notExists(key),
                     Operations.put(key, tableView.name().getBytes(StandardCharsets.UTF_8)),
                     Operations.noop()).thenCompose(res ->
-                    res ? metaStorageMgr.put(new Key(INTERNAL_PREFIX + "assignment." + tblId.toString()), new byte[0])
+                    res ? metaStorageMgr.put(new ByteArray(INTERNAL_PREFIX + "assignment." + tblId), new byte[0])
                         .thenApply(v -> true)
                         : CompletableFuture.completedFuture(false)));
             }
 
             Set<String> tablesToStop = ctx.oldValue().namedListKeys() == null ?
-                Collections.EMPTY_SET : ctx.oldValue().namedListKeys();
+                Collections.emptySet() : ctx.oldValue().namedListKeys();
 
             tablesToStop.removeAll(ctx.newValue().namedListKeys());
 
@@ -262,12 +259,13 @@ public class TableManager extends Producer<TableEvent, TableEventParameters> imp
 
                 UUID tblId = t.internalTable().tableId();
 
-                var key = new Key(INTERNAL_PREFIX + "assignment." + tblId.toString());
+                var key = new ByteArray(INTERNAL_PREFIX + "assignment." + tblId);
+
                 futs.add(metaStorageMgr.invoke(
-                    Conditions.key(key).value().ne(null),
+                    Conditions.value(key).ne(null),
                     Operations.remove(key),
                     Operations.noop()).thenCompose(res ->
-                    res ? metaStorageMgr.remove(new Key(INTERNAL_PREFIX + tblId.toString()))
+                    res ? metaStorageMgr.remove(new ByteArray(INTERNAL_PREFIX + tblId))
                         .thenApply(v -> true)
                         : CompletableFuture.completedFuture(false)));
             }

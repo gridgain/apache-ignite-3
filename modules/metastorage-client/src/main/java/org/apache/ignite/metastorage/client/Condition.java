@@ -15,12 +15,15 @@
  * limitations under the License.
  */
 
-package org.apache.ignite.metastorage.common;
+package org.apache.ignite.metastorage.client;
 
-import java.util.Arrays;
+import java.util.Collection;
 
 /**
- * Represents a condition for conditional update.
+ * Represents a condition for meta storage conditional update.
+ *
+ * @see MetaStorageService#invoke(Condition, Operation, Operation)
+ * @see MetaStorageService#invoke(Condition, Collection, Collection)
  */
 public final class Condition {
     /** Actual condition implementation. */
@@ -36,22 +39,11 @@ public final class Condition {
     }
 
     /**
-     * Tests the given entry on satisfaction of the condition.
-     *
-     * @param e Entry.
-     * @return The result of condition test. {@code true} - if the entry satisfies to the condition,
-     * otherwise - {@code false}.
-     */
-    public boolean test(Entry e) {
-        return cond.test(e);
-    }
-
-    /**
      * Represents condition on entry revision. Only one type of condition could be applied to
      * the one instance of condition. Subsequent invocations of any method which produces condition will throw
      * {@link IllegalStateException}.
      */
-    public static final class RevisionCondition implements InnerCondition {
+    public static final class RevisionCondition extends AbstractCondition {
         /**
          * The type of condition.
          *
@@ -62,16 +54,13 @@ public final class Condition {
         /** The revision as the condition argument. */
         private long rev;
 
-        /** Key of entry, which will be tested for condition. */
-        private final Key key;
-
         /**
-         * Creates a new condition for the given {@code key}.
+         * Constructs a condition by a revision for an entry identified by the given key.
          *
-         * @param key Key of entry, to be tested for the condition.
+         * @param key Identifies an entry which condition will be applied to.
          */
-        RevisionCondition(Key key) {
-            this.key = key;
+        RevisionCondition(byte[] key) {
+            super(key);
         }
 
         /**
@@ -176,70 +165,27 @@ public final class Condition {
             return new Condition(this);
         }
 
-        /** {@inheritDoc} */
-        @Override public boolean test(Entry e) {
-            if ((e.key() == key) || (e.key() != null && e.key().equals(key))) {
-                int res = Long.compare(e.revision(), rev);
-
-                return type.test(res);
-            }
-            else
-                return false;
-        }
-
         /**
          * Defines possible condition types which can be applied to the revision.
          */
         enum Type {
             /** Equality condition type. */
-            EQUAL {
-                @Override public boolean test(long res) {
-                    return res == 0;
-                }
-            },
+            EQUAL,
 
             /** Inequality condition type. */
-            NOT_EQUAL {
-                @Override public boolean test(long res) {
-                    return res != 0;
-                }
-            },
+            NOT_EQUAL,
 
             /** Greater than condition type. */
-            GREATER {
-                @Override public boolean test(long res) {
-                    return res > 0;
-                }
-            },
+            GREATER,
 
             /** Less than condition type. */
-            LESS {
-                @Override public boolean test(long res) {
-                    return res < 0;
-                }
-            },
+            LESS,
 
             /** Less than or equal to condition type. */
-            LESS_OR_EQUAL {
-                @Override public boolean test(long res) {
-                    return res <= 0;
-                }
-            },
+            LESS_OR_EQUAL,
 
             /** Greater than or equal to condition type. */
-            GREATER_OR_EQUAL {
-                @Override public boolean test(long res) {
-                    return res >= 0;
-                }
-            };
-
-            /**
-             * Interprets comparison result.
-             *
-             * @param res The result of comparison.
-             * @return The interpretation of the comparison result.
-             */
-            public abstract boolean test(long res);
+            GREATER_OR_EQUAL
         }
     }
 
@@ -248,7 +194,7 @@ public final class Condition {
      * the one instance of condition. Subsequent invocations of any method which produces condition will throw
      * {@link IllegalStateException}.
      */
-    public static final class ValueCondition implements InnerCondition {
+    public static final class ValueCondition extends AbstractCondition {
         /**
          * The type of condition.
          *
@@ -259,16 +205,13 @@ public final class Condition {
         /** The value as the condition argument. */
         private byte[] val;
 
-        /** Key of entry, which will be tested for condition. */
-        private final Key key;
-
         /**
-         * Creates a new condition for the given {@code key}.
+         * Constructs a condition by a value for an entry identified by the given key.
          *
-         * @param key Key of entry, to be tested for the condition.
+         * @param key Identifies an entry which condition will be applied to.
          */
-        ValueCondition(Key key) {
-            this.key = key;
+        ValueCondition(byte[] key) {
+            super(key);
         }
 
         /**
@@ -305,42 +248,79 @@ public final class Condition {
             return new Condition(this);
         }
 
-        /** {@inheritDoc} */
-        @Override public boolean test(Entry e) {
-            if ((e.key() == key) || (e.key() != null && e.key().equals(key))) {
-                int res = Arrays.compare(e.value(), val);
+        /**
+         * Defines possible condition types which can be applied to the value.
+         */
+        enum Type {
+            /** Equality condition type. */
+            EQUAL,
 
-                return type.test(res);
-            }
-            else
-               return false;
+            /** Inequality condition type. */
+            NOT_EQUAL
+        }
+    }
+
+    /**
+     * Represents condition on an entry existence. Only one type of condition could be applied to
+     * the one instance of condition. Subsequent invocations of any method which produces condition will throw
+     * {@link IllegalStateException}.
+     */
+    public static final class ExistenceCondition extends AbstractCondition {
+        /**
+         * The type of condition.
+         *
+         * @see Type
+         */
+        private Type type;
+
+        /**
+         * Constructs a condition on existence an entry identified by the given key.
+         *
+         * @param key Identifies an entry which condition will be applied to.
+         */
+        ExistenceCondition(byte[] key) {
+            super(key);
+        }
+
+        /**
+         * Produces the condition of type {@link Type#EXISTS}. This condition tests the existence of an entry
+         * identified by the given key.
+         *
+         * @return The condition of type {@link Type#EXISTS}.
+         * @throws IllegalStateException In case when the condition is already defined.
+         */
+        public Condition exists() {
+            validate(type);
+
+            this.type = Type.EXISTS;
+
+            return new Condition(this);
+        }
+
+        /**
+         * Produces the condition of type {@link Type#NOT_EXISTS}. This condition tests the non-existence of an entry
+         * identified by the given key.
+         *
+         * @return The condition of type {@link Type#NOT_EXISTS}.
+         * @throws IllegalStateException In case when the condition is already defined.
+         */
+        public Condition notExists() {
+            validate(type);
+
+            this.type = Type.NOT_EXISTS;
+
+            return new Condition(this);
         }
 
         /**
          * Defines possible condition types which can be applied to the value.
          */
         enum Type {
-            /** Equality condition type. */
-            EQUAL {
-                @Override public boolean test(long res) {
-                    return res == 0;
-                }
-            },
+            /** Existence condition type. */
+            EXISTS,
 
-            /** Inequality condition type. */
-            NOT_EQUAL {
-                @Override public boolean test(long res) {
-                    return res != 0;
-                }
-            };
-
-            /**
-             * Interprets comparison result.
-             *
-             * @param res The result of comparison.
-             * @return The interpretation of the comparison result.
-             */
-            public abstract boolean test(long res);
+            /** Non-existence condition type. */
+            NOT_EXISTS
         }
     }
 
@@ -359,12 +339,36 @@ public final class Condition {
      */
     private interface InnerCondition {
         /**
-         * Tests the given entry on satisfaction of the condition.
+         * Returns key which identifies an entry which condition will be applied to.
          *
-         * @param e Entry.
-         * @return The result of condition test. {@code true} - if the entry satisfies to the condition,
-         * otherwise - {@code false}.
+         * @return Key which identifies an entry which condition will be applied to.
          */
-        boolean test(Entry e);
+        byte[] key();
+    }
+
+    /**
+     * Defines an abstract condition with the key which identifies an entry which condition will be applied to.
+     */
+    private static abstract class AbstractCondition implements InnerCondition {
+        /** Entry key. */
+        private final byte[] key;
+
+        /**
+         * Constructs a condition with the given entry key.
+         *
+         * @param key Key which identifies an entry which condition will be applied to.
+         */
+        public AbstractCondition(byte[] key) {
+            this.key = key;
+        }
+
+        /**
+         * Returns the key which identifies an entry which condition will be applied to.
+         *
+         * @return Key which identifies an entry which condition will be applied to.
+         */
+        @Override public byte[] key() {
+            return key;
+        }
     }
 }

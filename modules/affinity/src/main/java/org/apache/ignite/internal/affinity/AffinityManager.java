@@ -31,11 +31,11 @@ import org.apache.ignite.internal.util.ByteUtils;
 import org.apache.ignite.internal.vault.VaultManager;
 import org.apache.ignite.lang.ByteArray;
 import org.apache.ignite.lang.IgniteLogger;
-import org.apache.ignite.metastorage.common.Conditions;
-import org.apache.ignite.metastorage.common.Key;
-import org.apache.ignite.metastorage.common.Operations;
-import org.apache.ignite.metastorage.common.WatchEvent;
-import org.apache.ignite.metastorage.common.WatchListener;
+import org.apache.ignite.metastorage.client.Conditions;
+import org.apache.ignite.metastorage.client.EntryEvent;
+import org.apache.ignite.metastorage.client.Operations;
+import org.apache.ignite.metastorage.client.WatchEvent;
+import org.apache.ignite.metastorage.client.WatchListener;
 import org.jetbrains.annotations.NotNull;
 
 /**
@@ -130,9 +130,9 @@ public class AffinityManager {
 
         String tableInternalPrefix = INTERNAL_PREFIX + "assignment.";
 
-        affinityCalculateSubscriptionFut = metaStorageMgr.registerWatchByPrefix(new Key(tableInternalPrefix), new WatchListener() {
-            @Override public boolean onUpdate(@NotNull Iterable<WatchEvent> events) {
-                for (WatchEvent evt : events) {
+        affinityCalculateSubscriptionFut = metaStorageMgr.registerWatchByPrefix(new ByteArray(tableInternalPrefix), new WatchListener() {
+            @Override public boolean onUpdate(@NotNull WatchEvent watchEvt) {
+                for (EntryEvent evt : watchEvt.entryEvents()) {
                     byte[] assignmentVal = evt.newEntry().value();
 
                     if (assignmentVal != null && assignmentVal.length == 0) {
@@ -143,16 +143,20 @@ public class AffinityManager {
                         UUID tblId = UUID.fromString(placeholderValue);
 
                         try {
-                            String name = new String(vaultManager.get(ByteArray.fromString(INTERNAL_PREFIX + tblId.toString())).get().value(), StandardCharsets.UTF_8);
+                            byte[] tblNameVal = vaultManager.get(ByteArray.fromString(INTERNAL_PREFIX + tblId)).get().value();
 
-                            int partitions = configurationMgr.configurationRegistry().getConfiguration(TablesConfiguration.KEY)
-                                .tables().get(name).partitions().value();
-                            int replicas = configurationMgr.configurationRegistry().getConfiguration(TablesConfiguration.KEY)
-                                .tables().get(name).replicas().value();
+                            String name = new String(tblNameVal, StandardCharsets.UTF_8);
+
+                            int partitions = configurationMgr.configurationRegistry()
+                                    .getConfiguration(TablesConfiguration.KEY).tables().get(name).partitions().value();
+
+                            int replicas = configurationMgr.configurationRegistry()
+                                    .getConfiguration(TablesConfiguration.KEY).tables().get(name).replicas().value();
 
                             var key = evt.newEntry().key();
+
                             metaStorageMgr.invoke(
-                                Conditions.key(key).value().eq(assignmentVal),
+                                Conditions.value(key).eq(assignmentVal),
                                 Operations.put(key, ByteUtils.toBytes(
                                     RendezvousAffinityFunction.assignPartitions(
                                         baselineMgr.nodes(),

@@ -17,35 +17,28 @@
 
 package org.apache.ignite.internal.metastorage.server;
 
+import org.jetbrains.annotations.NotNull;
+
 import java.util.Collection;
-import java.util.List;
 
-public class WatchEvent {
-    private final List<EntryEvent> entryEvts;
-
-    private final boolean single;
+/**
+ * Defines interface for condition which could be applied to an entry.
+ * 
+ * @see KeyValueStorage#invoke(Condition, Collection, Collection) 
+ */
+public interface Condition {
+    /**
+     * Returns the key which identifies an entry which condition will applied to.
+     *
+     * @return The key which identifies an entry which condition will applied to.
+     */
+    @NotNull byte[] key();
 
     /**
-     * Constructs an watch event with given entry events collection.
+     * Tests the given entry on condition.
      *
-     * @param entryEvts Events for entries corresponding to an update under one revision.
+     * @param e Entry which will be tested on the condition. Can't be {@code null}.
+     * @return {@code True} if the given entry satisfies to the condition, otherwise - {@code false}.
      */
-    public WatchEvent(List<EntryEvent> entryEvts) {
-        assert entryEvts != null && !entryEvts.isEmpty();
-
-        this.single = entryEvts.size() == 1;
-        this.entryEvts = entryEvts;
-    }
-
-    public boolean single() {
-        return single;
-    }
-
-    public Collection<EntryEvent> entryEvents() {
-        return entryEvts;
-    }
-
-    public EntryEvent entryEvent() {
-        return entryEvts.get(0);
-    }
+    boolean test(@NotNull Entry e);
 }

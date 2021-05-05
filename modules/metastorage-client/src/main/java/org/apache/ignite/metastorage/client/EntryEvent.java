@@ -15,38 +15,44 @@
  * limitations under the License.
  */
 
-package org.apache.ignite.metastorage.common;
-
-import org.jetbrains.annotations.NotNull;
-import org.jetbrains.annotations.Nullable;
+package org.apache.ignite.metastorage.client;
 
 /**
- * Represents a storage unit as entry with key, value and revision, where
- * <ul>
- *     <li>key - an unique entry's key. Keys are comparable in lexicographic manner.</li>
- *     <li>value - a data which is associated with a key and represented as an array of bytes.</li>
- *     <li>revision - a number which denotes a version of whole meta storage. Each change increments the revision.</li>
- * </ul>
+ * Represent an update event for particular key and entry.
  */
-public interface Entry {
-    /**
-     * Returns a key.
-     *
-     * @return The key.
-     */
-    @NotNull Key key();
+public final class EntryEvent {
+    /** Old (previous) entry. */
+    private final Entry oldEntry;
+
+    /** New (current) entry. */
+    private final Entry newEntry;
 
     /**
-     * Returns a value. Could be {@code null} for empty entry.
+     * Constructs event with given old and new entries.
      *
-     * @return Value.
+     * @param oldEntry Old entry.
+     * @param newEntry New entry.
      */
-    @Nullable byte[] value();
+    public EntryEvent(Entry oldEntry, Entry newEntry) {
+        this.oldEntry = oldEntry;
+        this.newEntry = newEntry;
+    }
 
     /**
-     * Returns a revision.
+     * Returns old entry.
      *
-     * @return Revision.
+     * @return Old entry.
      */
-    long revision();
+    public Entry oldEntry() {
+        return oldEntry;
+    }
+
+    /**
+     * Rreturns new entry.
+     *
+     * @return New entry.
+     */
+    public Entry newEntry() {
+        return newEntry;
+    }
 }
