@@ -226,12 +226,12 @@ public interface MetaStorageService {
      * All updated entries will have same revision.
      * The condition is applied to the first key in the list.
      *
-     * @param keys
-     * @param conditions
-     * @param success
-     * @param failure
+     * @param keys Keys
+     * @param condition The condition to test.
+     * @param success Success ops list.
+     * @param failure Failure ops list.
      * @param evtMarker Event marker. Propagated to the metastore listener.
-     * @return
+     * @return The future.
      */
     CompletableFuture<Boolean> invoke(@NotNull List<Key> keys, @NotNull Condition condition,
                                       @NotNull List<Operation> success, @NotNull List<Operation> failure, int evtMarker);
