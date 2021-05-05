@@ -37,19 +37,19 @@ public class MetaStorageServiceEventsTest {
     private static final int CHANGE_AFFINITY_EVT_MARKER = 2;
 
     /** Table configurations. */
-    private static final String TABLE_CONFIG_PREFIX = "config.tables.";
+    private static final String TABLE_CONFIG_PREFIX = "tables.config.";
 
     /** Tables name to id map. */
-    private static final String TABLE_ID_PREFIX = "id.tables.";
+    private static final String TABLE_ID_PREFIX = "tables.id.";
 
     /** Table change versions. Guards table metadata updates. */
-    private static final String TABLE_CHANGE_PREFIX = "meta.tables.";
+    private static final String TABLE_CHANGE_PREFIX = "tables.meta.";
 
     /** Calculated affinity list. */
-    private static final String TABLE_AFFINITY_PREFIX = "affinity.tables.";
+    private static final String TABLE_AFFINITY_PREFIX = "tables.affinity.";
 
     /** Table schemas list. */
-    private static final String TABLE_SCHEMA_PREFIX = "schema.tables."; // TODO swap
+    private static final String TABLE_SCHEMA_PREFIX = "tables.schema.";
 
     private TestMetaStorageService metaStorageService;
 
