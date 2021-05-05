@@ -3,7 +3,6 @@ package org.apache.ignite.metastorage.client;
 import java.io.Serializable;
 import java.util.List;
 import java.util.TreeMap;
-import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionStage;
 import java.util.concurrent.ExecutionException;
@@ -59,9 +58,10 @@ public class MetaStorageServiceEventsTest {
     public void before() {
         metaStorageService = new TestMetaStorageService();
 
-        // Listen for key changes and translate it to events.
+        // Listen for metastore changes and translate it to events.
         metaStorageService.addMetastoreListener(new MetastoreEventListener() {
             @Override public boolean onUpdate(int evtMarker, List<Entry> entries, List<Entry> oldEntries, long revision, MetastoreEventListenerContext ctx) {
+                // TODO event translation could be cleaner.
                 if (entries.size() == 1) {
                     Entry newEntry = entries.get(0);
                     Entry oldEntry = oldEntries.get(0);
@@ -125,6 +125,28 @@ public class MetaStorageServiceEventsTest {
         });
     }
 
+    public long getTableId(String tblName) {
+        Key key = new Key(TABLE_ID_PREFIX + tblName);
+
+        Entry entry = metaStorageService.get(key).getNow(null);
+
+        if (entry == null)
+            throw new NullPointerException();
+
+        return (long) fromBytes(entry.value());
+    }
+
+    public List<List<String>> getTableAffinity(long tblId) {
+        Key key = new Key(TABLE_AFFINITY_PREFIX + tblId);
+
+        Entry entry = metaStorageService.get(key).getNow(null);
+
+        if (entry == null)
+            throw new NullPointerException();
+
+        return (List<List<String>>) fromBytes(entry.value());
+    }
+
     @Test
     public void testCreateTable() throws InterruptedException, ExecutionException {
         final String tableName = "testTable";
@@ -147,21 +169,22 @@ public class MetaStorageServiceEventsTest {
 
         assertEquals(2, events2.size());
 
-        TreeMap<TestMetaStorageService.VersionedKey, Entry> data = new TreeMap<>(metaStorageService.data);
-
         // Test idempotency. Events can be processed again without side effects.
+        TreeMap<TestMetaStorageService.VersionedKey, Entry> data = new TreeMap<>(metaStorageService.data);
         processEvents(events2);
-
-        // Metastorage state shouldn't change.
         List<MetastoreEvent> events3 = metaStorageService.fetch(0);
-
-        assertEquals(2, events3.size(), "Metastorage state shouldn't change");
-
+        assertEquals(2, events3.size());
         assertEquals(data, metaStorageService.data, "Metastorage state shouldn't change");
+
+        long tableId = getTableId(tableName);
+        assertEquals(1, tableId);
+
+        List<List<String>> affinity = getTableAffinity(tableId);
+        assertEquals(2, affinity.get(0).size());
     }
 
     @Test
-    public void testCreateStartChange() throws InterruptedException, ExecutionException {
+    public void testCreateStartChangeTable() throws InterruptedException, ExecutionException {
         final String tableName = "testTable";
 
         createTable(tableName, 2, 3);
@@ -186,10 +209,23 @@ public class MetaStorageServiceEventsTest {
 
         List<MetastoreEvent> events5 = metaStorageService.fetch(0);
         assertEquals(4, events5.size());
+
+        // Test idempotency.
+        TreeMap<TestMetaStorageService.VersionedKey, Entry> data = new TreeMap<>(metaStorageService.data);
+        processEvents(events5);
+        List<MetastoreEvent> events6 = metaStorageService.fetch(0);
+        assertEquals(4, events6.size());
+        assertEquals(data, metaStorageService.data, "Metastorage state shouldn't change");
+
+        long tableId = getTableId(tableName);
+        assertEquals(1, tableId);
+
+        List<List<String>> affinity = getTableAffinity(tableId);
+        assertEquals(1, affinity.get(0).size());
     }
 
     @Test
-    public void testCreateChangeStart() throws InterruptedException, ExecutionException {
+    public void testCreateChangeStartTable() throws InterruptedException, ExecutionException {
         final String tableName = "testTable";
 
         createTable(tableName, 2, 3);
@@ -199,18 +235,23 @@ public class MetaStorageServiceEventsTest {
 
         assertEquals(2, events.size());
 
-        processEvents(events.subList(0, 1));
+        processEvents(events.subList(0, 1)); // Should create table with merged changes.
 
         List<MetastoreEvent> events2 = metaStorageService.fetch(0);
         assertEquals(3, events2.size());
-        processEvents(events2);
 
+        // Test idempotency.
+        TreeMap<TestMetaStorageService.VersionedKey, Entry> data = new TreeMap<>(metaStorageService.data);
+        processEvents(events2);
         List<MetastoreEvent> events3 = metaStorageService.fetch(0);
         assertEquals(3, events3.size());
-        processEvents(events3);
+        assertEquals(data, metaStorageService.data, "Metastorage state shouldn't change");
 
-        List<MetastoreEvent> events4 = metaStorageService.fetch(0);
-        assertEquals(3, events4.size());
+        long tableId = getTableId(tableName);
+        assertEquals(1, tableId);
+
+        List<List<String>> affinity = getTableAffinity(tableId);
+        assertEquals(1, affinity.get(0).size());
     }
 
     private void processEvents(List<MetastoreEvent> events) {
