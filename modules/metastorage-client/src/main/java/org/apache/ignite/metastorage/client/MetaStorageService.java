@@ -222,13 +222,15 @@ public interface MetaStorageService {
                                       @NotNull Operation success, @NotNull Operation failure);
 
     /**
-     * Updates multiple entries for the given key conditionally. The condition is applied to the first key.
+     * Updates multiple entries conditionally.
+     * All updated entries will have same revision.
+     * The condition is applied to the first key in the list.
      *
      * @param keys
      * @param conditions
      * @param success
      * @param failure
-     * @param evtMarker Event marker. // TODO can have some kind of event transforming closure here.
+     * @param evtMarker Event marker. Propagated to the metastore listener.
      * @return
      */
     CompletableFuture<Boolean> invoke(@NotNull List<Key> keys, @NotNull Condition condition,
@@ -358,16 +360,23 @@ public interface MetaStorageService {
     @NotNull
     CompletableFuture<Void> compact();
 
+    /**
+     * Adds metastore listener which converts key updates to fine grained events.
+     * @param lsnt The listener.
+     */
     void addMetastoreListener(MetastoreEventListener lsnt);
 
     /**
-     * Uses polling for simplicity.
-     * Idempotent event processing.
-     * @param fromRev
-     * @return
+     * Fetches all events from from revision.
+     * @param fromRev Start from the revision.
+     * @return List of events.
      */
     List<MetastoreEvent> fetch(long fromRev);
 
-    void discard(long fromRev, long toRev);
+    /**
+     * Discard not needed events.
+     * @param upperRev Upper revision (inclusive).
+     */
+    void discard(long upperRev);
 }
 

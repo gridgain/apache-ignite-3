@@ -138,8 +138,13 @@ public class TestMetaStorageService implements MetaStorageService, MetastoreEven
             }
         }
 
-        for (MetastoreEventListener listener : listeners)
-            listener.onUpdate(evtMarker, entries, oldEntries, revision, this);
+        for (MetastoreEventListener listener : listeners) {
+            boolean stopListen = listener.onUpdate(evtMarker, entries, oldEntries, revision, this);
+
+            if (stopListen) {
+                // TODO
+            }
+        }
 
         return CompletableFuture.completedFuture(res);
     }
@@ -191,7 +196,7 @@ public class TestMetaStorageService implements MetaStorageService, MetastoreEven
         return copy;
     }
 
-    @Override public void discard(long fromRev, long toRev) {
+    @Override public void discard(long upperRev) {
         // TODO
     }
 

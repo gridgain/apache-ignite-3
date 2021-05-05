@@ -17,7 +17,6 @@ import org.apache.ignite.metastorage.common.MetastoreEventListener;
 import org.apache.ignite.metastorage.common.MetastoreEventListenerContext;
 import org.jetbrains.annotations.Nullable;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
 import static org.apache.ignite.internal.util.ByteUtils.fromBytes;
