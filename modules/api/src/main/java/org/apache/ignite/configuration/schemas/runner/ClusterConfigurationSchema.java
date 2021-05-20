@@ -27,6 +27,9 @@ import org.apache.ignite.configuration.storage.ConfigurationType;
 @ConfigurationRoot(rootName = "cluster", type = ConfigurationType.DISTRIBUTED)
 public class ClusterConfigurationSchema {
     /** List of unique names of those cluster nodes that will host distributed metastorage instances. */
-    @Value
-    String[] metastorageNodes;
+// TODO: tmp.
+//    @Value
+//    String[] metastorageNodes;
+    @Value(hasDefault = true)
+    final String[] metastorageNodes = new String[0];
 }
