@@ -31,4 +31,6 @@ public interface Ignition {
      */
     // TODO: IGNITE-14599 Add generic way to bootstrap configuration.
     public Ignite start(@Nullable String jsonStrBootstrapCfg);
+
+    public void stop();
 }

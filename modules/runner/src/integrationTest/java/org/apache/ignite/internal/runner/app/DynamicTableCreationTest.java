@@ -28,6 +28,7 @@ import org.apache.ignite.internal.schema.SchemaManager;
 import org.apache.ignite.lang.IgniteLogger;
 import org.apache.ignite.table.Table;
 import org.apache.ignite.table.Tuple;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -136,6 +137,12 @@ class DynamicTableCreationTest {
 
         return ign.tables().table("tbl1");
     }
+
+    @AfterEach
+    public void afterTest() throws Exception {
+        IgnitionManager.stop();
+    }
+
 
     /**
      * Check dynamic table creation.

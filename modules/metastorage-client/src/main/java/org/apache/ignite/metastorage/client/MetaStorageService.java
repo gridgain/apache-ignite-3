@@ -333,5 +333,7 @@ public interface MetaStorageService {
      */
     @NotNull
     CompletableFuture<Void> compact();
+
+    void shutdown();
 }
 

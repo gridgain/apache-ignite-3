@@ -22,6 +22,8 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.ExecutionException;
 import org.apache.ignite.app.Ignite;
 import org.apache.ignite.app.Ignition;
 import org.apache.ignite.configuration.RootKey;
@@ -79,6 +81,8 @@ public class IgnitionImpl implements Ignition {
 
     /** */
     private static final String VER_KEY = "version";
+
+    private static CopyOnWriteArrayList<MetaStorageManager> metaStorageManagers = new CopyOnWriteArrayList<>();
 
     /** {@inheritDoc} */
     @Override public synchronized Ignite start(String jsonStrBootstrapCfg) {
@@ -148,6 +152,8 @@ public class IgnitionImpl implements Ignition {
             raftMgr
         );
 
+        metaStorageManagers.add(metaStorageMgr);
+
         // TODO IGNITE-14578 Bootstrap configuration manager with distributed configuration.
         configurationStorages.add(new DistributedConfigurationStorage(metaStorageMgr));
 
@@ -194,5 +200,16 @@ public class IgnitionImpl implements Ignition {
         String banner = String.join("\n", BANNER);
 
         LOG.info(banner + '\n' + " ".repeat(22) + "Apache Ignite ver. " + ver + '\n');
+    }
+
+    public void stop() {
+        for (MetaStorageManager metaStorageManager : metaStorageManagers) {
+            try {
+                metaStorageManager.shutdown();
+            }
+            catch (ExecutionException | InterruptedException e) {
+                e.printStackTrace();
+            }
+        }
     }
 }

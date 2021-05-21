@@ -352,6 +352,10 @@ public class MetaStorageServiceImpl implements MetaStorageService {
         return new WatchEvent(evts);
     }
 
+    @Override public void shutdown() {
+        watchProcessor.watchers.forEach((id, watcher) -> watchProcessor.stopWatch(id));
+    }
+
     // TODO: IGNITE-14691 Temporally solution that should be removed after implementing reactive watches.
     /** Watch processor, that manages {@link Watcher} threads. */
     private final class WatchProcessor {

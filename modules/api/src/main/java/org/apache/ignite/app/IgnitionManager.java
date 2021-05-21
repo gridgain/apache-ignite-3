@@ -59,4 +59,8 @@ public class IgnitionManager {
 
         return ignition.start(jsonStrBootstrapCfg);
     }
+
+    public static synchronized void stop() {
+        ignition.stop();
+    }
 }

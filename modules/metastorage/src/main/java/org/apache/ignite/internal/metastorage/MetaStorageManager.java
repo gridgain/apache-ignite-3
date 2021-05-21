@@ -418,6 +418,15 @@ public class MetaStorageManager {
         return metaStorageSvcFut.thenCompose(MetaStorageService::compact);
     }
 
+
+    public void shutdown() throws ExecutionException, InterruptedException {
+        metaStorageSvcFut.get().shutdown();
+
+        raftMgr.shutdown();
+
+    }
+
+
     /**
      * Stop current batch of consolidated watches and register new one from current {@link WatchAggregator}.
      *

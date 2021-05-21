@@ -102,4 +102,15 @@ public class Loza {
         if (peers.get(0).name().equals(clusterNetSvc.topologyService().localMember().name()))
             raftServer.clearListener(groupId);
     }
+
+    public void shutdown() {
+        try {
+            raftServer.shutdown();
+
+            clusterNetSvc.shutdown();
+        }
+        catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
 }
