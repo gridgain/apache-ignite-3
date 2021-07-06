@@ -53,7 +53,7 @@ import org.openjdk.jmh.runner.RunnerException;
 import org.openjdk.jmh.runner.options.Options;
 import org.openjdk.jmh.runner.options.OptionsBuilder;
 
-import static org.apache.ignite.internal.schema.NativeType.LONG;
+import static org.apache.ignite.internal.schema.NativeType.INT64;
 
 /**
  * Serializer benchmark.
@@ -113,7 +113,7 @@ public class SerializerBenchmarkTest {
             objectFactory = new ObjectFactory<>(valClass);
         }
 
-        Column[] keyCols = new Column[] {new Column("key", LONG, true)};
+        Column[] keyCols = new Column[] {new Column("key", INT64, true)};
         Column[] valCols = mapFieldsToColumns(valClass);
         final SchemaDescriptor schema = new SchemaDescriptor(1, keyCols, valCols);
 
@@ -151,7 +151,7 @@ public class SerializerBenchmarkTest {
      */
     private Column[] mapFieldsToColumns(Class<?> aClass) {
         if (aClass == Long.class)
-            return new Column[] {new Column("col0", LONG, true)};
+            return new Column[] {new Column("col0", INT64, true)};
 
         final Field[] fields = aClass.getDeclaredFields();
         final Column[] cols = new Column[fields.length];
@@ -159,7 +159,7 @@ public class SerializerBenchmarkTest {
         for (int i = 0; i < fields.length; i++) {
             assert fields[i].getType() == Long.TYPE : "Only 'long' field type is supported.";
 
-            cols[i] = new Column("col" + i, LONG, false);
+            cols[i] = new Column("col" + i, INT64, false);
         }
 
         return cols;

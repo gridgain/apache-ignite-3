@@ -30,14 +30,14 @@ public class NativeTypeTest {
      */
     @Test
     public void testCompareFixlenTypesVsVarlenTypes() {
-        assertTrue(NativeType.BYTE.compareTo(NativeType.STRING) < 0);
-        assertTrue(NativeType.BYTE.compareTo(NativeType.BYTES) < 0);
+        assertTrue(NativeType.INT8.compareTo(NativeType.STRING) < 0);
+        assertTrue(NativeType.INT8.compareTo(NativeType.BYTES) < 0);
 
-        assertTrue(NativeType.INTEGER.compareTo(NativeType.STRING) < 0);
-        assertTrue(NativeType.INTEGER.compareTo(NativeType.BYTES) < 0);
+        assertTrue(NativeType.INT32.compareTo(NativeType.STRING) < 0);
+        assertTrue(NativeType.INT32.compareTo(NativeType.BYTES) < 0);
 
-        assertTrue(NativeType.LONG.compareTo(NativeType.STRING) < 0);
-        assertTrue(NativeType.LONG.compareTo(NativeType.BYTES) < 0);
+        assertTrue(NativeType.INT64.compareTo(NativeType.STRING) < 0);
+        assertTrue(NativeType.INT64.compareTo(NativeType.BYTES) < 0);
 
         assertTrue(NativeType.UUID.compareTo(NativeType.STRING) < 0);
         assertTrue(NativeType.UUID.compareTo(NativeType.BYTES) < 0);
@@ -48,9 +48,9 @@ public class NativeTypeTest {
      */
     @Test
     public void testCompareFixlenTypesBySize() {
-        assertTrue(NativeType.SHORT.compareTo(NativeType.INTEGER) < 0);
-        assertTrue(NativeType.INTEGER.compareTo(NativeType.LONG) < 0);
-        assertTrue(NativeType.LONG.compareTo(NativeType.UUID) < 0);
+        assertTrue(NativeType.INT16.compareTo(NativeType.INT32) < 0);
+        assertTrue(NativeType.INT32.compareTo(NativeType.INT64) < 0);
+        assertTrue(NativeType.INT64.compareTo(NativeType.UUID) < 0);
     }
 
     /**
@@ -58,7 +58,7 @@ public class NativeTypeTest {
      */
     @Test
     public void testCompareFixlenTypesByDesc() {
-        assertTrue(NativeType.FLOAT.compareTo(NativeType.INTEGER) < 0);
+        assertTrue(NativeType.FLOAT.compareTo(NativeType.INT32) < 0);
     }
 
     /**

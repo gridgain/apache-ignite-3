@@ -84,7 +84,7 @@ class TupleMarshallerImpl implements TupleMarshaller {
         }
 
         switch (col.type().spec()) {
-            case LONG: {
+            case INT64: {
                 rowAsm.appendLong(tup.longValue(col.name()));
 
                 break;

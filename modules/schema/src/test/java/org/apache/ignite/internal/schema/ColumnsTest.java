@@ -34,8 +34,8 @@ public class ColumnsTest {
     public void testFixSizedColumnsIndex() {
         Columns cols = new Columns(
             0,
-            new Column("intCol2", NativeType.INTEGER, false),
-            new Column("intCol1", NativeType.INTEGER, false),
+            new Column("intCol2", NativeType.INT32, false),
+            new Column("intCol1", NativeType.INT32, false),
             new Column("uuidCol", NativeType.UUID, false)
         );
 
@@ -79,8 +79,8 @@ public class ColumnsTest {
         Columns cols = new Columns(
             0,
             new Column("stringCol", NativeType.STRING, false),
-            new Column("intCol2", NativeType.INTEGER, false),
-            new Column("intCol1", NativeType.INTEGER, false),
+            new Column("intCol2", NativeType.INT32, false),
+            new Column("intCol1", NativeType.INT32, false),
             new Column("uuidCol", NativeType.UUID, false)
         );
 
@@ -127,8 +127,8 @@ public class ColumnsTest {
             Columns cols = new Columns(
                 0,
                 new Column("uuidCol", NativeType.UUID, false),
-                new Column("intCol2", NativeType.INTEGER, false),
-                new Column("intCol1", NativeType.INTEGER, false)
+                new Column("intCol2", NativeType.INT32, false),
+                new Column("intCol1", NativeType.INT32, false)
             );
 
             assertEquals("intCol1", cols.column(0).name());
@@ -144,8 +144,8 @@ public class ColumnsTest {
             Columns cols = new Columns(
                 3,
                 new Column("uuidCol", NativeType.UUID, false),
-                new Column("intCol2", NativeType.INTEGER, false),
-                new Column("intCol1", NativeType.INTEGER, false)
+                new Column("intCol2", NativeType.INT32, false),
+                new Column("intCol1", NativeType.INT32, false)
             );
 
             assertEquals("intCol1", cols.column(0).name());
@@ -165,13 +165,13 @@ public class ColumnsTest {
     @Test
     public void testFoldSizeNoVarlenIncomplete1Byte() {
         Column[] colDef = {
-            new Column("a", NativeType.SHORT, false),   // 2
-            new Column("b", NativeType.INTEGER, false), // 4
-            new Column("c", NativeType.INTEGER, false), // 4
-            new Column("d", NativeType.LONG, false),    // 8
-            new Column("e", NativeType.LONG, false),    // 8
-            new Column("f", NativeType.LONG, false),    // 8
-            new Column("g", NativeType.UUID, false)     // 16
+            new Column("a", NativeType.INT16, false), // 2
+            new Column("b", NativeType.INT32, false), // 4
+            new Column("c", NativeType.INT32, false), // 4
+            new Column("d", NativeType.INT64, false), // 8
+            new Column("e", NativeType.INT64, false), // 8
+            new Column("f", NativeType.INT64, false), // 8
+            new Column("g", NativeType.UUID, false)   // 16
         };
 
         checkColumnFolding(colDef);
@@ -183,14 +183,14 @@ public class ColumnsTest {
     @Test
     public void testFoldSizeNoVarlenFull1Byte() {
         Column[] colDef = {
-            new Column("a", NativeType.SHORT, false),   // 2
-            new Column("b", NativeType.INTEGER, false), // 4
-            new Column("c", NativeType.INTEGER, false), // 4
-            new Column("d", NativeType.INTEGER, false), // 4
-            new Column("e", NativeType.LONG, false),    // 8
-            new Column("f", NativeType.LONG, false),    // 8
-            new Column("g", NativeType.UUID, false),    // 16
-            new Column("h", NativeType.UUID, false)     // 16
+            new Column("a", NativeType.INT16, false), // 2
+            new Column("b", NativeType.INT32, false), // 4
+            new Column("c", NativeType.INT32, false), // 4
+            new Column("d", NativeType.INT32, false), // 4
+            new Column("e", NativeType.INT64, false), // 8
+            new Column("f", NativeType.INT64, false), // 8
+            new Column("g", NativeType.UUID, false),  // 16
+            new Column("h", NativeType.UUID, false)   // 16
         };
 
         checkColumnFolding(colDef);
@@ -202,16 +202,16 @@ public class ColumnsTest {
     @Test
     public void testFoldSizeNoVarlenIncomplete2Bytes() {
         Column[] colDef = {
-            new Column("a", NativeType.SHORT, false),   // 2
-            new Column("b", NativeType.SHORT, false),   // 2
-            new Column("c", NativeType.INTEGER, false), // 4
-            new Column("d", NativeType.INTEGER, false), // 4
-            new Column("e", NativeType.INTEGER, false), // 4
-            new Column("f", NativeType.INTEGER, false), // 4
-            new Column("g", NativeType.LONG, false),    // 8
-            new Column("h", NativeType.LONG, false),    // 8
-            new Column("i", NativeType.UUID, false),    // 16
-            new Column("j", NativeType.UUID, false)     // 16
+            new Column("a", NativeType.INT16, false), // 2
+            new Column("b", NativeType.INT16, false), // 2
+            new Column("c", NativeType.INT32, false), // 4
+            new Column("d", NativeType.INT32, false), // 4
+            new Column("e", NativeType.INT32, false), // 4
+            new Column("f", NativeType.INT32, false), // 4
+            new Column("g", NativeType.INT64, false), // 8
+            new Column("h", NativeType.INT64, false), // 8
+            new Column("i", NativeType.UUID, false),  // 16
+            new Column("j", NativeType.UUID, false)   // 16
         };
 
         checkColumnFolding(colDef);
@@ -223,22 +223,22 @@ public class ColumnsTest {
     @Test
     public void testFoldSizeNoVarlenFull2Bytes() {
         Column[] colDef = {
-            new Column("a", NativeType.SHORT, false),   // 2
-            new Column("b", NativeType.SHORT, false),   // 2
-            new Column("c", NativeType.SHORT, false),   // 2
-            new Column("d", NativeType.SHORT, false),   // 2
-            new Column("e", NativeType.INTEGER, false), // 4
-            new Column("f", NativeType.INTEGER, false), // 4
-            new Column("g", NativeType.INTEGER, false), // 4
-            new Column("h", NativeType.INTEGER, false), // 4
-            new Column("i", NativeType.INTEGER, false), // 4
-            new Column("j", NativeType.INTEGER, false), // 4
-            new Column("k", NativeType.LONG, false),    // 8
-            new Column("l", NativeType.LONG, false),    // 8
-            new Column("m", NativeType.LONG, false),    // 8
-            new Column("n", NativeType.UUID, false),    // 16
-            new Column("o", NativeType.UUID, false),    // 16
-            new Column("p", NativeType.UUID, false)     // 16
+            new Column("a", NativeType.INT16, false), // 2
+            new Column("b", NativeType.INT16, false), // 2
+            new Column("c", NativeType.INT16, false), // 2
+            new Column("d", NativeType.INT16, false), // 2
+            new Column("e", NativeType.INT32, false), // 4
+            new Column("f", NativeType.INT32, false), // 4
+            new Column("g", NativeType.INT32, false), // 4
+            new Column("h", NativeType.INT32, false), // 4
+            new Column("i", NativeType.INT32, false), // 4
+            new Column("j", NativeType.INT32, false), // 4
+            new Column("k", NativeType.INT64, false), // 8
+            new Column("l", NativeType.INT64, false), // 8
+            new Column("m", NativeType.INT64, false), // 8
+            new Column("n", NativeType.UUID, false),  // 16
+            new Column("o", NativeType.UUID, false),  // 16
+            new Column("p", NativeType.UUID, false)   // 16
         };
 
         checkColumnFolding(colDef);
@@ -250,11 +250,11 @@ public class ColumnsTest {
     @Test
     public void testFoldSizeVarlenIncomplete1Byte() {
         Column[] colDef = {
-            new Column("a", NativeType.SHORT, false),   // 2
-            new Column("b", NativeType.INTEGER, false), // 4
-            new Column("c", NativeType.INTEGER, false), // 4
-            new Column("d", NativeType.INTEGER, false), // 4
-            new Column("e", NativeType.LONG, false),    // 8
+            new Column("a", NativeType.INT16, false), // 2
+            new Column("b", NativeType.INT32, false), // 4
+            new Column("c", NativeType.INT32, false), // 4
+            new Column("d", NativeType.INT32, false), // 4
+            new Column("e", NativeType.INT64, false), // 8
             new Column("f", NativeType.STRING, false),
             new Column("g", NativeType.BYTES, false)
         };
@@ -268,11 +268,11 @@ public class ColumnsTest {
     @Test
     public void testFoldSizeVarlenFull1Byte() {
         Column[] colDef = {
-            new Column("a", NativeType.SHORT, false),   // 2
-            new Column("b", NativeType.INTEGER, false), // 4
-            new Column("c", NativeType.INTEGER, false), // 4
-            new Column("d", NativeType.INTEGER, false), // 4
-            new Column("e", NativeType.LONG, false),    // 8
+            new Column("a", NativeType.INT16, false), // 2
+            new Column("b", NativeType.INT32, false), // 4
+            new Column("c", NativeType.INT32, false), // 4
+            new Column("d", NativeType.INT32, false), // 4
+            new Column("e", NativeType.INT64, false), // 8
             new Column("f", NativeType.STRING, false),
             new Column("g", NativeType.STRING, false),
             new Column("h", NativeType.BYTES, false)
@@ -287,12 +287,12 @@ public class ColumnsTest {
     @Test
     public void testFoldSizeVarlenIncomplete2Bytes1() {
         Column[] colDef = {
-            new Column("a", NativeType.SHORT, false),   // 2
-            new Column("b", NativeType.INTEGER, false), // 4
-            new Column("c", NativeType.INTEGER, false), // 4
-            new Column("d", NativeType.INTEGER, false), // 4
-            new Column("e", NativeType.INTEGER, false), // 4
-            new Column("f", NativeType.LONG, false),    // 8
+            new Column("a", NativeType.INT16, false), // 2
+            new Column("b", NativeType.INT32, false), // 4
+            new Column("c", NativeType.INT32, false), // 4
+            new Column("d", NativeType.INT32, false), // 4
+            new Column("e", NativeType.INT32, false), // 4
+            new Column("f", NativeType.INT64, false), // 8
             new Column("g", NativeType.STRING, false),
             new Column("h", NativeType.STRING, false),
             new Column("i", NativeType.BYTES, false)
@@ -307,14 +307,14 @@ public class ColumnsTest {
     @Test
     public void testFoldSizeVarlenIncomplete2Bytes2() {
         Column[] colDef = {
-            new Column("a", NativeType.SHORT, false),   // 2
-            new Column("b", NativeType.INTEGER, false), // 4
-            new Column("c", NativeType.INTEGER, false), // 4
-            new Column("d", NativeType.INTEGER, false), // 4
-            new Column("e", NativeType.INTEGER, false), // 4
-            new Column("f", NativeType.INTEGER, false), // 4
-            new Column("g", NativeType.INTEGER, false), // 4
-            new Column("h", NativeType.LONG, false),    // 8
+            new Column("a", NativeType.INT16, false), // 2
+            new Column("b", NativeType.INT32, false), // 4
+            new Column("c", NativeType.INT32, false), // 4
+            new Column("d", NativeType.INT32, false), // 4
+            new Column("e", NativeType.INT32, false), // 4
+            new Column("f", NativeType.INT32, false), // 4
+            new Column("g", NativeType.INT32, false), // 4
+            new Column("h", NativeType.INT64, false), // 8
             new Column("i", NativeType.STRING, false),
             new Column("j", NativeType.STRING, false),
             new Column("k", NativeType.BYTES, false)
@@ -329,15 +329,15 @@ public class ColumnsTest {
     @Test
     public void testFoldSizeVarlenIncomplete2Bytes3() {
         Column[] colDef = {
-            new Column("a", NativeType.SHORT, false),   // 2
-            new Column("b", NativeType.INTEGER, false), // 4
-            new Column("c", NativeType.INTEGER, false), // 4
-            new Column("d", NativeType.INTEGER, false), // 4
-            new Column("e", NativeType.INTEGER, false), // 4
-            new Column("f", NativeType.INTEGER, false), // 4
-            new Column("g", NativeType.INTEGER, false), // 4
-            new Column("h", NativeType.LONG, false),    // 8
-            new Column("i", NativeType.LONG, false),    // 8
+            new Column("a", NativeType.INT16, false), // 2
+            new Column("b", NativeType.INT32, false), // 4
+            new Column("c", NativeType.INT32, false), // 4
+            new Column("d", NativeType.INT32, false), // 4
+            new Column("e", NativeType.INT32, false), // 4
+            new Column("f", NativeType.INT32, false), // 4
+            new Column("g", NativeType.INT32, false), // 4
+            new Column("h", NativeType.INT64, false), // 8
+            new Column("i", NativeType.INT64, false), // 8
             new Column("j", NativeType.STRING, false),
             new Column("k", NativeType.BYTES, false)
         };
@@ -351,15 +351,15 @@ public class ColumnsTest {
     @Test
     public void testFoldSizeVarlenFull2Bytes() {
         Column[] colDef = {
-            new Column("a", NativeType.SHORT, false),   // 2
-            new Column("b", NativeType.INTEGER, false), // 4
-            new Column("c", NativeType.INTEGER, false), // 4
-            new Column("d", NativeType.INTEGER, false), // 4
-            new Column("e", NativeType.INTEGER, false), // 4
-            new Column("f", NativeType.INTEGER, false), // 4
-            new Column("g", NativeType.INTEGER, false), // 4
-            new Column("h", NativeType.INTEGER, false), // 4
-            new Column("i", NativeType.LONG, false),    // 8
+            new Column("a", NativeType.INT16, false), // 2
+            new Column("b", NativeType.INT32, false), // 4
+            new Column("c", NativeType.INT32, false), // 4
+            new Column("d", NativeType.INT32, false), // 4
+            new Column("e", NativeType.INT32, false), // 4
+            new Column("f", NativeType.INT32, false), // 4
+            new Column("g", NativeType.INT32, false), // 4
+            new Column("h", NativeType.INT32, false), // 4
+            new Column("i", NativeType.INT64, false), // 8
             new Column("j", NativeType.STRING, false),
             new Column("k", NativeType.BYTES, false),
             new Column("l", NativeType.BYTES, false),

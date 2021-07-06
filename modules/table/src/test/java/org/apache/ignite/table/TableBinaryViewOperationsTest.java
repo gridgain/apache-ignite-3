@@ -45,8 +45,8 @@ public class TableBinaryViewOperationsTest {
     public void testInsert() {
         SchemaDescriptor schema = new SchemaDescriptor(
             1,
-            new Column[] {new Column("id", NativeType.LONG, false)},
-            new Column[] {new Column("val", NativeType.LONG, false)}
+            new Column[] {new Column("id", NativeType.INT64, false)},
+            new Column[] {new Column("val", NativeType.INT64, false)}
         );
 
         Table tbl = new TableImpl(new DummyInternalTableImpl(), new DummySchemaManagerImpl(schema));
@@ -79,8 +79,8 @@ public class TableBinaryViewOperationsTest {
     public void testUpsert() {
         SchemaDescriptor schema = new SchemaDescriptor(
             1,
-            new Column[] {new Column("id", NativeType.LONG, false)},
-            new Column[] {new Column("val", NativeType.LONG, false)}
+            new Column[] {new Column("id", NativeType.INT64, false)},
+            new Column[] {new Column("val", NativeType.INT64, false)}
         );
 
         Table tbl = new TableImpl(new DummyInternalTableImpl(), new DummySchemaManagerImpl(schema));
@@ -114,8 +114,8 @@ public class TableBinaryViewOperationsTest {
     public void testGetAndUpsert() {
         SchemaDescriptor schema = new SchemaDescriptor(
             1,
-            new Column[] {new Column("id", NativeType.LONG, false)},
-            new Column[] {new Column("val", NativeType.LONG, false)}
+            new Column[] {new Column("id", NativeType.INT64, false)},
+            new Column[] {new Column("val", NativeType.INT64, false)}
         );
 
         Table tbl = new TableImpl(new DummyInternalTableImpl(), new DummySchemaManagerImpl(schema));
@@ -146,8 +146,8 @@ public class TableBinaryViewOperationsTest {
     public void testRemove() {
         SchemaDescriptor schema = new SchemaDescriptor(
             1,
-            new Column[] {new Column("id", NativeType.LONG, false)},
-            new Column[] {new Column("val", NativeType.LONG, false)}
+            new Column[] {new Column("id", NativeType.INT64, false)},
+            new Column[] {new Column("val", NativeType.INT64, false)}
         );
 
         Table tbl = new TableImpl(new DummyInternalTableImpl(), new DummySchemaManagerImpl(schema));
@@ -176,8 +176,8 @@ public class TableBinaryViewOperationsTest {
     public void testRemoveExact() {
         SchemaDescriptor schema = new SchemaDescriptor(
             1,
-            new Column[] {new Column("id", NativeType.LONG, false)},
-            new Column[] {new Column("val", NativeType.LONG, false)}
+            new Column[] {new Column("id", NativeType.INT64, false)},
+            new Column[] {new Column("val", NativeType.INT64, false)}
         );
 
         Table tbl = new TableImpl(new DummyInternalTableImpl(), new DummySchemaManagerImpl(schema));
@@ -227,8 +227,8 @@ public class TableBinaryViewOperationsTest {
     public void testReplace() {
         SchemaDescriptor schema = new SchemaDescriptor(
             1,
-            new Column[] {new Column("id", NativeType.LONG, false)},
-            new Column[] {new Column("val", NativeType.LONG, false)}
+            new Column[] {new Column("id", NativeType.INT64, false)},
+            new Column[] {new Column("val", NativeType.INT64, false)}
         );
 
         Table tbl = new TableImpl(new DummyInternalTableImpl(), new DummySchemaManagerImpl(schema));
@@ -262,8 +262,8 @@ public class TableBinaryViewOperationsTest {
     public void testReplaceExact() {
         SchemaDescriptor schema = new SchemaDescriptor(
             1,
-            new Column[] {new Column("id", NativeType.LONG, false)},
-            new Column[] {new Column("val", NativeType.LONG, false)}
+            new Column[] {new Column("id", NativeType.INT64, false)},
+            new Column[] {new Column("val", NativeType.INT64, false)}
         );
 
         Table tbl = new TableImpl(new DummyInternalTableImpl(), new DummySchemaManagerImpl(schema));

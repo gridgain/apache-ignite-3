@@ -193,11 +193,11 @@ public class RowAssembler {
      * @param val Column value.
      */
     public void appendByte(byte val) {
-        checkType(NativeType.BYTE);
+        checkType(NativeType.INT8);
 
         buf.put(curOff, val);
 
-        shiftColumn(NativeType.BYTE);
+        shiftColumn(NativeType.INT8);
     }
 
     /**
@@ -206,11 +206,11 @@ public class RowAssembler {
      * @param val Column value.
      */
     public void appendShort(short val) {
-        checkType(NativeType.SHORT);
+        checkType(NativeType.INT16);
 
         buf.putShort(curOff, val);
 
-        shiftColumn(NativeType.SHORT);
+        shiftColumn(NativeType.INT16);
     }
 
     /**
@@ -219,11 +219,11 @@ public class RowAssembler {
      * @param val Column value.
      */
     public void appendInt(int val) {
-        checkType(NativeType.INTEGER);
+        checkType(NativeType.INT32);
 
         buf.putInt(curOff, val);
 
-        shiftColumn(NativeType.INTEGER);
+        shiftColumn(NativeType.INT32);
     }
 
     /**
@@ -232,11 +232,11 @@ public class RowAssembler {
      * @param val Column value.
      */
     public void appendLong(long val) {
-        checkType(NativeType.LONG);
+        checkType(NativeType.INT64);
 
         buf.putLong(curOff, val);
 
-        shiftColumn(NativeType.LONG);
+        shiftColumn(NativeType.INT64);
     }
 
     /**

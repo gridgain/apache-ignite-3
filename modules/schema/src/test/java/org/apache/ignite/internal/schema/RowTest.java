@@ -24,13 +24,13 @@ import java.util.Random;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
-import static org.apache.ignite.internal.schema.NativeType.BYTE;
 import static org.apache.ignite.internal.schema.NativeType.BYTES;
 import static org.apache.ignite.internal.schema.NativeType.DOUBLE;
 import static org.apache.ignite.internal.schema.NativeType.FLOAT;
-import static org.apache.ignite.internal.schema.NativeType.INTEGER;
-import static org.apache.ignite.internal.schema.NativeType.LONG;
-import static org.apache.ignite.internal.schema.NativeType.SHORT;
+import static org.apache.ignite.internal.schema.NativeType.INT8;
+import static org.apache.ignite.internal.schema.NativeType.INT32;
+import static org.apache.ignite.internal.schema.NativeType.INT64;
+import static org.apache.ignite.internal.schema.NativeType.INT16;
 import static org.apache.ignite.internal.schema.NativeType.STRING;
 import static org.apache.ignite.internal.schema.NativeType.UUID;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
@@ -61,10 +61,10 @@ public class RowTest {
     @Test
     public void testFixedSizes() {
         Column[] keyCols = new Column[] {
-            new Column("keyByteCol", BYTE, true),
-            new Column("keyShortCol", SHORT, true),
-            new Column("keyIntCol", INTEGER, true),
-            new Column("keyLongCol", LONG, true),
+            new Column("keyByteCol", INT8, true),
+            new Column("keyShortCol", INT16, true),
+            new Column("keyIntCol", INT32, true),
+            new Column("keyLongCol", INT64, true),
             new Column("keyFloatCol", FLOAT, true),
             new Column("keyDoubleCol", DOUBLE, true),
             new Column("keyUuidCol", UUID, true),
@@ -73,10 +73,10 @@ public class RowTest {
         };
 
         Column[] valCols = new Column[] {
-            new Column("valByteCol", BYTE, true),
-            new Column("valShortCol", SHORT, true),
-            new Column("valIntCol", INTEGER, true),
-            new Column("valLongCol", LONG, true),
+            new Column("valByteCol", INT8, true),
+            new Column("valShortCol", INT16, true),
+            new Column("valIntCol", INT32, true),
+            new Column("valLongCol", INT64, true),
             new Column("valFloatCol", FLOAT, true),
             new Column("valDoubleCol", DOUBLE, true),
             new Column("valUuidCol", UUID, true),
@@ -93,19 +93,19 @@ public class RowTest {
     @Test
     public void testVariableSizes() {
         Column[] keyCols = new Column[] {
-            new Column("keyByteCol", BYTE, true),
-            new Column("keyShortCol", SHORT, true),
-            new Column("keyIntCol", INTEGER, true),
-            new Column("keyLongCol", LONG, true),
+            new Column("keyByteCol", INT8, true),
+            new Column("keyShortCol", INT16, true),
+            new Column("keyIntCol", INT32, true),
+            new Column("keyLongCol", INT64, true),
             new Column("keyBytesCol", BYTES, true),
             new Column("keyStringCol", STRING, true),
         };
 
         Column[] valCols = new Column[] {
-            new Column("keyByteCol", BYTE, true),
-            new Column("keyShortCol", SHORT, true),
-            new Column("keyIntCol", INTEGER, true),
-            new Column("keyLongCol", LONG, true),
+            new Column("keyByteCol", INT8, true),
+            new Column("keyShortCol", INT16, true),
+            new Column("keyIntCol", INT32, true),
+            new Column("keyLongCol", INT64, true),
             new Column("valBytesCol", BYTES, true),
             new Column("valStringCol", STRING, true),
         };
@@ -248,19 +248,19 @@ public class RowTest {
                 NativeType type = schema.column(i).type();
 
                 switch (type.spec()) {
-                    case BYTE:
+                    case INT8:
                         asm.appendByte((Byte)vals[i]);
                         break;
 
-                    case SHORT:
+                    case INT16:
                         asm.appendShort((Short)vals[i]);
                         break;
 
-                    case INTEGER:
+                    case INT32:
                         asm.appendInt((Integer)vals[i]);
                         break;
 
-                    case LONG:
+                    case INT64:
                         asm.appendLong((Long)vals[i]);
                         break;
 

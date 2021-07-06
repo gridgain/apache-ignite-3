@@ -33,7 +33,7 @@ public class ColumnTest {
     public void testCompareColumns() {
         Column[] cols = new Column[] {
             new Column("C", NativeType.BYTES, false),
-            new Column("B", NativeType.INTEGER, false),
+            new Column("B", NativeType.INT32, false),
             new Column("AD", NativeType.STRING, false),
             new Column("AA", NativeType.STRING, false),
         };

@@ -24,16 +24,16 @@ import org.apache.ignite.internal.tostring.S;
  */
 public class NativeType implements Comparable<NativeType> {
     /** */
-    public static final NativeType BYTE = new NativeType(NativeTypeSpec.BYTE, 1);
+    public static final NativeType INT8 = new NativeType(NativeTypeSpec.INT8, 1);
 
     /** */
-    public static final NativeType SHORT = new NativeType(NativeTypeSpec.SHORT, 2);
+    public static final NativeType INT16 = new NativeType(NativeTypeSpec.INT16, 2);
 
     /** */
-    public static final NativeType INTEGER = new NativeType(NativeTypeSpec.INTEGER, 4);
+    public static final NativeType INT32 = new NativeType(NativeTypeSpec.INT32, 4);
 
     /** */
-    public static final NativeType LONG = new NativeType(NativeTypeSpec.LONG, 8);
+    public static final NativeType INT64 = new NativeType(NativeTypeSpec.INT64, 8);
 
     /** */
     public static final NativeType FLOAT = new NativeType(NativeTypeSpec.FLOAT, 4);

@@ -96,9 +96,9 @@ public class DistributedTableTest {
 
     /** Schema. */
     public static SchemaDescriptor SCHEMA = new SchemaDescriptor(1, new Column[] {
-        new Column("key", NativeType.LONG, false)
+        new Column("key", NativeType.INT64, false)
     }, new Column[] {
-        new Column("value", NativeType.LONG, false)
+        new Column("value", NativeType.INT64, false)
     });
 
     /** Cluster. */

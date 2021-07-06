@@ -72,7 +72,7 @@ public class Row implements BinaryRow {
      * @throws InvalidTypeException If actual column type does not match the requested column type.
      */
     public byte byteValue(int col) throws InvalidTypeException {
-        long off = findColumn(col, NativeTypeSpec.BYTE);
+        long off = findColumn(col, NativeTypeSpec.INT8);
 
         return off < 0 ? 0 : readByte(offset(off));
     }
@@ -85,7 +85,7 @@ public class Row implements BinaryRow {
      * @throws InvalidTypeException If actual column type does not match the requested column type.
      */
     public Byte byteValueBoxed(int col) throws InvalidTypeException {
-        long off = findColumn(col, NativeTypeSpec.BYTE);
+        long off = findColumn(col, NativeTypeSpec.INT8);
 
         return off < 0 ? null : readByte(offset(off));
     }
@@ -98,7 +98,7 @@ public class Row implements BinaryRow {
      * @throws InvalidTypeException If actual column type does not match the requested column type.
      */
     public short shortValue(int col) throws InvalidTypeException {
-        long off = findColumn(col, NativeTypeSpec.SHORT);
+        long off = findColumn(col, NativeTypeSpec.INT16);
 
         return off < 0 ? 0 : readShort(offset(off));
     }
@@ -111,7 +111,7 @@ public class Row implements BinaryRow {
      * @throws InvalidTypeException If actual column type does not match the requested column type.
      */
     public Short shortValueBoxed(int col) throws InvalidTypeException {
-        long off = findColumn(col, NativeTypeSpec.SHORT);
+        long off = findColumn(col, NativeTypeSpec.INT16);
 
         return off < 0 ? null : readShort(offset(off));
     }
@@ -124,7 +124,7 @@ public class Row implements BinaryRow {
      * @throws InvalidTypeException If actual column type does not match the requested column type.
      */
     public int intValue(int col) throws InvalidTypeException {
-        long off = findColumn(col, NativeTypeSpec.INTEGER);
+        long off = findColumn(col, NativeTypeSpec.INT32);
 
         return off < 0 ? 0 : readInteger(offset(off));
     }
@@ -137,7 +137,7 @@ public class Row implements BinaryRow {
      * @throws InvalidTypeException If actual column type does not match the requested column type.
      */
     public Integer intValueBoxed(int col) throws InvalidTypeException {
-        long off = findColumn(col, NativeTypeSpec.INTEGER);
+        long off = findColumn(col, NativeTypeSpec.INT32);
 
         return off < 0 ? null : readInteger(offset(off));
     }
@@ -150,7 +150,7 @@ public class Row implements BinaryRow {
      * @throws InvalidTypeException If actual column type does not match the requested column type.
      */
     public long longValue(int col) throws InvalidTypeException {
-        long off = findColumn(col, NativeTypeSpec.LONG);
+        long off = findColumn(col, NativeTypeSpec.INT64);
 
         return off < 0 ? 0 : readLong(offset(off));
     }
@@ -163,7 +163,7 @@ public class Row implements BinaryRow {
      * @throws InvalidTypeException If actual column type does not match the requested column type.
      */
     public Long longValueBoxed(int col) throws InvalidTypeException {
-        long off = findColumn(col, NativeTypeSpec.LONG);
+        long off = findColumn(col, NativeTypeSpec.INT64);
 
         return off < 0 ? null : readLong(offset(off));
     }
