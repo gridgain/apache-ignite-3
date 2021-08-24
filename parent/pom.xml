@@ -123,6 +123,14 @@
         <url>https://issues.apache.org/jira/projects/IGNITE/issues</url>
     </issueManagement>
 
+    <dependencies>
+        <dependency>
+            <groupId>kgusakov</groupId>
+            <artifactId>debug-trace</artifactId>
+            <version>1.0-SNAPSHOT</version>
+        </dependency>
+    </dependencies>
+
     <dependencyManagement>
         <dependencies>
             <dependency>

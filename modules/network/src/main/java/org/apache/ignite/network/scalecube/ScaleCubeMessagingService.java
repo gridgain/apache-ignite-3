@@ -120,7 +120,6 @@ final class ScaleCubeMessagingService extends AbstractMessagingService {
         // TODO of stopping the clusterService cause some sort of stop thread-safety logic will be implemented.
         if (cluster.isShutdown())
             return failedFuture(new NodeStoppingException());
-
         var message = Message
             .withData(msg)
             .correlationId(UUID.randomUUID().toString())

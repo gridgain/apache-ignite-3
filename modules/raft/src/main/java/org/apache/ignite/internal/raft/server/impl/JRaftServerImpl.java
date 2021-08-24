@@ -127,7 +127,6 @@ public class JRaftServerImpl implements RaftServer {
         rpcServer = new IgniteRpcServer(
             service,
             nodeManager,
-            opts.getRaftClientMessagesFactory(),
             opts.getRaftMessagesFactory(),
             JRaftUtils.createRequestExecutor(opts)
         );

@@ -33,15 +33,14 @@ import org.apache.ignite.network.ClusterService;
 import org.apache.ignite.network.NetworkAddress;
 import org.apache.ignite.raft.client.Command;
 import org.apache.ignite.raft.client.Peer;
-import org.apache.ignite.raft.client.RaftErrorCode;
+import org.apache.ignite.raft.jraft.RaftMessageGroup;
+import org.apache.ignite.raft.jraft.RaftMessagesFactory;
+import org.apache.ignite.raft.jraft.rpc.CliRequests;
+import org.apache.ignite.raft.jraft.rpc.impl.client.RaftErrorCode;
 import org.apache.ignite.raft.client.ReadCommand;
 import org.apache.ignite.raft.client.WriteCommand;
-import org.apache.ignite.raft.client.message.ActionRequest;
-import org.apache.ignite.raft.client.message.GetLeaderRequest;
-import org.apache.ignite.raft.client.message.GetLeaderResponse;
-import org.apache.ignite.raft.client.message.RaftClientMessageGroup;
-import org.apache.ignite.raft.client.message.RaftClientMessagesFactory;
-import org.apache.ignite.raft.client.message.RaftErrorResponse;
+import org.apache.ignite.raft.jraft.rpc.impl.client.ActionRequest;
+import org.apache.ignite.raft.jraft.rpc.impl.client.RaftErrorResponse;
 import org.apache.ignite.raft.client.service.CommandClosure;
 import org.apache.ignite.raft.client.service.RaftGroupListener;
 import org.jetbrains.annotations.Nullable;
@@ -58,7 +57,7 @@ public class RaftServerImpl implements RaftServer {
     private static final IgniteLogger LOG = IgniteLogger.forClass(RaftServerImpl.class);
 
     /** */
-    private final RaftClientMessagesFactory clientMsgFactory;
+    private final RaftMessagesFactory clientMsgFactory;
 
     /** */
     private final ClusterService service;
@@ -82,7 +81,7 @@ public class RaftServerImpl implements RaftServer {
      * @param service Network service.
      * @param clientMsgFactory Client message factory.
      */
-    public RaftServerImpl(ClusterService service, RaftClientMessagesFactory clientMsgFactory) {
+    public RaftServerImpl(ClusterService service, RaftMessagesFactory clientMsgFactory) {
         Objects.requireNonNull(service);
         Objects.requireNonNull(clientMsgFactory);
 
@@ -96,14 +95,15 @@ public class RaftServerImpl implements RaftServer {
     /** {@inheritDoc} */
     @Override public void start() {
         service.messagingService().addMessageHandler(
-            RaftClientMessageGroup.class,
+            RaftMessageGroup.RpcActionMessageGroup.class,
             (message, senderAddr, correlationId) -> {
-                if (message instanceof GetLeaderRequest) {
+                if (message instanceof CliRequests.GetLeaderRequest) {
                     var localPeer = new Peer(service.topologyService().localMember().address());
 
-                    GetLeaderResponse resp = clientMsgFactory.getLeaderResponse().leader(localPeer).build();
+                    throw new UnsupportedOperationException("can't send response");
+//                    CliRequests.GetLeaderResponse resp = new RaftMessagesFactory().getLeaderResponse().leader(localPeer).build();
 
-                    service.messagingService().send(senderAddr, resp, correlationId);
+//                    service.messagingService().send(senderAddr, resp, correlationId);
                 }
                 else if (message instanceof ActionRequest) {
                     ActionRequest req0 = (ActionRequest)message;
@@ -212,8 +212,9 @@ public class RaftServerImpl implements RaftServer {
             }
 
             @Override public void result(Serializable res) {
-                var msg = clientMsgFactory.actionResponse().result(res).build();
-                service.messagingService().send(sender, msg, corellationId);
+                throw new UnsupportedOperationException("");
+//                var msg = clientMsgFactory.actionResponse().result(res).build();
+//                service.messagingService().send(sender, msg, corellationId);
             }
         })) {
             // Queue out of capacity.

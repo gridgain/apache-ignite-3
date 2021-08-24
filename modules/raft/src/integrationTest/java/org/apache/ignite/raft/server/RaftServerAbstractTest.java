@@ -23,12 +23,12 @@ import org.apache.ignite.lang.IgniteLogger;
 import org.apache.ignite.network.ClusterLocalConfiguration;
 import org.apache.ignite.network.ClusterService;
 import org.apache.ignite.network.ClusterServiceFactory;
+import org.apache.ignite.network.LocalPortRangeNodeFinder;
 import org.apache.ignite.network.MessageSerializationRegistryImpl;
 import org.apache.ignite.network.NetworkAddress;
 import org.apache.ignite.network.StaticNodeFinder;
 import org.apache.ignite.network.scalecube.TestScaleCubeClusterServiceFactory;
 import org.apache.ignite.network.serialization.MessageSerializationRegistry;
-import org.apache.ignite.raft.client.message.RaftClientMessagesFactory;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.TestInfo;
 
@@ -38,9 +38,6 @@ import org.junit.jupiter.api.TestInfo;
 abstract class RaftServerAbstractTest {
     /** */
     protected static final IgniteLogger LOG = IgniteLogger.forClass(RaftServerAbstractTest.class);
-
-    /** */
-    protected static final RaftClientMessagesFactory FACTORY = new RaftClientMessagesFactory();
 
     /** Network factory. */
     protected static final ClusterServiceFactory NETWORK_FACTORY = new TestScaleCubeClusterServiceFactory();
@@ -67,7 +64,8 @@ abstract class RaftServerAbstractTest {
      * @return The client cluster view.
      */
     protected ClusterService clusterService(String name, int port, List<NetworkAddress> servers, boolean start) {
-        var context = new ClusterLocalConfiguration(name, port, new StaticNodeFinder(servers), SERIALIZATION_REGISTRY);
+        var nodeFinder = new LocalPortRangeNodeFinder(port, port + 3);
+        var context = new ClusterLocalConfiguration(name, port, nodeFinder, SERIALIZATION_REGISTRY);
 
         var network = NETWORK_FACTORY.createClusterService(context);
 

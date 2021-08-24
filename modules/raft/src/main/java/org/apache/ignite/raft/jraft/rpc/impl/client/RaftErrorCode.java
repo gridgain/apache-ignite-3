@@ -15,7 +15,7 @@
  * limitations under the License.
  */
 
-package org.apache.ignite.raft.client;
+package org.apache.ignite.raft.jraft.rpc.impl.client;
 
 /**
  * Public error codes for raft protocol.
@@ -49,9 +49,25 @@ public enum RaftErrorCode {
      * @param code The code.
      * @param desc The desctiption.
      */
-    RaftErrorCode(int code, String desc) {
+     RaftErrorCode(int code, String desc) {
         this.code = code;
         this.desc = desc;
+    }
+
+    public static RaftErrorCode from(int code) {
+         if (code == NO_LEADER.code())
+             return NO_LEADER;
+         else if (code == LEADER_CHANGED.code())
+             return LEADER_CHANGED;
+         else if (code == ILLEGAL_STATE.code())
+             return ILLEGAL_STATE;
+         else if (code == BUSY.code())
+             return BUSY;
+         else if (code == SNAPSHOT.code())
+             return SNAPSHOT;
+         else if (code == STATE_MACHINE.code())
+             return STATE_MACHINE;
+         else throw new IllegalArgumentException("Raft error has no suitable value for code: " + code);
     }
 
     /**

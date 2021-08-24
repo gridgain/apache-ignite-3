@@ -16,6 +16,7 @@
  */
 package org.apache.ignite.raft.jraft.rpc.impl.cli;
 
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Future;
 import org.apache.ignite.raft.jraft.option.CliOptions;
 import org.apache.ignite.raft.jraft.option.RpcOptions;

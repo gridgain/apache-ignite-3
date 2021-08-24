@@ -9,33 +9,39 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.function.BiConsumer;
 import java.util.stream.Collectors;
+import org.apache.ignite.lang.IgniteInternalException;
 import org.apache.ignite.lang.IgniteLogger;
 import org.apache.ignite.network.ClusterService;
 import org.apache.ignite.network.NetworkAddress;
 import org.apache.ignite.network.NetworkMessage;
 import org.apache.ignite.raft.client.Command;
 import org.apache.ignite.raft.client.Peer;
+import org.apache.ignite.raft.jraft.rpc.impl.client.RaftErrorCode;
 import org.apache.ignite.raft.client.ReadCommand;
-import org.apache.ignite.raft.client.exception.RaftException;
-import org.apache.ignite.raft.client.message.ActionRequest;
-import org.apache.ignite.raft.client.message.ActionResponse;
-import org.apache.ignite.raft.client.message.RaftClientMessagesFactory;
-import org.apache.ignite.raft.client.message.RaftErrorResponse;
+import org.apache.ignite.raft.jraft.rpc.impl.client.RaftException;
+import org.apache.ignite.raft.jraft.rpc.impl.client.ActionRequest;
+import org.apache.ignite.raft.jraft.rpc.impl.client.ActionResponse;
+import org.apache.ignite.raft.jraft.rpc.impl.client.RaftErrorResponse;
 import org.apache.ignite.raft.client.service.RaftGroupService;
-import org.apache.ignite.raft.client.service.impl.RaftGroupServiceImpl;
 import org.apache.ignite.raft.jraft.RaftMessagesFactory;
+import org.apache.ignite.raft.jraft.Status;
 import org.apache.ignite.raft.jraft.entity.PeerId;
+import org.apache.ignite.raft.jraft.option.CliOptions;
 import org.apache.ignite.raft.jraft.rpc.CliRequests;
+import org.apache.ignite.raft.jraft.rpc.RpcRequests;
+import org.apache.ignite.raft.jraft.rpc.RpcResponseClosure;
+import org.apache.ignite.raft.jraft.rpc.impl.IgniteRpcClient;
+import org.apache.ignite.raft.jraft.rpc.impl.cli.CliClientServiceImpl;
+import org.apache.ignite.raft.jraft.util.Endpoint;
 import org.jetbrains.annotations.NotNull;
 
 import static java.lang.System.currentTimeMillis;
 import static java.util.Objects.requireNonNull;
 import static java.util.concurrent.ThreadLocalRandom.current;
-import static org.apache.ignite.raft.client.RaftErrorCode.LEADER_CHANGED;
-import static org.apache.ignite.raft.client.RaftErrorCode.NO_LEADER;
+import static org.apache.ignite.raft.jraft.rpc.impl.client.RaftErrorCode.NO_LEADER;
 
 public class NewRaftGroupServiceImpl implements RaftGroupService {
-    private static final IgniteLogger LOG = IgniteLogger.forClass(RaftGroupServiceImpl.class);
+    private static final IgniteLogger LOG = IgniteLogger.forClass(NewRaftGroupServiceImpl.class);
 
     /** */
     private volatile long timeout;
@@ -51,8 +57,6 @@ public class NewRaftGroupServiceImpl implements RaftGroupService {
 
     private RaftMessagesFactory raftMessagesFactory;
 
-    private RaftClientMessagesFactory raftClientMessagesFactory;
-
     /** */
     private volatile List<Peer> learners;
 
@@ -61,6 +65,8 @@ public class NewRaftGroupServiceImpl implements RaftGroupService {
 
     /** */
     private final long retryDelay;
+
+    private final CliClientServiceImpl clientService;
 
     /** */
     private final ScheduledExecutorService executor = Executors.newScheduledThreadPool(1);
@@ -79,7 +85,6 @@ public class NewRaftGroupServiceImpl implements RaftGroupService {
         String groupId,
         ClusterService cluster,
         RaftMessagesFactory raftMessagesFactory,
-        RaftClientMessagesFactory raftClientMessagesFactory,
         int timeout,
         List<Peer> peers,
         Peer leader,
@@ -87,12 +92,19 @@ public class NewRaftGroupServiceImpl implements RaftGroupService {
     ) {
         this.cluster = requireNonNull(cluster);
         this.raftMessagesFactory = requireNonNull(raftMessagesFactory);
-        this.raftClientMessagesFactory = requireNonNull(raftClientMessagesFactory);
         this.peers = requireNonNull(peers);
-        this.timeout = timeout;
         this.groupId = groupId;
         this.retryDelay = retryDelay;
         this.leader = leader;
+
+        var rpcOptions = new CliOptions();
+        rpcOptions.setClientExecutor(executor);
+        rpcOptions.setRpcClient(new IgniteRpcClient(cluster));
+        rpcOptions.setRaftMessagesFactory(raftMessagesFactory);
+        rpcOptions.setTimeoutMs(timeout);
+
+        clientService = new CliClientServiceImpl();
+        clientService.init(rpcOptions);
     }
 
     /**
@@ -111,13 +123,12 @@ public class NewRaftGroupServiceImpl implements RaftGroupService {
         String groupId,
         ClusterService cluster,
         RaftMessagesFactory raftMessagesFactory,
-        RaftClientMessagesFactory raftClientMessagesFactory,
         int timeout,
         List<Peer> peers,
         boolean getLeader,
         long retryDelay
     ) {
-        var service = new NewRaftGroupServiceImpl(groupId, cluster, raftMessagesFactory, raftClientMessagesFactory, timeout, peers, null, retryDelay);
+        var service = new NewRaftGroupServiceImpl(groupId, cluster, raftMessagesFactory, timeout, peers, null, retryDelay);
 
         if (!getLeader) {
             return CompletableFuture.completedFuture(service);
@@ -163,17 +174,25 @@ public class NewRaftGroupServiceImpl implements RaftGroupService {
 
     /** {@inheritDoc} */
     @Override public CompletableFuture<Void> refreshLeader() {
+        var fut = new CompletableFuture<CliRequests.GetLeaderResponse>();
         CliRequests.GetLeaderRequest req = raftMessagesFactory.getLeaderRequest().groupId(groupId).build();
 
-        CompletableFuture<CliRequests.GetLeaderResponse> fut = new CompletableFuture<>();
+        var peer = randomNode();
+        clientService.getLeader(new Endpoint(peer.address().host(), peer.address().port()), req, new RpcResponseClosure<CliRequests.GetLeaderResponse>() {
+            @Override public void setResponse(CliRequests.GetLeaderResponse resp) {
+                fut.complete(resp);
+            }
 
-        sendWithRetry(randomNode(), req, currentTimeMillis() + timeout, fut);
+            @Override public void run(Status status) {
+                if (!status.isOk())
+                    fut.completeExceptionally(new IgniteInternalException(status.getCode() + " " + status.getErrorMsg()));
+            }
+        });
 
         return fut.thenApply(resp -> {
             PeerId p = new PeerId();
             p.parse(resp.leaderId());
             leader = new Peer(NetworkAddress.from(p.getEndpoint().toString()));
-
             return null;
         });
     }
@@ -189,7 +208,16 @@ public class NewRaftGroupServiceImpl implements RaftGroupService {
 
         CompletableFuture<CliRequests.GetPeersResponse> fut = new CompletableFuture<>();
 
-        sendWithRetry(leader, req, currentTimeMillis() + timeout, fut);
+        clientService.getPeers(new Endpoint(leader.address().host(), leader.address().port()), req, new RpcResponseClosure<CliRequests.GetPeersResponse>() {
+            @Override public void setResponse(CliRequests.GetPeersResponse resp) {
+                fut.complete(resp);
+            }
+
+            @Override public void run(Status status) {
+                if (!status.isOk())
+                    fut.completeExceptionally(new RaftException(RaftErrorCode.from(status.getCode()), status.getErrorMsg()));
+            }
+        });
 
         return fut.thenApply(resp -> {
             peers = resp.peersList().stream().map(s -> new Peer(NetworkAddress.from(s))).collect(Collectors.toList());
@@ -323,9 +351,20 @@ public class NewRaftGroupServiceImpl implements RaftGroupService {
         if (leader == null)
             return refreshLeader().thenCompose(res -> run(cmd));
 
-        ActionRequest req = raftClientMessagesFactory.actionRequest().command(cmd).groupId(groupId).readOnlySafe(true).build();
+        ActionRequest req = raftMessagesFactory.actionRequest().command(cmd).groupId(groupId).readOnlySafe(true).build();
 
         CompletableFuture<ActionResponse> fut = new CompletableFuture<>();
+
+//        clientService.getPeers(new Endpoint(leader.address().host(), leader.address().port()), req, new RpcResponseClosure<ActionResponse>() {
+//            @Override public void setResponse(ActionResponse resp) {
+//                fut.complete(resp);
+//            }
+//
+//            @Override public void run(Status status) {
+//                if (!status.isOk())
+//                    fut.completeExceptionally(new RaftException(RaftErrorCode.from(status.getCode()), status.getErrorMsg()));
+//            }
+//        });
 
         sendWithRetry(leader, req, currentTimeMillis() + timeout, fut);
 
@@ -336,9 +375,20 @@ public class NewRaftGroupServiceImpl implements RaftGroupService {
      * {@inheritDoc}
      */
     @Override public <R> CompletableFuture<R> run(Peer peer, ReadCommand cmd) {
-        ActionRequest req = raftClientMessagesFactory.actionRequest().command(cmd).groupId(groupId).readOnlySafe(false).build();
+        ActionRequest req = raftMessagesFactory.actionRequest().command(cmd).groupId(groupId).readOnlySafe(false).build();
 
-        CompletableFuture<?> fut = cluster.messagingService().invoke(peer.address(), req, timeout);
+        CompletableFuture<ActionResponse> fut = new CompletableFuture<>();
+
+//        clientService.invokeWithDone(new Endpoint(peer.address().host(), peer.address().port()), req, new RpcResponseClosure<ActionResponse>() {
+//            @Override public void setResponse(ActionResponse resp) {
+//                fut.complete(resp);
+//            }
+//
+//            @Override public void run(Status status) {
+//                if (!status.isOk())
+//                    fut.completeExceptionally(new RaftException(RaftErrorCode.from(status.getCode()), status.getErrorMsg()));
+//            }
+//        });
 
         return fut.thenApply(resp -> (R) ((ActionResponse) resp).result());
     }
@@ -347,6 +397,7 @@ public class NewRaftGroupServiceImpl implements RaftGroupService {
     @Override public void shutdown() {
         // No-op.
     }
+
 
     /**
      * Retries a request until success or timeout.
@@ -379,32 +430,32 @@ public class NewRaftGroupServiceImpl implements RaftGroupService {
                     else
                         fut.completeExceptionally(err);
                 }
-                else if (resp instanceof RaftErrorResponse) {
-                    RaftErrorResponse resp0 = (RaftErrorResponse) resp;
+                else if (resp instanceof RpcRequests.ErrorResponse) {
+                    RpcRequests.ErrorResponse resp0 = (RpcRequests.ErrorResponse) resp;
 
-                    if (resp0.errorCode() == null) { // Handle OK response.
+                    if (resp0.errorCode() == 0) { // Handle OK response.
                         leader = peer; // The OK response was received from a leader.
 
                         fut.complete(null); // Void response.
                     }
-                    else if (resp0.errorCode().equals(NO_LEADER)) {
+                    else if (resp0.errorCode() == NO_LEADER.code()) {
                         executor.schedule(() -> {
                             sendWithRetry(randomNode(), req, stopTime, fut);
 
                             return null;
                         }, retryDelay, TimeUnit.MILLISECONDS);
                     }
-                    else if (resp0.errorCode().equals(LEADER_CHANGED)) {
-                        leader = resp0.newLeader(); // Update a leader.
-
-                        executor.schedule(() -> {
-                            sendWithRetry(resp0.newLeader(), req, stopTime, fut);
-
-                            return null;
-                        }, retryDelay, TimeUnit.MILLISECONDS);
-                    }
+//                    else if (resp0.errorCode() == LEADER_CHANGED.code()) {
+//                        leader = resp0.newLeader(); // Update a leader.
+//
+//                        executor.schedule(() -> {
+//                            sendWithRetry(resp0.newLeader(), req, stopTime, fut);
+//
+//                            return null;
+//                        }, retryDelay, TimeUnit.MILLISECONDS);
+//                    }
                     else
-                        fut.completeExceptionally(new RaftException(resp0.errorCode(), resp0.errorMessage()));
+                        fut.completeExceptionally(new IgniteInternalException(resp0.errorCode() + resp0.errorMsg()));
                 }
                 else {
                     leader = peer; // The OK response was received from a leader.
