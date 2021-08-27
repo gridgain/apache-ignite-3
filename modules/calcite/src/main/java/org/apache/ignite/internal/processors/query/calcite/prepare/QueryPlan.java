@@ -17,40 +17,12 @@
 
 package org.apache.ignite.internal.processors.query.calcite.prepare;
 
-import org.apache.ignite.internal.processors.query.calcite.SqlQueryType;
-
 /**
  *
  */
 public interface QueryPlan {
     /** Query type */
-    enum Type {
-        QUERY,
-        FRAGMENT,
-        DML,
-        DDL,
-        EXPLAIN;
-
-        /**
-         * @return Associated SqlQueryType.
-         */
-        public SqlQueryType mapPlanTypeToSqlType() {
-            switch (this) {
-                case QUERY:
-                    return SqlQueryType.QUERY;
-                case FRAGMENT:
-                    return SqlQueryType.FRAGMENT;
-                case DML:
-                    return SqlQueryType.DML;
-                case DDL:
-                    return SqlQueryType.DDL;
-                case EXPLAIN:
-                    return SqlQueryType.EXPLAIN;
-                default:
-                    throw new UnsupportedOperationException("Unexpected query plan type: " + name());
-            }
-        }
-    }
+    enum Type { QUERY, FRAGMENT, DML, DDL, EXPLAIN }
 
     /**
      * @return Query type.

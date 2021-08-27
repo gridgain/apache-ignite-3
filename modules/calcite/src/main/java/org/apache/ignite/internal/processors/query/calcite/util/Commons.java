@@ -141,7 +141,7 @@ public final class Commons {
     public static <T> SqlCursor<T> createCursor(Iterator<T> iter, QueryPlan.Type type) {
         return new SqlCursor<>() {
             @Override public SqlQueryType getQueryType() {
-                return type.mapPlanTypeToSqlType();
+                return SqlQueryType.mapPlanTypeToSqlType(type);
             }
 
             @Override public void remove() {

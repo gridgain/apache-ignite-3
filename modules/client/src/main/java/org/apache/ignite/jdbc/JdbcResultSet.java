@@ -210,8 +210,6 @@ public class JdbcResultSet implements ResultSet {
                 catch (Exception e) {
                     throw new SQLException("Failed to close cursor.", e.getCause());
                 }
-//                if (res.status() != JdbcResponse.STATUS_SUCCESS)
-//                    throw IgniteQueryErrorCode.createJdbcSqlException(res.err(), res.status());
             }
         }
         finally {

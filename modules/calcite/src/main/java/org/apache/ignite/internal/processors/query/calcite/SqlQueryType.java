@@ -21,6 +21,7 @@ import java.util.Arrays;
 import java.util.Map;
 import java.util.function.Function;
 import java.util.stream.Collectors;
+import org.apache.ignite.internal.processors.query.calcite.prepare.QueryPlan;
 
 /**
  * Possible query types.
@@ -55,6 +56,23 @@ public enum SqlQueryType {
         SqlQueryType value = QRY_TYPE_INDEX.get(qryTypeId);
         assert value != null;
         return value;
+    }
+
+    public static SqlQueryType mapPlanTypeToSqlType(QueryPlan.Type type) {
+        switch (type) {
+            case QUERY:
+                return SqlQueryType.QUERY;
+            case FRAGMENT:
+                return SqlQueryType.FRAGMENT;
+            case DML:
+                return SqlQueryType.DML;
+            case DDL:
+                return SqlQueryType.DDL;
+            case EXPLAIN:
+                return SqlQueryType.EXPLAIN;
+            default:
+                throw new UnsupportedOperationException("Unexpected query plan type: " + type);
+        }
     }
 
     /** Id. */
