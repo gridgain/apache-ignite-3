@@ -25,7 +25,9 @@ import org.apache.ignite.client.IgniteClientConfiguration;
 import org.apache.ignite.client.IgniteClientException;
 import org.apache.ignite.client.proto.query.event.JdbcClientMessage;
 import org.apache.ignite.internal.client.io.ClientConnectionMultiplexer;
+import org.apache.ignite.internal.client.query.ClientQueryProcessor;
 import org.apache.ignite.internal.client.table.ClientTables;
+import org.apache.ignite.internal.processors.query.calcite.QueryProcessor;
 import org.apache.ignite.table.manager.IgniteTables;
 import org.apache.ignite.tx.IgniteTransactions;
 
@@ -41,6 +43,9 @@ public class TcpIgniteClient implements IgniteClient {
 
     /** Tables. */
     private final ClientTables tables;
+
+    /** Tables. */
+    private final ClientQueryProcessor processor;
 
     /**
      * Constructor.
@@ -68,6 +73,7 @@ public class TcpIgniteClient implements IgniteClient {
 
         ch = new ReliableChannel(chFactory, cfg);
         tables = new ClientTables(ch);
+        processor = new ClientQueryProcessor(ch);
     }
 
     /**
@@ -94,6 +100,10 @@ public class TcpIgniteClient implements IgniteClient {
     /** {@inheritDoc} */
     @Override public IgniteTables tables() {
         return tables;
+    }
+
+    public QueryProcessor queryEngine() {
+        return processor;
     }
 
     /** {@inheritDoc} */

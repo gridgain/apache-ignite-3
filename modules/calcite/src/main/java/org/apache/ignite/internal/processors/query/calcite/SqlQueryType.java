@@ -17,45 +17,60 @@
 
 package org.apache.ignite.internal.processors.query.calcite;
 
-import org.apache.ignite.internal.processors.query.calcite.prepare.QueryPlan;
+import java.util.Arrays;
+import java.util.Map;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 /**
  * Possible query types.
  */
 public enum SqlQueryType {
     /** Query. */
-    QUERY,
+    QUERY((byte)0),
 
     /** Fragment. */
-    FRAGMENT,
+    FRAGMENT((byte)1),
 
     /** DML. */
-    DML,
+    DML((byte)2),
 
     /** DDL. */
-    DDL,
+    DDL((byte)3),
 
     /** Explain. */
-    EXPLAIN;
+    EXPLAIN((byte)4);
+
+    private static final Map<Byte, SqlQueryType> QRY_TYPE_INDEX;
+
+    static {
+        QRY_TYPE_INDEX = Arrays.stream(values()).collect(Collectors.toMap(SqlQueryType::id, Function.identity()));
+    }
 
     /**
-     * @param type QueryPlan.Type.
-     * @return Associated SqlQueryType.
+     * @param qryTypeId
+     * @return
      */
-    public static SqlQueryType mapPlanTypeToSqlType(QueryPlan.Type type) {
-        switch (type) {
-            case QUERY:
-                return QUERY;
-            case FRAGMENT:
-                return FRAGMENT;
-            case DML:
-                return DML;
-            case DDL:
-                return DDL;
-            case EXPLAIN:
-                return EXPLAIN;
-            default:
-                throw new UnsupportedOperationException("Unexpected query plan type: " + type.name());
-        }
+    public static SqlQueryType getQryType(byte qryTypeId) {
+        SqlQueryType value = QRY_TYPE_INDEX.get(qryTypeId);
+        assert value != null;
+        return value;
+    }
+
+    /** Id. */
+    private byte id;
+
+    /**
+     * @param id Id.
+     */
+    SqlQueryType(byte id) {
+        this.id = id;
+    }
+
+    /**
+     * @return id.
+     */
+    public byte id() {
+        return id;
     }
 }

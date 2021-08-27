@@ -17,7 +17,6 @@
 
 package org.apache.ignite.jdbc;
 
-import java.sql.BatchUpdateException;
 import java.sql.Connection;
 import java.sql.ResultSet;
 import java.sql.SQLException;
@@ -27,14 +26,10 @@ import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.List;
 import org.apache.ignite.client.proto.query.IgniteQueryErrorCode;
+import org.apache.ignite.client.proto.query.SqlRuntimeException;
 import org.apache.ignite.client.proto.query.SqlStateCode;
-import org.apache.ignite.client.proto.query.event.JdbcBatchExecuteRequest;
-import org.apache.ignite.client.proto.query.event.JdbcBatchExecuteResult;
 import org.apache.ignite.client.proto.query.event.JdbcQuery;
-import org.apache.ignite.client.proto.query.event.JdbcQueryExecuteRequest;
-import org.apache.ignite.client.proto.query.event.JdbcQueryExecuteResult;
-import org.apache.ignite.client.proto.query.event.JdbcQuerySingleResult;
-import org.apache.ignite.client.proto.query.event.JdbcResponse;
+import org.apache.ignite.internal.processors.query.calcite.SqlCursor;
 import org.apache.ignite.internal.util.ArrayUtils;
 import org.apache.ignite.internal.util.CollectionUtils;
 
@@ -131,25 +126,17 @@ public class JdbcStatement implements Statement {
         if (sql == null || sql.isEmpty())
             throw new SQLException("SQL query is empty.");
 
-        JdbcQueryExecuteRequest req = new JdbcQueryExecuteRequest(schema, pageSize,
-            maxRows, conn.getAutoCommit(), false, sql, args == null ? null : ArrayUtils.OBJECT_EMPTY_ARRAY);
-
-        JdbcQueryExecuteResult res = conn.handler().query(req);
-
-        if (res.status() != JdbcResponse.STATUS_SUCCESS)
-            throw IgniteQueryErrorCode.createJdbcSqlException(res.err(), res.status());
-
-        for (JdbcQuerySingleResult jdbcRes : res.results()) {
-            if (jdbcRes.status() != JdbcResponse.STATUS_SUCCESS)
-                throw IgniteQueryErrorCode.createJdbcSqlException(jdbcRes.err(), jdbcRes.status());
+        List<SqlCursor<List<?>>> cursors;
+        try {
+            cursors = conn.processor().query(schema, sql, args == null ? null : ArrayUtils.OBJECT_EMPTY_ARRAY);
+        } catch (SqlRuntimeException e) {
+            throw IgniteQueryErrorCode.createJdbcSqlException(e.message(), e.code());
         }
 
-        resSets = new ArrayList<>(res.results().size());
+        resSets = new ArrayList<>(cursors.size());
 
-        for (JdbcQuerySingleResult jdbcRes : res.results()) {
-            resSets.add(new JdbcResultSet(this, jdbcRes.cursorId(), pageSize,
-                jdbcRes.last(), jdbcRes.items(), jdbcRes.isQuery(), false, jdbcRes.updateCount(),
-                closeOnCompletion, conn.handler()));
+        for (SqlCursor<List<?>> cursor : cursors) {
+            resSets.add(new JdbcResultSet(this, cursor, pageSize, false, closeOnCompletion));
         }
 
         assert !resSets.isEmpty() : "At least one results set is expected";
@@ -386,25 +373,7 @@ public class JdbcStatement implements Statement {
         if (CollectionUtils.nullOrEmpty(batch))
             return new int[0];
 
-        JdbcBatchExecuteRequest req = new JdbcBatchExecuteRequest(conn.getSchema(), batch, conn.getAutoCommit());
-
-        try {
-            JdbcBatchExecuteResult res = conn.handler().batch(req);
-
-            if (res.status() != JdbcResponse.STATUS_SUCCESS) {
-                throw new BatchUpdateException(res.err(),
-                    IgniteQueryErrorCode.codeToSqlState(res.status()),
-                    res.status(),
-                    res.updateCounts());
-            }
-
-            return res.updateCounts();
-        }
-        finally {
-            batchSize = 0;
-
-            batch = null;
-        }
+        throw new SQLFeatureNotSupportedException("Execute batch function is not supported.");
     }
 
     /** {@inheritDoc} */

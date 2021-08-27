@@ -43,10 +43,8 @@ import static org.apache.ignite.client.proto.query.IgniteQueryErrorCode.UNSUPPOR
 import static org.apache.ignite.client.proto.query.event.JdbcResponse.STATUS_FAILED;
 import static org.apache.ignite.client.proto.query.event.JdbcResponse.STATUS_SUCCESS;
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.doReturn;
@@ -89,14 +87,7 @@ public class QueryEventHandlerTest {
 
         for (int i = 0; i < res.results().size(); i++) {
             JdbcQuerySingleResult singleRes = res.results().get(i);
-            assertTrue(singleRes.isQuery());
-            assertFalse(singleRes.last());
             assertEquals(singleRes.cursorId(), i);
-
-            assertEquals(singleRes.items().size(), 10);
-            assertEquals(singleRes.items().get(0).size(), 1);
-
-            assertEquals(singleRes.items().get(0).get(0), "42");
         }
     }
 
@@ -119,7 +110,7 @@ public class QueryEventHandlerTest {
 
         when(processor.query(anyString(), anyString(), any())).thenReturn(cursors);
 
-        return new JdbcQueryEventHandlerImpl(processor);
+        return new JdbcQueryEventHandlerImpl2(processor);
     }
 
     /**
@@ -146,36 +137,11 @@ public class QueryEventHandlerTest {
     }
 
     /**
-     * Test dml query request.
-     */
-    @Test
-    public void testDMLQuery() {
-        JdbcQueryEventHandler hnd = getHandler(SqlQueryType.DML, 1L);
-
-        when(cursor.hasNext()).thenReturn(true).thenReturn(false);
-
-        JdbcQueryExecuteRequest qryReq = getJdbcQueryExecuteRequest(10);
-
-        JdbcQueryExecuteResult res = hnd.query(qryReq);
-
-        assertEquals(res.status(), STATUS_SUCCESS);
-        assertNull(res.err());
-
-        assertEquals(res.results().size(), 1);
-
-        JdbcQuerySingleResult singleRes = res.results().get(0);
-
-        assertEquals(singleRes.updateCount(), 1L);
-        assertFalse(singleRes.isQuery());
-        assertTrue(singleRes.last());
-    }
-
-    /**
      * Test batch query request.
      */
     @Test
     public void testBatchQuery() {
-        JdbcQueryEventHandler hnd = new JdbcQueryEventHandlerImpl(processor);
+        JdbcQueryEventHandler hnd = new JdbcQueryEventHandlerImpl2(processor);
 
         var req = new JdbcBatchExecuteRequest(
             "PUBLIC",
@@ -193,7 +159,7 @@ public class QueryEventHandlerTest {
      */
     @Test
     public void testSelectQueryBadRequest() {
-        JdbcQueryEventHandler hnd = new JdbcQueryEventHandlerImpl(processor);
+        JdbcQueryEventHandler hnd = new JdbcQueryEventHandlerImpl2(processor);
 
         JdbcQueryExecuteRequest qryReq = getJdbcQueryExecuteRequest(10);
 
@@ -290,12 +256,9 @@ public class QueryEventHandlerTest {
      */
     private JdbcQueryEventHandler getHandler(SqlQueryType type, Object val) {
         when(cursor.getQueryType()).thenReturn(type);
-        when(cursor.hasNext()).thenReturn(true);
-
-        doReturn(Collections.singletonList(val)).when(cursor).next();
 
         when(processor.query(anyString(), anyString(), any())).thenReturn(Collections.singletonList(cursor));
 
-        return new JdbcQueryEventHandlerImpl(processor);
+        return new JdbcQueryEventHandlerImpl2(processor);
     }
 }

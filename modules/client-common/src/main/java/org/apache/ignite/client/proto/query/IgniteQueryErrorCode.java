@@ -58,6 +58,17 @@ public final class IgniteQueryErrorCode {
     }
 
     /**
+     * Create a {@link SqlRuntimeException} for given code and message with detected state.
+     *
+     * @param msg Message.
+     * @param code Ignite status code.
+     * @return {@link SQLException} with given details.
+     */
+    public static SqlRuntimeException createJdbcSqlRuntimeException(String msg, int code) {
+        return new SqlRuntimeException(msg, code);
+    }
+
+    /**
      * Map Ignite specific error code to standard SQL state.
      *
      * @param statusCode Ignite specific error code.

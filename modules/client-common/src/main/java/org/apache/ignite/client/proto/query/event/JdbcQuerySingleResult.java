@@ -17,9 +17,6 @@
 
 package org.apache.ignite.client.proto.query.event;
 
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.List;
 import org.apache.ignite.client.proto.ClientMessagePacker;
 import org.apache.ignite.client.proto.ClientMessageUnpacker;
 import org.apache.ignite.internal.tostring.S;
@@ -31,17 +28,8 @@ public class JdbcQuerySingleResult extends JdbcResponse {
     /** Cursor ID. */
     private long cursorId;
 
-    /** Query result rows. */
-    private List<List<Object>> items;
-
-    /** Flag indicating the query has no unfetched results. */
-    private boolean last;
-
     /** Flag indicating the query is SELECT query. {@code false} for DML/DDL queries. */
-    private boolean isQuery;
-
-    /** Update count. */
-    private long updateCnt;
+    private byte qryTypeId;
 
     /**
      * Constructor. For deserialization purposes only.
@@ -63,31 +51,13 @@ public class JdbcQuerySingleResult extends JdbcResponse {
      * Constructor.
      *
      * @param cursorId Cursor ID.
-     * @param items Query result rows.
-     * @param last Flag indicates the query has no unfetched results.
+     * @param qryTypeId Query type id.
      */
-    public JdbcQuerySingleResult(long cursorId, List<List<Object>> items, boolean last) {
+    public JdbcQuerySingleResult(long cursorId, byte qryTypeId) {
         super();
 
         this.cursorId = cursorId;
-        this.items = items;
-        this.last = last;
-        isQuery = true;
-    }
-
-    /**
-     * Constructor.
-     *
-     * @param cursorId Cursor ID.
-     * @param updateCnt Update count for DML queries.
-     */
-    public JdbcQuerySingleResult(long cursorId, long updateCnt) {
-        super();
-
-        this.cursorId = cursorId;
-        last = true;
-        isQuery = false;
-        this.updateCnt = updateCnt;
+        this.qryTypeId = qryTypeId;
     }
 
     /**
@@ -100,39 +70,12 @@ public class JdbcQuerySingleResult extends JdbcResponse {
     }
 
     /**
-     * Get the items.
-     *
-     * @return Query result rows.
-     */
-    public List<List<Object>> items() {
-        return items;
-    }
-
-    /**
-     * Get the last flag.
-     *
-     * @return Flag indicating the query has no unfetched results.
-     */
-    public boolean last() {
-        return last;
-    }
-
-    /**
      * Get the isQuery flag.
      *
      * @return Flag indicating the query is SELECT query. {@code false} for DML/DDL queries.
      */
-    public boolean isQuery() {
-        return isQuery;
-    }
-
-    /**
-     * Get the update count.
-     *
-     * @return Update count for DML queries.
-     */
-    public long updateCount() {
-        return updateCnt;
+    public byte type() {
+        return qryTypeId;
     }
 
     /** {@inheritDoc} */
@@ -143,20 +86,7 @@ public class JdbcQuerySingleResult extends JdbcResponse {
             return;
 
         packer.packLong(cursorId);
-        packer.packBoolean(isQuery);
-
-        if (isQuery) {
-            assert items != null;
-
-            packer.packBoolean(last);
-
-            packer.packInt(items.size());
-
-            for (List<Object> item : items)
-                packer.packObjectArray(item.toArray());
-        }
-        else
-            packer.packLong(updateCnt);
+        packer.packByte(qryTypeId);
     }
 
     /** {@inheritDoc} */
@@ -167,25 +97,7 @@ public class JdbcQuerySingleResult extends JdbcResponse {
             return;
 
         cursorId = unpacker.unpackLong();
-        isQuery = unpacker.unpackBoolean();
-
-        if (isQuery) {
-            last = unpacker.unpackBoolean();
-
-            int size = unpacker.unpackInt();
-
-            if (size > 0) {
-                items = new ArrayList<>(size);
-
-                for (int i = 0; i < size; i++)
-                    items.add(Arrays.asList(unpacker.unpackObjectArray()));
-            }
-        }
-        else {
-            last = true;
-
-            updateCnt = unpacker.unpackLong();
-        }
+        qryTypeId = unpacker.unpackByte();
     }
 
     /** {@inheritDoc} */

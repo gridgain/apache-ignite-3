@@ -43,12 +43,10 @@ import java.util.Properties;
 import java.util.Set;
 import java.util.concurrent.Executor;
 import org.apache.ignite.client.IgniteClient;
-import org.apache.ignite.client.proto.query.JdbcQueryEventHandler;
 import org.apache.ignite.client.proto.query.SqlStateCode;
 import org.apache.ignite.internal.client.HostAndPortRange;
 import org.apache.ignite.internal.client.TcpIgniteClient;
-import org.apache.ignite.internal.client.query.JdbcClientQueryEventHandler;
-import org.jetbrains.annotations.Nullable;
+import org.apache.ignite.internal.processors.query.calcite.QueryProcessor;
 
 import static java.sql.ResultSet.CLOSE_CURSORS_AT_COMMIT;
 import static java.sql.ResultSet.CONCUR_READ_ONLY;
@@ -70,7 +68,7 @@ public class JdbcConnection implements Connection {
     private final Object stmtsMux = new Object();
 
     /** Handler. */
-    private final JdbcQueryEventHandler handler;
+    private final QueryProcessor processor;
 
     /** Schema name. */
     private String schema;
@@ -100,7 +98,7 @@ public class JdbcConnection implements Connection {
     private int netTimeout;
 
     /** Query timeout. */
-    private final @Nullable Integer qryTimeout;
+    private final Integer qryTimeout;
 
     /** Ignite remote client. */
     private final TcpIgniteClient client;
@@ -108,12 +106,12 @@ public class JdbcConnection implements Connection {
     /**
      * Constructor.
      *
-     * @param handler Handler.
+     * @param processor QueryProcessor.
      * @param props Properties.
      */
-    public JdbcConnection(JdbcQueryEventHandler handler, ConnectionProperties props) {
+    public JdbcConnection(QueryProcessor processor, ConnectionProperties props) {
         this.connProps = props;
-        this.handler = handler;
+        this.processor = processor;
 
         autoCommit = true;
 
@@ -143,7 +141,7 @@ public class JdbcConnection implements Connection {
             .addresses(objects)
             .build());
 
-        this.handler = new JdbcClientQueryEventHandler(client);
+        this.processor = client.queryEngine();
 
         txIsolation = Connection.TRANSACTION_NONE;
 
@@ -668,8 +666,8 @@ public class JdbcConnection implements Connection {
      *
      * @return Handler.
      */
-    public JdbcQueryEventHandler handler() {
-        return handler;
+    public QueryProcessor processor() {
+        return processor;
     }
 
     /** {@inheritDoc} */

@@ -42,18 +42,16 @@ import java.sql.Timestamp;
 import java.text.DecimalFormat;
 import java.text.DecimalFormatSymbols;
 import java.text.ParseException;
+import java.util.ArrayList;
 import java.util.Calendar;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import org.apache.ignite.client.proto.query.IgniteQueryErrorCode;
-import org.apache.ignite.client.proto.query.JdbcQueryEventHandler;
+import org.apache.ignite.client.proto.query.SqlRuntimeException;
 import org.apache.ignite.client.proto.query.SqlStateCode;
-import org.apache.ignite.client.proto.query.event.JdbcQueryCloseRequest;
-import org.apache.ignite.client.proto.query.event.JdbcQueryCloseResult;
-import org.apache.ignite.client.proto.query.event.JdbcQueryFetchRequest;
-import org.apache.ignite.client.proto.query.event.JdbcQueryFetchResult;
-import org.apache.ignite.client.proto.query.event.JdbcResponse;
+import org.apache.ignite.internal.processors.query.calcite.SqlCursor;
+import org.apache.ignite.internal.processors.query.calcite.SqlQueryType;
 
 /**
  * Jdbc result set implementation.
@@ -81,8 +79,8 @@ public class JdbcResultSet implements ResultSet {
     /** Statement. */
     private final JdbcStatement stmt;
 
-    /** Cursor ID. */
-    private final Long cursorId;
+    /** Cursor. */
+    private final SqlCursor<List<?>> cursor;
 
     /** Rows. */
     private List<List<Object>> rows;
@@ -109,7 +107,7 @@ public class JdbcResultSet implements ResultSet {
     private int fetchSize;
 
     /** Is query flag. */
-    private boolean isQuery;
+    private final boolean isQuery;
 
     /** Auto close server cursors flag. */
     private boolean autoClose;
@@ -120,44 +118,33 @@ public class JdbcResultSet implements ResultSet {
     /** Close statement after close result set count. */
     private boolean closeStmt;
 
-    /** Query request handler. */
-    private JdbcQueryEventHandler qryHandler;
-
     /**
      * Creates new result set.
      *
      * @param stmt Statement.
-     * @param cursorId Cursor ID.
      * @param fetchSize Fetch size.
      * @param finished Finished flag.
-     * @param rows Rows.
-     * @param isQry Is Result ser for Select query.
-     * @param autoClose Is automatic close of server cursors enabled.
-     * @param updCnt Update count.
      * @param closeStmt Close statement on the result set close.
-     * @param qryHandler QueryEventHandler (local or remote).
+     * @param cursor Remote or local sql cursor.
      */
-    JdbcResultSet(JdbcStatement stmt, long cursorId, int fetchSize, boolean finished,
-        List<List<Object>> rows, boolean isQry, boolean autoClose, long updCnt, boolean closeStmt, JdbcQueryEventHandler qryHandler) {
-        assert stmt != null;
-        assert fetchSize > 0;
-
-        this.qryHandler = qryHandler;
+    public JdbcResultSet(JdbcStatement stmt, SqlCursor<List<?>> cursor, int fetchSize, boolean finished,
+        boolean closeStmt) {
         this.stmt = stmt;
-        this.cursorId = cursorId;
+        this.cursor = cursor;
         this.fetchSize = fetchSize;
         this.finished = finished;
-        this.isQuery = isQry;
-        this.autoClose = autoClose;
         this.closeStmt = closeStmt;
 
-        if (isQuery) {
-            this.rows = rows;
+        this.isQuery = cursor.getQueryType() == SqlQueryType.QUERY;
 
-            rowsIter = rows != null ? rows.iterator() : null;
+        if (!isQuery) {
+            List<?> next = cursor.next();
+
+            validateDmlResult(next, cursor.hasNext());
+
+            this.updCnt = (long)next.get(0);
         }
-        else
-            this.updCnt = updCnt;
+
     }
 
     /** {@inheritDoc} */
@@ -165,13 +152,16 @@ public class JdbcResultSet implements ResultSet {
         ensureNotClosed();
 
         if ((rowsIter == null || !rowsIter.hasNext()) && !finished) {
-            JdbcQueryFetchResult res = qryHandler.fetch(new JdbcQueryFetchRequest(cursorId, fetchSize));
+            rows = new ArrayList<>(fetchSize);
 
-            if (res.status() != JdbcResponse.STATUS_SUCCESS)
-                throw IgniteQueryErrorCode.createJdbcSqlException(res.err(), res.status());
+            try {
+                for (int i = 0; i < fetchSize && cursor.hasNext(); i++)
+                    rows.add((List<Object>)cursor.next());
+            } catch (SqlRuntimeException e) {
+                throw IgniteQueryErrorCode.createJdbcSqlException(e.message(), e.code());
+            }
 
-            rows = res.items();
-            finished = res.last();
+            finished = cursor.hasNext();
 
             rowsIter = rows.iterator();
         }
@@ -214,10 +204,14 @@ public class JdbcResultSet implements ResultSet {
 
         try {
             if (stmt != null && (!finished || (isQuery && !autoClose))) {
-                JdbcQueryCloseResult res = qryHandler.close(new JdbcQueryCloseRequest(cursorId));
-
-                if (res.status() != JdbcResponse.STATUS_SUCCESS)
-                    throw IgniteQueryErrorCode.createJdbcSqlException(res.err(), res.status());
+                try {
+                    cursor.close();
+                }
+                catch (Exception e) {
+                    throw new SQLException("Failed to close cursor.", e.getCause());
+                }
+//                if (res.status() != JdbcResponse.STATUS_SUCCESS)
+//                    throw IgniteQueryErrorCode.createJdbcSqlException(res.err(), res.status());
             }
         }
         finally {
@@ -1819,6 +1813,23 @@ public class JdbcResultSet implements ResultSet {
      */
     public void closeStatement(boolean closeStmt) {
         this.closeStmt = closeStmt;
+    }
+
+    /**
+     * Validate dml result. Check if it stores only one value of Long type.
+     *
+     * @param fetch Fetched data from cursor.
+     * @param next HasNext flag.
+     * @return Boolean value indicates if data is valid or not.
+     */
+    private boolean validateDmlResult(List<?> fetch, boolean next) {
+        if (next)
+            return false;
+
+        if (fetch.size() != 1)
+            return false;
+
+        return fetch.get(0) instanceof Long;
     }
 
     /**
