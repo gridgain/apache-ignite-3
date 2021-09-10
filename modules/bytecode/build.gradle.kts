@@ -15,15 +15,7 @@
   limitations under the License.
  */
 
-group = "org.apache.ignite"
 description = "ignite-bytecode"
-version = "3.0.0-SNAPSHOT"
-// java.sourceCompatibility = JavaVersion.VERSION_11
-
-plugins {
-    id("org.apache.ignite.java-conventions")
-    id("com.adarshr.test-logger") version "3.0.0"
-}
 
 dependencies {
     implementation("org.jetbrains:annotations:20.1.0")

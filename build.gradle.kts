@@ -14,3 +14,34 @@
   See the License for the specific language governing permissions and
   limitations under the License.
  */
+
+val projectVersion: String by project
+
+plugins {
+    java
+    `maven-publish`
+
+    id("com.adarshr.test-logger") version "3.0.0"
+}
+
+tasks.named("publishToMavenLocal") {
+    dependsOn("test")
+}
+
+allprojects {
+    group = "org.apache.ignite"
+    version = projectVersion
+
+    apply() {
+        plugin("java")
+        plugin("maven-publish")
+        plugin("com.adarshr.test-logger")
+    }
+
+    java.sourceCompatibility = JavaVersion.VERSION_11
+    java.targetCompatibility = JavaVersion.VERSION_11
+
+    repositories {
+        mavenLocal()
+    }
+}
