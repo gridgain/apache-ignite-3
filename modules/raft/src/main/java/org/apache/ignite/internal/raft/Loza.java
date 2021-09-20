@@ -43,7 +43,7 @@ public class Loza implements IgniteComponent {
     private static final RaftMessagesFactory FACTORY = new RaftMessagesFactory();
 
     /** Timeout. */
-    private static final int TIMEOUT = 3000;
+    private static final int TIMEOUT = 10000;
 
     /** Retry delay. */
     private static final int DELAY = 100;
@@ -76,6 +76,10 @@ public class Loza implements IgniteComponent {
         raftServer.stop();
     }
 
+    public CompletableFuture<RaftGroupService> prepareRaftGroup(String groupId, Set<ClusterNode> nodes, Supplier<RaftGroupListener> lsnr) {
+        return prepareRaftGroup(groupId, nodes, lsnr, null);
+    }
+
     /**
      * Creates a raft group service providing operations on a raft group.
      * If {@code nodes} contains the current node, then raft group starts on the current node.
@@ -88,7 +92,8 @@ public class Loza implements IgniteComponent {
     public CompletableFuture<RaftGroupService> prepareRaftGroup(
         String groupId,
         Set<ClusterNode> nodes,
-        Supplier<RaftGroupListener> lsnrSupplier) {
+        Supplier<RaftGroupListener> lsnrSupplier,
+        Supplier<List<Peer>> updatePeers) {
         assert !nodes.isEmpty();
 
         List<Peer> peers = nodes.stream().map(n -> new Peer(n.address())).collect(Collectors.toList());
@@ -105,7 +110,8 @@ public class Loza implements IgniteComponent {
             TIMEOUT,
             peers,
             true,
-            DELAY
+            DELAY,
+            updatePeers
         );
     }
 

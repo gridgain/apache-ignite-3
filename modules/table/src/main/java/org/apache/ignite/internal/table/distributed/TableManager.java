@@ -61,6 +61,7 @@ import org.apache.ignite.internal.schema.SchemaUtils;
 import org.apache.ignite.internal.schema.registry.SchemaRegistryImpl;
 import org.apache.ignite.internal.storage.rocksdb.RocksDbStorage;
 import org.apache.ignite.internal.table.IgniteTablesInternal;
+import org.apache.ignite.internal.table.PartitionAssignmentsUpdater;
 import org.apache.ignite.internal.table.TableImpl;
 import org.apache.ignite.internal.table.distributed.raft.PartitionListener;
 import org.apache.ignite.internal.table.distributed.storage.InternalTableImpl;
@@ -353,7 +354,8 @@ public class TableManager extends Producer<TableEvent, TableEventParameters> imp
                 raftMgr.prepareRaftGroup(
                     raftGroupName(tblId, p),
                     assignment.get(p),
-                    prepareRaftGroupListenerSupplier(p, name)
+                    prepareRaftGroupListenerSupplier(p, name),
+                    new PartitionAssignmentsUpdater(metaStorageMgr, tblId, p)
                 )
             )
         );
@@ -423,6 +425,38 @@ public class TableManager extends Producer<TableEvent, TableEventParameters> imp
             fireEvent(TableEvent.DROP, new TableEventParameters(tblId, name), e);
         }
     }
+
+//    private CompletableFuture<Map<Integer, RaftGroupService>> refreshPartitionMapping(UUID tblId) {
+//        return affMgr.updateAssignment(tblId).thenCompose(newMapping -> {
+//            int partition = 0;
+//            ArrayList<CompletableFuture<RaftGroupService>> partitionsGroupsFutures = new ArrayList<>();
+//            for (List<ClusterNode> nodes: newMapping) {
+//                partitionsGroupsFutures.add(raftMgr.prepareRaftGroup(
+//                    raftGroupName(tblId, partition++),
+//                    nodes
+//                ));
+//            }
+//
+//            CompletableFuture<Map<Integer, RaftGroupService>> future = CompletableFuture.allOf(partitionsGroupsFutures.toArray(CompletableFuture[]::new)).thenApply((v) -> {
+//                Map<Integer, RaftGroupService> partitionMap = new HashMap<>(partitionsGroupsFutures.size());
+//
+//                for (int p = 0; p < partitionsGroupsFutures.size(); p++) {
+//                    CompletableFuture<RaftGroupService> f = partitionsGroupsFutures.get(p);
+//
+//                    assert f.isDone();
+//
+//                    RaftGroupService service = f.join();
+//
+//                    partitionMap.put(p, service);
+//                }
+//
+//                return partitionMap;
+//            });
+//
+//            return future;
+//        });
+//
+//    }
 
     /**
      * Compounds a RAFT group unique name.
