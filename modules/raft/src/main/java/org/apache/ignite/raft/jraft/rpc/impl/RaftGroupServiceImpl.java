@@ -474,7 +474,7 @@ public class RaftGroupServiceImpl implements RaftGroupService {
                 peersToChoose = new ArrayList<>(peers);
             }
             else
-                peersToChoose = peers;
+                peersToChoose = new ArrayList<>(peers);
         }
         var peer = randomNode(peersToChoose);
         peersToChoose.remove(peer);
@@ -551,7 +551,7 @@ public class RaftGroupServiceImpl implements RaftGroupService {
                             sendWithRetry(req, stopTime, fut, anotherPeers);
 
                             return null;
-                        }, 0, TimeUnit.MILLISECONDS);
+                        }, retryDelay, TimeUnit.MILLISECONDS);
                     }
                     else
                         fut.completeExceptionally(
