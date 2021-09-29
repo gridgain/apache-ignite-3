@@ -43,10 +43,10 @@ public class Loza implements IgniteComponent {
     private static final RaftMessagesFactory FACTORY = new RaftMessagesFactory();
 
     /** Timeout. */
-    private static final int TIMEOUT = 1000;
+    private static final int TIMEOUT = 3000;
 
     /** Retry delay. */
-    private static final int DELAY = 200;
+    private static final int DELAY = 100;
 
     /** Cluster network service. */
     private final ClusterService clusterNetSvc;

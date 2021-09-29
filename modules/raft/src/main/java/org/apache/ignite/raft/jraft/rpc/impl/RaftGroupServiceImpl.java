@@ -456,7 +456,7 @@ public class RaftGroupServiceImpl implements RaftGroupService {
 
         CompletableFuture<?> fut0 = cluster.messagingService().invoke(peer.address(), (NetworkMessage) req, timeout);
 
-        fut0.whenComplete(new BiConsumer<Object, Throwable>() {
+        fut0.whenCompleteAsync(new BiConsumer<Object, Throwable>() {
             @Override public void accept(Object resp, Throwable err) {
                 if (err != null) {
                     if (recoverable(err)) {
@@ -464,7 +464,7 @@ public class RaftGroupServiceImpl implements RaftGroupService {
                             sendWithRetry(randomNode(), req, stopTime, fut);
 
                             return null;
-                        }, retryDelay, TimeUnit.MILLISECONDS);
+                        }, 0, TimeUnit.MILLISECONDS);
                     }
                     else
                         fut.completeExceptionally(err);
@@ -477,21 +477,20 @@ public class RaftGroupServiceImpl implements RaftGroupService {
 
                         fut.complete(null); // Void response.
                     }
-                    else if (resp0.errorCode() == RaftError.EBUSY.getNumber() ||
-                        resp0.errorCode() == (RaftError.EAGAIN.getNumber())) {
+                    else if (shouldRetryOnTheSameNode(resp0)) {
                         executor.schedule(() -> {
                             sendWithRetry(peer, req, stopTime, fut);
 
                             return null;
                         }, retryDelay, TimeUnit.MILLISECONDS);
                     }
-                    else if (resp0.errorCode() == RaftError.EPERM.getNumber()) {
+                    else if (shouldRetryOnAnotherRandomNode(resp0)) {
                         if (resp0.leaderId() == null) {
                             executor.schedule(() -> {
                                 sendWithRetry(randomNode(), req, stopTime, fut);
 
                                 return null;
-                            }, retryDelay, TimeUnit.MILLISECONDS);
+                            }, 0, TimeUnit.MILLISECONDS);
                         }
                         else {
                             leader = parsePeer(resp0.leaderId()); // Update a leader.
@@ -500,7 +499,7 @@ public class RaftGroupServiceImpl implements RaftGroupService {
                                 sendWithRetry(leader, req, stopTime, fut);
 
                                 return null;
-                            }, retryDelay, TimeUnit.MILLISECONDS);
+                            }, 0, TimeUnit.MILLISECONDS);
 
                         }
                     }
@@ -517,13 +516,25 @@ public class RaftGroupServiceImpl implements RaftGroupService {
         });
     }
 
+    private boolean shouldRetryOnTheSameNode(RpcRequests.ErrorResponse response) {
+        return response.errorCode() == RaftError.EBUSY.getNumber() ||
+            response.errorCode() == (RaftError.EAGAIN.getNumber());
+    }
+
+    private boolean shouldRetryOnAnotherRandomNode(RpcRequests.ErrorResponse response) {
+        return response.errorCode() == RaftError.EPERM.getNumber() ||
+            response.errorCode() == RaftError.EINTERNAL.getNumber() ||
+            response.errorCode() == RaftError.UNKNOWN.getNumber() ||
+            response.errorCode() == RaftError.ENOENT.getNumber();
+    }
+
     /**
      * Checks if an error is recoverable, for example, {@link java.net.ConnectException}.
      * @param t The throwable.
      * @return {@code True} if this is a recoverable exception.
      */
     private boolean recoverable(Throwable t) {
-        return t.getCause() instanceof IOException;
+        return true;
     }
 
     /**

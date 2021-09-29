@@ -92,7 +92,8 @@ class ITDynamicTableCreationTest {
     /** */
     @AfterEach
     void tearDown() throws Exception {
-        IgniteUtils.closeAll(Lists.reverse(clusterNodes));
+        System.out.println("------------------------TEST ENDED------------------------------------------------");
+//        IgniteUtils.closeAll(Lists.reverse(clusterNodes));
     }
 
     /**
@@ -225,4 +226,88 @@ class ITDynamicTableCreationTest {
         assertEquals(7373, (Integer)kvView2.get(keyTuple2).value("valInt"));
         assertNull(kvView2.get(keyTuple2).value("valNull"));
     }
+
+    @Test
+    void testDynamicTableCreationAndRebalance() throws InterruptedException {
+        nodesBootstrapCfg.forEach((nodeName, configStr) ->
+            clusterNodes.add(IgnitionManager.start(nodeName, configStr, workDir.resolve(nodeName)))
+        );
+
+        assertEquals(3, clusterNodes.size());
+
+        // Create table on node 0.
+        SchemaTable scmTbl1 = SchemaBuilders.tableBuilder("PUBLIC", "tbl1").columns(
+            SchemaBuilders.column("key", ColumnType.UUID).asNonNull().build(),
+            SchemaBuilders.column("affKey", ColumnType.INT64).asNonNull().build(),
+            SchemaBuilders.column("valStr", ColumnType.string()).asNullable().build()
+        ).withIndex(
+            SchemaBuilders.pkIndex()
+                .addIndexColumn("key").done()
+                .addIndexColumn("affKey").done()
+                .withAffinityColumns("affKey")
+                .build()
+        ).build();
+
+        clusterNodes.get(0).tables().createTable(scmTbl1.canonicalName(), tblCh ->
+            SchemaConfigurationConverter.convert(scmTbl1, tblCh)
+                .changeReplicas(10)
+                .changePartitions(1));
+
+        final UUID uuid = UUID.randomUUID();
+        final UUID uuid2 = UUID.randomUUID();
+
+        // Put data on node 1.
+        Table tbl1 = clusterNodes.get(1).tables().table(scmTbl1.canonicalName());
+
+        tbl1.insert(Tuple.create().set("key", uuid).set("affKey", 42L));
+
+        // Get data on node 2.
+        Table tbl2 = clusterNodes.get(2).tables().table(scmTbl1.canonicalName());
+
+        final Tuple keyTuple1 = Tuple.create().set("key", uuid).set("affKey", 42L);
+        final Tuple keyTuple2 = Tuple.create().set("key", uuid2).set("affKey", 4242L);
+
+
+        // Record binary view MUST return key columns in value.
+        assertEquals(uuid, tbl2.get(keyTuple1).value("key"));
+
+        var node3Conf = "{\n" +
+            "  \"node\": {\n" +
+            "    \"metastorageNodes\":[ \"node0\"]\n" +
+            "  },\n" +
+            "  \"network\": {\n" +
+            "    \"port\":3347,\n" +
+            "    \"netClusterNodes\":[ \"localhost:3344\", \"localhost:3345\", \"localhost:3346\" ]\n" +
+            "  }\n" +
+            "}";
+        var node4Conf = "{\n" +
+            "  \"node\": {\n" +
+            "    \"metastorageNodes\":[ \"node0\"]\n" +
+            "  },\n" +
+            "  \"network\": {\n" +
+            "    \"port\":3348,\n" +
+            "    \"netClusterNodes\":[ \"localhost:3344\", \"localhost:3345\", \"localhost:3346\" ]\n" +
+            "  }\n" +
+            "}";
+        var node3 = IgnitionManager.start("node3", node3Conf, workDir.resolve("node3"));
+        var node4 = IgnitionManager.start("node4", node4Conf, workDir.resolve("node4"));
+        IgnitionManager.stop(clusterNodes.get(1).name());
+        IgnitionManager.stop(clusterNodes.get(2).name());
+
+        Thread.sleep(5000);
+
+        // Get data on node 3.
+        Table tbl3 = node4.tables().table(scmTbl1.canonicalName());
+
+        // Record binary view MUST return key columns in value.
+        try {
+            assertEquals(uuid, tbl3.get(keyTuple1).value("key"));
+        }
+        catch (Throwable th) {
+            System.out.println("fail with exception");
+            th.printStackTrace();
+            throw th;
+        }
+    }
+
 }
