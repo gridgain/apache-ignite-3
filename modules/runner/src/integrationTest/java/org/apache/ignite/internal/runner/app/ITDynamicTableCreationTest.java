@@ -96,7 +96,7 @@ class ITDynamicTableCreationTest {
     @AfterEach
     void tearDown() throws Exception {
         System.out.println("------------------------TEST ENDED------------------------------------------------");
-//        IgniteUtils.closeAll(Lists.reverse(clusterNodes));
+        IgniteUtils.closeAll(Lists.reverse(clusterNodes));
     }
 
     /**
@@ -296,8 +296,6 @@ class ITDynamicTableCreationTest {
         var node4 = IgnitionManager.start("node4", node4Conf, workDir.resolve("node4"));
         IgnitionManager.stop(clusterNodes.get(1).name());
         IgnitionManager.stop(clusterNodes.get(2).name());
-
-        Thread.sleep(5000);
 
         // Get data on node 3.
         Table tbl3 = node4.tables().table(scmTbl1.canonicalName());

@@ -135,7 +135,8 @@ public class RaftGroupServiceImpl implements RaftGroupService {
         this.groupId = groupId;
         this.retryDelay = retryDelay;
         this.leader = leader;
-        this.updatePeersFromAssignments = updatePeersFromAssignments;
+        // DISABLE
+        this.updatePeersFromAssignments = null;
     }
 
     public static CompletableFuture<RaftGroupService> start(
@@ -524,7 +525,7 @@ public class RaftGroupServiceImpl implements RaftGroupService {
                             sendWithRetry(req, stopTime, fut, anotherPeers);
 
                             return null;
-                        }, 0, TimeUnit.MILLISECONDS);
+                        }, retryDelay, TimeUnit.MILLISECONDS);
                     }
                     else
                         fut.completeExceptionally(err);
