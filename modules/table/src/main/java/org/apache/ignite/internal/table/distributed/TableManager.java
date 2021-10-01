@@ -254,25 +254,28 @@ public class TableManager extends Producer<TableEvent, TableEventParameters> imp
                                 toAdd,
                                 prepareRaftGroupListenerSupplier(p, ctx.newValue().name())
                             )
-                                .thenAccept(
-                                    updatedRaftGroupService -> {
+                                .thenCompose(
+                                    updatedRaftGroupService ->
                                         // Change peers from old assignment to (old assignment union new assignment).
                                         updatedRaftGroupService.changePeers(
-                                            oldNewUnion.stream().map(n -> new Peer(n.address())).collect(Collectors.toList()));
+                                            oldNewUnion.stream().map(n -> new Peer(n.address())).collect(Collectors.toList())).thenCompose(v ->
 
-                                        // Change peers from (old assignment union new assignment) to new assignment.
                                         updatedRaftGroupService.changePeers(
-                                            newPartitionAssignment.stream().map(n -> new Peer(n.address())).collect(Collectors.toList()));
+                                            newPartitionAssignment.stream().map(n -> new Peer(n.address())).collect(Collectors.toList()))).thenRun(() ->
+                                            tables.get(ctx.newValue().name()).updateInternalTableRaftGroupService(p, updatedRaftGroupService))
 
                                         // Update table with new raft group services with changed peers.
-                                        tables.get(ctx.newValue().name()).updateInternalTableRaftGroupService(p, updatedRaftGroupService);
-                                    })
+                                    )
                                 .thenRun(() ->
                                     // Stop raft nodes from old assignment that doesn't fit into new one.
                                     // TODO: According to return value check whether raft group was stopped.
                                     raftMgr.stopRaftGroupLocally(
                                         raftGroupName(tblId, p),
                                         toRemove)
+                                ).exceptionally(th -> {
+                                    System.out.println("Failed to update raft peers from new assignments " + th.getClass() + " " + th.getMessage());
+                                    return null;
+                                }
                                 );
                             // TODO: Add exceptionally close.
                         }
