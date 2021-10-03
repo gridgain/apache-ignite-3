@@ -43,7 +43,7 @@ public class Loza implements IgniteComponent {
     private static final RaftMessagesFactory FACTORY = new RaftMessagesFactory();
 
     /** Timeout. */
-    private static final int TIMEOUT = 10000;
+    private static final int TIMEOUT = 3000;
 
     /** Retry delay. */
     private static final int DELAY = 100;
@@ -149,6 +149,15 @@ public class Loza implements IgniteComponent {
             true,
             DELAY
         );
+    }
+
+    public CompletableFuture<Void> addLocalPeer(RaftGroupService groupService, Collection<ClusterNode> newNodes) {
+        String locNodeName = clusterNetSvc.topologyService().localMember().name();
+
+        if (newNodes.stream().anyMatch(n -> locNodeName.equals(n.name()))) {
+            return groupService.addPeer(new Peer(clusterNetSvc.topologyService().localMember().address()));
+        }
+        return CompletableFuture.completedFuture(null);
     }
 
     /**

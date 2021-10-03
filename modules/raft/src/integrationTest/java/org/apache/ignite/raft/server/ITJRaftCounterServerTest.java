@@ -277,6 +277,40 @@ class ITJRaftCounterServerTest extends RaftServerAbstractTest {
             .collect(Collectors.toSet());
     }
 
+    @Test
+    public void testRebalance() throws Exception {
+        startCluster();
+
+        RaftGroupService c2 = startClient(COUNTER_GROUP_1);
+
+        c2.refreshMembers(true).get();
+
+        c2.refreshLeader().get();
+
+        var newPeerList = IntStream.range(0, 6).mapToObj(n -> new Peer(new NetworkAddress(getLocalAddress(), PORT + n))).collect(Collectors.toList());
+
+        for (int i = 3; i < 6; i++) {
+            startServer(i, raftServer -> {
+                raftServer.startRaftGroup(COUNTER_GROUP_1, listenerFactory.get(), newPeerList);
+            });
+        }
+
+        c2.changePeers(newPeerList).get();
+        c2.refreshMembers(true).get();
+
+        var ld = c2.leader();
+
+        System.out.println("Leader before the stop: " + ld);
+
+        servers.stream().filter(s -> s.localPeer(COUNTER_GROUP_1).equals(ld)).findFirst().get().stop();
+
+        c2.refreshLeader().get();
+
+        System.out.println("Leader after the stop: " + c2.leader());
+
+        assertNotNull(c2.leader());
+    }
+
     /**
      *
      */

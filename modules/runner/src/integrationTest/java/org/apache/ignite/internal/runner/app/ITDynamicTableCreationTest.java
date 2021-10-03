@@ -17,22 +17,35 @@
 
 package org.apache.ignite.internal.runner.app;
 
+import java.lang.reflect.Field;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 import com.google.common.collect.Lists;
 import org.apache.ignite.app.Ignite;
 import org.apache.ignite.app.IgnitionManager;
+import org.apache.ignite.internal.app.IgniteImpl;
+import org.apache.ignite.internal.app.IgnitionImpl;
+import org.apache.ignite.internal.configuration.ConfigurationManager;
+import org.apache.ignite.internal.configuration.util.ConfigurationUtil;
 import org.apache.ignite.internal.metastorage.MetaStorageManager;
+import org.apache.ignite.internal.metastorage.client.Entry;
 import org.apache.ignite.internal.schema.configuration.SchemaConfigurationConverter;
 import org.apache.ignite.internal.testframework.WorkDirectory;
 import org.apache.ignite.internal.testframework.WorkDirectoryExtension;
+import org.apache.ignite.internal.util.ByteUtils;
+import org.apache.ignite.internal.util.Cursor;
 import org.apache.ignite.internal.util.IgniteUtils;
 import org.apache.ignite.lang.ByteArray;
 import org.apache.ignite.lang.NodeStoppingException;
+import org.apache.ignite.network.ClusterNode;
+import org.apache.ignite.raft.client.Peer;
 import org.apache.ignite.schema.ColumnType;
 import org.apache.ignite.schema.SchemaBuilders;
 import org.apache.ignite.schema.SchemaTable;
@@ -42,6 +55,7 @@ import org.apache.ignite.table.Tuple;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.platform.commons.util.ReflectionUtils;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -231,7 +245,7 @@ class ITDynamicTableCreationTest {
     }
 
     @Test
-    void testDynamicTableCreationAndRebalance() throws InterruptedException {
+    void testDynamicTableCreationAndRebalance() throws Exception {
         nodesBootstrapCfg.forEach((nodeName, configStr) ->
             clusterNodes.add(IgnitionManager.start(nodeName, configStr, workDir.resolve(nodeName)))
         );
@@ -293,9 +307,8 @@ class ITDynamicTableCreationTest {
             "  }\n" +
             "}";
         var node3 = IgnitionManager.start("node3", node3Conf, workDir.resolve("node3"));
-        Thread.sleep(3000);
+//        Thread.sleep(3000);
         var node4 = IgnitionManager.start("node4", node4Conf, workDir.resolve("node4"));
-        Thread.sleep(3000);
         IgnitionManager.stop(clusterNodes.get(1).name());
         IgnitionManager.stop(clusterNodes.get(2).name());
 
@@ -303,6 +316,7 @@ class ITDynamicTableCreationTest {
         Table tbl3 = node4.tables().table(scmTbl1.canonicalName());
 
         // Record binary view MUST return key columns in value.
+//        printMetastore((IgniteImpl) node4);
         try {
             assertEquals(uuid, tbl3.get(keyTuple1).value("key"));
         }
@@ -313,4 +327,23 @@ class ITDynamicTableCreationTest {
         }
     }
 
+    private void printMetastore(IgniteImpl ignite) throws Exception {
+//
+//        ConfigurationManager clusterCfgMgr;
+//        MetaStorageManager metaStorageManager = (MetaStorageManager)ReflectionUtils.tryToReadFieldValue(IgniteImpl.class, "metaStorageMgr", ignite).get();
+//        byte[] assignment = null;
+//
+//        try (Cursor<Entry> cursor = metaStorageManager.prefix(ByteArray.fromString("dst-cfg.table.tables."))) {
+//            while (cursor.hasNext()) {
+//                Entry entry = cursor.next();
+//
+//                List<String> keySplit = ConfigurationUtil.split(entry.key().toString());
+//
+//                if (keySplit.size() == 5 && "assignments".equals(keySplit.get(4)))
+//                    System.out.println("AssignInfo " + ((List<Set<ClusterNode>>)ByteUtils.fromBytes(entry.value())));
+//                assignment = entry.value();
+//            }
+//
+//        }
+    }
 }

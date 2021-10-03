@@ -52,6 +52,8 @@ public class ChangePeersRequestProcessor extends BaseCliRequestProcessor<ChangeP
     protected Message processRequest0(final CliRequestContext ctx, final ChangePeersRequest request,
         final IgniteCliRpcRequestClosure done) {
         final List<PeerId> oldConf = ctx.node.listPeers();
+        LOG.info(ctx.peerId + " " + ctx.node.getNodeId().getPeerId() + "Old group peers " + oldConf);
+        LOG.info(ctx.peerId + " " + ctx.node.getNodeId().getPeerId() + "New group peers " + request.newPeersList().stream().map(PeerId::parsePeer).collect(toList()));
 
         final Configuration conf = new Configuration();
         for (final String peerIdStr : request.newPeersList()) {

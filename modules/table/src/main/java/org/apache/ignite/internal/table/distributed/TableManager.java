@@ -34,7 +34,6 @@ import java.util.concurrent.CompletionException;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
-import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import org.apache.ignite.configuration.notifications.ConfigurationNamedListListener;
 import org.apache.ignite.configuration.notifications.ConfigurationNotificationEvent;
@@ -81,7 +80,6 @@ import org.apache.ignite.lang.LoggerMessageHelper;
 import org.apache.ignite.network.ClusterNode;
 import org.apache.ignite.network.ClusterService;
 import org.apache.ignite.network.TopologyEventHandler;
-import org.apache.ignite.raft.client.Peer;
 import org.apache.ignite.raft.client.service.RaftGroupListener;
 import org.apache.ignite.raft.client.service.RaftGroupService;
 import org.apache.ignite.table.Table;
@@ -229,6 +227,10 @@ public class TableManager extends Producer<TableEvent, TableEventParameters> imp
 
                         List<Set<ClusterNode>> newAssignments =
                             (List<Set<ClusterNode>>)ByteUtils.fromBytes(assignmentsCtx.newValue());
+                        LOG.info("Old assignments received " + oldAssignments);
+                        LOG.info("New assignments received " + newAssignments);
+
+                        List<CompletableFuture<Void>> futures = new ArrayList<CompletableFuture<Void>>(oldAssignments.size());
 
                         // TODO: IGNITE-15554 Add logic for assignment recalculation in case of partitions or replicas changes
                         // TODO: Until IGNITE-15554 is implemented it's safe to iterate over partitions and replicas cause there will
@@ -248,39 +250,51 @@ public class TableManager extends Producer<TableEvent, TableEventParameters> imp
                             oldNewUnion.addAll(newPartitionAssignment);
 
                             // Create new raft nodes according to new assignments.
-                            raftMgr.updateRaftGroup(
+                            futures.add(raftMgr.updateRaftGroup(
                                 raftGroupName(tblId, p),
-                                oldNewUnion,
+                                newPartitionAssignment,
                                 toAdd,
                                 prepareRaftGroupListenerSupplier(p, ctx.newValue().name())
                             )
                                 .thenCompose(
-                                    updatedRaftGroupService ->
+                                    updatedRaftGroupService -> {
+//                                        LOG.info("Adding peer " + toAdd.stream().findFirst().map(n -> new Peer(n.address())).get());
+//                                        return updatedRaftGroupService.addPeer(toAdd.stream().findFirst().map(n -> new Peer(n.address())).get());
+                                        return raftMgr.addLocalPeer(updatedRaftGroupService, toAdd)
+                                            .thenRun(() ->
+                                                    tables.get(ctx.newValue().name()).updateInternalTableRaftGroupService(p, updatedRaftGroupService));
+//                                            updatedRaftGroupService.
+//                                                changePeers(
+//                                                    newPartitionAssignment.stream().map(n -> new Peer(n.address())).collect(Collectors.toList())).
+//                                                thenRun(() ->
+//                                                    tables.get(ctx.newValue().name()).updateInternalTableRaftGroupService(p, updatedRaftGroupService));
+                                    }
                                         // Change peers from old assignment to (old assignment union new assignment).
-                                        updatedRaftGroupService.changePeers(
-                                            oldNewUnion.stream().map(n -> new Peer(n.address())).collect(Collectors.toList())).thenCompose(v ->
-
-                                        updatedRaftGroupService.changePeers(
-                                            newPartitionAssignment.stream().map(n -> new Peer(n.address())).collect(Collectors.toList()))).thenRun(() ->
-                                            tables.get(ctx.newValue().name()).updateInternalTableRaftGroupService(p, updatedRaftGroupService))
+//                                        updatedRaftGroupService.
+//                                            changePeers(
+//                                                newPartitionAssignment.stream().map(n -> new Peer(n.address())).collect(Collectors.toList())).
+//                                            thenRun(() ->
+//                                                tables.get(ctx.newValue().name()).updateInternalTableRaftGroupService(p, updatedRaftGroupService))
 
                                         // Update table with new raft group services with changed peers.
                                     )
-                                .thenRun(() ->
-                                    // Stop raft nodes from old assignment that doesn't fit into new one.
-                                    // TODO: According to return value check whether raft group was stopped.
-                                    raftMgr.stopRaftGroupLocally(
-                                        raftGroupName(tblId, p),
-                                        toRemove)
+                                .thenRun(() -> {
+                                        LOG.info("newPartitionAssignment " + newPartitionAssignment);
+                                        // Stop raft nodes from old assignment that doesn't fit into new one.
+                                        // TODO: According to return value check whether raft group was stopped.
+                                        raftMgr.stopRaftGroupLocally(
+                                            raftGroupName(tblId, p),
+                                            toRemove);
+                                    }
                                 ).exceptionally(th -> {
                                     System.out.println("Failed to update raft peers from new assignments " + th.getClass() + " " + th.getMessage());
                                     return null;
                                 }
-                                );
+                                ));
                             // TODO: Add exceptionally close.
                         }
 
-                        return CompletableFuture.completedFuture(null);
+                        return CompletableFuture.allOf(futures.toArray(new CompletableFuture[futures.size()]));
                     });
 
                 createTableLocally(
@@ -325,7 +339,7 @@ public class TableManager extends Producer<TableEvent, TableEventParameters> imp
             }
 
             @Override public void onDisappeared(ClusterNode member) {
-                recalculateAssignments();
+//                recalculateAssignments();
             }
         });
     }
@@ -937,8 +951,10 @@ public class TableManager extends Producer<TableEvent, TableEventParameters> imp
                                 change.partitions(),
                                 change.replicas());
 
-                            if (!recalculatedAssignments.equals(ByteUtils.fromBytes(currAssignments)))
+                            if (!recalculatedAssignments.equals(ByteUtils.fromBytes(currAssignments))) {
+                                LOG.info("Current assignments: " + (List<Set<ClusterNode>>) ByteUtils.fromBytes(currAssignments) + "Recalculated assignments: " + recalculatedAssignments);
                                 change.changeAssignments(ByteUtils.toBytes(recalculatedAssignments));
+                            }
                         });
                     }
                 });
