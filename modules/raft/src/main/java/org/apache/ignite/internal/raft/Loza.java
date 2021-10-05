@@ -18,6 +18,7 @@
 package org.apache.ignite.internal.raft;
 
 import java.nio.file.Path;
+import java.util.Collection;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ScheduledExecutorService;
@@ -30,6 +31,7 @@ import org.apache.ignite.internal.raft.server.RaftServer;
 import org.apache.ignite.internal.raft.server.impl.JRaftServerImpl;
 import org.apache.ignite.internal.thread.NamedThreadFactory;
 import org.apache.ignite.internal.util.IgniteUtils;
+import org.apache.ignite.lang.IgniteLogger;
 import org.apache.ignite.network.ClusterNode;
 import org.apache.ignite.network.ClusterService;
 import org.apache.ignite.raft.client.Peer;
@@ -43,6 +45,9 @@ import org.apache.ignite.raft.jraft.util.Utils;
  * Best raft manager ever since 1982.
  */
 public class Loza implements IgniteComponent {
+
+    private static final IgniteLogger LOG = IgniteLogger.forClass(IgniteLogger.class);
+
     /** Factory. */
     private static final RaftMessagesFactory FACTORY = new RaftMessagesFactory();
 
@@ -55,7 +60,7 @@ public class Loza implements IgniteComponent {
     private static final int CLIENT_POOL_SIZE = Math.min(Utils.cpus() * 3, 20);
 
     /** Timeout. */
-    private static final int TIMEOUT = 1000;
+    private static final int TIMEOUT = 5000;
 
     /** Retry delay. */
     private static final int DELAY = 200;
@@ -111,7 +116,8 @@ public class Loza implements IgniteComponent {
     public CompletableFuture<RaftGroupService> prepareRaftGroup(
         String groupId,
         List<ClusterNode> nodes,
-        Supplier<RaftGroupListener> lsnrSupplier) {
+        Supplier<RaftGroupListener> lsnrSupplier,
+        int clientTimeout) {
         assert !nodes.isEmpty();
 
         List<Peer> peers = nodes.stream().map(n -> new Peer(n.address())).collect(Collectors.toList());
@@ -125,12 +131,20 @@ public class Loza implements IgniteComponent {
             groupId,
             clusterNetSvc,
             FACTORY,
-            TIMEOUT,
+            clientTimeout,
             peers,
             true,
             DELAY,
             executor
         );
+    }
+
+    public CompletableFuture<RaftGroupService> prepareRaftGroup(
+        String groupId,
+        List<ClusterNode> nodes,
+        Supplier<RaftGroupListener> lsnrSupplier) {
+
+        return prepareRaftGroup(groupId, nodes, lsnrSupplier, TIMEOUT);
     }
 
     /**
@@ -146,5 +160,44 @@ public class Loza implements IgniteComponent {
 
         if (nodes.stream().anyMatch(n -> locNodeName.equals(n.name())))
             raftServer.stopRaftGroup(groupId);
+    }
+
+    /**
+     * Creates a raft group service providing operations on a raft group.
+     * If {@code deltaNodes} contains the current node, then raft group starts on the current node.
+     * @param groupId Raft group id.
+     * @param nodes Full set of raft group nodes.
+     * @param deltaNodes New raft group nodes.
+     * @param lsnrSupplier Raft group listener supplier.
+     * @return Future representing pending completion of the operation.
+     * @return
+     */
+    public CompletableFuture<RaftGroupService> updateRaftGroup(
+        String groupId,
+        Collection<ClusterNode> nodes,
+        Collection<ClusterNode> deltaNodes,
+        Supplier<RaftGroupListener> lsnrSupplier
+    ) {
+        assert !nodes.isEmpty();
+
+        List<Peer> peers = nodes.stream().map(n -> new Peer(n.address())).collect(Collectors.toList());
+
+        String locNodeName = clusterNetSvc.topologyService().localMember().name();
+
+        if (deltaNodes.stream().anyMatch(n -> locNodeName.equals(n.name()))) {
+            if (!raftServer.startRaftGroup(groupId, lsnrSupplier.get(), peers))
+                LOG.error("Failed to start raft group on node " + locNodeName);
+        }
+
+        return RaftGroupServiceImpl.start(
+            groupId,
+            clusterNetSvc,
+            FACTORY,
+            TIMEOUT,
+            peers,
+            true,
+            DELAY,
+            executor
+        );
     }
 }
