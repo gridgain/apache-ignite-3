@@ -515,7 +515,7 @@ public class RaftGroupServiceImpl implements RaftGroupService {
 //        }
 
         CompletableFuture<?> fut0 = cluster.messagingService()
-            .invoke(peer.address(), (NetworkMessage) req, 200);
+            .invoke(peer.address(), (NetworkMessage) req, 1000);
 
         fut0.whenCompleteAsync(new BiConsumer<Object, Throwable>() {
             @Override public void accept(Object resp, Throwable err) {

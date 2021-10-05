@@ -126,4 +126,8 @@ public class ClientTables implements IgniteTables {
         return ch.serviceAsync(ClientOp.TABLE_GET, w -> w.out().packString(name),
                 r -> new ClientTable(ch, r.in().unpackIgniteUuid(), name));
     }
+
+    @Override public void updateBaseline() {
+        throw new UnsupportedOperationException();
+    }
 }

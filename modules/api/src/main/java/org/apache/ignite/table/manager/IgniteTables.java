@@ -128,4 +128,6 @@ public interface IgniteTables {
      * @return Future representing pending completion of the operation.
      */
     CompletableFuture<Table> tableAsync(String name);
+
+    public void updateBaseline();
 }

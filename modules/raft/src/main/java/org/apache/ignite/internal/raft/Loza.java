@@ -115,6 +115,27 @@ public class Loza implements IgniteComponent {
         );
     }
 
+    public CompletableFuture<RaftGroupService> prepareRaftGroupOnly(
+        String groupId,
+        Set<ClusterNode> nodes,
+        Supplier<RaftGroupListener> lsnrSupplier,
+        Supplier<List<Peer>> updatePeers) {
+        assert !nodes.isEmpty();
+
+        List<Peer> peers = nodes.stream().map(n -> new Peer(n.address())).collect(Collectors.toList());
+
+        return RaftGroupServiceImpl.start(
+            groupId,
+            clusterNetSvc,
+            FACTORY,
+            TIMEOUT,
+            peers,
+            true,
+            30000,
+            updatePeers
+        );
+    }
+
     /**
      * Creates a raft group service providing operations on a raft group.
      * If {@code deltaNodes} contains the current node, then raft group starts on the current node.

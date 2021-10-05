@@ -309,11 +309,12 @@ class ITDynamicTableCreationTest {
         var node3 = IgnitionManager.start("node3", node3Conf, workDir.resolve("node3"));
 //        Thread.sleep(3000);
         var node4 = IgnitionManager.start("node4", node4Conf, workDir.resolve("node4"));
+        clusterNodes.get(0).tables().updateBaseline();
         IgnitionManager.stop(clusterNodes.get(1).name());
         IgnitionManager.stop(clusterNodes.get(2).name());
 
         // Get data on node 3.
-        Table tbl3 = node4.tables().table(scmTbl1.canonicalName());
+        Table tbl3 = clusterNodes.get(0).tables().table(scmTbl1.canonicalName());
 
         // Record binary view MUST return key columns in value.
 //        printMetastore((IgniteImpl) node4);

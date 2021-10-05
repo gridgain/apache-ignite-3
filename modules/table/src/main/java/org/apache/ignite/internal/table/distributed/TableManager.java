@@ -34,6 +34,7 @@ import java.util.concurrent.CompletionException;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
+import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import org.apache.ignite.configuration.notifications.ConfigurationNamedListListener;
 import org.apache.ignite.configuration.notifications.ConfigurationNotificationEvent;
@@ -80,6 +81,7 @@ import org.apache.ignite.lang.LoggerMessageHelper;
 import org.apache.ignite.network.ClusterNode;
 import org.apache.ignite.network.ClusterService;
 import org.apache.ignite.network.TopologyEventHandler;
+import org.apache.ignite.raft.client.Peer;
 import org.apache.ignite.raft.client.service.RaftGroupListener;
 import org.apache.ignite.raft.client.service.RaftGroupService;
 import org.apache.ignite.table.Table;
@@ -161,6 +163,102 @@ public class TableManager extends Producer<TableEvent, TableEventParameters> imp
         this.baselineMgr = baselineMgr;
         this.metaStorageMgr = metaStorageMgr;
         this.partitionsStoreDir = partitionsStoreDir;
+    }
+
+    @Override
+    public void updateBaseline() {
+        tablesCfg.tables().change(
+            tbls -> {
+                for (int i = 0; i < tbls.size(); i++) {
+                    tbls.createOrUpdate(tbls.get(i).name(), changeX -> {
+                        ExtendedTableChange change = (ExtendedTableChange)changeX;
+                        byte[] currAssignments = change.assignments();
+
+                        List<Set<ClusterNode>> recalculatedAssignments = AffinityUtils.calculateAssignments(
+                            baselineMgr.nodes(),
+                            change.partitions(),
+                            change.replicas());
+
+                        if (!recalculatedAssignments.equals(ByteUtils.fromBytes(currAssignments))) {
+                            LOG.info("Current assignments: " +
+                                ((List<Set<ClusterNode>>) ByteUtils.fromBytes(currAssignments)).stream().map(n -> n.stream().map(ClusterNode::name).collect(Collectors.toList())).collect(Collectors.toList()) +
+                                "Recalculated assignments: " + recalculatedAssignments.stream().map(n -> n.stream().map(ClusterNode::name).collect(Collectors.toList())).collect(Collectors.toList()) );
+                            change.changeAssignments(ByteUtils.toBytes(recalculatedAssignments));
+                            while (true) {
+                                try {
+                                    updateRaftTopology((List<Set<ClusterNode>>)ByteUtils.fromBytes(currAssignments), recalculatedAssignments, change.name(), IgniteUuid.fromString(change.id()));
+                                    break;
+                                }
+                                catch (Throwable th) {
+                                    continue;
+                                }
+                            }
+
+                        }
+                    });
+                }
+            }).join();
+
+    }
+
+    private void updateRaftTopology(List<Set<ClusterNode>> oldAssignments, List<Set<ClusterNode>> newAssignments, String name, IgniteUuid tblId) {
+        LOG.info("Old assignments received " + oldAssignments);
+        LOG.info("New assignments received " + newAssignments);
+
+        List<CompletableFuture<Void>> futures = new ArrayList<CompletableFuture<Void>>(oldAssignments.size());
+
+        // TODO: IGNITE-15554 Add logic for assignment recalculation in case of partitions or replicas changes
+        // TODO: Until IGNITE-15554 is implemented it's safe to iterate over partitions and replicas cause there will
+        // TODO: be exact same amount of partitions and replicas for both old and new assignments
+        for (int i = 0; i < oldAssignments.size(); i++) {
+            final int p = i;
+
+            Set<ClusterNode> oldPartitionAssignment = oldAssignments.get(p);
+            Set<ClusterNode> newPartitionAssignment = newAssignments.get(p);
+
+            var toRemove = new HashSet<>(oldPartitionAssignment);
+            var toAdd = new HashSet<>(newPartitionAssignment);
+            var oldNewUnion = new HashSet<>(oldPartitionAssignment);
+
+            toRemove.removeAll(newPartitionAssignment);
+            toAdd.removeAll(oldPartitionAssignment);
+            oldNewUnion.addAll(newPartitionAssignment);
+
+            // Create new raft nodes according to new assignments.
+            futures.add(raftMgr.prepareRaftGroupOnly(
+                raftGroupName(tblId, p),
+                newPartitionAssignment,
+                null,
+                null
+            )
+                .thenCompose(
+                    updatedRaftGroupService -> {
+
+//                                        return updatedRaftGroupService.addPeer(toAdd.stream().findFirst().map(n -> new Peer(n.address())).get());
+                        return
+                                            updatedRaftGroupService.
+                                                changePeers(
+                                                    newPartitionAssignment.stream().map(n -> new Peer(n.address())).collect(Collectors.toList()));
+//                                                thenRun(() ->
+//                                                    tables.get(ctx.newValue().name()).updateInternalTableRaftGroupService(p, updatedRaftGroupService));
+                    }
+                    // Change peers from old assignment to (old assignment union new assignment).
+//                                        updatedRaftGroupService.
+//                                            changePeers(
+//                                                newPartitionAssignment.stream().map(n -> new Peer(n.address())).collect(Collectors.toList())).
+//                                            thenRun(() ->
+//                                                tables.get(ctx.newValue().name()).updateInternalTableRaftGroupService(p, updatedRaftGroupService))
+
+                    // Update table with new raft group services with changed peers.
+                ).exceptionally(th -> {
+                        System.out.println("Failed to update raft peers from new assignments " + th.getClass() + " " + th.getMessage());
+                        return null;
+                    }
+                ));
+            // TODO: Add exceptionally close.
+        }
+
+        CompletableFuture.allOf(futures.toArray(new CompletableFuture[futures.size()])).join();
     }
 
     /** {@inheritDoc} */
@@ -256,13 +354,11 @@ public class TableManager extends Producer<TableEvent, TableEventParameters> imp
                                 toAdd,
                                 prepareRaftGroupListenerSupplier(p, ctx.newValue().name())
                             )
-                                .thenCompose(
+                                .thenAccept(
                                     updatedRaftGroupService -> {
 //                                        LOG.info("Adding peer " + toAdd.stream().findFirst().map(n -> new Peer(n.address())).get());
 //                                        return updatedRaftGroupService.addPeer(toAdd.stream().findFirst().map(n -> new Peer(n.address())).get());
-                                        return raftMgr.addLocalPeer(updatedRaftGroupService, toAdd)
-                                            .thenRun(() ->
-                                                    tables.get(ctx.newValue().name()).updateInternalTableRaftGroupService(p, updatedRaftGroupService));
+                                        tables.get(ctx.newValue().name()).updateInternalTableRaftGroupService(p, updatedRaftGroupService);
 //                                            updatedRaftGroupService.
 //                                                changePeers(
 //                                                    newPartitionAssignment.stream().map(n -> new Peer(n.address())).collect(Collectors.toList())).
@@ -335,7 +431,7 @@ public class TableManager extends Producer<TableEvent, TableEventParameters> imp
 
         clusterSvc.topologyService().addEventHandler(new TopologyEventHandler() {
             @Override public void onAppeared(ClusterNode member) {
-                recalculateAssignments();
+//                recalculateAssignments();
             }
 
             @Override public void onDisappeared(ClusterNode member) {
@@ -957,7 +1053,7 @@ public class TableManager extends Producer<TableEvent, TableEventParameters> imp
                             }
                         });
                     }
-                });
+                }).join();
         }
     }
 

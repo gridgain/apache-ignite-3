@@ -169,4 +169,8 @@ public class FakeIgniteTables implements IgniteTables, IgniteTablesInternal {
     @Override public TableImpl table(IgniteUuid id) {
         return tablesById.get(id);
     }
+
+    @Override public void updateBaseline() {
+        throw new UnsupportedOperationException();
+    }
 }
