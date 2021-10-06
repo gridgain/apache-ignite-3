@@ -310,7 +310,7 @@ class ITDynamicTableCreationTest {
         var node5Cfg = "{\n" +
             "  node.metastorageNodes: [ \"" + clusterNodes.get(0).name() + "\" ],\n" +
             "  network: {\n" +
-            "    port: 3347\n" +
+            "    port: 3348\n" +
             "    netClusterNodes: [ \"localhost:3344\", \"localhost:3345\", \"localhost:3346\" ]\n" +
             "  }\n" +
             "}";
@@ -321,15 +321,7 @@ class ITDynamicTableCreationTest {
         IgnitionManager.stop(clusterNodes.get(2).name());
 
         Table tbl5 = node5.tables().table(schTbl1.canonicalName());
-        while (true) {
-            try {
-                var result = (Long)tbl5.recordView().get(keyTuple1).value("key");
-                assertEquals(1, result);
-                break;
-            }
-            catch (Throwable th) {
-                continue;
-            }
-        }
+        var result = (Long)tbl5.recordView().get(keyTuple1).value("key");
+        assertEquals(1, result);
     }
 }

@@ -487,7 +487,9 @@ public class RaftGroupServiceImpl implements RaftGroupService {
                             return null;
                         }, retryDelay, TimeUnit.MILLISECONDS);
                     }
-                    else if (resp0.errorCode() == RaftError.EPERM.getNumber()) {
+                    else if (resp0.errorCode() == RaftError.EPERM.getNumber() ||
+                        resp0.errorCode() == RaftError.UNKNOWN.getNumber() ||
+                        resp0.errorCode() == RaftError.EINTERNAL.getNumber()) {
                         if (resp0.leaderId() == null) {
                             executor.schedule(() -> {
                                 sendWithRetry(randomNode(), req, stopTime, fut);
