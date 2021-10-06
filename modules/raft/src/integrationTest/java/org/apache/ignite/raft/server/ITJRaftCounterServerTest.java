@@ -21,6 +21,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Set;
@@ -308,6 +309,45 @@ class ITJRaftCounterServerTest extends RaftServerAbstractTest {
         clients.get(1).refreshLeader().get();
 
         assertNotNull(clients.get(1).leader());
+    }
+
+    @Test
+    public void testRebalance() throws Exception {
+        startServer(0, raftServer -> {
+            raftServer.startRaftGroup(COUNTER_GROUP_0, listenerFactory.get(), List.of(new Peer(new NetworkAddress(getLocalAddress(), PORT))));
+        });
+
+        {
+            var addr = new NetworkAddress(getLocalAddress(), PORT);
+
+            ClusterService clientNode = clusterService(CLIENT_PORT, List.of(addr), true);
+
+            RaftGroupService client = RaftGroupServiceImpl.start(COUNTER_GROUP_0, clientNode, FACTORY, 10_000,
+                List.of(new Peer(addr)), false, 200, executor).get(3, TimeUnit.SECONDS);
+
+            client.refreshLeader().join();
+            assertEquals(new Peer(new NetworkAddress(getLocalAddress(), PORT)), client.leader());
+
+            startServer(1, raftServer -> {
+                raftServer.startRaftGroup(COUNTER_GROUP_0, listenerFactory.get(), List.of(new Peer(new NetworkAddress(getLocalAddress(), PORT))));
+            });
+
+            client.changePeers(List.of(new Peer(new NetworkAddress(getLocalAddress(), PORT + 1)))).join();
+
+        }
+
+        {
+            var addr = new NetworkAddress(getLocalAddress(), PORT);
+
+            ClusterService clientNode = clusterService(CLIENT_PORT, List.of(addr), true);
+
+            RaftGroupService client = RaftGroupServiceImpl.start(COUNTER_GROUP_0, clientNode, FACTORY, 10_000,
+                List.of(new Peer(new NetworkAddress(getLocalAddress(), PORT + 1))), false, 200, executor).get(3, TimeUnit.SECONDS);
+
+            client.refreshLeader().join();
+
+            assertEquals(new Peer(new NetworkAddress(getLocalAddress(), PORT + 1)), client.leader());
+        }
     }
 
     /**
