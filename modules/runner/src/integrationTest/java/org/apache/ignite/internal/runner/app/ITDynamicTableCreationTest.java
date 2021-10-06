@@ -252,7 +252,7 @@ class ITDynamicTableCreationTest {
      * Check dynamic table creation.
      */
     @Test
-    void testDynamicSimpleTableCreationRebalance() {
+    void testDynamicSimpleTableCreationRebalance(TestInfo testInfo) {
         nodesBootstrapCfg.forEach((nodeName, configStr) ->
             clusterNodes.add(IgnitionManager.start(nodeName, configStr, workDir.resolve(nodeName)))
         );
@@ -267,7 +267,7 @@ class ITDynamicTableCreationTest {
 
         clusterNodes.get(0).tables().createTable(schTbl1.canonicalName(), tblCh ->
             SchemaConfigurationConverter.convert(schTbl1, tblCh)
-                .changeReplicas(10)
+                .changeReplicas(5)
                 .changePartitions(1)
         );
 
@@ -314,8 +314,13 @@ class ITDynamicTableCreationTest {
             "    netClusterNodes: [ \"localhost:3344\", \"localhost:3345\", \"localhost:3346\" ]\n" +
             "  }\n" +
             "}";
-        var node4 = IgnitionManager.start("node4", node4Cfg, workDir.resolve("node4"));
-        var node5 = IgnitionManager.start("node5", node5Cfg, workDir.resolve("node5"));
+        var node4Name = testNodeName(testInfo, 3347);
+        var node5Name = testNodeName(testInfo, 3348);
+
+        var node4 = IgnitionManager.start(node4Name, node4Cfg, workDir.resolve(node4Name));
+        var node5 = IgnitionManager.start(node5Name, node5Cfg, workDir.resolve(node5Name));
+        clusterNodes.add(node4);
+        clusterNodes.add(node5);
         ((TableManager) clusterNodes.get(0).tables()).updateBaseline();
         IgnitionManager.stop(clusterNodes.get(1).name());
         IgnitionManager.stop(clusterNodes.get(2).name());
