@@ -21,6 +21,8 @@ import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
 
+import org.apache.ignite.internal.app.IgniteImpl;
+import org.apache.ignite.internal.processors.query.calcite.extension.SqlExtensionPluginImpl;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
@@ -30,6 +32,19 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
  * Test SQL data types.
  */
 public class ITDataTypesTest extends AbstractBasicIntegrationTest {
+    @Test
+    public void test() {
+        createAndPopulateTable();
+
+        SqlExtensionPluginImpl.allNodes = CLUSTER_NODES.stream()
+            .map(i -> (IgniteImpl)i)
+            .map(IgniteImpl::id)
+            .collect(Collectors.toList());
+
+        for (List<?> row : sql("select p.id, p.name, t.c2 from person p join MY_PLUGIN.CUSTOM_SCHEMA.TEST_TBL t on p.id = t.c1 where t.c1 > 2"))
+            System.out.println(row);
+    }
+
     /** */
     @Disabled("https://issues.apache.org/jira/browse/IGNITE-15107")
     @Test

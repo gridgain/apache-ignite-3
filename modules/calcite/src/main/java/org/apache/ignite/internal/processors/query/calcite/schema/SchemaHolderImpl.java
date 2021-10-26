@@ -23,6 +23,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
+import org.apache.calcite.schema.Schema;
 import org.apache.calcite.schema.SchemaPlus;
 import org.apache.calcite.tools.Frameworks;
 import org.apache.ignite.internal.schema.Column;
@@ -35,6 +36,8 @@ import org.apache.ignite.internal.table.TableImpl;
 public class SchemaHolderImpl implements SchemaHolder {
     /** */
     private final Map<String, IgniteSchema> igniteSchemas = new HashMap<>();
+
+    private final Map<String, Schema> externalSchemas = new HashMap<>();
 
     /** */
     private final Runnable onSchemaUpdatedCallback;
@@ -53,6 +56,12 @@ public class SchemaHolderImpl implements SchemaHolder {
     /** {@inheritDoc} */
     @Override public SchemaPlus schema() {
         return calciteSchema;
+    }
+
+    public synchronized void registerExternalSchema(String name, Schema schema) {
+        externalSchemas.put(name, schema);
+
+        rebuild();
     }
 
     public synchronized void onSchemaCreated(String schemaName) {
@@ -112,8 +121,12 @@ public class SchemaHolderImpl implements SchemaHolder {
 
     private void rebuild() {
         SchemaPlus newCalciteSchema = Frameworks.createRootSchema(false);
+
         newCalciteSchema.add("PUBLIC", new IgniteSchema("PUBLIC"));
+
         igniteSchemas.forEach(newCalciteSchema::add);
+        externalSchemas.forEach(newCalciteSchema::add);
+
         calciteSchema = newCalciteSchema;
 
         onSchemaUpdatedCallback.run();

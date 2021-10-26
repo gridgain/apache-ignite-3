@@ -48,6 +48,7 @@ import org.apache.ignite.internal.processors.query.calcite.exec.rel.Inbox;
 import org.apache.ignite.internal.processors.query.calcite.exec.rel.Node;
 import org.apache.ignite.internal.processors.query.calcite.exec.rel.Outbox;
 import org.apache.ignite.internal.processors.query.calcite.exec.rel.RootNode;
+import org.apache.ignite.internal.processors.query.calcite.extension.api.SqlExtensionPlugin;
 import org.apache.ignite.internal.processors.query.calcite.message.ErrorMessage;
 import org.apache.ignite.internal.processors.query.calcite.message.MessageService;
 import org.apache.ignite.internal.processors.query.calcite.message.QueryStartRequest;
@@ -101,8 +102,8 @@ import org.jetbrains.annotations.Nullable;
 
 import static java.util.Collections.singletonList;
 import static org.apache.calcite.rel.type.RelDataType.PRECISION_NOT_SPECIFIED;
-import static org.apache.ignite.internal.processors.query.calcite.exec.PlannerHelper.optimize;
 import static org.apache.ignite.internal.processors.query.calcite.externalize.RelJsonReader.fromJson;
+import static org.apache.ignite.internal.processors.query.calcite.prepare.PlannerHelper.optimize;
 import static org.apache.ignite.internal.processors.query.calcite.util.Commons.FRAMEWORK_CONFIG;
 import static org.apache.ignite.internal.util.CollectionUtils.first;
 import static org.apache.ignite.internal.util.CollectionUtils.nullOrEmpty;
@@ -157,19 +158,23 @@ public class ExecutionServiceImpl<Row> implements ExecutionService {
     /** */
     private final DdlSqlToCommandConverter ddlConverter;
 
+    private final List<SqlExtensionPlugin> plugins;
+
     public ExecutionServiceImpl(
         TopologyService topSrvc,
         MessageService msgSrvc,
         QueryPlanCache planCache,
         SchemaHolder schemaHolder,
         QueryTaskExecutor taskExecutor,
-        RowHandler<Row> handler
+        RowHandler<Row> handler,
+        List<SqlExtensionPlugin> plugins
     ) {
         this.topSrvc = topSrvc;
         this.handler = handler;
         this.msgSrvc = msgSrvc;
         this.schemaHolder = schemaHolder;
         this.taskExecutor = taskExecutor;
+        this.plugins = plugins;
 
         locNodeId = topSrvc.localMember().id();
         qryPlanCache = planCache;
@@ -202,7 +207,7 @@ public class ExecutionServiceImpl<Row> implements ExecutionService {
         String qry,
         Object[] params
     ) {
-        PlanningContext pctx = createContext(topologyVersion(), locNodeId, schema, qry, params);
+        PlanningContext pctx = createContext(topologyVersion(), plugins, locNodeId, schema, qry, params);
 
         List<QueryPlan> qryPlans = qryPlanCache.queryPlan(pctx, new CacheKey(pctx.schemaName(), pctx.query()), this::prepareQuery);
 
@@ -246,7 +251,7 @@ public class ExecutionServiceImpl<Row> implements ExecutionService {
     }
 
     /** */
-    private PlanningContext createContext(long topVer, String originator,
+    private PlanningContext createContext(long topVer, List<SqlExtensionPlugin> plugins, String originator,
         @Nullable String schema, String qry, Object[] params) {
         RelTraitDef<?>[] traitDefs = {
             ConventionTraitDef.INSTANCE,
@@ -268,6 +273,7 @@ public class ExecutionServiceImpl<Row> implements ExecutionService {
                 .build())
             .query(qry)
             .parameters(params)
+            .plugins(plugins)
             .topologyVersion(topVer)
             .build();
     }
@@ -353,7 +359,7 @@ public class ExecutionServiceImpl<Row> implements ExecutionService {
 
         sqlNode = validated.sqlNode();
 
-        IgniteRel igniteRel = optimize(sqlNode, planner, LOG);
+        IgniteRel igniteRel = optimize(sqlNode, planner);
 
         // Split query plan to query fragments.
         List<Fragment> fragments = new Splitter().go(igniteRel);
@@ -371,7 +377,7 @@ public class ExecutionServiceImpl<Row> implements ExecutionService {
         sqlNode = planner.validate(sqlNode);
 
         // Convert to Relational operators graph
-        IgniteRel igniteRel = optimize(sqlNode, planner, LOG);
+        IgniteRel igniteRel = optimize(sqlNode, planner);
 
         // Split query plan to query fragments.
         List<Fragment> fragments = new Splitter().go(igniteRel);
@@ -400,7 +406,7 @@ public class ExecutionServiceImpl<Row> implements ExecutionService {
         sql = planner.validate(sql);
 
         // Convert to Relational operators graph
-        IgniteRel igniteRel = optimize(sql, planner, LOG);
+        IgniteRel igniteRel = optimize(sql, planner);
 
         String plan = RelOptUtil.toString(igniteRel, SqlExplainLevel.ALL_ATTRIBUTES);
 
@@ -596,7 +602,7 @@ public class ExecutionServiceImpl<Row> implements ExecutionService {
         assert nodeId != null && msg != null;
 
         try {
-            PlanningContext pctx = createContext(msg.topologyVersion(), nodeId, msg.schema(),
+            PlanningContext pctx = createContext(msg.topologyVersion(), plugins, nodeId, msg.schema(),
                 msg.root(), msg.parameters());
 
             List<QueryPlan> qryPlans = qryPlanCache.queryPlan(

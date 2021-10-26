@@ -50,6 +50,7 @@ import org.apache.ignite.internal.processors.query.calcite.type.IgniteTypeFactor
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
+import static org.apache.calcite.util.Util.last;
 import static org.apache.ignite.internal.processors.query.calcite.util.Commons.nativeTypeToClass;
 import static org.apache.ignite.internal.processors.query.calcite.util.Commons.transform;
 import static org.apache.ignite.internal.util.CollectionUtils.nullOrEmpty;
@@ -198,11 +199,19 @@ public class TypeUtils {
         if (nullOrEmpty(origin))
             return typeFactory.getResultClass(type);
 
-        RelOptTable table = schema.getTableForMember(origin.subList(0, 2));
+        RelOptTable table = schema.getTableForMember(origin.subList(0, origin.size() - 1));
 
         assert table != null;
 
-        ColumnDescriptor fldDesc = table.unwrap(TableDescriptor.class).columnDescriptor(origin.get(2));
+        if (origin.size() == 4) {
+            if ("C1".equals(origin.get(3)))
+                return Integer.class;
+
+            if ("C2".equals(origin.get(3)))
+                return String.class;
+        }
+
+        ColumnDescriptor fldDesc = table.unwrap(TableDescriptor.class).columnDescriptor(last(origin));
 
         assert fldDesc != null;
 

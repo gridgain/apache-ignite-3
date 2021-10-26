@@ -17,6 +17,7 @@
 
 package org.apache.ignite.internal.processors.query.calcite.prepare;
 
+import java.util.List;
 import java.util.Properties;
 import java.util.function.Function;
 
@@ -35,6 +36,7 @@ import org.apache.calcite.sql.validate.SqlConformance;
 import org.apache.calcite.tools.FrameworkConfig;
 import org.apache.calcite.tools.Frameworks;
 import org.apache.calcite.tools.RuleSet;
+import org.apache.ignite.internal.processors.query.calcite.extension.api.SqlExtensionPlugin;
 import org.apache.ignite.internal.processors.query.calcite.type.IgniteTypeFactory;
 import org.jetbrains.annotations.NotNull;
 
@@ -72,6 +74,8 @@ public final class PlanningContext implements Context {
     /** */
     private final IgniteTypeFactory typeFactory;
 
+    private final List<SqlExtensionPlugin> plugins;
+
     /** */
     private Function<RuleSet, RuleSet> rulesFilter;
 
@@ -90,6 +94,7 @@ public final class PlanningContext implements Context {
     private PlanningContext(
         FrameworkConfig cfg,
         Context parentCtx,
+        List<SqlExtensionPlugin> plugins,
         String locNodeId,
         String originatingNodeId,
         String qry,
@@ -101,6 +106,7 @@ public final class PlanningContext implements Context {
         this.qry = qry;
         this.parameters = parameters;
         this.topVer = topVer;
+        this.plugins = plugins;
 
         this.parentCtx = Contexts.chain(parentCtx, cfg.getContext());
         // link frameworkConfig#context() to this.
@@ -129,6 +135,10 @@ public final class PlanningContext implements Context {
      */
     public FrameworkConfig config() {
         return cfg;
+    }
+
+    public List<SqlExtensionPlugin> plugins() {
+        return plugins;
     }
 
     /**
@@ -318,6 +328,8 @@ public final class PlanningContext implements Context {
         /** */
         private long topVer;
 
+        private List<SqlExtensionPlugin> plugins;
+
         /**
          * @param locNodeId Local node ID.
          * @return Builder for chaining.
@@ -382,13 +394,18 @@ public final class PlanningContext implements Context {
             return this;
         }
 
+        public Builder plugins(List<SqlExtensionPlugin> plugins) {
+            this.plugins = plugins;
+            return this;
+        }
+
         /**
          * Builds planner context.
          *
          * @return Planner context.
          */
         public PlanningContext build() {
-            return new PlanningContext(frameworkCfg, parentCtx, locNodeId, originatingNodeId, qry, parameters, topVer);
+            return new PlanningContext(frameworkCfg, parentCtx, plugins, locNodeId, originatingNodeId, qry, parameters, topVer);
         }
     }
 }

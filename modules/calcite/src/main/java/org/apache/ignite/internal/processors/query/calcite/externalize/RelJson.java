@@ -224,7 +224,9 @@ class RelJson {
             "org.apache.calcite.rel.core.",
             "org.apache.calcite.rel.logical.",
             "org.apache.calcite.adapter.jdbc.",
-            "org.apache.calcite.adapter.jdbc.JdbcRules$");
+            "org.apache.calcite.adapter.jdbc.JdbcRules$",
+            "org.apache.ignite.internal.processors.query.calcite.extension."
+        );
 
     /** */
     RelJson(RelOptCluster cluster) {

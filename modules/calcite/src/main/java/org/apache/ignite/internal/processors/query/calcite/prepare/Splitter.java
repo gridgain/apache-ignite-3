@@ -24,6 +24,7 @@ import java.util.List;
 
 import org.apache.calcite.plan.RelOptCluster;
 import org.apache.ignite.internal.processors.query.calcite.rel.IgniteExchange;
+import org.apache.ignite.internal.processors.query.calcite.rel.IgniteGateway;
 import org.apache.ignite.internal.processors.query.calcite.rel.IgniteIndexScan;
 import org.apache.ignite.internal.processors.query.calcite.rel.IgniteReceiver;
 import org.apache.ignite.internal.processors.query.calcite.rel.IgniteRel;
@@ -96,6 +97,11 @@ public class Splitter extends IgniteRelShuttle {
 
     /** {@inheritDoc} */
     @Override public IgniteRel visit(IgniteTableScan rel) {
+        return rel.clone(IdGenerator.nextId());
+    }
+
+    /** {@inheritDoc} */
+    @Override public IgniteRel visit(IgniteGateway rel) {
         return rel.clone(IdGenerator.nextId());
     }
 

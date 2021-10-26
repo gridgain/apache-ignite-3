@@ -28,6 +28,8 @@ import java.util.stream.Collectors;
 
 import com.google.common.collect.ImmutableList;
 import org.apache.calcite.linq4j.Ord;
+import org.apache.calcite.plan.Convention;
+import org.apache.calcite.plan.ConventionTraitDef;
 import org.apache.calcite.plan.RelOptCluster;
 import org.apache.calcite.plan.RelOptPlanner;
 import org.apache.calcite.plan.RelOptRule;
@@ -55,6 +57,7 @@ import org.apache.calcite.util.Pair;
 import org.apache.calcite.util.mapping.Mappings;
 import org.apache.ignite.internal.processors.query.calcite.rel.IgniteConvention;
 import org.apache.ignite.internal.processors.query.calcite.rel.IgniteExchange;
+import org.apache.ignite.internal.processors.query.calcite.rel.IgniteGateway;
 import org.apache.ignite.internal.processors.query.calcite.rel.IgniteRel;
 import org.apache.ignite.internal.processors.query.calcite.rel.IgniteSort;
 import org.apache.ignite.internal.processors.query.calcite.rel.IgniteTableSpool;
@@ -114,7 +117,9 @@ public class TraitUtils {
 
         RelTraitDef converter = fromTrait.getTraitDef();
 
-        if (converter == RelCollationTraitDef.INSTANCE)
+        if (converter == ConventionTraitDef.INSTANCE)
+            return convertConvention(planner, (Convention)toTrait, rel);
+        else if (converter == RelCollationTraitDef.INSTANCE)
             return convertCollation(planner, (RelCollation)toTrait, rel);
         else if (converter == DistributionTraitDef.INSTANCE)
             return convertDistribution(planner, (IgniteDistribution)toTrait, rel);
@@ -122,6 +127,17 @@ public class TraitUtils {
             return convertRewindability(planner, (RewindabilityTrait)toTrait, rel);
         else
             return convertOther(planner, converter, toTrait, rel);
+    }
+
+    private static RelNode convertConvention(RelOptPlanner planner, Convention toTrait, RelNode rel) {
+        Convention fromTrait = rel.getConvention();
+
+        if (fromTrait.satisfies(toTrait))
+            return rel;
+
+        RelTraitSet traits = rel.getTraitSet().replace(toTrait);
+
+        return new IgniteGateway(rel.getCluster(), traits, rel);
     }
 
     /** */
@@ -378,14 +394,18 @@ public class TraitUtils {
 
         return distribution.apply(mapping);
     }
-
     /** */
     public static Pair<RelTraitSet, List<RelTraitSet>> passThrough(TraitsAwareIgniteRel rel, RelTraitSet requiredTraits) {
-        if (requiredTraits.getConvention() != IgniteConvention.INSTANCE || rel.getInputs().isEmpty())
+        return passThrough(IgniteConvention.INSTANCE, rel, requiredTraits);
+    }
+
+    /** */
+    public static Pair<RelTraitSet, List<RelTraitSet>> passThrough(Convention convention, TraitsAwareIgniteRel rel, RelTraitSet requiredTraits) {
+        if (requiredTraits.getConvention() != convention || rel.getInputs().isEmpty())
             return null;
 
         List<RelTraitSet> inTraits = Collections.nCopies(rel.getInputs().size(),
-            rel.getCluster().traitSetOf(IgniteConvention.INSTANCE));
+            rel.getCluster().traitSetOf(convention));
 
         List<Pair<RelTraitSet, List<RelTraitSet>>> traits = new PropagationContext(Set.of(Pair.of(requiredTraits, inTraits)))
             .propagate((in, outs) -> singletonListFromNullable(rel.passThroughCollation(in, outs)))
@@ -401,9 +421,14 @@ public class TraitUtils {
 
     /** */
     public static List<RelNode> derive(TraitsAwareIgniteRel rel, List<List<RelTraitSet>> inTraits) {
+        return derive(IgniteConvention.INSTANCE, rel, inTraits);
+    }
+
+    /** */
+    public static List<RelNode> derive(Convention convention, TraitsAwareIgniteRel rel, List<List<RelTraitSet>> inTraits) {
         assert !nullOrEmpty(inTraits);
 
-        RelTraitSet outTraits = rel.getCluster().traitSetOf(IgniteConvention.INSTANCE);
+        RelTraitSet outTraits = rel.getCluster().traitSetOf(convention);
         Set<Pair<RelTraitSet, List<RelTraitSet>>> combinations = combinations(outTraits, inTraits);
 
         if (combinations.isEmpty())
