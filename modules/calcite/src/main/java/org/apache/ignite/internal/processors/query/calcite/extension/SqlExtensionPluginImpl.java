@@ -1,5 +1,6 @@
 package org.apache.ignite.internal.processors.query.calcite.extension;
 
+import com.google.common.collect.Lists;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -8,7 +9,6 @@ import java.util.function.Predicate;
 
 import org.apache.calcite.plan.RelOptRule;
 import org.apache.calcite.rel.RelNode;
-import org.apache.calcite.schema.Schema;
 import org.apache.calcite.schema.SchemaPlus;
 import org.apache.calcite.schema.Table;
 import org.apache.calcite.schema.impl.AbstractSchema;
@@ -18,9 +18,13 @@ import org.apache.ignite.internal.processors.query.calcite.exec.RowHandler;
 import org.apache.ignite.internal.processors.query.calcite.exec.rel.FilterNode;
 import org.apache.ignite.internal.processors.query.calcite.exec.rel.Node;
 import org.apache.ignite.internal.processors.query.calcite.exec.rel.ScanNode;
+import org.apache.ignite.internal.processors.query.calcite.extension.api.InternalTableDescriptor;
 import org.apache.ignite.internal.processors.query.calcite.extension.api.SqlExtensionPlugin;
 import org.apache.ignite.internal.processors.query.calcite.metadata.ColocationGroup;
 import org.apache.ignite.internal.processors.query.calcite.prepare.PlannerPhase;
+import org.apache.ignite.internal.processors.query.calcite.schema.ColumnDescriptor;
+import org.apache.ignite.internal.processors.query.calcite.schema.ColumnDescriptorImpl;
+import org.apache.ignite.internal.schema.NativeTypes;
 
 public class SqlExtensionPluginImpl implements SqlExtensionPlugin {
     public static volatile List<String> allNodes;
@@ -97,7 +101,11 @@ public class SqlExtensionPluginImpl implements SqlExtensionPlugin {
 
     static class SchemaImpl extends AbstractSchema {
         @Override protected Map<String, Table> getTableMap() {
-            return Map.of(ONLY_TABLE_NAME, new OnlyTableImpl());
+            ColumnDescriptor cd1 = new ColumnDescriptorImpl("C1", false, 0, NativeTypes.INT32, () -> 0);
+            ColumnDescriptor cd2 = new ColumnDescriptorImpl("C2", false, 1, NativeTypes.STRING, () -> "");
+    
+            InternalTableDescriptor descriptor = new MyInternalTableDescriptor(Lists.newArrayList(cd1, cd2));
+            return Map.of(ONLY_TABLE_NAME, new OnlyTableImpl(descriptor));
         }
     }
 

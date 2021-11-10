@@ -44,6 +44,7 @@ import org.apache.calcite.sql.type.SqlTypeUtil;
 import org.apache.calcite.util.Pair;
 import org.apache.ignite.internal.processors.query.calcite.exec.ExecutionContext;
 import org.apache.ignite.internal.processors.query.calcite.exec.RowHandler;
+import org.apache.ignite.internal.processors.query.calcite.extension.api.InternalTableDescriptor;
 import org.apache.ignite.internal.processors.query.calcite.schema.ColumnDescriptor;
 import org.apache.ignite.internal.processors.query.calcite.schema.TableDescriptor;
 import org.apache.ignite.internal.processors.query.calcite.type.IgniteTypeFactory;
@@ -202,17 +203,16 @@ public class TypeUtils {
         RelOptTable table = schema.getTableForMember(origin.subList(0, origin.size() - 1));
 
         assert table != null;
-
-        if (origin.size() == 4) {
-            if ("C1".equals(origin.get(3)))
-                return Integer.class;
-
-            if ("C2".equals(origin.get(3)))
-                return String.class;
+    
+        String last = last(origin);
+    
+        ColumnDescriptor fldDesc;
+        
+        if (table.maybeUnwrap(TableDescriptor.class).isPresent()) {
+            fldDesc = table.unwrap(TableDescriptor.class).columnDescriptor(last);
+        } else {
+            fldDesc = table.unwrap(InternalTableDescriptor.class).columnDescriptor(last);
         }
-
-        ColumnDescriptor fldDesc = table.unwrap(TableDescriptor.class).columnDescriptor(last(origin));
-
         assert fldDesc != null;
 
         return nativeTypeToClass(fldDesc.storageType());
