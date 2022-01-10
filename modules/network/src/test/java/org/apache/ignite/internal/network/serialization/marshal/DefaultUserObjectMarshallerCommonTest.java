@@ -24,6 +24,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import java.util.Arrays;
 import org.apache.ignite.internal.network.serialization.ClassDescriptorFactory;
 import org.apache.ignite.internal.network.serialization.ClassDescriptorFactoryContext;
+import org.apache.ignite.internal.network.serialization.IdIndexedDescriptors;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -32,6 +33,7 @@ import org.junit.jupiter.api.Test;
 class DefaultUserObjectMarshallerCommonTest {
     private final ClassDescriptorFactoryContext descriptorRegistry = new ClassDescriptorFactoryContext();
     private final ClassDescriptorFactory descriptorFactory = new ClassDescriptorFactory(descriptorRegistry);
+    private final IdIndexedDescriptors descriptors = new ContextBasedIdIndexedDescriptors(descriptorRegistry);
 
     private final DefaultUserObjectMarshaller marshaller = new DefaultUserObjectMarshaller(descriptorRegistry, descriptorFactory);
 
@@ -41,7 +43,7 @@ class DefaultUserObjectMarshallerCommonTest {
 
         byte[] tooManyBytes = Arrays.copyOf(marshalled.bytes(), marshalled.bytes().length + 1);
 
-        UnmarshalException ex = assertThrows(UnmarshalException.class, () -> marshaller.unmarshal(tooManyBytes, descriptorRegistry));
+        UnmarshalException ex = assertThrows(UnmarshalException.class, () -> marshaller.unmarshal(tooManyBytes, descriptors));
         assertThat(ex.getMessage(), is("After reading a value, 1 excessive byte(s) still remain"));
     }
 

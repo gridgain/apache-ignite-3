@@ -41,6 +41,7 @@ import java.util.Set;
 import org.apache.ignite.internal.network.serialization.ClassDescriptor;
 import org.apache.ignite.internal.network.serialization.ClassDescriptorFactory;
 import org.apache.ignite.internal.network.serialization.ClassDescriptorFactoryContext;
+import org.apache.ignite.internal.network.serialization.IdIndexedDescriptors;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -49,6 +50,7 @@ import org.junit.jupiter.api.Test;
 class DefaultUserObjectMarshallerWithExternalizableTest {
     private final ClassDescriptorFactoryContext descriptorRegistry = new ClassDescriptorFactoryContext();
     private final ClassDescriptorFactory descriptorFactory = new ClassDescriptorFactory(descriptorRegistry);
+    private final IdIndexedDescriptors descriptors = new ContextBasedIdIndexedDescriptors(descriptorRegistry);
 
     private final DefaultUserObjectMarshaller marshaller = new DefaultUserObjectMarshaller(descriptorRegistry, descriptorFactory);
 
@@ -77,7 +79,7 @@ class DefaultUserObjectMarshallerWithExternalizableTest {
     }
 
     private <T> T unmarshalNonNull(MarshalledObject marshalled) throws UnmarshalException {
-        T unmarshalled = marshaller.unmarshal(marshalled.bytes(), descriptorRegistry);
+        T unmarshalled = marshaller.unmarshal(marshalled.bytes(), descriptors);
 
         assertThat(unmarshalled, is(notNullValue()));
 
@@ -117,7 +119,7 @@ class DefaultUserObjectMarshallerWithExternalizableTest {
     void marshalsExternalizableWithReplaceWithNull() throws Exception {
         MarshalledObject marshalled = marshaller.marshal(new ExternalizableWithReplaceWithNull(42));
 
-        SimpleExternalizable unmarshalled = marshaller.unmarshal(marshalled.bytes(), descriptorRegistry);
+        SimpleExternalizable unmarshalled = marshaller.unmarshal(marshalled.bytes(), descriptors);
 
         assertThat(unmarshalled, is(nullValue()));
     }
@@ -134,7 +136,7 @@ class DefaultUserObjectMarshallerWithExternalizableTest {
     void unmarshalsExternalizableWithResolveWithNull() throws Exception {
         MarshalledObject marshalled = marshaller.marshal(new ExternalizableWithResolveWithNull(42));
 
-        SimpleExternalizable unmarshalled = marshaller.unmarshal(marshalled.bytes(), descriptorRegistry);
+        SimpleExternalizable unmarshalled = marshaller.unmarshal(marshalled.bytes(), descriptors);
 
         assertThat(unmarshalled, is(nullValue()));
     }
@@ -218,7 +220,7 @@ class DefaultUserObjectMarshallerWithExternalizableTest {
 
         byte[] externalBytes = dis.readAllBytes();
 
-        IntHolder nested = marshaller.unmarshal(externalBytes, descriptorRegistry);
+        IntHolder nested = marshaller.unmarshal(externalBytes, descriptors);
         assertThat(nested, is(notNullValue()));
         assertThat(nested.value, is(42));
     }

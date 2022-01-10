@@ -48,6 +48,7 @@ import org.apache.ignite.internal.network.serialization.BuiltinType;
 import org.apache.ignite.internal.network.serialization.ClassDescriptor;
 import org.apache.ignite.internal.network.serialization.ClassDescriptorFactory;
 import org.apache.ignite.internal.network.serialization.ClassDescriptorFactoryContext;
+import org.apache.ignite.internal.network.serialization.IdIndexedDescriptors;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -60,6 +61,7 @@ import org.junit.jupiter.params.provider.MethodSource;
 class DefaultUserObjectMarshallerWithSerializableTest {
     private final ClassDescriptorFactoryContext descriptorRegistry = new ClassDescriptorFactoryContext();
     private final ClassDescriptorFactory descriptorFactory = new ClassDescriptorFactory(descriptorRegistry);
+    private final IdIndexedDescriptors descriptors = new ContextBasedIdIndexedDescriptors(descriptorRegistry);
 
     private final DefaultUserObjectMarshaller marshaller = new DefaultUserObjectMarshaller(descriptorRegistry, descriptorFactory);
 
@@ -99,7 +101,7 @@ class DefaultUserObjectMarshallerWithSerializableTest {
     }
 
     private <T> T unmarshalNonNull(MarshalledObject marshalled) throws UnmarshalException {
-        T unmarshalled = marshaller.unmarshal(marshalled.bytes(), descriptorRegistry);
+        T unmarshalled = marshaller.unmarshal(marshalled.bytes(), descriptors);
 
         assertThat(unmarshalled, is(notNullValue()));
 
@@ -142,7 +144,7 @@ class DefaultUserObjectMarshallerWithSerializableTest {
     void marshalsSerializableWithReplaceWithNull() throws Exception {
         MarshalledObject marshalled = marshaller.marshal(new SerializableWithReplaceWithNull(42));
 
-        SimpleSerializable unmarshalled = marshaller.unmarshal(marshalled.bytes(), descriptorRegistry);
+        SimpleSerializable unmarshalled = marshaller.unmarshal(marshalled.bytes(), descriptors);
 
         assertThat(unmarshalled, is(nullValue()));
     }
@@ -159,7 +161,7 @@ class DefaultUserObjectMarshallerWithSerializableTest {
     void unmarshalsSerializableWithResolveWithNull() throws Exception {
         MarshalledObject marshalled = marshaller.marshal(new SerializableWithResolveWithNull(42));
 
-        SimpleSerializable unmarshalled = marshaller.unmarshal(marshalled.bytes(), descriptorRegistry);
+        SimpleSerializable unmarshalled = marshaller.unmarshal(marshalled.bytes(), descriptors);
 
         assertThat(unmarshalled, is(nullValue()));
     }
@@ -320,7 +322,7 @@ class DefaultUserObjectMarshallerWithSerializableTest {
         stream.transferTo(baos);
 
         try {
-            return staticMarshaller.unmarshal(baos.toByteArray(), staticDescriptorRegistry);
+            return staticMarshaller.unmarshal(baos.toByteArray(), new ContextBasedIdIndexedDescriptors(staticDescriptorRegistry));
         } catch (UnmarshalException e) {
             throw new RuntimeException("Unmarshalling failed", e);
         }
