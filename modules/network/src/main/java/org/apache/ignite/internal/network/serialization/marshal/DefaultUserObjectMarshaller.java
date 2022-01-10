@@ -52,8 +52,8 @@ public class DefaultUserObjectMarshaller implements UserObjectMarshaller {
     private final BuiltInContainerMarshallers builtInContainerMarshallers = new BuiltInContainerMarshallers(
             (obj, out, ctx) -> marshalToOutput(obj, objectClass(obj), out, ctx)
     );
-    private final ExternalizableMarshaller externalizableMarshaller = new ExternalizableMarshaller();
     private final ArbitraryObjectMarshaller arbitraryObjectMarshaller;
+    private final ExternalizableMarshaller externalizableMarshaller;
 
     /**
      * Constructor.
@@ -70,6 +70,8 @@ public class DefaultUserObjectMarshaller implements UserObjectMarshaller {
                 this::marshalToOutput,
                 this::unmarshalFromInput
         );
+
+        externalizableMarshaller = new ExternalizableMarshaller(this::unmarshalFromInput, this::marshalToOutput, arbitraryObjectMarshaller);
     }
 
     public MarshalledObject marshal(@Nullable Object object) throws MarshalException {
@@ -91,7 +93,7 @@ public class DefaultUserObjectMarshaller implements UserObjectMarshaller {
         return new MarshalledObject(baos.toByteArray(), context.usedDescriptors());
     }
 
-    private void marshalToOutput(@Nullable Object object, Class<?> declaredClass, DataOutput output, MarshallingContext context)
+    private void marshalToOutput(@Nullable Object object, Class<?> declaredClass, DataOutputStream output, MarshallingContext context)
             throws MarshalException, IOException {
         assert declaredClass != null;
         assert object == null
@@ -102,7 +104,9 @@ public class DefaultUserObjectMarshaller implements UserObjectMarshaller {
 
         throwIfMarshallingNotSupported(object);
 
-        DescribedObject writeReplaced = applyWriteReplaceIfNeeded(object, declaredClass);
+        ClassDescriptor originalDescriptor = obtainOriginalDescriptor(object, declaredClass);
+
+        DescribedObject writeReplaced = applyWriteReplaceIfNeeded(object, originalDescriptor);
 
         if (canParticipateInCycles(writeReplaced.descriptor)) {
             Integer maybeRefId = context.rememberAsSeen(writeReplaced.object);
@@ -124,6 +128,16 @@ public class DefaultUserObjectMarshaller implements UserObjectMarshaller {
      */
     boolean canParticipateInCycles(ClassDescriptor descriptor) {
         return !builtInNonContainerMarshallers.supports(descriptor.clazz());
+    }
+
+    private ClassDescriptor obtainOriginalDescriptor(@Nullable Object object, Class<?> declaredClass) {
+        // object class is not a subclass of the declared class for primitives
+        // for enums we don't need the specific classes at all
+        Class<?> classToQueryForOriginalDescriptor = isInstanceOfSubclass(object, declaredClass)
+                && !(object instanceof Enum)
+                ? object.getClass() : declaredClass;
+
+        return getOrCreateDescriptor(classToQueryForOriginalDescriptor);
     }
 
     private boolean objectIsMemberOfEnumWithAnonymousClassesForMembers(Object object, Class<?> declaredClass) {
@@ -162,22 +176,19 @@ public class DefaultUserObjectMarshaller implements UserObjectMarshaller {
         return false;
     }
 
-    private DescribedObject applyWriteReplaceIfNeeded(@Nullable Object originalObject, Class<?> declaredClass) throws MarshalException {
-        // object class is not a subclass of the declared class for primitives
-        // for enums we don't need the specific classes at all
-        Class<?> classToQueryForOriginalDescriptor = isInstanceOfSubclass(originalObject, declaredClass)
-                && !(originalObject instanceof Enum)
-                ? originalObject.getClass() : declaredClass;
+    private DescribedObject applyWriteReplaceIfNeeded(@Nullable Object objectBefore, ClassDescriptor descriptorBefore)
+            throws MarshalException {
+        if (!descriptorBefore.supportsWriteReplace()) {
+            return new DescribedObject(objectBefore, descriptorBefore);
+        }
 
-        final ClassDescriptor originalDescriptor = getOrCreateDescriptor(classToQueryForOriginalDescriptor);
+        Object replacedObject = applyWriteReplace(objectBefore, descriptorBefore);
+        ClassDescriptor replacementDescriptor = getOrCreateDescriptor(replacedObject, objectClass(replacedObject));
 
-        if (originalDescriptor.supportsWriteReplace()) {
-            Object objectToWrite = applyWriteReplace(originalObject, originalDescriptor);
-            ClassDescriptor descriptorToUse = getOrCreateDescriptor(objectToWrite, objectClass(objectToWrite));
-
-            return new DescribedObject(objectToWrite, descriptorToUse);
+        if (descriptorBefore.describesSameClass(replacementDescriptor)) {
+            return new DescribedObject(replacedObject, replacementDescriptor);
         } else {
-            return new DescribedObject(originalObject, originalDescriptor);
+            return applyWriteReplaceIfNeeded(replacedObject, replacementDescriptor);
         }
     }
 
@@ -195,11 +206,7 @@ public class DefaultUserObjectMarshaller implements UserObjectMarshaller {
     }
 
     private ClassDescriptor getOrCreateDescriptor(@Nullable Object object, Class<?> declaredClass) {
-        assert object != null || declaredClass == Void.class || declaredClass == Null.class;
-
-        if (declaredClass == Void.class) {
-            return descriptorRegistry.getRequiredDescriptor(Void.class);
-        }
+        assert object != null || declaredClass == Null.class;
 
         if (object == null) {
             return descriptorRegistry.getNullDescriptor();
@@ -237,18 +244,18 @@ public class DefaultUserObjectMarshaller implements UserObjectMarshaller {
 
     private void writeReference(int referenceId, DataOutput output) throws IOException {
         writeDescriptorOrCommandId(SerializedStreamCommands.REFERENCE, output);
-        writeReferenceId(referenceId, output);
+        ProtocolMarshalling.writeObjectId(referenceId, output);
     }
 
-    private void marshalCycleable(DescribedObject describedObject, DataOutput output, MarshallingContext context)
+    private void marshalCycleable(DescribedObject describedObject, DataOutputStream output, MarshallingContext context)
             throws IOException, MarshalException {
         writeDescriptorId(describedObject.descriptor, output);
-        writeReferenceId(context.referenceId(describedObject.object), output);
+        ProtocolMarshalling.writeObjectId(context.referenceId(describedObject.object), output);
 
         writeObject(describedObject.object, describedObject.descriptor, output, context);
     }
 
-    private void marshalNonCycleable(DescribedObject describedObject, DataOutput output, MarshallingContext context)
+    private void marshalNonCycleable(DescribedObject describedObject, DataOutputStream output, MarshallingContext context)
             throws IOException, MarshalException {
         writeDescriptorId(describedObject.descriptor, output);
 
@@ -260,14 +267,10 @@ public class DefaultUserObjectMarshaller implements UserObjectMarshaller {
     }
 
     private void writeDescriptorOrCommandId(int id, DataOutput output) throws IOException {
-        output.writeInt(id);
+        ProtocolMarshalling.writeDescriptorOrCommandId(id, output);
     }
 
-    private void writeReferenceId(int referenceId, DataOutput output) throws IOException {
-        output.writeInt(referenceId);
-    }
-
-    private void writeObject(@Nullable Object object, ClassDescriptor descriptor, DataOutput output, MarshallingContext context)
+    private void writeObject(@Nullable Object object, ClassDescriptor descriptor, DataOutputStream output, MarshallingContext context)
             throws IOException, MarshalException {
         if (isBuiltInNonContainer(descriptor)) {
             builtInNonContainerMarshallers.writeBuiltIn(object, descriptor, output, context);
@@ -307,14 +310,18 @@ public class DefaultUserObjectMarshaller implements UserObjectMarshaller {
     public <T> T unmarshal(byte[] bytes, IdIndexedDescriptors mergedDescriptors) throws UnmarshalException {
         try (var bais = new ByteArrayInputStream(bytes); var dis = new DataInputStream(bais)) {
             UnmarshallingContext context = new UnmarshallingContext(bais, mergedDescriptors);
-            return unmarshalFromInput(dis, context);
+            T result = unmarshalFromInput(dis, context);
+
+            throwIfExcessiveBytesRemain(dis);
+
+            return result;
         } catch (IOException e) {
             throw new UnmarshalException("Cannot unmarshal", e);
         }
     }
 
-    private <T> T unmarshalFromInput(DataInput input, UnmarshallingContext context) throws IOException, UnmarshalException {
-        int commandOrDescriptorId = readDescriptorOrCommandId(input);
+    private <T> T unmarshalFromInput(DataInputStream input, UnmarshallingContext context) throws IOException, UnmarshalException {
+        int commandOrDescriptorId = ProtocolMarshalling.readDescriptorOrCommandId(input);
         if (commandOrDescriptorId == SerializedStreamCommands.REFERENCE) {
             // TODO: IGNITE-16165 - make sure readResolve() is applied correctly when we exit early due to reading a reference
             return unmarshalReference(input, context);
@@ -332,29 +339,21 @@ public class DefaultUserObjectMarshaller implements UserObjectMarshaller {
         return resolvedObject;
     }
 
-    private int readDescriptorOrCommandId(DataInput input) throws IOException {
-        return input.readInt();
-    }
-
     private <T> T unmarshalReference(DataInput input, UnmarshallingContext context) throws IOException {
-        int referenceId = input.readInt();
-        return context.dereference(referenceId);
+        int objectId = ProtocolMarshalling.readObjectId(input);
+        return context.dereference(objectId);
     }
 
-    private Object readCycleable(DataInput input, UnmarshallingContext context, ClassDescriptor descriptor)
+    private Object readCycleable(DataInputStream input, UnmarshallingContext context, ClassDescriptor descriptor)
             throws IOException, UnmarshalException {
-        int referenceId = readReferenceId(input);
+        int objectId = ProtocolMarshalling.readObjectId(input);
 
         Object preInstantiatedObject = preInstantiate(descriptor, input, context);
-        context.registerReference(referenceId, preInstantiatedObject);
+        context.registerReference(objectId, preInstantiatedObject);
 
         fillObjectFrom(input, preInstantiatedObject, descriptor, context);
 
         return preInstantiatedObject;
-    }
-
-    private int readReferenceId(DataInput input) throws IOException {
-        return input.readInt();
     }
 
     private Object preInstantiate(ClassDescriptor descriptor, DataInput input, UnmarshallingContext context)
@@ -378,7 +377,7 @@ public class DefaultUserObjectMarshaller implements UserObjectMarshaller {
         return builtInContainerMarshallers.preInstantiateGenericRefArray(input);
     }
 
-    private void fillObjectFrom(DataInput input, Object preInstantiatedObject, ClassDescriptor descriptor, UnmarshallingContext context)
+    private void fillObjectFrom(DataInputStream input, Object preInstantiatedObject, ClassDescriptor descriptor, UnmarshallingContext context)
             throws UnmarshalException, IOException {
         if (isBuiltInNonContainer(descriptor)) {
             throw new IllegalStateException("Cannot fill " + descriptor.clazz() + ", this is a programmatic error");
@@ -389,14 +388,14 @@ public class DefaultUserObjectMarshaller implements UserObjectMarshaller {
         } else if (isArray(descriptor)) {
             fillGenericRefArrayFrom(input, (Object[]) preInstantiatedObject, context);
         } else if (descriptor.isExternalizable()) {
-            externalizableMarshaller.fillExternalizableFrom(input, (Externalizable) preInstantiatedObject);
+            externalizableMarshaller.fillExternalizableFrom(input, (Externalizable) preInstantiatedObject, context);
         } else {
             arbitraryObjectMarshaller.fillArbitraryObjectFrom(input, preInstantiatedObject, descriptor, context);
         }
     }
 
     private void fillBuiltInCollectionFrom(
-            DataInput input,
+            DataInputStream input,
             Collection<?> preInstantiatedObject,
             ClassDescriptor descriptor,
             UnmarshallingContext context
@@ -405,7 +404,7 @@ public class DefaultUserObjectMarshaller implements UserObjectMarshaller {
     }
 
     private void fillBuiltInMapFrom(
-            DataInput input,
+            DataInputStream input,
             Map<?, ?> preInstantiatedObject,
             UnmarshallingContext context
     ) throws UnmarshalException, IOException {
@@ -417,13 +416,13 @@ public class DefaultUserObjectMarshaller implements UserObjectMarshaller {
         );
     }
 
-    private void fillGenericRefArrayFrom(DataInput input, Object[] array, UnmarshallingContext context)
+    private void fillGenericRefArrayFrom(DataInputStream input, Object[] array, UnmarshallingContext context)
             throws IOException, UnmarshalException {
         builtInContainerMarshallers.fillGenericRefArray(input, array, this::unmarshalFromInput, context);
     }
 
     @Nullable
-    private Object readObject(DataInput input, ClassDescriptor descriptor, UnmarshallingContext context)
+    private Object readObject(DataInputStream input, ClassDescriptor descriptor, UnmarshallingContext context)
             throws IOException, UnmarshalException {
         if (isBuiltInNonContainer(descriptor)) {
             return builtInNonContainerMarshallers.readBuiltIn(descriptor, input, context);
@@ -445,6 +444,12 @@ public class DefaultUserObjectMarshaller implements UserObjectMarshaller {
             return descriptor.serializationMethods().readResolve(readObject);
         } catch (SpecialMethodInvocationException e) {
             throw new UnmarshalException("Cannot apply readResolve()", e);
+        }
+    }
+
+    private void throwIfExcessiveBytesRemain(DataInputStream dis) throws IOException, UnmarshalException {
+        if (dis.available() > 0) {
+            throw new UnmarshalException("After reading a value, " + dis.available() + " excessive byte(s) still remain");
         }
     }
 

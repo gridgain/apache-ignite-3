@@ -19,6 +19,9 @@ package org.apache.ignite.internal.network.serialization.marshal;
 
 import static java.util.Collections.unmodifiableSet;
 
+import java.io.DataOutputStream;
+import java.io.IOException;
+import java.io.NotActiveException;
 import java.util.HashSet;
 import java.util.IdentityHashMap;
 import java.util.Map;
@@ -35,6 +38,11 @@ class MarshallingContext {
     private final Map<Object, Integer> objectsToRefIds = new IdentityHashMap<>();
 
     private int nextRefId = 0;
+
+    private Object objectCurrentlyWrittenWithWriteObject;
+    private ClassDescriptor descriptorOfObjectCurrentlyWrittenWithWriteObject;
+
+    private UosObjectOutputStream objectOutputStream;
 
     public void addUsedDescriptor(ClassDescriptor descriptor) {
         usedDescriptors.add(descriptor);
@@ -86,5 +94,43 @@ class MarshallingContext {
         }
 
         return refId;
+    }
+
+    public Object objectCurrentlyWrittenWithWriteObject() throws NotActiveException {
+        if (objectCurrentlyWrittenWithWriteObject == null) {
+            throw new NotActiveException("not in call to writeObject");
+        }
+
+        return objectCurrentlyWrittenWithWriteObject;
+    }
+
+    public ClassDescriptor descriptorOfObjectCurrentlyWrittenWithWriteObject() {
+        if (descriptorOfObjectCurrentlyWrittenWithWriteObject == null) {
+            throw new IllegalStateException("No object is currently being written");
+        }
+
+        return descriptorOfObjectCurrentlyWrittenWithWriteObject;
+    }
+
+    public void startWritingWithWriteObject(Object object, ClassDescriptor descriptor) {
+        objectCurrentlyWrittenWithWriteObject = object;
+        descriptorOfObjectCurrentlyWrittenWithWriteObject = descriptor;
+    }
+
+    public void endWritingWithWriteObject() {
+        objectCurrentlyWrittenWithWriteObject = null;
+        descriptorOfObjectCurrentlyWrittenWithWriteObject = null;
+    }
+
+    UosObjectOutputStream objectOutputStream(
+            DataOutputStream output,
+            TypedValueWriter valueWriter,
+            DefaultFieldsReaderWriter defaultFieldsReaderWriter
+    ) throws IOException {
+        if (objectOutputStream == null) {
+            objectOutputStream = new UosObjectOutputStream(output, valueWriter, defaultFieldsReaderWriter, this);
+        }
+
+        return objectOutputStream;
     }
 }

@@ -17,17 +17,22 @@
 
 package org.apache.ignite.internal.network.serialization.marshal;
 
-import java.io.DataInput;
-import java.io.DataOutput;
+import java.io.DataInputStream;
+import java.io.DataOutputStream;
 import java.io.IOException;
+import java.io.ObjectInputStream;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
 import org.apache.ignite.internal.network.serialization.ClassDescriptor;
 import org.apache.ignite.internal.network.serialization.ClassIndexedDescriptors;
 import org.apache.ignite.internal.network.serialization.FieldDescriptor;
+import org.apache.ignite.internal.network.serialization.SpecialMethodInvocationException;
 
 /**
  * (Un)marshals arbitrary objects (that is, objects that are not built-in nor serializable/externalizable).
  */
-class ArbitraryObjectMarshaller {
+class ArbitraryObjectMarshaller implements DefaultFieldsReaderWriter {
     private final TypedValueWriter valueWriter;
     private final ValueReader<Object> valueReader;
 
@@ -44,16 +49,71 @@ class ArbitraryObjectMarshaller {
         );
     }
 
-    void writeArbitraryObject(Object object, ClassDescriptor descriptor, DataOutput output, MarshallingContext context)
+    void writeArbitraryObject(Object object, ClassDescriptor descriptor, DataOutputStream output, MarshallingContext context)
             throws MarshalException, IOException {
-        context.addUsedDescriptor(descriptor);
+        for (ClassDescriptor layer : lineage(descriptor)) {
+            writeArbitraryObjectLayer(object, layer, output, context);
+        }
+    }
 
+    /**
+     * Returns the lineage (all the ancestors, from the progenitor (excluding Object) down the line, including the given class).
+     *
+     * @param descriptor class from which to obtain lineage
+     * @return ancestors from the progenitor (excluding Object) down the line, plus the given class itself
+     */
+    private List<ClassDescriptor> lineage(ClassDescriptor descriptor) {
+        List<ClassDescriptor> descriptors = new ArrayList<>();
+
+        ClassDescriptor currentDesc = descriptor;
+        while (currentDesc != null) {
+            descriptors.add(currentDesc);
+            currentDesc = currentDesc.superClassDescriptor();
+        }
+
+        Collections.reverse(descriptors);
+
+        return descriptors;
+    }
+
+    private void writeArbitraryObjectLayer(Object object, ClassDescriptor layer, DataOutputStream output, MarshallingContext context)
+            throws IOException, MarshalException {
+        if (layer.hasSerializationOverride()) {
+            writeWithWriteObject(object, layer, output, context);
+        } else {
+            defaultWriteFields(object, layer, output, context);
+        }
+
+        context.addUsedDescriptor(layer);
+    }
+
+
+    private void writeWithWriteObject(Object object, ClassDescriptor descriptor, DataOutputStream output, MarshallingContext context)
+            throws IOException, MarshalException {
+        context.startWritingWithWriteObject(object, descriptor);
+
+        try {
+            // Do not close the stream yet!
+            UosObjectOutputStream oos = context.objectOutputStream(output, valueWriter, this);
+            descriptor.serializationMethods().writeObject(object, oos);
+            oos.flush();
+        } catch (SpecialMethodInvocationException e) {
+                throw new MarshalException("Cannot invoke writeObject()", e);
+        } finally {
+            context.endWritingWithWriteObject();
+        }
+    }
+
+    /** {@inheritDoc} */
+    @Override
+    public void defaultWriteFields(Object object, ClassDescriptor descriptor, DataOutputStream output, MarshallingContext context)
+            throws MarshalException, IOException {
         for (FieldDescriptor fieldDescriptor : descriptor.fields()) {
             writeField(object, fieldDescriptor, output, context);
         }
     }
 
-    private void writeField(Object object, FieldDescriptor fieldDescriptor, DataOutput output, MarshallingContext context)
+    private void writeField(Object object, FieldDescriptor fieldDescriptor, DataOutputStream output, MarshallingContext context)
             throws MarshalException, IOException {
         Object fieldValue = fieldDescriptor.accessor().get(object);
 
@@ -68,7 +128,44 @@ class ArbitraryObjectMarshaller {
         }
     }
 
-    void fillArbitraryObjectFrom(DataInput input, Object object, ClassDescriptor descriptor, UnmarshallingContext context)
+    void fillArbitraryObjectFrom(DataInputStream input, Object object, ClassDescriptor descriptor, UnmarshallingContext context)
+            throws IOException, UnmarshalException {
+        for (ClassDescriptor layer : lineage(descriptor)) {
+            fillArbitraryObjectLayerFrom(input, layer, object, context);
+        }
+    }
+
+    private void fillArbitraryObjectLayerFrom(DataInputStream input, ClassDescriptor layer, Object object, UnmarshallingContext context)
+            throws IOException, UnmarshalException {
+        if (layer.hasSerializationOverride()) {
+            fillObjectWithReadObjectFrom(input, object, layer, context);
+        } else {
+            defaultFillFieldsFrom(input, object, layer, context);
+        }
+    }
+
+    private void fillObjectWithReadObjectFrom(
+            DataInputStream input,
+            Object object,
+            ClassDescriptor descriptor,
+            UnmarshallingContext context
+    ) throws IOException, UnmarshalException {
+        context.startReadingWithReadObject(object, descriptor);
+
+        // Do not close the stream yet!
+        ObjectInputStream ois = context.objectInputStream(input, valueReader, this);
+        try {
+            descriptor.serializationMethods().readObject(object, ois);
+        } catch (SpecialMethodInvocationException e) {
+            throw new UnmarshalException("Cannot invoke readObject()", e);
+        } finally {
+            context.endReadingWithReadObject();
+        }
+    }
+
+    /** {@inheritDoc} */
+    @Override
+    public void defaultFillFieldsFrom(DataInputStream input, Object object, ClassDescriptor descriptor, UnmarshallingContext context)
             throws IOException, UnmarshalException {
         for (FieldDescriptor fieldDescriptor : descriptor.fields()) {
             Object fieldValue = valueReader.read(input, context);
@@ -79,4 +176,5 @@ class ArbitraryObjectMarshaller {
     private void setFieldValue(Object target, FieldDescriptor fieldDescriptor, Object value) {
         fieldDescriptor.accessor().set(target, value);
     }
+
 }

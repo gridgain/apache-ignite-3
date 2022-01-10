@@ -17,17 +17,18 @@
 
 package org.apache.ignite.internal.network.serialization.marshal;
 
-import org.apache.ignite.lang.IgniteInternalCheckedException;
+import java.io.DataInputStream;
+import java.io.DataOutputStream;
+import java.io.IOException;
+import org.apache.ignite.internal.network.serialization.ClassDescriptor;
 
 /**
- * Thrown when unmarshalling fails.
+ *
  */
-public class UnmarshalException extends IgniteInternalCheckedException {
-    public UnmarshalException(String msg) {
-        super(msg);
-    }
+interface DefaultFieldsReaderWriter {
+    void defaultWriteFields(Object object, ClassDescriptor descriptor, DataOutputStream output, MarshallingContext context)
+            throws MarshalException, IOException;
 
-    public UnmarshalException(String message, Throwable cause) {
-        super(message, cause);
-    }
+    void defaultFillFieldsFrom(DataInputStream input, Object object, ClassDescriptor descriptor, UnmarshallingContext context)
+            throws IOException, UnmarshalException;
 }

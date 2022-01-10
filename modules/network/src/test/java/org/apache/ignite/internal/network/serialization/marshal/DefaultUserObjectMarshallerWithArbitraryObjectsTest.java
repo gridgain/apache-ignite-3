@@ -20,6 +20,7 @@ package org.apache.ignite.internal.network.serialization.marshal;
 import static java.util.Collections.singletonList;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.equalTo;
+import static org.hamcrest.Matchers.hasItems;
 import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.instanceOf;
 import static org.hamcrest.Matchers.is;
@@ -100,6 +101,16 @@ class DefaultUserObjectMarshallerWithArbitraryObjectsTest {
 
         assertThat(unmarshalled.parentValue(), is("answer"));
         assertThat(unmarshalled.childValue(), is(42));
+    }
+
+    @Test
+    void usesDescriptorsOfAllAncestors() throws Exception {
+        MarshalledObject marshalled = marshaller.marshal(new SimpleChild("answer", 42));
+
+        assertThat(marshalled.usedDescriptors(), hasItems(
+                descriptorRegistry.getRequiredDescriptor(Parent.class),
+                descriptorRegistry.getRequiredDescriptor(SimpleChild.class)
+        ));
     }
 
     @Test

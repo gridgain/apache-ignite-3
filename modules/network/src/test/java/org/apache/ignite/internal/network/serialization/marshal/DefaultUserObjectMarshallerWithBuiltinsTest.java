@@ -94,12 +94,12 @@ class DefaultUserObjectMarshallerWithBuiltinsTest {
     void marshalsBareObjectWithCorrectDescriptorIdInMarshalledRepresentation() throws Exception {
         MarshalledObject marshalled = marshaller.marshal(new Object());
 
-        assertThat(readType(marshalled), is(BuiltinType.BARE_OBJECT.descriptorId()));
+        assertThat(readDescriptorId(marshalled), is(BuiltinType.BARE_OBJECT.descriptorId()));
     }
 
-    private int readType(MarshalledObject marshalled) throws IOException {
+    private int readDescriptorId(MarshalledObject marshalled) throws IOException {
         try (var dis = new DataInputStream(new ByteArrayInputStream(marshalled.bytes()))) {
-            return dis.readInt();
+            return ProtocolMarshalling.readDescriptorOrCommandId(dis);
         }
     }
 
@@ -129,8 +129,7 @@ class DefaultUserObjectMarshallerWithBuiltinsTest {
         Object unmarshalled = marshaller.unmarshal(marshalled.bytes(), descriptorRegistry);
 
         assertThat(unmarshalled, is(equalTo(typeValue.value)));
-        if (typeValue.builtinType != BuiltinType.VOID && typeValue.builtinType != BuiltinType.NULL
-                && typeValue.value.getClass().isArray()) {
+        if (typeValue.builtinType != BuiltinType.NULL && typeValue.value.getClass().isArray()) {
             assertThat(unmarshalled, is(notNullValue()));
             assertThat(unmarshalled.getClass().getComponentType(), is(typeValue.value.getClass().getComponentType()));
         }
@@ -200,8 +199,7 @@ class DefaultUserObjectMarshallerWithBuiltinsTest {
                         BuiltinType.ENUM_ARRAY
                 ),
                 builtInTypeValue(BitSet.valueOf(new long[]{42, 43}), BitSet.class, BuiltinType.BIT_SET),
-                builtInTypeValue(null, Null.class, BuiltinType.NULL),
-                builtInTypeValue(null, Void.class, BuiltinType.VOID)
+                builtInTypeValue(null, Null.class, BuiltinType.NULL)
         ).map(Arguments::of);
     }
 
@@ -253,7 +251,7 @@ class DefaultUserObjectMarshallerWithBuiltinsTest {
     void marshalsBuiltInTypesWithCorrectDescriptorIdsInMarshalledRepresentation(BuiltInTypeValue typeValue) throws Exception {
         MarshalledObject marshalled = marshaller.marshal(typeValue.value, typeValue.valueClass);
 
-        assertThat(readType(marshalled), is(equalTo(typeValue.builtinType.descriptorId())));
+        assertThat(readDescriptorId(marshalled), is(equalTo(typeValue.builtinType.descriptorId())));
     }
 
     static Stream<Arguments> builtInTypes() {

@@ -1,0 +1,171 @@
+/*
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the "License"); you may not use this file except in compliance with
+ * the License.  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.apache.ignite.internal.network.serialization.marshal;
+
+import static org.apache.ignite.internal.network.serialization.marshal.ObjectClass.objectClass;
+
+import java.io.DataOutputStream;
+import java.io.IOException;
+import java.io.ObjectOutputStream;
+
+/**
+ *
+ */
+class UosObjectOutputStream extends ObjectOutputStream {
+    private final DataOutputStream output;
+    private final TypedValueWriter valueWriter;
+    private final DefaultFieldsReaderWriter defaultFieldsReaderWriter;
+    private final MarshallingContext context;
+
+    UosObjectOutputStream(
+            DataOutputStream output,
+            TypedValueWriter valueWriter,
+            DefaultFieldsReaderWriter defaultFieldsReaderWriter,
+            MarshallingContext context
+    ) throws IOException {
+        this.output = output;
+        this.valueWriter = valueWriter;
+        this.defaultFieldsReaderWriter = defaultFieldsReaderWriter;
+        this.context = context;
+    }
+
+    @Override
+    public void write(int val) throws IOException {
+        output.write(val);
+    }
+
+    @Override
+    public void write(byte[] buf) throws IOException {
+        output.write(buf);
+    }
+
+    @Override
+    public void write(byte[] buf, int off, int len) throws IOException {
+        output.write(buf, off, len);
+    }
+
+    @Override
+    public void writeByte(int val) throws IOException {
+        output.writeByte(val);
+    }
+
+    @Override
+    public void writeShort(int val) throws IOException {
+        output.writeShort(val);
+    }
+
+    @Override
+    public void writeInt(int val) throws IOException {
+        output.writeInt(val);
+    }
+
+    @Override
+    public void writeLong(long val) throws IOException {
+        output.writeLong(val);
+    }
+
+    @Override
+    public void writeFloat(float val) throws IOException {
+        output.writeFloat(val);
+    }
+
+    @Override
+    public void writeDouble(double val) throws IOException {
+        output.writeDouble(val);
+    }
+
+    @Override
+    public void writeChar(int val) throws IOException {
+        output.writeChar(val);
+    }
+
+    @Override
+    public void writeBoolean(boolean val) throws IOException {
+        output.writeBoolean(val);
+    }
+
+    @Override
+    public void writeBytes(String str) throws IOException {
+        output.writeBytes(str);
+    }
+
+    @Override
+    public void writeChars(String str) throws IOException {
+        output.writeChars(str);
+    }
+
+    @Override
+    public void writeUTF(String str) throws IOException {
+        output.writeUTF(str);
+    }
+
+    @Override
+    protected void writeObjectOverride(Object obj) throws IOException {
+        writeObject0(obj);
+    }
+
+    private void writeObject0(Object obj) throws IOException {
+        try {
+            valueWriter.write(obj, objectClass(obj), output, context);
+        } catch (MarshalException e) {
+            // TODO: IGNITE-16165 -  pass exception correctly
+            throw new RuntimeException("Cannot write", e);
+        }
+    }
+
+    @Override
+    public void writeUnshared(Object obj) throws IOException {
+        // TODO: IGNITE-16165 - implement 'unshared' logic?
+        writeObject0(obj);
+    }
+
+    @Override
+    public void defaultWriteObject() throws IOException {
+        try {
+            defaultFieldsReaderWriter.defaultWriteFields(
+                    context.objectCurrentlyWrittenWithWriteObject(),
+                    context.descriptorOfObjectCurrentlyWrittenWithWriteObject(),
+                    output,
+                    context
+            );
+        } catch (MarshalException e) {
+            // TODO: IGNITE-16165 -  pass exception correctly
+            throw new RuntimeException("Cannot write", e);
+        }
+    }
+
+    @Override
+    public void useProtocolVersion(int version) {
+        // no op
+    }
+
+    @Override
+    public void reset() throws IOException {
+        // TODO: IGNITE-16165 - erase information about references?
+    }
+
+    @Override
+    public void flush() throws IOException {
+        output.flush();
+    }
+
+    @Override
+    public void close() throws IOException {
+        flush();
+    }
+}
