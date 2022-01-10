@@ -23,6 +23,7 @@ import static org.hamcrest.Matchers.containsInAnyOrder;
 import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.notNullValue;
+import static org.hamcrest.Matchers.nullValue;
 import static org.hamcrest.Matchers.sameInstance;
 import static org.junit.jupiter.api.Assumptions.assumingThat;
 
@@ -101,6 +102,15 @@ class DefaultUserObjectMarshallerWithBuiltinsTest {
         try (var dis = new DataInputStream(new ByteArrayInputStream(marshalled.bytes()))) {
             return dis.readInt();
         }
+    }
+
+    @Test
+    void marshalsAndUnmarshalsNullThrowable() throws Exception {
+        MarshalledObject marshalled = marshaller.marshal(null, Throwable.class);
+
+        Throwable unmarshalled = marshaller.unmarshal(marshalled.bytes(), descriptorRegistry);
+
+        assertThat(unmarshalled, is(nullValue()));
     }
 
     @Test
@@ -200,8 +210,7 @@ class DefaultUserObjectMarshallerWithBuiltinsTest {
                         BuiltinType.ENUM_ARRAY
                 ),
                 builtInTypeValue(BitSet.valueOf(new long[]{42, 43}), BitSet.class, BuiltinType.BIT_SET),
-                builtInTypeValue(null, Null.class, BuiltinType.NULL),
-                builtInTypeValue(null, Void.class, BuiltinType.VOID)
+                builtInTypeValue(null, Null.class, BuiltinType.NULL)
         ).map(Arguments::of);
     }
 

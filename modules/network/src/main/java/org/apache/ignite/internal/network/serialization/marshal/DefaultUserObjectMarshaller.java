@@ -163,6 +163,10 @@ public class DefaultUserObjectMarshaller implements UserObjectMarshaller {
     }
 
     private DescribedObject applyWriteReplaceIfNeeded(@Nullable Object originalObject, Class<?> declaredClass) throws MarshalException {
+        if (originalObject == null) {
+            return new DescribedObject(originalObject, descriptorRegistry.getNullDescriptor());
+        }
+
         // object class is not a subclass of the declared class for primitives
         // for enums we don't need the specific classes at all
         Class<?> classToQueryForOriginalDescriptor = isInstanceOfSubclass(originalObject, declaredClass)
