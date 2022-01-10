@@ -74,6 +74,13 @@ public class DefaultUserObjectMarshaller implements UserObjectMarshaller {
         externalizableMarshaller = new ExternalizableMarshaller(this::unmarshalFromInput, this::marshalToOutput, arbitraryObjectMarshaller);
     }
 
+    /**
+     * Marshals an object detecting its type from the value.
+     *
+     * @param object object to marshal
+     * @return marshalled representation
+     * @throws MarshalException if marshalling fails
+     */
     public MarshalledObject marshal(@Nullable Object object) throws MarshalException {
         return marshal(object, objectClass(object));
     }
