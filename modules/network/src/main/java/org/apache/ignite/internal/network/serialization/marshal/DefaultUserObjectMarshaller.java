@@ -315,7 +315,6 @@ public class DefaultUserObjectMarshaller implements UserObjectMarshaller {
     private <T> T unmarshalFromInput(DataInputStream input, UnmarshallingContext context) throws IOException, UnmarshalException {
         int commandOrDescriptorId = ProtocolMarshalling.readDescriptorOrCommandId(input);
         if (commandOrDescriptorId == SerializedStreamCommands.REFERENCE) {
-            // TODO: IGNITE-16165 - make sure readResolve() is applied correctly when we exit early due to reading a reference
             return unmarshalReference(input, context);
         }
 

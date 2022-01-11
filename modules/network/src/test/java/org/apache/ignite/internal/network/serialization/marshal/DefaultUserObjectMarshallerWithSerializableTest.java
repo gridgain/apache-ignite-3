@@ -25,6 +25,7 @@ import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.not;
 import static org.hamcrest.Matchers.notNullValue;
 import static org.hamcrest.Matchers.nullValue;
+import static org.hamcrest.Matchers.sameInstance;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -214,6 +215,28 @@ class DefaultUserObjectMarshallerWithSerializableTest {
         marshalAndUnmarshalNonNull(object);
 
         assertFalse(constructorCalled);
+    }
+
+    @Test
+    void resolveObjectWorksCorrectlyWhenInSelfCycle() throws Exception {
+        SelfRefWithResolveToSelf deserialized = marshalAndUnmarshalNonNull(new SelfRefWithResolveToSelf(42));
+
+        assertThat(deserialized.value, is(42 + READ_RESOLVE_INCREMENT));
+        assertThat(deserialized.self, is(sameInstance(deserialized)));
+    }
+
+    @Test
+    void resolveObjectProducesUnrolledCyclesAsInJavaSerializationWhenObjectIsInCycleWithLengthOfMoreThanOne() throws Exception {
+        RelativeSelfRefWithResolveToSelf first = new RelativeSelfRefWithResolveToSelf(42);
+        RelativeSelfRefWithResolveToSelf second = new RelativeSelfRefWithResolveToSelf(43);
+        first.ref = second;
+        second.ref = first;
+
+        RelativeSelfRefWithResolveToSelf deserialized = marshalAndUnmarshalNonNull(first);
+
+        assertThat(deserialized.value, is(42 + READ_RESOLVE_INCREMENT));
+        assertThat(deserialized.ref.value, is(43 + READ_RESOLVE_INCREMENT));
+        assertThat(deserialized.ref.ref, is(not(sameInstance(deserialized))));
     }
 
     /**
@@ -425,6 +448,38 @@ class DefaultUserObjectMarshallerWithSerializableTest {
     private static class SerializableWithSideEffectInConstructor implements Serializable {
         public SerializableWithSideEffectInConstructor() {
             constructorCalled = true;
+        }
+    }
+
+    private static class SelfRefWithResolveToSelf implements Serializable {
+        private final int value;
+        private final SelfRefWithResolveToSelf self;
+
+        private SelfRefWithResolveToSelf(int value) {
+            this.value = value;
+            this.self = this;
+        }
+
+        private Object readResolve() {
+            return new SelfRefWithResolveToSelf(value + READ_RESOLVE_INCREMENT);
+        }
+    }
+
+    private static class RelativeSelfRefWithResolveToSelf implements Serializable {
+        private final int value;
+        private RelativeSelfRefWithResolveToSelf ref;
+
+        private RelativeSelfRefWithResolveToSelf(int value) {
+            this.value = value;
+        }
+
+        private RelativeSelfRefWithResolveToSelf(int value, RelativeSelfRefWithResolveToSelf ref) {
+            this.value = value;
+            this.ref = ref;
+        }
+
+        private Object readResolve() {
+            return new RelativeSelfRefWithResolveToSelf(value + READ_RESOLVE_INCREMENT, ref);
         }
     }
 }
