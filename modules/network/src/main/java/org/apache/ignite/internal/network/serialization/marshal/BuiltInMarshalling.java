@@ -304,7 +304,7 @@ class BuiltInMarshalling {
 
     static <T> T[] preInstantiateGenericRefArray(DataInput input) throws IOException, UnmarshalException {
         IntFunction<T[]> arrayFactory = readTypeAndCreateArrayFactory(input);
-        int length = input.readInt();
+        int length = readLength(input);
         return arrayFactory.apply(length);
     }
 

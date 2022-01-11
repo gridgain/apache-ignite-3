@@ -101,7 +101,7 @@ class DefaultUserObjectMarshallerWithArbitraryObjectsTest {
 
     private int readType(MarshalledObject marshalled) throws IOException {
         try (var dis = new DataInputStream(new ByteArrayInputStream(marshalled.bytes()))) {
-            return dis.readInt();
+            return ProtocolMarshalling.readDescriptorOrCommandId(dis);
         }
     }
 

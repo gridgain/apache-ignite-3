@@ -29,46 +29,28 @@ class ProtocolMarshalling {
     static final int MAX_LENGTH_BYTE_COUNT = 4;
 
     static void writeDescriptorOrCommandId(int id, DataOutput output) throws IOException {
-        output.writeInt(id);
+        VarInts.writeUnsignedInt(id, output);
     }
 
     static int readDescriptorOrCommandId(DataInput input) throws IOException {
-        return input.readInt();
+        return VarInts.readUnsignedInt(input);
     }
 
     static void writeObjectId(int id, DataOutput output) throws IOException {
-        output.writeInt(id);
+        VarInts.writeUnsignedInt(id, output);
     }
 
     static int readObjectId(DataInput input) throws IOException {
-        return input.readInt();
+        return VarInts.readUnsignedInt(input);
     }
 
 
     static void writeLength(int length, DataOutput output) throws IOException {
-        writeUnsignedInt(length, output);
-    }
-
-    private static void writeUnsignedInt(int value, DataOutput output) throws IOException {
-        if (value < 0) {
-            throw new IllegalArgumentException(value + " is negative" );
-        }
-
-        output.writeInt(value);
+        VarInts.writeUnsignedInt(length, output);
     }
 
     static int readLength(DataInput input) throws IOException {
-        return readUnsignedInt(input);
-    }
-
-    private static int readUnsignedInt(DataInput input) throws IOException {
-        int value = input.readInt();
-
-        if (value < 0) {
-            throw new IllegalStateException(value + " is negative");
-        }
-
-        return value;
+        return VarInts.readUnsignedInt(input);
     }
 
     private ProtocolMarshalling() {
