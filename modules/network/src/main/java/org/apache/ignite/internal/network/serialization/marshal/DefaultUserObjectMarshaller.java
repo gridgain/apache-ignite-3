@@ -134,11 +134,14 @@ public class DefaultUserObjectMarshaller implements UserObjectMarshaller {
     }
 
     private ClassDescriptor obtainOriginalDescriptor(@Nullable Object object, Class<?> declaredClass) {
-        // object class is not a subclass of the declared class for primitives
-        // for enums we don't need the specific classes at all
-        Class<?> classToQueryForOriginalDescriptor = isInstanceOfSubclass(object, declaredClass)
-                && !(object instanceof Enum)
-                ? object.getClass() : declaredClass;
+        if (object == null) {
+            return descriptorRegistry.getNullDescriptor();
+        }
+
+        // For primitives we need to keep the declaredClass (it differs from object.getClass()).
+        // For enums we don't need the specific classes at all.
+        Class<?> classToQueryForOriginalDescriptor = declaredClass.isPrimitive() || object instanceof Enum
+                ? declaredClass : object.getClass();
 
         return getOrCreateDescriptor(classToQueryForOriginalDescriptor);
     }
@@ -193,10 +196,6 @@ public class DefaultUserObjectMarshaller implements UserObjectMarshaller {
         } else {
             return applyWriteReplaceIfNeeded(replacedObject, replacementDescriptor);
         }
-    }
-
-    private boolean isInstanceOfSubclass(@Nullable Object object, Class<?> maybeSuperclass) {
-        return object != null && maybeSuperclass.isAssignableFrom(object.getClass());
     }
 
     @Nullable

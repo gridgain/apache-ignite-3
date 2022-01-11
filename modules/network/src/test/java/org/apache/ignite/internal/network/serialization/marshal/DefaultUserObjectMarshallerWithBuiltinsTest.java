@@ -23,6 +23,7 @@ import static org.hamcrest.Matchers.containsInAnyOrder;
 import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.notNullValue;
+import static org.hamcrest.Matchers.nullValue;
 import static org.hamcrest.Matchers.sameInstance;
 import static org.junit.jupiter.api.Assumptions.assumingThat;
 
@@ -103,6 +104,15 @@ class DefaultUserObjectMarshallerWithBuiltinsTest {
         try (var dis = new DataInputStream(new ByteArrayInputStream(marshalled.bytes()))) {
             return ProtocolMarshalling.readDescriptorOrCommandId(dis);
         }
+    }
+
+    @Test
+    void marshalsAndUnmarshalsNullThrowable() throws Exception {
+        MarshalledObject marshalled = marshaller.marshal(null, Throwable.class);
+
+        Throwable unmarshalled = marshaller.unmarshal(marshalled.bytes(), descriptors);
+
+        assertThat(unmarshalled, is(nullValue()));
     }
 
     @Test
