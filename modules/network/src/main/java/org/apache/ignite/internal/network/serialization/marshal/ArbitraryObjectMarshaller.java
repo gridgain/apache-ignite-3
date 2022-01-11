@@ -25,7 +25,6 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import org.apache.ignite.internal.network.serialization.ClassDescriptor;
-import org.apache.ignite.internal.network.serialization.ClassIndexedDescriptors;
 import org.apache.ignite.internal.network.serialization.FieldDescriptor;
 import org.apache.ignite.internal.network.serialization.SpecialMethodInvocationException;
 
@@ -38,13 +37,12 @@ class ArbitraryObjectMarshaller implements DefaultFieldsReaderWriter {
 
     private final Instantiation instantiation;
 
-    ArbitraryObjectMarshaller(ClassIndexedDescriptors descriptors, TypedValueWriter valueWriter, ValueReader<Object> valueReader) {
+    ArbitraryObjectMarshaller(TypedValueWriter valueWriter, ValueReader<Object> valueReader) {
         this.valueWriter = valueWriter;
         this.valueReader = valueReader;
 
         instantiation = new BestEffortInstantiation(
-                new NoArgConstructorInstantiation(),
-                new SerializableInstantiation(descriptors),
+                new SerializableInstantiation(),
                 new UnsafeInstantiation()
         );
     }

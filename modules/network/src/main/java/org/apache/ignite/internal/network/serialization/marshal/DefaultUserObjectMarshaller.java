@@ -65,11 +65,7 @@ public class DefaultUserObjectMarshaller implements UserObjectMarshaller {
         this.descriptorRegistry = descriptorRegistry;
         this.descriptorFactory = descriptorFactory;
 
-        arbitraryObjectMarshaller = new ArbitraryObjectMarshaller(
-                descriptorRegistry,
-                this::marshalToOutput,
-                this::unmarshalFromInput
-        );
+        arbitraryObjectMarshaller = new ArbitraryObjectMarshaller(this::marshalToOutput, this::unmarshalFromInput);
 
         externalizableMarshaller = new ExternalizableMarshaller(this::unmarshalFromInput, this::marshalToOutput, arbitraryObjectMarshaller);
     }
