@@ -29,6 +29,7 @@ import static org.hamcrest.Matchers.nullValue;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
@@ -81,6 +82,9 @@ class DefaultUserObjectMarshallerWithSerializableTest {
     private static UserObjectMarshaller staticMarshaller;
     /** Static access to the registry (for using in parameterized tests) */
     private static ClassDescriptorFactoryContext staticDescriptorRegistry;
+
+    private static boolean nonSerializableParentConstructorCalled;
+    private static boolean constructorCalled;
 
     @BeforeEach
     void initStatics() {
@@ -447,6 +451,26 @@ class DefaultUserObjectMarshallerWithSerializableTest {
         assertThat(result.childValue, is(42 + CHILD_WRITE_OBJECT_INCREMENT + CHILD_READ_OBJECT_INCREMENT));
     }
 
+    @Test
+    void invokesNoArgConstructorOfNonSerializableParentOnUnmarshalling() throws Exception {
+        SerializableWithSideEffectInParentConstructor object = new SerializableWithSideEffectInParentConstructor();
+        nonSerializableParentConstructorCalled = false;
+
+        marshalAndUnmarshalNonNull(object);
+
+        assertTrue(nonSerializableParentConstructorCalled);
+    }
+
+    @Test
+    void doesNotInvokeNoArgConstructorOfSerializableOnUnmarshalling() throws Exception {
+        SerializableWithSideEffectInConstructor object = new SerializableWithSideEffectInConstructor();
+        constructorCalled = false;
+
+        marshalAndUnmarshalNonNull(object);
+
+        assertFalse(constructorCalled);
+    }
+
     /**
      * An {@link Serializable} that does not have {@code writeReplace()}/{@code readResolve()} methods or other customizations.
      */
@@ -806,6 +830,22 @@ class DefaultUserObjectMarshallerWithSerializableTest {
 
         private void readObject(ObjectInputStream ois) throws IOException {
             childValue = ois.readInt() + CHILD_READ_OBJECT_INCREMENT;
+        }
+    }
+
+    private static class NonSerializableParentWithSideEffectInConstructor {
+        protected NonSerializableParentWithSideEffectInConstructor() {
+            nonSerializableParentConstructorCalled = true;
+        }
+    }
+
+    private static class SerializableWithSideEffectInParentConstructor extends NonSerializableParentWithSideEffectInConstructor
+            implements Serializable {
+    }
+
+    private static class SerializableWithSideEffectInConstructor implements Serializable {
+        public SerializableWithSideEffectInConstructor() {
+            constructorCalled = true;
         }
     }
 }
