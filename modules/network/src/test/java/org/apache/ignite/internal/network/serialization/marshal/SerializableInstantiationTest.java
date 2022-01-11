@@ -55,8 +55,6 @@ class SerializableInstantiationTest {
         assertTrue(instantiation.supports(WithReadResolve.class));
     }
 
-    // TODO: IGNITE-16165 - test that it does not support instantiation of Serializable classes with writeObject()/readObject()
-
     @Test
     void instantiatesSerializableClassesWithoutNoArgConstructor() throws Exception {
         Object instance = instantiation.newInstance(SerializableWithoutNoArgConstructor.class);
