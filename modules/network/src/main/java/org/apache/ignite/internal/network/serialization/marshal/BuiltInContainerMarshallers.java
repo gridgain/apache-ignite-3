@@ -77,7 +77,7 @@ class BuiltInContainerMarshallers {
         writeCollection(Arrays.asList(array), arrayDescriptor, output, context);
     }
 
-    <T> T[] preInstantiateGenericRefArray(DataInput input) throws IOException {
+    <T> T[] preInstantiateGenericRefArray(DataInput input) throws IOException, UnmarshalException {
         return BuiltInMarshalling.preInstantiateGenericRefArray(input);
     }
 

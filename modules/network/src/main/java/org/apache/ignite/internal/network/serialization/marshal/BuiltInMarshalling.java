@@ -249,24 +249,24 @@ class BuiltInMarshalling {
         output.writeUTF(object.name());
     }
 
-    static <T extends Enum<T>> Enum<?> readEnum(DataInput input) throws IOException {
+    static <T extends Enum<T>> Enum<?> readEnum(DataInput input) throws IOException, UnmarshalException {
         String enumClassName = input.readUTF();
         Class<T> enumClass = enumClass(enumClassName);
         return Enum.valueOf(enumClass, input.readUTF());
     }
 
-    private static <T extends Enum<T>> Class<T> enumClass(String className) throws IOException {
+    private static <T extends Enum<T>> Class<T> enumClass(String className) throws UnmarshalException {
         return classByName(className, "enum");
     }
 
     @NotNull
-    private static <T> Class<T> classByName(String className, String classKind) throws IOException {
+    private static <T> Class<T> classByName(String className, String classKind) throws UnmarshalException {
         try {
             // TODO: what classloader to use?
             @SuppressWarnings("unchecked") Class<T> castedClass = (Class<T>) Class.forName(className);
             return castedClass;
         } catch (ClassNotFoundException e) {
-            throw new IOException("Can not load " + classKind + " class: " + className, e);
+            throw new UnmarshalException("Can not load " + classKind + " class: " + className, e);
         }
     }
 
@@ -296,13 +296,13 @@ class BuiltInMarshalling {
     }
 
     @SuppressWarnings("unchecked")
-    private static <T> IntFunction<T[]> readTypeAndCreateArrayFactory(DataInput input) throws IOException {
+    private static <T> IntFunction<T[]> readTypeAndCreateArrayFactory(DataInput input) throws IOException, UnmarshalException {
         String componentClassName = input.readUTF();
         Class<T> componentType = classByName(componentClassName, "component");
         return len -> (T[]) Array.newInstance(componentType, len);
     }
 
-    static <T> T[] preInstantiateGenericRefArray(DataInput input) throws IOException {
+    static <T> T[] preInstantiateGenericRefArray(DataInput input) throws IOException, UnmarshalException {
         IntFunction<T[]> arrayFactory = readTypeAndCreateArrayFactory(input);
         int length = input.readInt();
         return arrayFactory.apply(length);
