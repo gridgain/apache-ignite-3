@@ -44,76 +44,91 @@ class UosObjectOutputStream extends ObjectOutputStream {
         this.context = context;
     }
 
+    /** {@inheritDoc} */
     @Override
     public void write(int val) throws IOException {
         output.write(val);
     }
 
+    /** {@inheritDoc} */
     @Override
     public void write(byte[] buf) throws IOException {
         output.write(buf);
     }
 
+    /** {@inheritDoc} */
     @Override
     public void write(byte[] buf, int off, int len) throws IOException {
         output.write(buf, off, len);
     }
 
+    /** {@inheritDoc} */
     @Override
     public void writeByte(int val) throws IOException {
         output.writeByte(val);
     }
 
+    /** {@inheritDoc} */
     @Override
     public void writeShort(int val) throws IOException {
         output.writeShort(val);
     }
 
+    /** {@inheritDoc} */
     @Override
     public void writeInt(int val) throws IOException {
         output.writeInt(val);
     }
 
+    /** {@inheritDoc} */
     @Override
     public void writeLong(long val) throws IOException {
         output.writeLong(val);
     }
 
+    /** {@inheritDoc} */
     @Override
     public void writeFloat(float val) throws IOException {
         output.writeFloat(val);
     }
 
+    /** {@inheritDoc} */
     @Override
     public void writeDouble(double val) throws IOException {
         output.writeDouble(val);
     }
 
+    /** {@inheritDoc} */
     @Override
     public void writeChar(int val) throws IOException {
         output.writeChar(val);
     }
 
+    /** {@inheritDoc} */
     @Override
     public void writeBoolean(boolean val) throws IOException {
         output.writeBoolean(val);
     }
 
+    /** {@inheritDoc} */
     @Override
     public void writeBytes(String str) throws IOException {
         output.writeBytes(str);
     }
 
+    /** {@inheritDoc} */
     @Override
     public void writeChars(String str) throws IOException {
         output.writeChars(str);
     }
 
+    /** {@inheritDoc} */
     @Override
     public void writeUTF(String str) throws IOException {
         output.writeUTF(str);
     }
 
+    /** {@inheritDoc} */
     @Override
     protected void writeObjectOverride(Object obj) throws IOException {
         writeObject0(obj);
@@ -127,12 +142,14 @@ class UosObjectOutputStream extends ObjectOutputStream {
         }
     }
 
+    /** {@inheritDoc} */
     @Override
     public void writeUnshared(Object obj) throws IOException {
         // TODO: IGNITE-16257 - implement 'unshared' logic?
         writeObject0(obj);
     }
 
+    /** {@inheritDoc} */
     @Override
     public void defaultWriteObject() throws IOException {
         try {
@@ -147,21 +164,25 @@ class UosObjectOutputStream extends ObjectOutputStream {
         }
     }
 
+    /** {@inheritDoc} */
     @Override
     public void useProtocolVersion(int version) {
         // no op
     }
 
+    /** {@inheritDoc} */
     @Override
     public void reset() throws IOException {
         // TODO: IGNITE-16165 - erase information about references?
     }
 
+    /** {@inheritDoc} */
     @Override
     public void flush() throws IOException {
         output.flush();
     }
 
+    /** {@inheritDoc} */
     @Override
     public void close() throws IOException {
         flush();
