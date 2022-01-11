@@ -49,6 +49,7 @@ import org.junit.jupiter.api.Test;
 
 /**
  * Tests for how {@link DefaultUserObjectMarshaller} handles arbitrary objects.
+ * An arbitrary object is an object of a class that is not built-in, not a {@link Serializable} and not an {@link java.io.Externalizable}.
  */
 class DefaultUserObjectMarshallerWithArbitraryObjectsTest {
     private final ClassDescriptorFactoryContext descriptorRegistry = new ClassDescriptorFactoryContext();
