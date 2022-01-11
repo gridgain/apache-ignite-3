@@ -37,92 +37,110 @@ class UosObjectInputStream extends ObjectInputStream {
         this.context = context;
     }
 
+    /** {@inheritDoc} */
     @Override
     public int read() throws IOException {
         return input.read();
     }
 
+    /** {@inheritDoc} */
     @SuppressWarnings("NullableProblems")
     @Override
     public int read(byte[] buf) throws IOException {
         return input.read(buf);
     }
 
+    /** {@inheritDoc} */
     @Override
     public int read(byte[] buf, int off, int len) throws IOException {
         return input.read(buf, off, len);
     }
 
+    /** {@inheritDoc} */
     @Override
     public byte readByte() throws IOException {
         return input.readByte();
     }
 
+    /** {@inheritDoc} */
     @Override
     public short readShort() throws IOException {
         return input.readShort();
     }
 
+    /** {@inheritDoc} */
     @Override
     public int readInt() throws IOException {
         return input.readInt();
     }
 
+    /** {@inheritDoc} */
     @Override
     public long readLong() throws IOException {
         return input.readLong();
     }
 
+    /** {@inheritDoc} */
     @Override
     public float readFloat() throws IOException {
         return input.readFloat();
     }
 
+    /** {@inheritDoc} */
     @Override
     public double readDouble() throws IOException {
         return input.readDouble();
     }
 
+    /** {@inheritDoc} */
     @Override
     public char readChar() throws IOException {
         return input.readChar();
     }
 
+    /** {@inheritDoc} */
     @Override
     public boolean readBoolean() throws IOException {
         return input.readBoolean();
     }
 
+    /** {@inheritDoc} */
     @Override
     public String readUTF() throws IOException {
         return input.readUTF();
     }
 
+    /** {@inheritDoc} */
     @Override
     public int readUnsignedByte() throws IOException {
         return input.readUnsignedByte();
     }
 
+    /** {@inheritDoc} */
     @Override
     public int readUnsignedShort() throws IOException {
         return input.readUnsignedShort();
     }
 
+    /** {@inheritDoc} */
     @Override
     public void readFully(byte[] buf) throws IOException {
         input.readFully(buf);
     }
 
+    /** {@inheritDoc} */
     @Override
     public void readFully(byte[] buf, int off, int len) throws IOException {
         input.readFully(buf, off, len);
     }
 
+    /** {@inheritDoc} */
     @Override
     public String readLine() throws IOException {
         return input.readLine();
     }
 
+    /** {@inheritDoc} */
     @Override
     protected Object readObjectOverride() throws IOException {
         return doReadObject();
@@ -136,12 +154,14 @@ class UosObjectInputStream extends ObjectInputStream {
         }
     }
 
+    /** {@inheritDoc} */
     @Override
     public Object readUnshared() throws IOException {
         // TODO: IGNITE-16257 - implement 'unshared' logic?
         return doReadObject();
     }
 
+    /** {@inheritDoc} */
     @Override
     public void defaultReadObject() throws IOException {
         try {
@@ -156,16 +176,19 @@ class UosObjectInputStream extends ObjectInputStream {
         }
     }
 
+    /** {@inheritDoc} */
     @Override
     public int available() throws IOException {
         return input.available();
     }
 
+    /** {@inheritDoc} */
     @Override
     public int skipBytes(int len) throws IOException {
         return input.skipBytes(len);
     }
 
+    /** {@inheritDoc} */
     @Override
     public void close() throws IOException {
     }
