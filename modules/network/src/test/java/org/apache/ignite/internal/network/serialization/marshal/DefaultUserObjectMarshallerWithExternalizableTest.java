@@ -27,6 +27,7 @@ import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.notNullValue;
 import static org.hamcrest.Matchers.nullValue;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.ByteArrayInputStream;
 import java.io.DataInputStream;
@@ -56,6 +57,8 @@ class DefaultUserObjectMarshallerWithExternalizableTest {
 
     private static final int WRITE_REPLACE_INCREMENT = 1_000_000;
     private static final int READ_RESOLVE_INCREMENT = 1_000;
+
+    private static boolean constructorCalled;
 
     @Test
     void usesExactlyOneDescriptorWhenMarshallingExternalizable() throws Exception {
@@ -232,6 +235,16 @@ class DefaultUserObjectMarshallerWithExternalizableTest {
         ExternalizableWritingAndReadingObject unmarshalled = marshalAndUnmarshalNonNull(object);
 
         assertThat(unmarshalled.intHolder.value, is(42));
+    }
+
+    @Test
+    void invokesDefaultConstructorOnExternalizableUnmarshalling() throws Exception {
+        WithSideEffectInConstructor object = new WithSideEffectInConstructor();
+        constructorCalled = false;
+
+        marshalAndUnmarshalNonNull(object);
+
+        assertTrue(constructorCalled);
     }
 
     /**
@@ -526,6 +539,22 @@ class DefaultUserObjectMarshallerWithExternalizableTest {
 
         private IntHolder(int value) {
             this.value = value;
+        }
+    }
+
+    private static class WithSideEffectInConstructor implements Externalizable {
+        public WithSideEffectInConstructor() {
+            constructorCalled = true;
+        }
+
+        @Override
+        public void writeExternal(ObjectOutput out) {
+            // no-op
+        }
+
+        @Override
+        public void readExternal(ObjectInput in) {
+            // no-op
         }
     }
 }
