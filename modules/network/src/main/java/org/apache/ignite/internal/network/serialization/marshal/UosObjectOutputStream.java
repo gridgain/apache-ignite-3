@@ -129,7 +129,7 @@ class UosObjectOutputStream extends ObjectOutputStream {
 
     @Override
     public void writeUnshared(Object obj) throws IOException {
-        // TODO: IGNITE-16165 - implement 'unshared' logic?
+        // TODO: IGNITE-16257 - implement 'unshared' logic?
         writeObject0(obj);
     }
 

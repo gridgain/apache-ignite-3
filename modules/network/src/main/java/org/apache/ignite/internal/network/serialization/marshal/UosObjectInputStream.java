@@ -138,7 +138,7 @@ class UosObjectInputStream extends ObjectInputStream {
 
     @Override
     public Object readUnshared() throws IOException {
-        // TODO: IGNITE-16165 - implement 'unshared' logic?
+        // TODO: IGNITE-16257 - implement 'unshared' logic?
         return doReadObject();
     }
 
