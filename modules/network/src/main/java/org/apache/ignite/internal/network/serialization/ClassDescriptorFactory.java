@@ -210,10 +210,10 @@ public class ClassDescriptorFactory {
         boolean hasReadObject = hasReadObject(clazz);
         boolean hasWriteObject = hasWriteObject(clazz);
 
-        if (hasWriteObject != hasReadObject) {
-            throw new IllegalArgumentException("Class must either have both writeObject() and readObject() methods or neither of them: "
-                    + clazz.getName());
-        }
+//        if (hasWriteObject != hasReadObject) {
+//            throw new IllegalArgumentException("Class must either have both writeObject() and readObject() methods or neither of them: "
+//                    + clazz.getName());
+//        }
     }
 
     private boolean hasReadResolve(Class<? extends Serializable> clazz) {

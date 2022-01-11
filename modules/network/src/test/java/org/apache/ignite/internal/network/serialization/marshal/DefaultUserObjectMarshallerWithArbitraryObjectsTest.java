@@ -19,6 +19,8 @@ package org.apache.ignite.internal.network.serialization.marshal;
 
 import static java.util.Collections.singletonList;
 import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.Matchers.contains;
+import static org.hamcrest.Matchers.containsInAnyOrder;
 import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.hasItems;
 import static org.hamcrest.Matchers.hasSize;
@@ -37,6 +39,7 @@ import java.io.IOException;
 import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.Callable;
 import org.apache.ignite.internal.network.serialization.BuiltinType;
@@ -368,6 +371,27 @@ class DefaultUserObjectMarshallerWithArbitraryObjectsTest {
         marshalAndUnmarshalNonNull(object);
 
         assertFalse(constructorCalled);
+    }
+
+    @Test
+    void supportsListOf() throws Exception {
+        List<Integer> list = marshalAndUnmarshalNonNull(List.of(1, 2, 3));
+
+        assertThat(list, contains(1, 2, 3));
+    }
+
+    @Test
+    void supportsSetOf() throws Exception {
+        Set<Integer> set = marshalAndUnmarshalNonNull(Set.of(1, 2, 3));
+
+        assertThat(set, containsInAnyOrder(1, 2, 3));
+    }
+
+    @Test
+    void supportsMapOf() throws Exception {
+        Map<?, ?> map = marshalAndUnmarshalNonNull(Map.of(1, 2, 3, 4));
+
+        assertThat(map, is(equalTo(Map.of(1, 2, 3, 4))));
     }
 
     private static class Simple {

@@ -493,20 +493,6 @@ public class ClassDescriptorFactoryTest {
         assertDoesNotThrow(() -> context.getRequiredDescriptor(Parent.class));
     }
 
-    @Test
-    void failsWhenTryingToParseSerializableWithWriteObjectButWithoutReadObject() {
-        Throwable ex = assertThrows(IllegalArgumentException.class, () -> factory.create(SerializableWithWriteObjectOnly.class));
-        assertThat(ex.getMessage(), is("Class must either have both writeObject() and readObject() methods or neither of them: "
-                + SerializableWithWriteObjectOnly.class.getName()));
-    }
-
-    @Test
-    void failsWhenTryingToParseSerializableWithReadObjectButWithoutWriteObject() {
-        Throwable ex = assertThrows(IllegalArgumentException.class, () -> factory.create(SerializableWithReadObjectOnly.class));
-        assertThat(ex.getMessage(), is("Class must either have both writeObject() and readObject() methods or neither of them: "
-                + SerializableWithReadObjectOnly.class.getName()));
-    }
-
     private static class Parent {
         @SuppressWarnings("unused")
         private String value;
@@ -522,18 +508,6 @@ public class ClassDescriptorFactoryTest {
         private int value;
         private int banana;
         private int apple;
-    }
-
-    private static class SerializableWithWriteObjectOnly implements Serializable {
-        private void writeObject(ObjectOutputStream oos) {
-            // no-op
-        }
-    }
-
-    private static class SerializableWithReadObjectOnly implements Serializable {
-        private void readObject(ObjectInputStream ois) {
-            // no-op
-        }
     }
 
     private static class ExtendsObject {
