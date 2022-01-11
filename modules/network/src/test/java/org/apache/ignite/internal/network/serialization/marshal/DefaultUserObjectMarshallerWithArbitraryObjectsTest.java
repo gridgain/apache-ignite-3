@@ -28,6 +28,7 @@ import static org.hamcrest.Matchers.notNullValue;
 import static org.hamcrest.Matchers.nullValue;
 import static org.hamcrest.Matchers.sameInstance;
 import static org.hamcrest.Matchers.startsWith;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import java.io.ByteArrayInputStream;
@@ -42,6 +43,7 @@ import org.apache.ignite.internal.network.serialization.BuiltinType;
 import org.apache.ignite.internal.network.serialization.ClassDescriptorFactory;
 import org.apache.ignite.internal.network.serialization.ClassDescriptorFactoryContext;
 import org.apache.ignite.internal.network.serialization.IdIndexedDescriptors;
+import org.jetbrains.annotations.NotNull;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
@@ -55,15 +57,22 @@ class DefaultUserObjectMarshallerWithArbitraryObjectsTest {
 
     private final DefaultUserObjectMarshaller marshaller = new DefaultUserObjectMarshaller(descriptorRegistry, descriptorFactory);
 
+    private static boolean constructorCalled;
+
     @Test
     void marshalsAndUnmarshalsSimpleClassInstances() throws Exception {
-        MarshalledObject marshalled = marshaller.marshal(new Simple(42));
-
-        Simple unmarshalled = unmarshalNonNull(marshalled);
+        Simple unmarshalled = marshalAndUnmarshalNonNull(new Simple(42));
 
         assertThat(unmarshalled.value, is(42));
     }
 
+    @NotNull
+    private <T> T marshalAndUnmarshalNonNull(Object object) throws MarshalException, UnmarshalException {
+        MarshalledObject marshalled = marshaller.marshal(object);
+        return unmarshalNonNull(marshalled);
+    }
+
+    @NotNull
     private <T> T unmarshalNonNull(MarshalledObject marshalled) throws UnmarshalException {
         T unmarshalled = marshaller.unmarshal(marshalled.bytes(), descriptors);
 
@@ -97,9 +106,7 @@ class DefaultUserObjectMarshallerWithArbitraryObjectsTest {
 
     @Test
     void marshalsAndUnmarshalsClassInstancesInvolvingSuperclasses() throws Exception {
-        MarshalledObject marshalled = marshaller.marshal(new Child("answer", 42));
-
-        Child unmarshalled = unmarshalNonNull(marshalled);
+        Child unmarshalled = marshalAndUnmarshalNonNull(new Child("answer", 42));
 
         assertThat(unmarshalled.parentValue(), is("answer"));
         assertThat(unmarshalled.childValue(), is(42));
@@ -117,9 +124,7 @@ class DefaultUserObjectMarshallerWithArbitraryObjectsTest {
 
     @Test
     void marshalsAndUnmarshalsClassInstancesHavingNestedArbitraryObjects() throws Exception {
-        MarshalledObject marshalled = marshaller.marshal(new WithArbitraryClassField(new Simple(42)));
-
-        WithArbitraryClassField unmarshalled = unmarshalNonNull(marshalled);
+        WithArbitraryClassField unmarshalled = marshalAndUnmarshalNonNull(new WithArbitraryClassField(new Simple(42)));
 
         assertThat(unmarshalled.nested, is(notNullValue()));
         assertThat(unmarshalled.nested.value, is(42));
@@ -127,9 +132,7 @@ class DefaultUserObjectMarshallerWithArbitraryObjectsTest {
 
     @Test
     void marshalsAndUnmarshalsClassInstancesHavingCollectionsOfArbitraryObjects() throws Exception {
-        MarshalledObject marshalled = marshaller.marshal(withArbitraryObjectInArrayList(new Simple(42)));
-
-        WithArbitraryObjectInList unmarshalled = unmarshalNonNull(marshalled);
+        WithArbitraryObjectInList unmarshalled = marshalAndUnmarshalNonNull(withArbitraryObjectInArrayList(new Simple(42)));
 
         assertThat(unmarshalled.list, hasSize(1));
         assertThat(unmarshalled.list.get(0).value, is(42));
@@ -142,9 +145,7 @@ class DefaultUserObjectMarshallerWithArbitraryObjectsTest {
 
     @Test
     void marshalsAndUnmarshalsClassInstancesHavingPolymorphicNestedArbitraryObjects() throws Exception {
-        MarshalledObject marshalled = marshaller.marshal(new WithArbitraryClassField(new ChildOfSimple(42)));
-
-        WithArbitraryClassField unmarshalled = unmarshalNonNull(marshalled);
+        WithArbitraryClassField unmarshalled = marshalAndUnmarshalNonNull(new WithArbitraryClassField(new ChildOfSimple(42)));
 
         assertThat(unmarshalled.nested, is(instanceOf(ChildOfSimple.class)));
         assertThat(unmarshalled.nested.value, is(42));
@@ -152,9 +153,9 @@ class DefaultUserObjectMarshallerWithArbitraryObjectsTest {
 
     @Test
     void marshalsAndUnmarshalsClassInstancesHavingCollectionsOfPolymorphicArbitraryObjects() throws Exception {
-        MarshalledObject marshalled = marshaller.marshal(withArbitraryObjectInArrayList(new ChildOfSimple(42)));
+        WithArbitraryObjectInList object = withArbitraryObjectInArrayList(new ChildOfSimple(42));
 
-        WithArbitraryObjectInList unmarshalled = unmarshalNonNull(marshalled);
+        WithArbitraryObjectInList unmarshalled = marshalAndUnmarshalNonNull(object);
 
         assertThat(unmarshalled.list, hasSize(1));
         assertThat(unmarshalled.list.get(0), is(instanceOf(ChildOfSimple.class)));
@@ -163,36 +164,28 @@ class DefaultUserObjectMarshallerWithArbitraryObjectsTest {
 
     @Test
     void restoresConcreteCollectionTypeCorrectlyWhenUnmarshalls() throws Exception {
-        MarshalledObject marshalled = marshaller.marshal(withArbitraryObjectInArrayList(new Simple(42)));
-
-        WithArbitraryObjectInList unmarshalled = unmarshalNonNull(marshalled);
+        WithArbitraryObjectInList unmarshalled = marshalAndUnmarshalNonNull(withArbitraryObjectInArrayList(new Simple(42)));
 
         assertThat(unmarshalled.list, is(instanceOf(ArrayList.class)));
     }
 
     @Test
     void ignoresTransientFields() throws Exception {
-        MarshalledObject marshalled = marshaller.marshal(new WithTransientFields("Hi"));
-
-        WithTransientFields unmarshalled = unmarshalNonNull(marshalled);
+        WithTransientFields unmarshalled = marshalAndUnmarshalNonNull(new WithTransientFields("Hi"));
 
         assertThat(unmarshalled.value, is(nullValue()));
     }
 
     @Test
     void supportsFinalFields() throws Exception {
-        MarshalledObject marshalled = marshaller.marshal(new WithFinalFields(42));
-
-        WithFinalFields unmarshalled = unmarshalNonNull(marshalled);
+        WithFinalFields unmarshalled = marshalAndUnmarshalNonNull(new WithFinalFields(42));
 
         assertThat(unmarshalled.value, is(42));
     }
 
     @Test
     void supportsNonCapturingAnonymousClassInstances() throws Exception {
-        MarshalledObject marshalled = marshaller.marshal(nonCapturingAnonymousInstance());
-
-        Callable<String> unmarshalled = unmarshalNonNull(marshalled);
+        Callable<String> unmarshalled = marshalAndUnmarshalNonNull(nonCapturingAnonymousInstance());
 
         assertThat(unmarshalled.call(), is("Hi!"));
     }
@@ -209,9 +202,7 @@ class DefaultUserObjectMarshallerWithArbitraryObjectsTest {
 
     @Test
     void supportsNonCapturingLambdas() throws Exception {
-        MarshalledObject marshalled = marshaller.marshal(nonCapturingLambda());
-
-        Callable<String> unmarshalled = unmarshalNonNull(marshalled);
+        Callable<String> unmarshalled = marshalAndUnmarshalNonNull(nonCapturingLambda());
 
         assertThat(unmarshalled.call(), is("Hi!"));
     }
@@ -224,9 +215,7 @@ class DefaultUserObjectMarshallerWithArbitraryObjectsTest {
     @Disabled("IGNITE-16165")
     // TODO: IGNITE-16165 - enable this test when we are able to work with serializable lambdas
     void supportsNonCapturingSerializableLambdas() throws Exception {
-        MarshalledObject marshalled = marshaller.marshal(nonCapturingSerializableLambda());
-
-        Callable<String> unmarshalled = unmarshalNonNull(marshalled);
+        Callable<String> unmarshalled = marshalAndUnmarshalNonNull(nonCapturingSerializableLambda());
 
         assertThat(unmarshalled.call(), is("Hi!"));
     }
@@ -299,9 +288,7 @@ class DefaultUserObjectMarshallerWithArbitraryObjectsTest {
 
     @Test
     void supportsNonCapturingLocalClassInstances() throws Exception {
-        MarshalledObject marshalled = marshaller.marshal(nonCapturingLocalClassInstance());
-
-        Callable<String> unmarshalled = unmarshalNonNull(marshalled);
+        Callable<String> unmarshalled = marshalAndUnmarshalNonNull(nonCapturingLocalClassInstance());
 
         assertThat(unmarshalled.call(), is("Hi!"));
     }
@@ -335,18 +322,14 @@ class DefaultUserObjectMarshallerWithArbitraryObjectsTest {
 
     @Test
     void supportsClassesWithoutNoArgConstructor() throws Exception {
-        MarshalledObject marshalled = marshaller.marshal(new WithoutNoArgConstructor(42));
-
-        WithoutNoArgConstructor unmarshalled = unmarshalNonNull(marshalled);
+        WithoutNoArgConstructor unmarshalled = marshalAndUnmarshalNonNull(new WithoutNoArgConstructor(42));
 
         assertThat(unmarshalled.value, is(42));
     }
 
     @Test
     void supportsInstancesDirectlyContainingThemselvesInFields() throws Exception {
-        MarshalledObject marshalled = marshaller.marshal(new WithInfiniteCycleViaField(42));
-
-        WithInfiniteCycleViaField unmarshalled = unmarshalNonNull(marshalled);
+        WithInfiniteCycleViaField unmarshalled = marshalAndUnmarshalNonNull(new WithInfiniteCycleViaField(42));
 
         assertThat(unmarshalled.value, is(42));
         assertThat(unmarshalled.myself, is(sameInstance(unmarshalled)));
@@ -359,9 +342,7 @@ class DefaultUserObjectMarshallerWithArbitraryObjectsTest {
         first.part = second;
         second.part = first;
 
-        MarshalledObject marshalled = marshaller.marshal(first);
-
-        WithFirstCyclePart unmarshalled = unmarshalNonNull(marshalled);
+        WithFirstCyclePart unmarshalled = marshalAndUnmarshalNonNull(first);
 
         assertThat(unmarshalled.part.part, is(sameInstance(unmarshalled)));
     }
@@ -373,11 +354,19 @@ class DefaultUserObjectMarshallerWithArbitraryObjectsTest {
         object.contents = container;
         container.add(object);
 
-        MarshalledObject marshalled = marshaller.marshal(object);
-
-        WithObjectList unmarshalled = unmarshalNonNull(marshalled);
+        WithObjectList unmarshalled = marshalAndUnmarshalNonNull(object);
 
         assertThat(unmarshalled.contents.get(0), is(sameInstance(unmarshalled)));
+    }
+
+    @Test
+    void doesNotInvokeNoArgConstructorOfArbitraryClassOnUnmarshalling() throws Exception {
+        WithSideEffectInConstructor object = new WithSideEffectInConstructor();
+        constructorCalled = false;
+
+        marshalAndUnmarshalNonNull(object);
+
+        assertFalse(constructorCalled);
     }
 
     private static class Simple {
@@ -513,5 +502,11 @@ class DefaultUserObjectMarshallerWithArbitraryObjectsTest {
 
     private static class WithObjectList {
         private List<Object> contents;
+    }
+
+    private static class WithSideEffectInConstructor implements Serializable {
+        public WithSideEffectInConstructor() {
+            constructorCalled = true;
+        }
     }
 }
