@@ -36,7 +36,6 @@ import org.apache.ignite.internal.network.serialization.ClassDescriptor;
 import org.apache.ignite.internal.network.serialization.ClassDescriptorFactory;
 import org.apache.ignite.internal.network.serialization.ClassDescriptorFactoryContext;
 import org.apache.ignite.internal.network.serialization.IdIndexedDescriptors;
-import org.apache.ignite.internal.network.serialization.Null;
 import org.apache.ignite.internal.network.serialization.SerializedStreamCommands;
 import org.apache.ignite.internal.network.serialization.SpecialMethodInvocationException;
 import org.jetbrains.annotations.Nullable;
@@ -107,19 +106,19 @@ public class DefaultUserObjectMarshaller implements UserObjectMarshaller {
 
         throwIfMarshallingNotSupported(object);
 
-        ClassDescriptor originalDescriptor = obtainOriginalDescriptor(object, declaredClass);
+        ClassDescriptor originalDescriptor = getOrCreateDescriptor(object, declaredClass);
 
-        DescribedObject writeReplaced = applyWriteReplaceIfNeeded(object, originalDescriptor);
+        DescribedObject afterReplacement = applyWriteReplaceIfNeeded(object, originalDescriptor);
 
-        if (canParticipateInCycles(writeReplaced.descriptor)) {
-            Integer maybeRefId = context.rememberAsSeen(writeReplaced.object);
+        if (canParticipateInCycles(afterReplacement.descriptor)) {
+            Integer maybeRefId = context.rememberAsSeen(afterReplacement.object);
             if (maybeRefId != null) {
                 writeReference(maybeRefId, output);
             } else {
-                marshalCycleable(writeReplaced, output, context);
+                marshalCycleable(afterReplacement, output, context);
             }
         } else {
-            marshalNonCycleable(writeReplaced, output, context);
+            marshalNonCycleable(afterReplacement, output, context);
         }
     }
 
@@ -131,19 +130,6 @@ public class DefaultUserObjectMarshaller implements UserObjectMarshaller {
      */
     boolean canParticipateInCycles(ClassDescriptor descriptor) {
         return !builtInNonContainerMarshallers.supports(descriptor.clazz());
-    }
-
-    private ClassDescriptor obtainOriginalDescriptor(@Nullable Object object, Class<?> declaredClass) {
-        if (object == null) {
-            return descriptorRegistry.getNullDescriptor();
-        }
-
-        // For primitives we need to keep the declaredClass (it differs from object.getClass()).
-        // For enums we don't need the specific classes at all.
-        Class<?> classToQueryForOriginalDescriptor = declaredClass.isPrimitive() || object instanceof Enum
-                ? declaredClass : object.getClass();
-
-        return getOrCreateDescriptor(classToQueryForOriginalDescriptor);
     }
 
     private boolean objectIsMemberOfEnumWithAnonymousClassesForMembers(Object object, Class<?> declaredClass) {
@@ -194,6 +180,7 @@ public class DefaultUserObjectMarshaller implements UserObjectMarshaller {
         if (descriptorBefore.describesSameClass(replacementDescriptor)) {
             return new DescribedObject(replacedObject, replacementDescriptor);
         } else {
+            // Let's do it again!
             return applyWriteReplaceIfNeeded(replacedObject, replacementDescriptor);
         }
     }
@@ -208,13 +195,16 @@ public class DefaultUserObjectMarshaller implements UserObjectMarshaller {
     }
 
     private ClassDescriptor getOrCreateDescriptor(@Nullable Object object, Class<?> declaredClass) {
-        assert object != null || declaredClass == Null.class;
-
         if (object == null) {
             return descriptorRegistry.getNullDescriptor();
         }
 
-        return getOrCreateDescriptor(object.getClass());
+        // For primitives, we need to keep the declaredClass (it differs from object.getClass()).
+        // For enums, we don't need the specific classes at all.
+        Class<?> classToQueryForOriginalDescriptor = declaredClass.isPrimitive() || object instanceof Enum
+                ? declaredClass : object.getClass();
+
+        return getOrCreateDescriptor(classToQueryForOriginalDescriptor);
     }
 
     private ClassDescriptor getOrCreateDescriptor(Class<?> objectClass) {
@@ -375,7 +365,7 @@ public class DefaultUserObjectMarshaller implements UserObjectMarshaller {
         }
     }
 
-    private Object[] preInstantiateGenericRefArray(DataInput input) throws IOException {
+    private Object[] preInstantiateGenericRefArray(DataInput input) throws IOException, UnmarshalException {
         return builtInContainerMarshallers.preInstantiateGenericRefArray(input);
     }
 

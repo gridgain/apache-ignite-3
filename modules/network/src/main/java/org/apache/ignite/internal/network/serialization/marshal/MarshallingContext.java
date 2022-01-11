@@ -53,7 +53,8 @@ class MarshallingContext {
     }
 
     /**
-     * If the object was already seen before, its ID is returned; otherwise, it's memorized as seen with a fresh ID.
+     * If the object was already seen before, its ID is returned; otherwise, it's memorized as seen with a fresh ID
+     * and {@code null} is returned.
      *
      * @param object object to operate upon
      * @return object ID if it was seen earlier or {@code null} if the object is new
