@@ -213,8 +213,8 @@ class DefaultUserObjectMarshallerWithArbitraryObjectsTest {
     }
 
     @Test
-    @Disabled("IGNITE-16165")
-    // TODO: IGNITE-16165 - enable this test when we are able to work with serializable lambdas
+    @Disabled("IGNITE-16258")
+    // TODO: IGNITE-16258 - enable this test when we are able to work with serializable lambdas
     void supportsNonCapturingSerializableLambdas() throws Exception {
         Callable<String> unmarshalled = marshalAndUnmarshalNonNull(nonCapturingSerializableLambda());
 
