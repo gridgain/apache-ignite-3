@@ -97,9 +97,9 @@ class DefaultUserObjectMarshallerWithArbitraryObjectsTest {
 
     @Test
     void marshalsAndUnmarshalsClassInstancesInvolvingSuperclasses() throws Exception {
-        MarshalledObject marshalled = marshaller.marshal(new SimpleChild("answer", 42));
+        MarshalledObject marshalled = marshaller.marshal(new Child("answer", 42));
 
-        SimpleChild unmarshalled = unmarshalNonNull(marshalled);
+        Child unmarshalled = unmarshalNonNull(marshalled);
 
         assertThat(unmarshalled.parentValue(), is("answer"));
         assertThat(unmarshalled.childValue(), is(42));
@@ -107,11 +107,11 @@ class DefaultUserObjectMarshallerWithArbitraryObjectsTest {
 
     @Test
     void usesDescriptorsOfAllAncestors() throws Exception {
-        MarshalledObject marshalled = marshaller.marshal(new SimpleChild("answer", 42));
+        MarshalledObject marshalled = marshaller.marshal(new Child("answer", 42));
 
         assertThat(marshalled.usedDescriptors(), hasItems(
                 descriptorRegistry.getRequiredDescriptor(Parent.class),
-                descriptorRegistry.getRequiredDescriptor(SimpleChild.class)
+                descriptorRegistry.getRequiredDescriptor(Child.class)
         ));
     }
 
@@ -407,14 +407,14 @@ class DefaultUserObjectMarshallerWithArbitraryObjectsTest {
         }
     }
 
-    private static class SimpleChild extends Parent {
+    private static class Child extends Parent {
         private int value;
 
         @SuppressWarnings("unused") // needed for instantiation
-        public SimpleChild() {
+        public Child() {
         }
 
-        public SimpleChild(String parentValue, int childValue) {
+        public Child(String parentValue, int childValue) {
             super(parentValue);
             this.value = childValue;
         }
