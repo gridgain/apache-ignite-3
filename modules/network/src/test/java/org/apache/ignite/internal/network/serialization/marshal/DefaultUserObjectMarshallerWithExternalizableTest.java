@@ -534,14 +534,6 @@ class DefaultUserObjectMarshallerWithExternalizableTest {
         }
     }
 
-    private static class IntHolder {
-        private final int value;
-
-        private IntHolder(int value) {
-            this.value = value;
-        }
-    }
-
     private static class WithSideEffectInConstructor implements Externalizable {
         public WithSideEffectInConstructor() {
             constructorCalled = true;

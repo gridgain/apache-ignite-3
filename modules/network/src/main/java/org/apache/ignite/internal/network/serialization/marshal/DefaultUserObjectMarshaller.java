@@ -335,7 +335,7 @@ public class DefaultUserObjectMarshaller implements UserObjectMarshaller {
         if (canParticipateInCycles(descriptor)) {
             readObject = readCycleable(input, context, descriptor);
         } else {
-            readObject = readObject(input, descriptor, context);
+            readObject = readNonCycleable(input, descriptor, context);
         }
 
         @SuppressWarnings("unchecked") T resolvedObject = (T) applyReadResolveIfNeeded(descriptor, readObject);
@@ -425,7 +425,7 @@ public class DefaultUserObjectMarshaller implements UserObjectMarshaller {
     }
 
     @Nullable
-    private Object readObject(DataInputStream input, ClassDescriptor descriptor, UnmarshallingContext context)
+    private Object readNonCycleable(DataInputStream input, ClassDescriptor descriptor, UnmarshallingContext context)
             throws IOException, UnmarshalException {
         if (isBuiltInNonContainer(descriptor)) {
             return builtInNonContainerMarshallers.readBuiltIn(descriptor, input, context);

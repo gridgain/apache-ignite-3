@@ -23,6 +23,7 @@ import static org.hamcrest.Matchers.lessThan;
 import static org.hamcrest.Matchers.notNullValue;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
@@ -33,6 +34,7 @@ import java.io.InputStream;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.io.Serializable;
+import java.util.Arrays;
 import java.util.Objects;
 import java.util.function.Consumer;
 import java.util.stream.Stream;
@@ -313,6 +315,16 @@ class DefaultUserObjectMarshallerWithSerializableOverrideStreamsTest {
         assertThat(result.nested.value, is(100));
     }
 
+    @Test
+    void passesUnmarshalExceptionTriggeredInsideReadObjectToTheCaller() throws Exception {
+        readerAndWriter = new ReaderAndWriter<>(oos -> oos.writeObject(new ThrowingFromReadObject()), ObjectInputStream::readObject);
+
+        WithCustomizableOverride<?> original = new WithCustomizableOverride<>();
+        MarshalledObject marshalled = marshaller.marshal(original);
+
+        assertThrows(UnmarshalException.class, () -> unmarshalNonNull(marshalled));
+    }
+
     private interface ContentsWriter {
         void writeTo(ObjectOutputStream stream) throws IOException;
     }
@@ -467,6 +479,16 @@ class DefaultUserObjectMarshallerWithSerializableOverrideStreamsTest {
 
         private void readObject(ObjectInputStream stream) throws IOException, ClassNotFoundException {
             stream.defaultReadObject();
+        }
+    }
+
+    private static class ThrowingFromReadObject implements Serializable {
+        private void writeObject(ObjectOutputStream stream) {
+            // no-op
+        }
+
+        private void readObject(ObjectInputStream stream) {
+            throw new RuntimeException("Oops");
         }
     }
 }

@@ -123,8 +123,7 @@ class UosObjectOutputStream extends ObjectOutputStream {
         try {
             valueWriter.write(obj, objectClass(obj), output, context);
         } catch (MarshalException e) {
-            // TODO: IGNITE-16165 -  pass exception correctly
-            throw new RuntimeException("Cannot write", e);
+            throw new UncheckedMarshalException("Cannot write object", e);
         }
     }
 
@@ -144,8 +143,7 @@ class UosObjectOutputStream extends ObjectOutputStream {
                     context
             );
         } catch (MarshalException e) {
-            // TODO: IGNITE-16165 -  pass exception correctly
-            throw new RuntimeException("Cannot write", e);
+            throw new UncheckedMarshalException("Cannot write fields in a default way", e);
         }
     }
 

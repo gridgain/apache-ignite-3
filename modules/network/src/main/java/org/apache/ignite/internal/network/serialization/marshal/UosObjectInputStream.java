@@ -132,8 +132,7 @@ class UosObjectInputStream extends ObjectInputStream {
         try {
             return valueReader.read(input, context);
         } catch (UnmarshalException e) {
-            // TODO: IGNITE-16165 -  pass exception correctly
-            throw new RuntimeException("Cannot read", e);
+            throw new UncheckedUnmarshalException("Cannot read object", e);
         }
     }
 
@@ -153,8 +152,7 @@ class UosObjectInputStream extends ObjectInputStream {
                     context
             );
         } catch (UnmarshalException e) {
-            // TODO: IGNITE-16165 -  pass exception correctly
-            throw new RuntimeException("Cannot read", e);
+            throw new UncheckedUnmarshalException("Cannot read fields in a default way", e);
         }
     }
 
