@@ -638,10 +638,7 @@ class DefaultUserObjectMarshallerWithSerializableTest {
     }
 
     private static class SerializableWithNoOpWriteReadOverride implements Serializable {
-        private int value;
-
-        public SerializableWithNoOpWriteReadOverride() {
-        }
+        private final int value;
 
         public SerializableWithNoOpWriteReadOverride(int value) {
             this.value = value;
@@ -815,9 +812,6 @@ class DefaultUserObjectMarshallerWithSerializableTest {
 
     private static class SubclassWithWriteReadOverride extends SerializableWithWriteReadOverride {
         private int childValue;
-
-        public SubclassWithWriteReadOverride() {
-        }
 
         public SubclassWithWriteReadOverride(int value) {
             super(value);
