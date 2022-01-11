@@ -67,8 +67,8 @@ class UnmarshallingContext implements IdIndexedDescriptors {
         return (T) result;
     }
 
-    public void markSource() {
-        source.mark(4);
+    public void markSource(int readAheadLimit) {
+        source.mark(readAheadLimit);
     }
 
     public void resetSourceToMark() {

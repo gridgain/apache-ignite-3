@@ -364,7 +364,7 @@ class BuiltInMarshalling {
     }
 
     static <T, C extends Collection<T>> C preInstantiateCollection(DataInput input, IntFunction<C> collectionFactory) throws IOException {
-        int length = input.readInt();
+        int length = ProtocolMarshalling.readLength(input);
         return collectionFactory.apply(length);
     }
 
@@ -413,7 +413,7 @@ class BuiltInMarshalling {
     }
 
     static <K, V, M extends Map<K, V>> M preInstantiateMap(DataInput input, IntFunction<M> mapFactory) throws IOException {
-        int length = input.readInt();
+        int length = ProtocolMarshalling.readLength(input);
         return mapFactory.apply(length);
     }
 

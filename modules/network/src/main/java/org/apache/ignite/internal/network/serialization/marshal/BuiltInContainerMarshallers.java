@@ -165,7 +165,7 @@ class BuiltInContainerMarshallers {
     ) throws IOException {
         IntFunction<C> collectionFactory = requiredCollectionFactory(collectionDescriptor);
 
-        context.markSource();
+        context.markSource(ProtocolMarshalling.MAX_LENGTH_BYTE_COUNT);
 
         C collection = BuiltInMarshalling.preInstantiateCollection(input, collectionFactory);
 
@@ -212,7 +212,7 @@ class BuiltInContainerMarshallers {
     ) throws IOException {
         IntFunction<M> mapFactory = requiredMapFactory(mapDescriptor);
 
-        context.markSource();
+        context.markSource(ProtocolMarshalling.MAX_LENGTH_BYTE_COUNT);
 
         M map = BuiltInMarshalling.preInstantiateMap(input, mapFactory);
 

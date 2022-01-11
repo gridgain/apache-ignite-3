@@ -25,6 +25,9 @@ import java.io.IOException;
  * Protocol-wide elements marshalling.
  */
 class ProtocolMarshalling {
+    /** Maximum number of bytes needed to encode a container length. */
+    static final int MAX_LENGTH_BYTE_COUNT = 4;
+
     static void writeDescriptorOrCommandId(int id, DataOutput output) throws IOException {
         output.writeInt(id);
     }
