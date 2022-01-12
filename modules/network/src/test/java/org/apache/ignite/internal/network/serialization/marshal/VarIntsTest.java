@@ -28,7 +28,6 @@ import java.io.DataInputStream;
 import java.io.DataOutput;
 import java.io.DataOutputStream;
 import java.io.IOException;
-import java.util.stream.IntStream;
 import java.util.stream.Stream;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
@@ -36,17 +35,22 @@ import org.junit.jupiter.params.provider.MethodSource;
 
 class VarIntsTest {
     @ParameterizedTest
-    @MethodSource("intsBetween0And254")
-    void writesIntsBetween0And254As1Byte(int value) throws Exception {
-        byte[] bytes = writeToBytes(output -> VarInts.writeUnsignedInt(value, output));
+    @MethodSource("intRangeBorders")
+    void writesIntsWithCorrectLengths(IntWriteSpec spec) throws Exception {
+        byte[] bytes = writeToBytes(output -> VarInts.writeUnsignedInt(spec.value, output));
 
-        assertThat(bytes.length, is(1));
+        assertThat(bytes.length, is(spec.expectedLength));
     }
 
-    private static Stream<Arguments> intsBetween0And254() {
-        return IntStream.rangeClosed(0, 254)
-                .boxed()
-                .map(Arguments::of);
+    private static Stream<Arguments> intRangeBorders() {
+        return Stream.of(
+                new IntWriteSpec(0, 1),
+                new IntWriteSpec(0xFE, 1),
+                new IntWriteSpec(0xFF, 3),
+                new IntWriteSpec(0xFFFE, 3),
+                new IntWriteSpec(0xFFFF, 7),
+                new IntWriteSpec(Integer.MAX_VALUE, 7)
+        ).map(Arguments::of);
     }
 
     private byte[] writeToBytes(StreamWriter streamWriter) throws IOException {
@@ -55,32 +59,6 @@ class VarIntsTest {
             streamWriter.write(dos);
         }
         return baos.toByteArray();
-    }
-
-    @ParameterizedTest
-    @MethodSource("intsHigherThan254")
-    void writesIntsHigherThan254WithCorrectLengths(IntWriteSpec spec) throws Exception {
-        byte[] bytes = writeToBytes(output -> VarInts.writeUnsignedInt(spec.value, output));
-
-        assertThat(bytes.length, is(spec.expectedLength));
-    }
-
-    private static Stream<Arguments> intsHigherThan254() {
-        return Stream.of(
-                new IntWriteSpec(0xFF, 3),
-                new IntWriteSpec(0xFFFE, 3),
-                new IntWriteSpec(0xFFFF, 7),
-                new IntWriteSpec(Integer.MAX_VALUE, 7)
-        ).map(Arguments::of);
-    }
-
-    @ParameterizedTest
-    @MethodSource("intsBetween0And254")
-    void writesAndReadsIntsBetween0And254(int value) throws Exception {
-        byte[] bytes = writeToBytes(output -> VarInts.writeUnsignedInt(value, output));
-        int result = readIntFromBytesConsuming(bytes, VarInts::readUnsignedInt);
-
-        assertThat(result, is(value));
     }
 
     private int readIntFromBytesConsuming(byte[] bytes, StreamReader streamReader) throws IOException {
@@ -93,8 +71,8 @@ class VarIntsTest {
     }
 
     @ParameterizedTest
-    @MethodSource("intsHigherThan254")
-    void writesAndReadsIntsHigherThan254(IntWriteSpec spec) throws Exception {
+    @MethodSource("intRangeBorders")
+    void writesAndReadsInts(IntWriteSpec spec) throws Exception {
         byte[] bytes = writeToBytes(output -> VarInts.writeUnsignedInt(spec.value, output));
         int result = readIntFromBytesConsuming(bytes, VarInts::readUnsignedInt);
 
