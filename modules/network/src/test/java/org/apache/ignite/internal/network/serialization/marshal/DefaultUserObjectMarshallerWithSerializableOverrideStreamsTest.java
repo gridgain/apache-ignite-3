@@ -87,7 +87,7 @@ class DefaultUserObjectMarshallerWithSerializableOverrideStreamsTest {
 
     @ParameterizedTest
     @MethodSource("readWriteSpecs")
-    <T> void objectOutputStreamFromWriteObjectWritesUsingOurFormat(ReadWriteSpec<T> spec) throws Exception {
+    <T> void objectStreamsFromReadWriteObjectReadsWritesUsingOurFormat(ReadWriteSpec<T> spec) throws Exception {
         readerAndWriter = new ReaderAndWriter<>(spec.writer, spec.reader);
 
         WithCustomizableOverride<T> original = new WithCustomizableOverride<>();
