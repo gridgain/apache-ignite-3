@@ -208,7 +208,7 @@ public class DefaultUserObjectMarshaller implements UserObjectMarshaller {
     }
 
     private ClassDescriptor getOrCreateDescriptor(Class<?> objectClass) {
-        // ENUM and ENUM_ARRAY need to be handled separately because an enum value usually has a class different from
+        // ENUM and ENUM_ARRAY need to be handled separately because an enum value has a class different from
         // Enum and an ENUM_ARRAY might be used for both Enum[] and EnumSubclass[].
         if (objectClass.isEnum()) {
             return localDescriptors.getEnumDescriptor();
@@ -221,7 +221,7 @@ public class DefaultUserObjectMarshaller implements UserObjectMarshaller {
         if (descriptor != null) {
             return descriptor;
         } else {
-            // This is some custom class (not a built-in). If it's a non-built-in array, we need handle it as a generic container.
+            // This is some custom class (not a built-in). If it's a non-built-in array, we need to handle it as a generic container.
             if (objectClass.isArray()) {
                 return localDescriptors.getBuiltInDescriptor(BuiltinType.OBJECT_ARRAY);
             }
