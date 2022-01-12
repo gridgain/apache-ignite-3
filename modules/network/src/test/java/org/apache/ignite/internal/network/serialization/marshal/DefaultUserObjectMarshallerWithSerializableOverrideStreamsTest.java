@@ -362,7 +362,7 @@ class DefaultUserObjectMarshallerWithSerializableOverrideStreamsTest {
     void passesUnmarshalExceptionTriggeredInsideReadObjectToTheCaller() throws Exception {
         readerAndWriter = new ReaderAndWriter<>(oos -> oos.writeObject(new ThrowingFromReadObject()), ObjectInputStream::readObject);
 
-        MarshalledObject marshalled = marshaller.marshal(new WithCustomizableOverride<Object>());
+        MarshalledObject marshalled = marshaller.marshal(new WithCustomizableOverride<>());
 
         assertThrows(UnmarshalException.class, () -> unmarshalNonNull(marshalled));
     }
