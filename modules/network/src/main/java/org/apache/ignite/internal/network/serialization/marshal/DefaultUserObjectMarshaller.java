@@ -352,7 +352,7 @@ public class DefaultUserObjectMarshaller implements UserObjectMarshaller {
         } else if (isBuiltInMap(descriptor)) {
             return builtInContainerMarshallers.preInstantiateBuiltInMutableMap(descriptor, input, context);
         } else if (isArray(descriptor)) {
-            return preInstantiateGenericRefArray(input);
+            return builtInContainerMarshallers.preInstantiateGenericRefArray(input);
         } else if (descriptor.isExternalizable()) {
             return externalizableMarshaller.preInstantiateExternalizable(descriptor);
         } else {
@@ -360,43 +360,37 @@ public class DefaultUserObjectMarshaller implements UserObjectMarshaller {
         }
     }
 
-    private Object[] preInstantiateGenericRefArray(DataInput input) throws IOException, UnmarshalException {
-        return builtInContainerMarshallers.preInstantiateGenericRefArray(input);
-    }
-
-    private void fillObjectFrom(DataInputStream input, Object preInstantiatedObject, ClassDescriptor descriptor, UnmarshallingContext context)
+    private void fillObjectFrom(DataInputStream input, Object objectToFill, ClassDescriptor descriptor, UnmarshallingContext context)
             throws UnmarshalException, IOException {
         if (isBuiltInNonContainer(descriptor)) {
             throw new IllegalStateException("Cannot fill " + descriptor.clazz() + ", this is a programmatic error");
         } else if (isBuiltInCollection(descriptor)) {
-            fillBuiltInCollectionFrom(input, (Collection<?>) preInstantiatedObject, descriptor, context);
+            fillBuiltInCollectionFrom(input, (Collection<?>) objectToFill, descriptor, context);
         } else if (isBuiltInMap(descriptor)) {
-            fillBuiltInMapFrom(input, (Map<?, ?>) preInstantiatedObject, context);
+            fillBuiltInMapFrom(input, (Map<?, ?>) objectToFill, context);
         } else if (isArray(descriptor)) {
-            fillGenericRefArrayFrom(input, (Object[]) preInstantiatedObject, context);
+            fillGenericRefArrayFrom(input, (Object[]) objectToFill, context);
         } else if (descriptor.isExternalizable()) {
-            externalizableMarshaller.fillExternalizableFrom(input, (Externalizable) preInstantiatedObject, context);
+            externalizableMarshaller.fillExternalizableFrom(input, (Externalizable) objectToFill, context);
         } else {
-            arbitraryObjectMarshaller.fillArbitraryObjectFrom(input, preInstantiatedObject, descriptor, context);
+            arbitraryObjectMarshaller.fillArbitraryObjectFrom(input, objectToFill, descriptor, context);
         }
     }
 
     private void fillBuiltInCollectionFrom(
             DataInputStream input,
-            Collection<?> preInstantiatedObject,
+            Collection<?> collectionToFill,
             ClassDescriptor descriptor,
             UnmarshallingContext context
     ) throws UnmarshalException, IOException {
-        builtInContainerMarshallers.fillBuiltInCollectionFrom(input, preInstantiatedObject, descriptor, this::unmarshalFromInput, context);
+        builtInContainerMarshallers.fillBuiltInCollectionFrom(input, collectionToFill, descriptor, this::unmarshalFromInput, context);
     }
 
-    private void fillBuiltInMapFrom(
-            DataInputStream input,
-            Map<?, ?> preInstantiatedObject,
-            UnmarshallingContext context
-    ) throws UnmarshalException, IOException {
-        builtInContainerMarshallers.fillBuiltInMapFrom(input,
-                preInstantiatedObject,
+    private void fillBuiltInMapFrom(DataInputStream input, Map<?, ?> mapToFill, UnmarshallingContext context)
+            throws UnmarshalException, IOException {
+        builtInContainerMarshallers.fillBuiltInMapFrom(
+                input,
+                mapToFill,
                 this::unmarshalFromInput,
                 this::unmarshalFromInput,
                 context
