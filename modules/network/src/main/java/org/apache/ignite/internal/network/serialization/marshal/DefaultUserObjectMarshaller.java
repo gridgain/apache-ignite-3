@@ -235,7 +235,7 @@ public class DefaultUserObjectMarshaller implements UserObjectMarshaller {
     }
 
     private void writeReference(int objectId, DataOutput output) throws IOException {
-        writeDescriptorOrCommandId(SerializedStreamCommands.REFERENCE, output);
+        ProtocolMarshalling.writeDescriptorOrCommandId(SerializedStreamCommands.REFERENCE, output);
         ProtocolMarshalling.writeObjectId(objectId, output);
     }
 
@@ -255,11 +255,7 @@ public class DefaultUserObjectMarshaller implements UserObjectMarshaller {
     }
 
     private void writeDescriptorId(ClassDescriptor descriptor, DataOutput output) throws IOException {
-        writeDescriptorOrCommandId(descriptor.descriptorId(), output);
-    }
-
-    private void writeDescriptorOrCommandId(int id, DataOutput output) throws IOException {
-        ProtocolMarshalling.writeDescriptorOrCommandId(id, output);
+        ProtocolMarshalling.writeDescriptorOrCommandId(descriptor.descriptorId(), output);
     }
 
     private void writeObject(@Nullable Object object, ClassDescriptor descriptor, DataOutputStream output, MarshallingContext context)
@@ -284,16 +280,16 @@ public class DefaultUserObjectMarshaller implements UserObjectMarshaller {
         return descriptor.isBuiltIn() && builtInNonContainerMarshallers.supports(descriptor.clazz());
     }
 
-    private boolean isArray(ClassDescriptor descriptor) {
-        return descriptor.clazz().isArray();
-    }
-
     private boolean isBuiltInCollection(ClassDescriptor descriptor) {
         return descriptor.isBuiltIn() && Collection.class.isAssignableFrom(descriptor.clazz());
     }
 
     private boolean isBuiltInMap(ClassDescriptor descriptor) {
         return descriptor.isBuiltIn() && Map.class.isAssignableFrom(descriptor.clazz());
+    }
+
+    private boolean isArray(ClassDescriptor descriptor) {
+        return descriptor.clazz().isArray();
     }
 
     /** {@inheritDoc} */
