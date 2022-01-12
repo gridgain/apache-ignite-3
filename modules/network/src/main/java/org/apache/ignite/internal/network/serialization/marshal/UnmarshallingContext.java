@@ -34,7 +34,7 @@ class UnmarshallingContext implements IdIndexedDescriptors {
     private final ByteArrayInputStream source;
     private final IdIndexedDescriptors descriptors;
 
-    private final Map<Integer, Object> refsToObjects = new HashMap<>();
+    private final Map<Integer, Object> idsToObjects = new HashMap<>();
 
     private Object objectCurrentlyReadWithReadObject;
     private ClassDescriptor descriptorOfObjectCurrentlyReadWithReadObject;
@@ -52,16 +52,16 @@ class UnmarshallingContext implements IdIndexedDescriptors {
         return descriptors.getDescriptor(descriptorId);
     }
 
-    public void registerReference(int referenceId, Object object) {
-        refsToObjects.put(referenceId, object);
+    public void registerReference(int objectId, Object object) {
+        idsToObjects.put(objectId, object);
     }
 
     @SuppressWarnings("unchecked")
-    public <T> T dereference(int referenceId) {
-        Object result = refsToObjects.get(referenceId);
+    public <T> T dereference(int objectId) {
+        Object result = idsToObjects.get(objectId);
 
         if (result == null) {
-            throw new IllegalStateException("Unknown reference: " + referenceId);
+            throw new IllegalStateException("Unknown object ID: " + objectId);
         }
 
         return (T) result;
