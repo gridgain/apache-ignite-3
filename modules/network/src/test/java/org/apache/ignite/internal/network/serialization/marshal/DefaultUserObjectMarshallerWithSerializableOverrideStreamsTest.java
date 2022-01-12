@@ -18,6 +18,7 @@
 package org.apache.ignite.internal.network.serialization.marshal;
 
 import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.lessThan;
 import static org.hamcrest.Matchers.notNullValue;
@@ -35,7 +36,6 @@ import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.io.Serializable;
 import java.util.Objects;
-import java.util.function.Consumer;
 import java.util.stream.Stream;
 import org.apache.ignite.internal.network.serialization.BuiltinType;
 import org.apache.ignite.internal.network.serialization.ClassDescriptorFactory;
@@ -87,6 +87,17 @@ class DefaultUserObjectMarshallerWithSerializableOverrideStreamsTest {
 
     @ParameterizedTest
     @MethodSource("readWriteSpecs")
+    <T> void supportsReadsAndWritesInWriteObjectAndReadObject(ReadWriteSpec<T> spec) throws Exception {
+        readerAndWriter = new ReaderAndWriter<>(spec.writer, spec.reader);
+
+        WithCustomizableOverride<T> original = new WithCustomizableOverride<>();
+        WithCustomizableOverride<T> unmarshalled = marshalAndUnmarshalNonNull(original);
+
+        spec.assertUnmarshalledValue(unmarshalled.value);
+    }
+
+    @ParameterizedTest
+    @MethodSource("readWriteSpecs")
     <T> void objectStreamsFromReadWriteObjectReadsWritesUsingOurFormat(ReadWriteSpec<T> spec) throws Exception {
         readerAndWriter = new ReaderAndWriter<>(spec.writer, spec.reader);
 
@@ -99,17 +110,6 @@ class DefaultUserObjectMarshallerWithSerializableOverrideStreamsTest {
         spec.assertUnmarshalledValue(overrideValue);
     }
 
-    @ParameterizedTest
-    @MethodSource("readWriteSpecs")
-    <T> void supportsReadsAndWritesInWriteObjectAndReadObject(ReadWriteSpec<T> spec) throws Exception {
-        readerAndWriter = new ReaderAndWriter<>(spec.writer, spec.reader);
-
-        WithCustomizableOverride<T> original = new WithCustomizableOverride<>();
-        WithCustomizableOverride<T> unmarshalled = marshalAndUnmarshalNonNull(original);
-
-        spec.assertUnmarshalledValue(unmarshalled.value);
-    }
-
     private byte[] readOverrideBytes(MarshalledObject marshalled) throws IOException {
         DataInputStream dis = new DataInputStream(new ByteArrayInputStream(marshalled.bytes()));
 
@@ -119,13 +119,9 @@ class DefaultUserObjectMarshallerWithSerializableOverrideStreamsTest {
         return dis.readAllBytes();
     }
 
-    private void assertThatDrained(DataInputStream dis) throws IOException {
-        assertThat(dis.read(), is(lessThan(0)));
-    }
-
     private static Stream<Arguments> readWriteSpecs() {
         return Stream.of(
-                // the following test perfect pairs like writeByte()/readByte()
+                // the following test perfectly-matching pairs like writeByte()/readByte()
                 new ReadWriteSpec<>("data byte", oos -> oos.writeByte(42), DataInput::readByte, (byte) 42),
                 new ReadWriteSpec<>("short", oos -> oos.writeShort(42), DataInput::readShort, (short) 42),
                 new ReadWriteSpec<>("int", oos -> oos.writeInt(42), DataInput::readInt, 42),
@@ -135,22 +131,76 @@ class DefaultUserObjectMarshallerWithSerializableOverrideStreamsTest {
                 new ReadWriteSpec<>("char", oos -> oos.writeChar('a'), DataInput::readChar, 'a'),
                 new ReadWriteSpec<>("boolean", oos -> oos.writeBoolean(true), DataInput::readBoolean, true),
                 new ReadWriteSpec<>("stream byte", oos -> oos.write(42), ObjectInputStream::read, DataInputStream::read, 42),
-                new ReadWriteSpec<>("byte array", oos -> oos.write(new byte[]{42, 43}), is -> readBytes(is, 2), is -> readBytes(is, 2), new byte[]{42, 43}),
-                new ReadWriteSpec<>("byte array range", oos -> oos.write(new byte[]{42, 43}, 0, 2), is -> readRange(is, 2), is -> readRange(is, 2), new byte[]{42, 43}),
+                new ReadWriteSpec<>(
+                        "byte array",
+                        oos -> oos.write(new byte[]{42, 43}),
+                        is -> readBytes(is, 2),
+                        is -> readBytes(is, 2),
+                        new byte[]{42, 43}
+                ),
+                new ReadWriteSpec<>(
+                        "byte array range",
+                        oos -> oos.write(new byte[]{42, 43}, 0, 2),
+                        is -> readRange(is, 2),
+                        is -> readRange(is, 2),
+                        new byte[]{42, 43}
+                ),
                 new ReadWriteSpec<>("UTF", oos -> oos.writeUTF("Привет"), DataInput::readUTF, "Привет"),
-                new ReadWriteSpec<>("object", oos -> oos.writeObject(new SimpleNonSerializable(42)), ObjectInputStream::readObject, DefaultUserObjectMarshallerWithSerializableOverrideStreamsTest::consumeAndUnmarshal, new SimpleNonSerializable(42)),
-                new ReadWriteSpec<>("unshared", oos -> oos.writeUnshared(new SimpleNonSerializable(42)), ObjectInputStream::readUnshared, DefaultUserObjectMarshallerWithSerializableOverrideStreamsTest::consumeAndUnmarshal, new SimpleNonSerializable(42)),
+                new ReadWriteSpec<>(
+                        "object",
+                        oos -> oos.writeObject(new SimpleNonSerializable(42)),
+                        ObjectInputStream::readObject,
+                        DefaultUserObjectMarshallerWithSerializableOverrideStreamsTest::consumeAndUnmarshal,
+                        new SimpleNonSerializable(42)
+                ),
+                new ReadWriteSpec<>(
+                        "unshared",
+                        oos -> oos.writeUnshared(new SimpleNonSerializable(42)),
+                        ObjectInputStream::readUnshared,
+                        DefaultUserObjectMarshallerWithSerializableOverrideStreamsTest::consumeAndUnmarshal,
+                        new SimpleNonSerializable(42)
+                ),
+
                 // the following test writing methods only (readers are just to help testing them)
                 new ReadWriteSpec<>("writeBytes", oos -> oos.writeBytes("abc"), input -> readBytesFully(input, 3), "abc".getBytes()),
                 new ReadWriteSpec<>("writeChars", oos -> oos.writeChars("a"), DataInput::readChar, 'a'),
+
                 // the following test reading methods only (writers are just to help testing them)
-                new ReadWriteSpec<>("readFully", oos -> oos.write(new byte[]{42, 43}), input -> readBytesFully(input, 2), new byte[]{42, 43}),
-                new ReadWriteSpec<>("readFully range", oos -> oos.write(new byte[]{42, 43}), input -> readBytesRangeFully(input, 2), new byte[]{42, 43}),
+                new ReadWriteSpec<>(
+                        "readFully",
+                        oos -> oos.write(new byte[]{42, 43}),
+                        input -> readBytesFully(input, 2),
+                        new byte[]{42, 43}
+                ),
+                new ReadWriteSpec<>(
+                        "readFully range",
+                        oos -> oos.write(new byte[]{42, 43}),
+                        input -> readBytesRangeFully(input, 2),
+                        new byte[]{42, 43}
+                ),
                 new ReadWriteSpec<>("readUnsignedByte", oos -> oos.writeByte(42), DataInput::readUnsignedByte, 42),
                 new ReadWriteSpec<>("readUnsignedShort", oos -> oos.writeShort(42), DataInput::readUnsignedShort, 42),
-                new ReadWriteSpec<>("readAllBytes", oos -> oos.write(new byte[]{42, 43}), InputStream::readAllBytes, InputStream::readAllBytes, new byte[]{42, 43}),
-                new ReadWriteSpec<>("readNBytes", oos -> oos.write(new byte[]{42, 43}), ois -> ois.readNBytes(2), dis -> readBytesFully(dis, 2), new byte[]{42, 43}),
-                new ReadWriteSpec<>("readNBytes range", oos -> oos.write(new byte[]{42, 43}), ois -> readNBytesRange(ois, 2), dis -> readNBytesRange(dis, 2), new byte[]{42, 43})
+                new ReadWriteSpec<>(
+                        "readAllBytes",
+                        oos -> oos.write(new byte[]{42, 43}),
+                        InputStream::readAllBytes,
+                        InputStream::readAllBytes,
+                        new byte[]{42, 43}
+                ),
+                new ReadWriteSpec<>(
+                        "readNBytes",
+                        oos -> oos.write(new byte[]{42, 43}),
+                        ois -> ois.readNBytes(2),
+                        dis -> readBytesFully(dis, 2),
+                        new byte[]{42, 43}
+                ),
+                new ReadWriteSpec<>(
+                        "readNBytes range",
+                        oos -> oos.write(new byte[]{42, 43}),
+                        ois -> readNBytesRange(ois, 2),
+                        dis -> readNBytesRange(dis, 2),
+                        new byte[]{42, 43}
+                )
         ).map(Arguments::of);
     }
 
@@ -208,27 +258,25 @@ class DefaultUserObjectMarshallerWithSerializableOverrideStreamsTest {
     void supportsFlushInsideWriteObject() {
         readerAndWriter = new ReaderAndWriter<>(ObjectOutputStream::flush, ois -> null);
 
-        WithCustomizableOverride<?> original = new WithCustomizableOverride<>();
+        assertDoesNotThrow(this::marshalAndUnmarshalWithCustomizableOverride);
+    }
 
-        assertDoesNotThrow(() -> marshalAndUnmarshalNonNull(original));
+    private WithCustomizableOverride<?> marshalAndUnmarshalWithCustomizableOverride() throws MarshalException, UnmarshalException {
+        return marshalAndUnmarshalNonNull(new WithCustomizableOverride<>());
     }
 
     @Test
     void resetThrowsInsideWriteObject() {
         readerAndWriter = new ReaderAndWriter<>(ObjectOutputStream::reset, ois -> null);
 
-        WithCustomizableOverride<?> original = new WithCustomizableOverride<>();
-
-        assertThrows(MarshalException.class, () -> marshalAndUnmarshalNonNull(original));
+        assertThrows(MarshalException.class, this::marshalAndUnmarshalWithCustomizableOverride);
     }
 
     @Test
     void supportsUseProtocolVersionInsideWriteObject() {
         readerAndWriter = new ReaderAndWriter<>(oos -> oos.useProtocolVersion(1), ois -> null);
 
-        WithCustomizableOverride<?> original = new WithCustomizableOverride<>();
-
-        assertDoesNotThrow(() -> marshalAndUnmarshalNonNull(original));
+        assertDoesNotThrow(this::marshalAndUnmarshalWithCustomizableOverride);
     }
 
     @Test
@@ -238,9 +286,7 @@ class DefaultUserObjectMarshallerWithSerializableOverrideStreamsTest {
             return ois.readByte();
         });
 
-        WithCustomizableOverride<?> original = new WithCustomizableOverride<>();
-
-        WithCustomizableOverride<Byte> unmarshalled = marshalAndUnmarshalNonNull(original);
+        WithCustomizableOverride<Byte> unmarshalled = this.marshalAndUnmarshalNonNull(new WithCustomizableOverride<>());
         assertThat(unmarshalled.value, is((byte) 43));
     }
 
@@ -251,9 +297,7 @@ class DefaultUserObjectMarshallerWithSerializableOverrideStreamsTest {
             return ois.readByte();
         });
 
-        WithCustomizableOverride<?> original = new WithCustomizableOverride<>();
-
-        WithCustomizableOverride<Byte> unmarshalled = marshalAndUnmarshalNonNull(original);
+        WithCustomizableOverride<Byte> unmarshalled = marshalAndUnmarshalNonNull(new WithCustomizableOverride<>());
         assertThat(unmarshalled.value, is((byte) 43));
     }
 
@@ -261,9 +305,7 @@ class DefaultUserObjectMarshallerWithSerializableOverrideStreamsTest {
     void supportsAvailableInsideReadObject() {
         readerAndWriter = new ReaderAndWriter<>(oos -> {}, ObjectInputStream::available);
 
-        WithCustomizableOverride<?> original = new WithCustomizableOverride<>();
-
-        assertDoesNotThrow(() -> marshalAndUnmarshalNonNull(original));
+        assertDoesNotThrow(this::marshalAndUnmarshalWithCustomizableOverride);
     }
 
     @Test
@@ -279,9 +321,7 @@ class DefaultUserObjectMarshallerWithSerializableOverrideStreamsTest {
             return null;
         });
 
-        WithCustomizableOverride<?> original = new WithCustomizableOverride<>();
-
-        assertDoesNotThrow(() -> marshalAndUnmarshalNonNull(original));
+        assertDoesNotThrow(() -> marshalAndUnmarshalNonNull(new WithCustomizableOverride<>()));
     }
 
     @Test
@@ -295,6 +335,10 @@ class DefaultUserObjectMarshallerWithSerializableOverrideStreamsTest {
         assertThat(ProtocolMarshalling.readDescriptorOrCommandId(dis), is(BuiltinType.INT.descriptorId()));
         assertThat(dis.readInt(), is(42));
         assertThatDrained(dis);
+    }
+
+    private void assertThatDrained(DataInputStream dis) throws IOException {
+        assertThat("Stream is not drained", dis.read(), is(lessThan(0)));
     }
 
     @Test
@@ -318,17 +362,16 @@ class DefaultUserObjectMarshallerWithSerializableOverrideStreamsTest {
     void passesUnmarshalExceptionTriggeredInsideReadObjectToTheCaller() throws Exception {
         readerAndWriter = new ReaderAndWriter<>(oos -> oos.writeObject(new ThrowingFromReadObject()), ObjectInputStream::readObject);
 
-        WithCustomizableOverride<?> original = new WithCustomizableOverride<>();
-        MarshalledObject marshalled = marshaller.marshal(original);
+        MarshalledObject marshalled = marshaller.marshal(new WithCustomizableOverride<Object>());
 
         assertThrows(UnmarshalException.class, () -> unmarshalNonNull(marshalled));
     }
 
-    private interface ContentsWriter {
+    private interface ObjectWriter {
         void writeTo(ObjectOutputStream stream) throws IOException;
     }
 
-    private interface ContentsReader<T> {
+    private interface ObjectReader<T> {
         T readFrom(ObjectInputStream stream) throws IOException, ClassNotFoundException;
     }
 
@@ -341,10 +384,10 @@ class DefaultUserObjectMarshallerWithSerializableOverrideStreamsTest {
     }
 
     private static class ReaderAndWriter<T> {
-        private final ContentsWriter writer;
-        private final ContentsReader<T> reader;
+        private final ObjectWriter writer;
+        private final ObjectReader<T> reader;
 
-        private ReaderAndWriter(ContentsWriter writer, ContentsReader<T> reader) {
+        private ReaderAndWriter(ObjectWriter writer, ObjectReader<T> reader) {
             this.writer = writer;
             this.reader = reader;
         }
@@ -352,25 +395,21 @@ class DefaultUserObjectMarshallerWithSerializableOverrideStreamsTest {
 
     private static class ReadWriteSpec<T> {
         private final String name;
-        private final ContentsWriter writer;
-        private final ContentsReader<T> reader;
+        private final ObjectWriter writer;
+        private final ObjectReader<T> reader;
         private final DataReader<T> dataReader;
-        private final Consumer<T> valueAsserter;
+        private final T expectedValue;
 
-        private ReadWriteSpec(String name, ContentsWriter writer, InputReader<T> inputReader, T expectedValue) {
+        private ReadWriteSpec(String name, ObjectWriter writer, InputReader<T> inputReader, T expectedValue) {
             this(name, writer, inputReader::readFrom, inputReader::readFrom, expectedValue);
         }
 
-        private ReadWriteSpec(String name, ContentsWriter writer, ContentsReader<T> reader, DataReader<T> dataReader, T expectedValue) {
-            this(name, writer, reader, dataReader, actual -> assertThat(actual, is(expectedValue)));
-        }
-
-        private ReadWriteSpec(String name, ContentsWriter writer, ContentsReader<T> reader, DataReader<T> dataReader, Consumer<T> valueAsserter) {
+        private ReadWriteSpec(String name, ObjectWriter writer, ObjectReader<T> reader, DataReader<T> dataReader, T expectedValue) {
             this.name = name;
             this.writer = writer;
             this.reader = reader;
             this.dataReader = dataReader;
-            this.valueAsserter = valueAsserter;
+            this.expectedValue = expectedValue;
         }
 
         private T parseOverrideValue(byte[] overrideBytes) throws IOException {
@@ -379,7 +418,7 @@ class DefaultUserObjectMarshallerWithSerializableOverrideStreamsTest {
         }
 
         private void assertUnmarshalledValue(T value) {
-            valueAsserter.accept(value);
+            assertThat(value, is(equalTo(expectedValue)));
         }
 
         /** {@inheritDoc} */
