@@ -57,7 +57,7 @@ public class DefaultUserObjectMarshaller implements UserObjectMarshaller {
     /**
      * Constructor.
      *
-     * @param localDescriptors registry of local descriptors to consult with
+     * @param localDescriptors registry of local descriptors to consult with (and to write to if an unseen class is encountered)
      * @param descriptorFactory  descriptor factory to create new descriptors from classes
      */
     public DefaultUserObjectMarshaller(ClassDescriptorFactoryContext localDescriptors, ClassDescriptorFactory descriptorFactory) {
