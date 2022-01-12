@@ -142,16 +142,20 @@ public class ClassDescriptorFactory {
     }
 
     /**
-     * If the given class has a super-class (which is not Object and not Enum), parses the super-class
+     * If the given class has a super-class (which is not Object) and the class is not an Enum subclass, parses the super-class
      * and registers the resulting descriptor.
      *
      * @param clazz class which super-class to parse
-     * @return descriptor of the super-class or {@code null} if the class has no super-class or the super-class is Object or Enum
+     * @return descriptor of the super-class or {@code null} if the class is an enum or it has no super-class or the super-class is Object
      */
     private ClassDescriptor superClassDescriptor(Class<?> clazz) {
+        if (Enum.class.isAssignableFrom(clazz)) {
+            return null;
+        }
+
         Class<?> superclass = clazz.getSuperclass();
 
-        if (superclass == null || superclass == Object.class || superclass == Enum.class) {
+        if (superclass == null || superclass == Object.class) {
             return null;
         }
 
