@@ -44,7 +44,7 @@ import org.jetbrains.annotations.Nullable;
  * Default implementation of {@link UserObjectMarshaller}.
  */
 public class DefaultUserObjectMarshaller implements UserObjectMarshaller {
-    private final ClassDescriptorFactoryContext descriptorRegistry;
+    private final ClassDescriptorFactoryContext localDescriptors;
     private final ClassDescriptorFactory descriptorFactory;
 
     private final BuiltInNonContainerMarshallers builtInNonContainerMarshallers = new BuiltInNonContainerMarshallers();
@@ -57,11 +57,11 @@ public class DefaultUserObjectMarshaller implements UserObjectMarshaller {
     /**
      * Constructor.
      *
-     * @param descriptorRegistry registry of local descriptors to consult with
+     * @param localDescriptors registry of local descriptors to consult with
      * @param descriptorFactory  descriptor factory to create new descriptors from classes
      */
-    public DefaultUserObjectMarshaller(ClassDescriptorFactoryContext descriptorRegistry, ClassDescriptorFactory descriptorFactory) {
-        this.descriptorRegistry = descriptorRegistry;
+    public DefaultUserObjectMarshaller(ClassDescriptorFactoryContext localDescriptors, ClassDescriptorFactory descriptorFactory) {
+        this.localDescriptors = localDescriptors;
         this.descriptorFactory = descriptorFactory;
 
         arbitraryObjectMarshaller = new ArbitraryObjectMarshaller(this::marshalToOutput, this::unmarshalFromInput);
@@ -196,7 +196,7 @@ public class DefaultUserObjectMarshaller implements UserObjectMarshaller {
 
     private ClassDescriptor getOrCreateDescriptor(@Nullable Object object, Class<?> declaredClass) {
         if (object == null) {
-            return descriptorRegistry.getNullDescriptor();
+            return localDescriptors.getNullDescriptor();
         }
 
         // For primitives, we need to keep the declaredClass (it differs from object.getClass()).
@@ -211,19 +211,19 @@ public class DefaultUserObjectMarshaller implements UserObjectMarshaller {
         // ENUM and ENUM_ARRAY need to be handled separately because an enum value usually has a class different from
         // Enum and an ENUM_ARRAY might be used for both Enum[] and EnumSubclass[].
         if (objectClass.isEnum()) {
-            return descriptorRegistry.getEnumDescriptor();
+            return localDescriptors.getEnumDescriptor();
         }
         if (isEnumArray(objectClass)) {
-            return descriptorRegistry.getRequiredDescriptor(Enum[].class);
+            return localDescriptors.getRequiredDescriptor(Enum[].class);
         }
 
-        ClassDescriptor descriptor = descriptorRegistry.getDescriptor(objectClass);
+        ClassDescriptor descriptor = localDescriptors.getDescriptor(objectClass);
         if (descriptor != null) {
             return descriptor;
         } else {
             // This is some custom class (not a built-in). If it's a non-built-in array, we need handle it as a generic container.
             if (objectClass.isArray()) {
-                return descriptorRegistry.getBuiltInDescriptor(BuiltinType.OBJECT_ARRAY);
+                return localDescriptors.getBuiltInDescriptor(BuiltinType.OBJECT_ARRAY);
             }
 
             return descriptorFactory.create(objectClass);
