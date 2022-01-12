@@ -330,18 +330,6 @@ class DefaultUserObjectMarshallerWithBuiltinsTest {
         ).map(Arguments::of);
     }
 
-    private enum SimpleEnum {
-        FIRST,
-        SECOND
-    }
-
-    private enum EnumWithAnonClassesForMembers {
-        FIRST {
-        },
-        SECOND {
-        }
-    }
-
     private static class BuiltInTypeValue {
         private final Object value;
         private final Class<?> valueClass;

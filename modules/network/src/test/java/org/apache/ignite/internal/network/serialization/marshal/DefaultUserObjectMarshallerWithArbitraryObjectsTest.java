@@ -394,6 +394,22 @@ class DefaultUserObjectMarshallerWithArbitraryObjectsTest {
         assertThat(map, is(equalTo(Map.of(1, 2, 3, 4))));
     }
 
+    @Test
+    void supportsEnumsInFields() throws Exception {
+        WithSimpleEnumField unmarshalled = marshalAndUnmarshalNonNull(new WithSimpleEnumField(SimpleEnum.FIRST));
+
+        assertThat(unmarshalled.value, is(SimpleEnum.FIRST));
+    }
+
+    @Test
+    void supportsEnumsWithAnonClassesForMembersInFields() throws Exception {
+        WithEnumWithAnonClassesForMembersField object = new WithEnumWithAnonClassesForMembersField(EnumWithAnonClassesForMembers.FIRST);
+
+        WithEnumWithAnonClassesForMembersField unmarshalled = marshalAndUnmarshalNonNull(object);
+
+        assertThat(unmarshalled.value, is(EnumWithAnonClassesForMembers.FIRST));
+    }
+
     private static class Simple {
         private int value;
 
@@ -529,9 +545,25 @@ class DefaultUserObjectMarshallerWithArbitraryObjectsTest {
         private List<Object> contents;
     }
 
-    private static class WithSideEffectInConstructor implements Serializable {
+    private static class WithSideEffectInConstructor {
         public WithSideEffectInConstructor() {
             constructorCalled = true;
+        }
+    }
+
+    private static class WithSimpleEnumField {
+        private final SimpleEnum value;
+
+        private WithSimpleEnumField(SimpleEnum value) {
+            this.value = value;
+        }
+    }
+
+    private static class WithEnumWithAnonClassesForMembersField {
+        private final EnumWithAnonClassesForMembers value;
+
+        private WithEnumWithAnonClassesForMembersField(EnumWithAnonClassesForMembers value) {
+            this.value = value;
         }
     }
 }
