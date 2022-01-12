@@ -143,7 +143,7 @@ class DefaultUserObjectMarshallerWithSerializableTest {
     }
 
     @Test
-    void appliesWriteReplaceOnExternalizableRecursively() throws Exception {
+    void appliesWriteReplaceOnSerializableRecursively() throws Exception {
         Object result = marshalAndUnmarshalNonNull(new SerializableWithWriteReplaceChain1(0));
 
         assertThat(result, is(instanceOf(Integer.class)));
@@ -151,14 +151,14 @@ class DefaultUserObjectMarshallerWithSerializableTest {
     }
 
     @Test
-    void stopsApplyingWriteReplaceOnExternalizableWhenReplacementIsInstanceOfSameClass() throws Exception {
+    void stopsApplyingWriteReplaceOnSerializableWhenReplacementIsInstanceOfSameClass() throws Exception {
         SerializableWithWriteReplaceWithSameClass result = marshalAndUnmarshalNonNull(new SerializableWithWriteReplaceWithSameClass(0));
 
         assertThat(result.intValue, is(1));
     }
 
     @Test
-    void causesInfiniteRecursionOnExternalizableWithIndirectWriteReplaceCycle() {
+    void causesInfiniteRecursionOnSerializableWithIndirectWriteReplaceCycle() {
         assertThrows(StackOverflowError.class, ()  -> marshalAndUnmarshalNonNull(new SerializableWithWriteReplaceCycle1(0)));
     }
 
@@ -169,7 +169,7 @@ class DefaultUserObjectMarshallerWithSerializableTest {
      * @throws Exception if something goes wrong
      */
     @Test
-    void onlyAppliesFirstReadResolveOnExternalizable() throws Exception {
+    void onlyAppliesFirstReadResolveOnSerializable() throws Exception {
         Object result = marshalAndUnmarshalNonNull(new SerializableWithReadResolveChain1(0));
 
         assertThat(result, is(instanceOf(SerializableWithReadResolveChain2.class)));
