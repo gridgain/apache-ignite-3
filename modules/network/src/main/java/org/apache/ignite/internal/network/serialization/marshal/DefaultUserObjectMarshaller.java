@@ -111,9 +111,9 @@ public class DefaultUserObjectMarshaller implements UserObjectMarshaller {
         DescribedObject afterReplacement = applyWriteReplaceIfNeeded(object, originalDescriptor);
 
         if (canParticipateInCycles(afterReplacement.descriptor)) {
-            Integer maybeObjectId = context.rememberAsSeen(afterReplacement.object);
-            if (maybeObjectId != null) {
-                writeReference(maybeObjectId, output);
+            Integer alreadySeenObjectId = context.rememberAsSeen(afterReplacement.object);
+            if (alreadySeenObjectId != null) {
+                writeReference(alreadySeenObjectId, output);
             } else {
                 marshalCycleable(afterReplacement, output, context);
             }
@@ -123,7 +123,7 @@ public class DefaultUserObjectMarshaller implements UserObjectMarshaller {
     }
 
     /**
-     * Returns {@code true} if an instance of the type represented by the descriptor may actively form a cycle.
+     * Returns {@code true} if an instance of the type represented by the descriptor may participate in a cycle.
      *
      * @param descriptor    descriptor to check
      * @return {@code true} if an instance of the type represented by the descriptor may actively form a cycle
@@ -234,9 +234,9 @@ public class DefaultUserObjectMarshaller implements UserObjectMarshaller {
         return objectClass.isArray() && objectClass.getComponentType().isEnum();
     }
 
-    private void writeReference(int referenceId, DataOutput output) throws IOException {
+    private void writeReference(int objectId, DataOutput output) throws IOException {
         writeDescriptorOrCommandId(SerializedStreamCommands.REFERENCE, output);
-        ProtocolMarshalling.writeObjectId(referenceId, output);
+        ProtocolMarshalling.writeObjectId(objectId, output);
     }
 
     private void marshalCycleable(DescribedObject describedObject, DataOutputStream output, MarshallingContext context)
