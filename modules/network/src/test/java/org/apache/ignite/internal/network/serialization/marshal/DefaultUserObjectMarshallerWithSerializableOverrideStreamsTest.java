@@ -34,7 +34,6 @@ import java.io.InputStream;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.io.Serializable;
-import java.util.Arrays;
 import java.util.Objects;
 import java.util.function.Consumer;
 import java.util.stream.Stream;
@@ -215,12 +214,12 @@ class DefaultUserObjectMarshallerWithSerializableOverrideStreamsTest {
     }
 
     @Test
-    void supportsResetInsideWriteObject() {
+    void resetThrowsInsideWriteObject() {
         readerAndWriter = new ReaderAndWriter<>(ObjectOutputStream::reset, ois -> null);
 
         WithCustomizableOverride<?> original = new WithCustomizableOverride<>();
 
-        assertDoesNotThrow(() -> marshalAndUnmarshalNonNull(original));
+        assertThrows(MarshalException.class, () -> marshalAndUnmarshalNonNull(original));
     }
 
     @Test

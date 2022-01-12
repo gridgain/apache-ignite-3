@@ -173,7 +173,8 @@ class UosObjectOutputStream extends ObjectOutputStream {
     /** {@inheritDoc} */
     @Override
     public void reset() throws IOException {
-        // TODO: IGNITE-16165 - erase information about references?
+        throw new UnsupportedOperationException("The correct way to reset is via MarshallingContext."
+                + " Note that it's not valid to call this from writeObject()/readObjecgt() implementation.");
     }
 
     /** {@inheritDoc} */
