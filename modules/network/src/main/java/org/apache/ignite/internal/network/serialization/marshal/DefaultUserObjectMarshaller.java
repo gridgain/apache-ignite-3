@@ -346,7 +346,7 @@ public class DefaultUserObjectMarshaller implements UserObjectMarshaller {
     private Object preInstantiate(ClassDescriptor descriptor, DataInput input, UnmarshallingContext context)
             throws IOException, UnmarshalException {
         if (isBuiltInNonContainer(descriptor)) {
-            throw new IllegalStateException("Should not be here");
+            throw new IllegalStateException("Should not be here, descriptor is " + descriptor);
         } else if (isBuiltInCollection(descriptor)) {
             return builtInContainerMarshallers.preInstantiateBuiltInMutableCollection(descriptor, input, context);
         } else if (isBuiltInMap(descriptor)) {
