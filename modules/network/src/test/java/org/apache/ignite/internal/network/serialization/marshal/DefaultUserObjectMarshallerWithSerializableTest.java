@@ -227,12 +227,12 @@ class DefaultUserObjectMarshallerWithSerializableTest {
 
     @Test
     void resolveObjectProducesUnrolledCyclesAsInJavaSerializationWhenObjectIsInCycleWithLengthOfMoreThanOne() throws Exception {
-        RelativeSelfRefWithResolveToSelf first = new RelativeSelfRefWithResolveToSelf(42);
-        RelativeSelfRefWithResolveToSelf second = new RelativeSelfRefWithResolveToSelf(43);
+        IndirectSelfRefWithResolveToSelf first = new IndirectSelfRefWithResolveToSelf(42);
+        IndirectSelfRefWithResolveToSelf second = new IndirectSelfRefWithResolveToSelf(43);
         first.ref = second;
         second.ref = first;
 
-        RelativeSelfRefWithResolveToSelf deserialized = marshalAndUnmarshalNonNull(first);
+        IndirectSelfRefWithResolveToSelf deserialized = marshalAndUnmarshalNonNull(first);
 
         assertThat(deserialized.value, is(42 + READ_RESOLVE_INCREMENT));
         assertThat(deserialized.ref.value, is(43 + READ_RESOLVE_INCREMENT));
@@ -465,21 +465,21 @@ class DefaultUserObjectMarshallerWithSerializableTest {
         }
     }
 
-    private static class RelativeSelfRefWithResolveToSelf implements Serializable {
+    private static class IndirectSelfRefWithResolveToSelf implements Serializable {
         private final int value;
-        private RelativeSelfRefWithResolveToSelf ref;
+        private IndirectSelfRefWithResolveToSelf ref;
 
-        private RelativeSelfRefWithResolveToSelf(int value) {
+        private IndirectSelfRefWithResolveToSelf(int value) {
             this.value = value;
         }
 
-        private RelativeSelfRefWithResolveToSelf(int value, RelativeSelfRefWithResolveToSelf ref) {
+        private IndirectSelfRefWithResolveToSelf(int value, IndirectSelfRefWithResolveToSelf ref) {
             this.value = value;
             this.ref = ref;
         }
 
         private Object readResolve() {
-            return new RelativeSelfRefWithResolveToSelf(value + READ_RESOLVE_INCREMENT, ref);
+            return new IndirectSelfRefWithResolveToSelf(value + READ_RESOLVE_INCREMENT, ref);
         }
     }
 }
