@@ -35,9 +35,9 @@ import org.jetbrains.annotations.Nullable;
 class MarshallingContext {
     private final Set<ClassDescriptor> usedDescriptors = new HashSet<>();
 
-    private final Map<Object, Integer> objectsToRefIds = new IdentityHashMap<>();
+    private final Map<Object, Integer> objectsToIds = new IdentityHashMap<>();
 
-    private int nextRefId = 0;
+    private int nextObjectId = 0;
 
     private Object objectCurrentlyWrittenWithWriteObject;
     private ClassDescriptor descriptorOfObjectCurrentlyWrittenWithWriteObject;
@@ -65,36 +65,36 @@ class MarshallingContext {
             return null;
         }
 
-        Integer prevRefId = objectsToRefIds.get(object);
-        if (prevRefId != null) {
-            return prevRefId;
+        Integer prevId = objectsToIds.get(object);
+        if (prevId != null) {
+            return prevId;
         } else {
-            int newRefId = nextRefId();
+            int newId = nextId();
 
-            objectsToRefIds.put(object, newRefId);
+            objectsToIds.put(object, newId);
 
             return null;
         }
     }
 
-    private int nextRefId() {
-        return nextRefId++;
+    private int nextId() {
+        return nextObjectId++;
     }
 
     /**
-     * Returns a reference ID by the given object.
+     * Returns an object ID by the given object.
      *
      * @param object lookup object
      * @return object ID
      */
-    public int referenceId(Object object) {
-        Integer refId = objectsToRefIds.get(object);
+    public int objectId(Object object) {
+        Integer id = objectsToIds.get(object);
 
-        if (refId == null) {
-            throw new IllegalStateException("No reference created yet for " + object);
+        if (id == null) {
+            throw new IllegalStateException("No ID memorized yet for " + object);
         }
 
-        return refId;
+        return id;
     }
 
     public Object objectCurrentlyWrittenWithWriteObject() throws NotActiveException {

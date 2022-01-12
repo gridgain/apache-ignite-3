@@ -111,9 +111,9 @@ public class DefaultUserObjectMarshaller implements UserObjectMarshaller {
         DescribedObject afterReplacement = applyWriteReplaceIfNeeded(object, originalDescriptor);
 
         if (canParticipateInCycles(afterReplacement.descriptor)) {
-            Integer maybeRefId = context.rememberAsSeen(afterReplacement.object);
-            if (maybeRefId != null) {
-                writeReference(maybeRefId, output);
+            Integer maybeObjectId = context.rememberAsSeen(afterReplacement.object);
+            if (maybeObjectId != null) {
+                writeReference(maybeObjectId, output);
             } else {
                 marshalCycleable(afterReplacement, output, context);
             }
@@ -242,7 +242,7 @@ public class DefaultUserObjectMarshaller implements UserObjectMarshaller {
     private void marshalCycleable(DescribedObject describedObject, DataOutputStream output, MarshallingContext context)
             throws IOException, MarshalException {
         writeDescriptorId(describedObject.descriptor, output);
-        ProtocolMarshalling.writeObjectId(context.referenceId(describedObject.object), output);
+        ProtocolMarshalling.writeObjectId(context.objectId(describedObject.object), output);
 
         writeObject(describedObject.object, describedObject.descriptor, output, context);
     }
