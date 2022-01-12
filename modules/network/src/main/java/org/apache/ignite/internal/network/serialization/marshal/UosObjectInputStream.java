@@ -22,7 +22,7 @@ import java.io.IOException;
 import java.io.ObjectInputStream;
 
 /**
- *
+ * {@link ObjectInputStream} specialization used by User Object Serialization.
  */
 class UosObjectInputStream extends ObjectInputStream {
     private final DataInputStream input;
@@ -30,7 +30,12 @@ class UosObjectInputStream extends ObjectInputStream {
     private final DefaultFieldsReaderWriter defaultFieldsReaderWriter;
     private final UnmarshallingContext context;
 
-    UosObjectInputStream(DataInputStream input, ValueReader<Object> valueReader, DefaultFieldsReaderWriter defaultFieldsReaderWriter, UnmarshallingContext context) throws IOException {
+    UosObjectInputStream(
+            DataInputStream input,
+            ValueReader<Object> valueReader,
+            DefaultFieldsReaderWriter defaultFieldsReaderWriter,
+            UnmarshallingContext context
+    ) throws IOException {
         this.input = input;
         this.valueReader = valueReader;
         this.defaultFieldsReaderWriter = defaultFieldsReaderWriter;
@@ -135,6 +140,7 @@ class UosObjectInputStream extends ObjectInputStream {
     }
 
     /** {@inheritDoc} */
+    @SuppressWarnings("deprecation")
     @Override
     public String readLine() throws IOException {
         return input.readLine();

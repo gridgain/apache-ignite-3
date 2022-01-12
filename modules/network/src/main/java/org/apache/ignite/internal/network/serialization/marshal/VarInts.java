@@ -22,15 +22,27 @@ import java.io.DataOutput;
 import java.io.IOException;
 
 /**
- *
+ * Utils to read/write variable length ints.
  */
 class VarInts {
     private VarInts() {
     }
 
+    /**
+     * Writes a unsigned int using variable length format. If it's less than 0xFF, it's written as one byte.
+     * If it's more than 0xFE, but less than 0xFFFF, it's written as 3 bytes: first one byte equal to 0xFF, then 2 bytes
+     * as {@link DataOutput#writeShort(int)} writes them. Otherwise, it writes 3 0xFF bytes, then writes
+     * {@link DataOutput#writeInt(int)}.
+     * This may be beneficial for the cases when we need to write an unsigned int, but most of the time the values
+     * are small.
+     *
+     * @param value  value to write
+     * @param output where to write to value to
+     * @throws IOException if an I/O error occurs
+     */
     static void writeUnsignedInt(int value, DataOutput output) throws IOException {
         if (value < 0) {
-            throw new IllegalArgumentException(value + " is negative" );
+            throw new IllegalArgumentException(value + " is negative");
         }
 
         if (value < 0xFF) {
@@ -45,6 +57,14 @@ class VarInts {
         }
     }
 
+    /**
+     * Reads an unsigned int written using {@link #writeUnsignedInt(int, DataOutput)}.
+     *
+     * @param input from where to read
+     * @return the unsigned int value
+     * @throws IOException if an I/O error occurs
+     * @see #writeUnsignedInt(int, DataOutput)
+     */
     static int readUnsignedInt(DataInput input) throws IOException {
         int first = input.readUnsignedByte();
         if (first < 0xFF) {

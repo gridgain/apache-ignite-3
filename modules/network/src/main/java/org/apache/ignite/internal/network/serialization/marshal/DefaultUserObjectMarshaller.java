@@ -66,7 +66,11 @@ public class DefaultUserObjectMarshaller implements UserObjectMarshaller {
 
         structuredObjectMarshaller = new StructuredObjectMarshaller(this::marshalToOutput, this::unmarshalFromInput);
 
-        externalizableMarshaller = new ExternalizableMarshaller(this::unmarshalFromInput, this::marshalToOutput, structuredObjectMarshaller);
+        externalizableMarshaller = new ExternalizableMarshaller(
+                this::unmarshalFromInput,
+                this::marshalToOutput,
+                structuredObjectMarshaller
+        );
     }
 
     /**

@@ -24,7 +24,7 @@ import java.io.IOException;
 import java.io.ObjectOutputStream;
 
 /**
- *
+ * {@link ObjectOutputStream} specialization used by User Object Serialization.
  */
 class UosObjectOutputStream extends ObjectOutputStream {
     private final DataOutputStream output;
@@ -174,7 +174,7 @@ class UosObjectOutputStream extends ObjectOutputStream {
     @Override
     public void reset() throws IOException {
         throw new UnsupportedOperationException("The correct way to reset is via MarshallingContext."
-                + " Note that it's not valid to call this from writeObject()/readObjecgt() implementation.");
+                + " Note that it's not valid to call this from writeObject()/readObject() implementation.");
     }
 
     /** {@inheritDoc} */

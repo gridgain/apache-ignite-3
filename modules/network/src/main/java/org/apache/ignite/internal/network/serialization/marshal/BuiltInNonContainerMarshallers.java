@@ -137,7 +137,8 @@ class BuiltInNonContainerMarshallers {
         context.addUsedDescriptor(descriptor);
     }
 
-    Object readBuiltIn(ClassDescriptor descriptor, DataInputStream input, UnmarshallingContext context) throws IOException, UnmarshalException {
+    Object readBuiltIn(ClassDescriptor descriptor, DataInputStream input, UnmarshallingContext context)
+            throws IOException, UnmarshalException {
         BuiltInMarshaller<?> builtinMarshaller = findBuiltInMarshaller(descriptor);
         return builtinMarshaller.unmarshal(input, context);
     }

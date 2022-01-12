@@ -61,9 +61,9 @@ class DefaultUserObjectMarshallerWithSerializableOverrideStreamsTest {
     /** This is static so that writeObject()/readObject() can easily find it. */
     private static ReaderAndWriter<?> readerAndWriter;
 
-    /** Static access to the marshaller (for using in parameterized tests) */
+    /** Static access to the marshaller (for using in parameterized tests). */
     private static UserObjectMarshaller staticMarshaller;
-    /** Static access to the registry (for using in parameterized tests) */
+    /** Static access to the registry (for using in parameterized tests). */
     private static ClassDescriptorFactoryContext staticDescriptorRegistry;
 
     @BeforeEach
@@ -197,8 +197,8 @@ class DefaultUserObjectMarshallerWithSerializableOverrideStreamsTest {
                 new ReadWriteSpec<>(
                         "readNBytes range",
                         oos -> oos.write(new byte[]{42, 43}),
-                        ois -> readNBytesRange(ois, 2),
-                        dis -> readNBytesRange(dis, 2),
+                        ois -> readNumBytesRange(ois, 2),
+                        dis -> readNumBytesRange(dis, 2),
                         new byte[]{42, 43}
                 )
         ).map(Arguments::of);
@@ -237,7 +237,7 @@ class DefaultUserObjectMarshallerWithSerializableOverrideStreamsTest {
     }
 
     @SuppressWarnings("SameParameterValue")
-    private static byte[] readNBytesRange(InputStream is, int count) throws IOException {
+    private static byte[] readNumBytesRange(InputStream is, int count) throws IOException {
         byte[] bytes = new byte[count];
         is.readNBytes(bytes, 0, count);
         return bytes;

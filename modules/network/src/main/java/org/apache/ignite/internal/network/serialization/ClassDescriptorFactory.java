@@ -146,7 +146,7 @@ public class ClassDescriptorFactory {
      * and registers the resulting descriptor.
      *
      * @param clazz class which super-class to parse
-     * @return descriptor of the super-class or {@code null} if the class is an enum or it has no super-class or the super-class is Object
+     * @return descriptor of the super-class or {@code null} if the class is an enum, or it has no super-class, or the super-class is Object
      */
     private ClassDescriptor superClassDescriptor(Class<?> clazz) {
         if (Enum.class.isAssignableFrom(clazz)) {
@@ -194,8 +194,6 @@ public class ClassDescriptorFactory {
      * @return Class descriptor.
      */
     private ClassDescriptor serializable(int descriptorId, Class<? extends Serializable> clazz) {
-        validateSerializationOverride(clazz);
-
         return new ClassDescriptor(
                 clazz,
                 descriptorId,
@@ -209,16 +207,6 @@ public class ClassDescriptorFactory {
                         hasReadResolve(clazz)
                 )
         );
-    }
-
-    private void validateSerializationOverride(Class<? extends Serializable> clazz) {
-        boolean hasReadObject = hasReadObject(clazz);
-        boolean hasWriteObject = hasWriteObject(clazz);
-
-//        if (hasWriteObject != hasReadObject) {
-//            throw new IllegalArgumentException("Class must either have both writeObject() and readObject() methods or neither of them: "
-//                    + clazz.getName());
-//        }
     }
 
     private boolean hasReadResolve(Class<? extends Serializable> clazz) {

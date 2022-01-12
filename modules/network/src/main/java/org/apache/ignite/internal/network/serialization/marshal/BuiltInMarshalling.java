@@ -278,8 +278,12 @@ class BuiltInMarshalling {
         }
     }
 
-    static <T> T[] readRefArray(DataInputStream input, IntFunction<T[]> arrayFactory, ValueReader<T> valueReader, UnmarshallingContext context)
-            throws IOException, UnmarshalException {
+    static <T> T[] readRefArray(
+            DataInputStream input,
+            IntFunction<T[]> arrayFactory,
+            ValueReader<T> valueReader,
+            UnmarshallingContext context
+    ) throws IOException, UnmarshalException {
         int length = readLength(input);
 
         T[] array = arrayFactory.apply(length);
@@ -341,8 +345,12 @@ class BuiltInMarshalling {
         return readRefArray(input, len -> (Enum<?>[]) Array.newInstance(enumClass, len), enumReader, context);
     }
 
-    static <T> void writeCollection(Collection<T> collection, DataOutputStream output, ValueWriter<T> valueWriter, MarshallingContext context)
-            throws IOException, MarshalException {
+    static <T> void writeCollection(
+            Collection<T> collection,
+            DataOutputStream output,
+            ValueWriter<T> valueWriter,
+            MarshallingContext context
+    ) throws IOException, MarshalException {
         writeLength(collection.size(), output);
 
         for (T object : collection) {
