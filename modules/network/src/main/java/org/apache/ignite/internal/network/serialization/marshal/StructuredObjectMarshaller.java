@@ -29,15 +29,16 @@ import org.apache.ignite.internal.network.serialization.FieldDescriptor;
 import org.apache.ignite.internal.network.serialization.SpecialMethodInvocationException;
 
 /**
- * (Un)marshals arbitrary objects (that is, objects that are not built-in nor serializable/externalizable).
+ * (Un)marshals objects that have structure (fields). These are {@link java.io.Serializable}s
+ * (which are not {@link java.io.Externalizable}s) and arbitrary (non-serializable, non-externalizable) objects.
  */
-class ArbitraryObjectMarshaller implements DefaultFieldsReaderWriter {
+class StructuredObjectMarshaller implements DefaultFieldsReaderWriter {
     private final TypedValueWriter valueWriter;
     private final ValueReader<Object> valueReader;
 
     private final Instantiation instantiation;
 
-    ArbitraryObjectMarshaller(TypedValueWriter valueWriter, ValueReader<Object> valueReader) {
+    StructuredObjectMarshaller(TypedValueWriter valueWriter, ValueReader<Object> valueReader) {
         this.valueWriter = valueWriter;
         this.valueReader = valueReader;
 
@@ -47,10 +48,10 @@ class ArbitraryObjectMarshaller implements DefaultFieldsReaderWriter {
         );
     }
 
-    void writeArbitraryObject(Object object, ClassDescriptor descriptor, DataOutputStream output, MarshallingContext context)
+    void writeStructuredObject(Object object, ClassDescriptor descriptor, DataOutputStream output, MarshallingContext context)
             throws MarshalException, IOException {
         for (ClassDescriptor layer : lineage(descriptor)) {
-            writeArbitraryObjectLayer(object, layer, output, context);
+            writeStructuredObjectLayer(object, layer, output, context);
         }
     }
 
@@ -74,7 +75,7 @@ class ArbitraryObjectMarshaller implements DefaultFieldsReaderWriter {
         return descriptors;
     }
 
-    private void writeArbitraryObjectLayer(Object object, ClassDescriptor layer, DataOutputStream output, MarshallingContext context)
+    private void writeStructuredObjectLayer(Object object, ClassDescriptor layer, DataOutputStream output, MarshallingContext context)
             throws IOException, MarshalException {
         if (layer.hasSerializationOverride()) {
             writeWithWriteObject(object, layer, output, context);
@@ -96,7 +97,7 @@ class ArbitraryObjectMarshaller implements DefaultFieldsReaderWriter {
             descriptor.serializationMethods().writeObject(object, oos);
             oos.flush();
         } catch (SpecialMethodInvocationException e) {
-                throw new MarshalException("Cannot invoke writeObject()", e);
+            throw new MarshalException("Cannot invoke writeObject()", e);
         } finally {
             context.endWritingWithWriteObject();
         }
@@ -118,7 +119,7 @@ class ArbitraryObjectMarshaller implements DefaultFieldsReaderWriter {
         valueWriter.write(fieldValue, fieldDescriptor.clazz(), output, context);
     }
 
-    Object preInstantiateArbitraryObject(ClassDescriptor descriptor) throws UnmarshalException {
+    Object preInstantiateStructuredObject(ClassDescriptor descriptor) throws UnmarshalException {
         try {
             return instantiation.newInstance(descriptor.clazz());
         } catch (InstantiationException e) {
@@ -126,14 +127,14 @@ class ArbitraryObjectMarshaller implements DefaultFieldsReaderWriter {
         }
     }
 
-    void fillArbitraryObjectFrom(DataInputStream input, Object object, ClassDescriptor descriptor, UnmarshallingContext context)
+    void fillStructuredObjectFrom(DataInputStream input, Object object, ClassDescriptor descriptor, UnmarshallingContext context)
             throws IOException, UnmarshalException {
         for (ClassDescriptor layer : lineage(descriptor)) {
-            fillArbitraryObjectLayerFrom(input, layer, object, context);
+            fillStructuredObjectLayerFrom(input, layer, object, context);
         }
     }
 
-    private void fillArbitraryObjectLayerFrom(DataInputStream input, ClassDescriptor layer, Object object, UnmarshallingContext context)
+    private void fillStructuredObjectLayerFrom(DataInputStream input, ClassDescriptor layer, Object object, UnmarshallingContext context)
             throws IOException, UnmarshalException {
         if (layer.hasSerializationOverride()) {
             fillObjectWithReadObjectFrom(input, object, layer, context);
@@ -150,9 +151,9 @@ class ArbitraryObjectMarshaller implements DefaultFieldsReaderWriter {
     ) throws IOException, UnmarshalException {
         context.startReadingWithReadObject(object, descriptor);
 
-        // Do not close the stream yet!
-        ObjectInputStream ois = context.objectInputStream(input, valueReader, this);
         try {
+            // Do not close the stream yet!
+            ObjectInputStream ois = context.objectInputStream(input, valueReader, this);
             descriptor.serializationMethods().readObject(object, ois);
         } catch (SpecialMethodInvocationException e) {
             throw new UnmarshalException("Cannot invoke readObject()", e);

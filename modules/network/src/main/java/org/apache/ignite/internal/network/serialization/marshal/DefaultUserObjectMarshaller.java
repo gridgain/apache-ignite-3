@@ -51,7 +51,7 @@ public class DefaultUserObjectMarshaller implements UserObjectMarshaller {
     private final BuiltInContainerMarshallers builtInContainerMarshallers = new BuiltInContainerMarshallers(
             (obj, out, ctx) -> marshalToOutput(obj, objectClass(obj), out, ctx)
     );
-    private final ArbitraryObjectMarshaller arbitraryObjectMarshaller;
+    private final StructuredObjectMarshaller structuredObjectMarshaller;
     private final ExternalizableMarshaller externalizableMarshaller;
 
     /**
@@ -64,9 +64,9 @@ public class DefaultUserObjectMarshaller implements UserObjectMarshaller {
         this.localDescriptors = localDescriptors;
         this.descriptorFactory = descriptorFactory;
 
-        arbitraryObjectMarshaller = new ArbitraryObjectMarshaller(this::marshalToOutput, this::unmarshalFromInput);
+        structuredObjectMarshaller = new StructuredObjectMarshaller(this::marshalToOutput, this::unmarshalFromInput);
 
-        externalizableMarshaller = new ExternalizableMarshaller(this::unmarshalFromInput, this::marshalToOutput, arbitraryObjectMarshaller);
+        externalizableMarshaller = new ExternalizableMarshaller(this::unmarshalFromInput, this::marshalToOutput, structuredObjectMarshaller);
     }
 
     /**
@@ -272,7 +272,7 @@ public class DefaultUserObjectMarshaller implements UserObjectMarshaller {
         } else if (descriptor.isExternalizable()) {
             externalizableMarshaller.writeExternalizable((Externalizable) object, descriptor, output, context);
         } else {
-            arbitraryObjectMarshaller.writeArbitraryObject(object, descriptor, output, context);
+            structuredObjectMarshaller.writeStructuredObject(object, descriptor, output, context);
         }
     }
 
@@ -356,7 +356,7 @@ public class DefaultUserObjectMarshaller implements UserObjectMarshaller {
         } else if (descriptor.isExternalizable()) {
             return externalizableMarshaller.preInstantiateExternalizable(descriptor);
         } else {
-            return arbitraryObjectMarshaller.preInstantiateArbitraryObject(descriptor);
+            return structuredObjectMarshaller.preInstantiateStructuredObject(descriptor);
         }
     }
 
@@ -373,7 +373,7 @@ public class DefaultUserObjectMarshaller implements UserObjectMarshaller {
         } else if (descriptor.isExternalizable()) {
             externalizableMarshaller.fillExternalizableFrom(input, (Externalizable) objectToFill, context);
         } else {
-            arbitraryObjectMarshaller.fillArbitraryObjectFrom(input, objectToFill, descriptor, context);
+            structuredObjectMarshaller.fillStructuredObjectFrom(input, objectToFill, descriptor, context);
         }
     }
 
