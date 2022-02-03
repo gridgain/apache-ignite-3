@@ -27,6 +27,7 @@ import java.util.Iterator;
 import java.util.Map;
 import java.util.NoSuchElementException;
 import java.util.Set;
+import org.apache.ignite.internal.tostring.S;
 import org.jetbrains.annotations.Nullable;
 
 /**
@@ -347,6 +348,6 @@ public class IgniteBiTuple<V1, V2> implements Map<V1, V2>, Map.Entry<V1, V2>,
     /** {@inheritDoc} */
     @Override
     public String toString() {
-        return "S.toString(IgniteBiTuple.class, this)";
+        return S.toString(IgniteBiTuple.class, this);
     }
 }

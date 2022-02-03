@@ -1,0 +1,617 @@
+package org.apache.ignite.internal.table;
+
+import static java.util.Spliterator.ORDERED;
+import static java.util.Spliterators.spliteratorUnknownSize;
+import static java.util.stream.Collectors.toList;
+import static java.util.stream.StreamSupport.stream;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.Iterator;
+import java.util.List;
+import java.util.Map;
+import java.util.Map.Entry;
+import java.util.NoSuchElementException;
+import java.util.Objects;
+import java.util.TreeMap;
+import java.util.UUID;
+import java.util.stream.IntStream;
+import org.apache.ignite.internal.tostring.S;
+import org.apache.ignite.internal.tx.Timestamp;
+import org.apache.ignite.lang.IgniteBiTuple;
+import org.jetbrains.annotations.Nullable;
+import org.junit.jupiter.api.Test;
+
+public class MVIndexTest {
+    private PrimaryIndex<Integer, User> primIdx = new PrimaryIndex<>();
+
+    private SecondaryIndex<String, Integer, User> emailIdx = new SecondaryIndex<>(primIdx);
+
+    private SecondaryIndex<Integer, Integer, User> nameIdx = new SecondaryIndex(primIdx);
+
+    @Test
+    public void testPrimaryIndexPutGet() {
+        User user = new User(1, "test1@badmail.com", 1);
+
+        UUID txId = UUID.randomUUID();
+
+        Timestamp ver0 = Timestamp.nextVersion();
+
+        // Create uncompleted version.
+        primIdx.addWrite(user.id, user, txId);
+        primIdx.printVersionChain(user.id);
+
+        // Update to completed version.
+        Timestamp ver1 = Timestamp.nextVersion();
+        primIdx.commitWrite(user.id, ver1);
+        primIdx.printVersionChain(user.id);
+
+        // Change email.
+        String email = "test" + user.id + "@goodmail.com";
+
+        User updated = new User(user.id, email, user.deptId);
+        primIdx.addWrite(user.id, updated, txId);
+        primIdx.printVersionChain(user.id);
+
+        Timestamp ver2 = Timestamp.nextVersion();
+
+        // Update to new completed version.
+        Timestamp ver3 = Timestamp.nextVersion();
+        primIdx.commitWrite(user.id, ver3);
+        primIdx.printVersionChain(user.id);
+
+        Timestamp ver4 = Timestamp.nextVersion();
+
+        User u0 = primIdx.read(user.id, ver0, txId);
+        System.out.println("Read: ver=" + ver0 + ", val=" + u0);
+        assertNull(u0);
+
+        User u1 = primIdx.read(user.id, ver1, txId);
+        System.out.println("Read: ver=" + ver1 + ", val=" + u1);
+        assertEquals(user.email, u1.email);
+
+        User u2 = primIdx.read(user.id, ver2, txId);
+        System.out.println("Read: ver=" + ver2 + ", val=" + u2);
+        assertEquals(user, u1);
+
+        User u3 = primIdx.read(user.id, ver3, txId);
+        System.out.println("Read: ver=" + ver3 + ", val=" + u3);
+        assertEquals(email, u3.email);
+
+        User u4 = primIdx.read(user.id, ver4, txId);
+        System.out.println("Read: ver=" + ver4 + ", val=" + u4);
+        assertEquals(u3, u4);
+    }
+
+    @Test
+    public void testPrimaryIndexPutScan() {
+        List<User> users = IntStream.range(0, 10).mapToObj(i -> new User(i, "test" + i + "@badmail.com", i)).collect(toList());
+        List<Timestamp> commits = new ArrayList<>();
+
+        UUID txId = UUID.randomUUID();
+
+        for (User user : users) {
+            primIdx.addWrite(user.id, user, txId);
+            Timestamp timestamp = Timestamp.nextVersion();
+            commits.add(timestamp);
+            primIdx.commitWrite(user.id, timestamp);
+        }
+
+        for (int i = 0; i < commits.size(); i++) {
+            Timestamp timestamp = commits.get(i);
+            Iterator<User> iter = primIdx.scan(null, false, null, false, timestamp, txId);
+            assertEquals(i + 1, stream(spliteratorUnknownSize(iter, ORDERED), false).count());
+        }
+    }
+
+    @Test
+    public void testSecondaryIndexUpdate() {
+        User user = new User(1, "test1@badmail.com", 1);
+
+        UUID txId = UUID.randomUUID();
+
+        Timestamp ver0 = Timestamp.nextVersion();
+
+        primIdx.addWrite(user.id, user, txId);
+        emailIdx.put(user.email, user.id);
+
+        Timestamp ver1 = Timestamp.nextVersion();
+        Timestamp ver2 = Timestamp.nextVersion();
+
+        primIdx.commitWrite(user.id, ver2);
+
+        // Must see self write.
+        validate(txId, null, false, null, false, null, 1, user);
+        validate(txId, "test1@badmail.com", true, null, false, null, 1, user);
+        validate(txId, null, false, "test1@badmail.com", true, null, 1, user);
+        validate(txId, "test1@badmail.com", true, "test1@badmail.com", true, null, 1, user);
+        validate(txId, "test1@badmail.com", false, null, false, null, 0, null);
+        validate(txId, null, false, "test1@badmail.com", false, null, 0, null);
+        validate(txId, "test1@badmail.com", false, "test1@badmail.com", false, null, 0, null);
+
+        // Must not see below write.
+        validate(txId, null, false, null, false, ver0, 0, null);
+        validate(txId, "test1@badmail.com", true, null, false, ver0, 0, null);
+        validate(txId, null, false, "test1@badmail.com", true, ver0, 0, null);
+        validate(txId, "test1@badmail.com", true, "test1@badmail.com", true, ver0, 0, null);
+        validate(txId, "test1@badmail.com", false, null, false, ver0, 0, null);
+        validate(txId, null, false, "test1@badmail.com", false, ver0, 0, null);
+        validate(txId, "test1@badmail.com", false, "test1@badmail.com", false, ver0, 0, null);
+
+        // Must not see uncommitted write.
+        validate(txId, null, false, null, false, ver1, 0, null);
+        validate(txId, "test1@badmail.com", true, null, false, ver1, 0, null);
+        validate(txId, null, false, "test1@badmail.com", true, ver1, 0, null);
+        validate(txId, "test1@badmail.com", true, "test1@badmail.com", true, ver1, 0, null);
+        validate(txId, "test1@badmail.com", false, null, false, ver1, 0, null);
+        validate(txId, null, false, "test1@badmail.com", false, ver1, 0, null);
+        validate(txId, "test1@badmail.com", false, "test1@badmail.com", false, ver1, 0, null);
+
+        // Must see committed write.
+        validate(txId, null, false, null, false, ver2, 1, user);
+        validate(txId, "test1@badmail.com", true, null, false, ver2, 1, user);
+        validate(txId, null, false, "test1@badmail.com", true, ver2, 1, user);
+        validate(txId, "test1@badmail.com", true, "test1@badmail.com", true, ver2, 1, user);
+        validate(txId, "test1@badmail.com", false, null, false, ver2, 0, null);
+        validate(txId, null, false, "test1@badmail.com", false, ver2, 0, null);
+        validate(txId, "test1@badmail.com", false, "test1@badmail.com", false, ver2, 0, null);
+
+        Timestamp ver3 = Timestamp.nextVersion();
+
+        // Reindex new email.
+        User user2 = new User(1, "test1@goodmail.com", 1);
+
+        primIdx.addWrite(user.id, user2, txId);
+        emailIdx.put(user2.email, user.id);
+
+        validate(txId, null, false, null, false, ver2, 1, user);
+        //validate(null, false, null, false, ver3, 1, user);
+        //validate(null, false, null, false, null, 1, user2);
+        //validate(null, false, null, false, ver3, 0, null);
+    }
+
+    private void validate(
+            UUID txID,
+            @Nullable String lower,
+            boolean fromInclusive,
+            @Nullable String upper,
+            boolean toInclusive,
+            @Nullable Timestamp timestamp,
+            int expSize,
+            Object expVal
+    ) {
+        List<User> users = stream(spliteratorUnknownSize(
+                emailIdx.scan(lower, fromInclusive, upper, toInclusive, timestamp, txID), ORDERED), false).collect(toList());
+
+        if (expSize == 0) {
+            assertTrue(users.isEmpty());
+        }
+        else {
+            assertEquals(expSize, users.size());
+        }
+
+        if (expSize > 0) {
+            assertEquals(expVal, users.get(0));
+        }
+    }
+
+    @Test
+    public void testSecondaryIndexScan() {
+        UUID txId = UUID.randomUUID();
+
+        // Split users in two depts.
+        List<User> users = IntStream.range(0, 10).mapToObj(i -> new User(i, "test" + i + "@badmail.com", i / 5)).collect(toList());
+        List<Timestamp> commits = new ArrayList<>();
+
+        for (User user : users) {
+            primIdx.addWrite(user.id, user, txId);
+            Timestamp timestamp = Timestamp.nextVersion();
+            commits.add(timestamp);
+            nameIdx.put(user.deptId, user.id);
+            primIdx.commitWrite(user.id, timestamp);
+        }
+
+        for (int i = 0; i < commits.size(); i++) {
+            Timestamp timestamp = commits.get(i);
+            Iterator<User> iter = nameIdx.scan(null, false, null, false, timestamp, txId);
+
+            assertEquals(i + 1, stream(spliteratorUnknownSize(iter, ORDERED), false).count());
+        }
+    }
+
+    private static class PrimaryIndex<PK extends Comparable<PK>, T> {
+        /** Sorted map delegate. */
+        private TreeMap<PK, VersionedValue<T>> map = new TreeMap<>();
+
+        /**
+         * Creates a new uncommitted version of a record identified by a given primary key.
+         * <p>Only one uncommitted version can exist at a time.
+         * <p>Uncommitted values can be read using {@code null} timestamp.
+         *
+         * @param key The primary key.
+         * @param val The value.
+         */
+        public void addWrite(PK key, T val, UUID txId) {
+            VersionedValue<T> top = map.get(key);
+
+            if (top == null) {
+                top = new VersionedValue<>(null, null, val, null);
+
+                map.put(key, top);
+            }
+            else {
+                assert top.begin != null : "Only one write intent is allowed: " + top;
+
+                // Re-link.
+                VersionedValue<T> next = new VersionedValue<>(top.begin, top.end, top.value, top.next);
+                top.setId(txId);
+                top.setBegin(null);
+                top.setEnd(null);
+                top.setValue(val);
+                top.setNext(next);
+            }
+        }
+
+        public void commitWrite(PK pk, Timestamp timestamp) {
+            VersionedValue<T> top = map.get(pk);
+
+            assert top == map.lastEntry().getValue();
+
+            top.setBegin(timestamp);
+            top.setId(null);
+
+            if (top.next != null)
+                top.next.end = timestamp;
+        }
+
+        public void abortWrite(PK pk) {
+            VersionedValue<T> top = map.get(pk);
+
+            Objects.requireNonNull(top);
+
+            if (top.next == null)
+                map.remove(pk);
+            else {
+                top.setBegin(top.next.begin);
+                top.setEnd(top.next.end);
+                top.setValue(top.next.value);
+                top.setNext(top.next);
+            }
+        }
+
+        /**
+         * @param pk The primary key.
+         * @param timestamp The timestamp.
+         * @param txId The txn id.
+         * @return Versioned value.
+         */
+        public T read(PK pk, @Nullable Timestamp timestamp, UUID txId) {
+            VersionedValue<T> top = map.get(pk);
+
+            return read(top, timestamp, txId);
+        }
+
+        public T read(VersionedValue<T> top, @Nullable Timestamp timestamp, UUID txId) {
+            if (top == null)
+                return null;
+
+            if (timestamp == null) {
+                if (txId.equals(top.id)) { // Self-read.
+                    return top.value;
+                }
+                else { // Return latest committed value.
+                    return top.next == null ? top.value : top.next.value;
+                }
+            }
+
+            VersionedValue<T> cur = top;
+
+            do {
+                if (cur.begin != null && timestamp.compareTo(cur.begin) >= 0 && (cur.end == null || timestamp.compareTo(cur.end) < 0)) {
+                    return cur.value;
+                }
+
+                cur = cur.next;
+            } while(cur != null);
+
+            return null;
+        }
+
+        public void cleanupCompletedVersions(Timestamp timestamp) {
+            // TODO
+        }
+
+        public void printVersionChain(PK key) {
+            VersionedValue<T> top = map.get(key);
+
+            if (top == null) {
+                return;
+            }
+
+            System.out.println("key=" + key);
+            System.out.println("    begin=" + top.begin + " end=" + top.end + ", value=" + top.value);
+
+            VersionedValue<T> next = top.next;
+
+            while(next != null) {
+                System.out.println("    begin=" + next.begin + " end=" + next.end + ", value=" + next.value);
+
+                next = next.next;
+            }
+        }
+
+        /**
+         * Scan the index at the given ts (null for latest).
+         * <p>Tombstone values are skipped.
+         *
+         * TODO support for prefix scans.
+         * @param ts The timestamp.
+         * @return The iterator.
+         */
+        public Iterator<T> scan(@Nullable PK lower, boolean fromInclusive, @Nullable PK upper, boolean toInclusive, Timestamp ts, UUID txId) {
+            Iterator<Entry<PK, VersionedValue<T>>> iter;
+
+            if (lower == null && upper != null) {
+                iter = map.headMap(upper, toInclusive).entrySet().iterator();
+            } else if (lower != null && upper == null) {
+                iter = map.tailMap(lower, fromInclusive).entrySet().iterator();
+            } else if (lower != null) {
+                iter = map.subMap(lower, fromInclusive, upper, toInclusive).entrySet().iterator();
+            } else {
+                iter = map.entrySet().iterator();
+            }
+
+            return new Iterator<T>() {
+                @Nullable T next;
+
+                @Override
+                public boolean hasNext() {
+                    if (next == null) {
+                        while(true) {
+                            if (!iter.hasNext())
+                                return false;
+
+                            Entry<PK, VersionedValue<T>> entry = iter.next();
+
+                            if ((next = read(entry.getValue(), ts, txId)) != null)
+                                return true;
+                        }
+                    }
+
+                    return false;
+                }
+
+                @Override
+                public T next() {
+                    if (next == null)
+                        throw new NoSuchElementException();
+
+                    T val = next;
+                    next = null;
+
+                    return val;
+                }
+            };
+        }
+
+        public void remove(@Nullable PK lower, boolean fromInclusive, @Nullable PK upper, boolean toInclusive) {
+            // TODO
+        }
+    }
+
+    private static class SecondaryIndex<SK extends Comparable<SK>, PK extends Comparable<PK>, T> {
+        private TreeMap<Map.Entry<SK, PK>, Boolean> map = new TreeMap<>(new Comparator<Entry<SK, PK>>() {
+            @Override
+            public int compare(Entry<SK, PK> o1, Entry<SK, PK> o2) {
+                int cmp = o1.getKey().compareTo(o2.getKey());
+
+                if (cmp != 0)
+                    return cmp;
+
+                if (o1.getValue() == null || o2.getValue() == null)
+                    return cmp;
+                else
+                    return o1.getValue().compareTo(o2.getValue());
+            }
+        });
+
+        private PrimaryIndex<PK, T> primIdx;
+
+        private SecondaryIndex(PrimaryIndex<PK, T> primIdx) {
+            this.primIdx = primIdx;
+        }
+
+        public void put(SK secondaryKey, PK primaryKey) {
+            map.put(new IgniteBiTuple<>(secondaryKey, primaryKey), Boolean.TRUE);
+        }
+
+        public void remove(SK secondaryKey, PK primaryKey) {
+            map.remove(new IgniteBiTuple<>(secondaryKey, primaryKey));
+        }
+
+        public Iterator<T> scan(@Nullable SK lower, boolean fromInclusive, @Nullable SK upper, boolean toInclusive, @Nullable Timestamp timestamp, UUID txId) {
+            Iterator<Entry<Entry<SK, PK>, Boolean>> iter;
+
+            if (lower == null && upper != null) {
+                iter = map.headMap(new IgniteBiTuple<>(upper, null), toInclusive).entrySet().iterator();
+            } else if (lower != null && upper == null) {
+                iter = map.tailMap(new IgniteBiTuple<>(lower, null), fromInclusive).entrySet().iterator();
+            } else if (lower != null) {
+                iter = map.subMap(new IgniteBiTuple<>(lower, null), fromInclusive, new IgniteBiTuple<>(upper, null), toInclusive).entrySet().iterator();
+            } else {
+                iter = map.entrySet().iterator();
+            }
+
+            return new Iterator<T>() {
+                @Nullable T next;
+
+                @Override
+                public boolean hasNext() {
+                    if (next == null) {
+                        while(true) {
+                            if (!iter.hasNext())
+                                return false;
+
+                            Entry<Entry<SK, PK>, Boolean> entry = iter.next();
+
+                            if ((this.next = primIdx.read(entry.getKey().getValue(), timestamp, txId)) != null) {
+                                return true;
+                            }
+                        }
+                    }
+
+                    return false;
+                }
+
+                @Override
+                public T next() {
+                    if (next == null)
+                        throw new NoSuchElementException();
+
+                    T val = next;
+                    next = null;
+
+                    return val;
+                }
+            };
+        }
+    }
+
+    private static class VersionedValue<T> {
+        private @Nullable Timestamp begin;
+        private @Nullable Timestamp end;
+        private T value;
+        private @Nullable UUID id;
+        private @Nullable VersionedValue<T> next;
+
+        private VersionedValue(@Nullable Timestamp begin, @Nullable Timestamp end,T value, @Nullable VersionedValue<T> next) {
+            this.begin = begin;
+            this.end = end;
+            this.value = value;
+            this.next = next;
+        }
+
+        public @Nullable Timestamp getBegin() {
+            return begin;
+        }
+
+        public void setBegin(@Nullable Timestamp timestamp) {
+            this.begin = timestamp;
+        }
+
+        public @Nullable Timestamp getEnd() {
+            return end;
+        }
+
+        public void setEnd(@Nullable Timestamp end) {
+            this.end = end;
+        }
+
+        public T getValue() {
+            return value;
+        }
+
+        public void setValue(T value) {
+            this.value = value;
+        }
+
+        public @Nullable VersionedValue<T> getNext() {
+            return next;
+        }
+
+        public void setNext(@Nullable VersionedValue<T> next) {
+            this.next = next;
+        }
+
+        public UUID getId() {
+            return id;
+        }
+
+        public void setId(@Nullable UUID id) {
+            this.id = id;
+        }
+
+        @Override
+        public String toString() {
+            return S.toString(VersionedValue.class, this);
+        }
+    }
+
+    private static class User {
+        private int id;
+
+        private String email;
+
+        private int deptId;
+
+        private User(int id, String email, int deptId) {
+            this.id = id;
+            this.email = email;
+            this.deptId = deptId;
+        }
+
+        public int getId() {
+            return id;
+        }
+
+        public void setId(int id) {
+            this.id = id;
+        }
+
+        public String getEmail() {
+            return email;
+        }
+
+        public void setEmail(String email) {
+            this.email = email;
+        }
+
+        public int getDepartmentId() {
+            return deptId;
+        }
+
+        public void setDepartmentId(int deptId) {
+            this.deptId = deptId;
+        }
+
+        @Override
+        public String toString() {
+            return S.toString(User.class, this);
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            if (this == o) {
+                return true;
+            }
+            if (o == null || getClass() != o.getClass()) {
+                return false;
+            }
+
+            User user = (User) o;
+
+            if (id != user.id) {
+                return false;
+            }
+            if (deptId != user.deptId) {
+                return false;
+            }
+            if (!email.equals(user.email)) {
+                return false;
+            }
+
+            return true;
+        }
+
+        @Override
+        public int hashCode() {
+            int result = id;
+            result = 31 * result + email.hashCode();
+            result = 31 * result + deptId;
+            return result;
+        }
+    }
+}
