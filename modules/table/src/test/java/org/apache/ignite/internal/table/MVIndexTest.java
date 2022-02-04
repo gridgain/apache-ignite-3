@@ -10,19 +10,23 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.NoSuchElementException;
 import java.util.Objects;
+import java.util.Set;
 import java.util.TreeMap;
 import java.util.UUID;
+import java.util.function.BiFunction;
 import java.util.function.BiPredicate;
 import java.util.stream.IntStream;
 import org.apache.ignite.internal.tostring.S;
 import org.apache.ignite.internal.tx.Timestamp;
 import org.apache.ignite.lang.IgniteBiTuple;
+import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.junit.jupiter.api.Test;
 
@@ -106,14 +110,16 @@ public class MVIndexTest {
 
         for (int i = 0; i < commits.size(); i++) {
             Timestamp timestamp = commits.get(i);
-            Iterator<User> iter = primIdx.scan(null, false, null, false, timestamp, txId);
+            Iterator<User> iter = primIdx.scan(null, false, null, false, timestamp);
             assertEquals(i + 1, stream(spliteratorUnknownSize(iter, ORDERED), false).count());
         }
     }
 
     @Test
     public void testSecondaryIndexUpdate() {
-        User user = new User(1, "test1@badmail.com", 1);
+        final String email = "test1@badmail.com";
+
+        User user = new User(1, email, 1);
 
         UUID txId = UUID.randomUUID();
 
@@ -128,40 +134,40 @@ public class MVIndexTest {
         primIdx.commitWrite(user.id, ver2);
 
         // Must see self write.
-        validate(null, false, null, false, null, 1, user);
-        validate("test1@badmail.com", true, null, false, null, 1, user);
-        validate(null, false, "test1@badmail.com", true, null, 1, user);
-        validate("test1@badmail.com", true, "test1@badmail.com", true, null, 1, user);
-        validate("test1@badmail.com", false, null, false, null, 0, null);
-        validate(null, false, "test1@badmail.com", false, null, 0, null);
-        validate("test1@badmail.com", false, "test1@badmail.com", false, null, 0, null);
+        validateEmail(null, false, null, false, null, 1, user);
+        validateEmail(email, true, null, false, null, 1, user);
+        validateEmail(null, false, email, true, null, 1, user);
+        validateEmail(email, true, email, true, null, 1, user);
+        validateEmail(email, false, null, false, null, 0, null);
+        validateEmail(null, false, email, false, null, 0, null);
+        validateEmail(email, false, email, false, null, 0, null);
 
         // Must not see below write.
-        validate(null, false, null, false, ver0, 0, null);
-        validate("test1@badmail.com", true, null, false, ver0, 0, null);
-        validate(null, false, "test1@badmail.com", true, ver0, 0, null);
-        validate("test1@badmail.com", true, "test1@badmail.com", true, ver0, 0, null);
-        validate("test1@badmail.com", false, null, false, ver0, 0, null);
-        validate(null, false, "test1@badmail.com", false, ver0, 0, null);
-        validate("test1@badmail.com", false, "test1@badmail.com", false, ver0, 0, null);
+        validateEmail(null, false, null, false, ver0, 0, null);
+        validateEmail(email, true, null, false, ver0, 0, null);
+        validateEmail(null, false, email, true, ver0, 0, null);
+        validateEmail(email, true, email, true, ver0, 0, null);
+        validateEmail(email, false, null, false, ver0, 0, null);
+        validateEmail(null, false, email, false, ver0, 0, null);
+        validateEmail(email, false, email, false, ver0, 0, null);
 
         // Must not see uncommitted write.
-        validate(null, false, null, false, ver1, 0, null);
-        validate("test1@badmail.com", true, null, false, ver1, 0, null);
-        validate(null, false, "test1@badmail.com", true, ver1, 0, null);
-        validate("test1@badmail.com", true, "test1@badmail.com", true, ver1, 0, null);
-        validate("test1@badmail.com", false, null, false, ver1, 0, null);
-        validate(null, false, "test1@badmail.com", false, ver1, 0, null);
-        validate("test1@badmail.com", false, "test1@badmail.com", false, ver1, 0, null);
+        validateEmail(null, false, null, false, ver1, 0, null);
+        validateEmail(email, true, null, false, ver1, 0, null);
+        validateEmail(null, false, email, true, ver1, 0, null);
+        validateEmail(email, true, email, true, ver1, 0, null);
+        validateEmail(email, false, null, false, ver1, 0, null);
+        validateEmail(null, false, email, false, ver1, 0, null);
+        validateEmail(email, false, email, false, ver1, 0, null);
 
         // Must see committed write.
-        validate(null, false, null, false, ver2, 1, user);
-        validate("test1@badmail.com", true, null, false, ver2, 1, user);
-        validate(null, false, "test1@badmail.com", true, ver2, 1, user);
-        validate("test1@badmail.com", true, "test1@badmail.com", true, ver2, 1, user);
-        validate("test1@badmail.com", false, null, false, ver2, 0, null);
-        validate(null, false, "test1@badmail.com", false, ver2, 0, null);
-        validate("test1@badmail.com", false, "test1@badmail.com", false, ver2, 0, null);
+        validateEmail(null, false, null, false, ver2, 1, user);
+        validateEmail(email, true, null, false, ver2, 1, user);
+        validateEmail(null, false, email, true, ver2, 1, user);
+        validateEmail(email, true, email, true, ver2, 1, user);
+        validateEmail(email, false, null, false, ver2, 0, null);
+        validateEmail(null, false, email, false, ver2, 0, null);
+        validateEmail(email, false, email, false, ver2, 0, null);
 
         Timestamp ver3 = Timestamp.nextVersion();
 
@@ -171,38 +177,38 @@ public class MVIndexTest {
         primIdx.addWrite(user.id, user2, txId);
         emailIdx.put(user2.email, user.id);
 
-        validate(null, false, null, false, ver2, 1, user);
-        validate(null, false, null, false, ver3, 1, user);
-        validate(null, false, null, false, null, 1, user2);
+        validateEmail(null, false, null, false, ver2, 1, user); // Must not see uncommitted version.
+        validateEmail(null, false, null, false, ver3, 1, user); // Must not see uncommitted version.
+        validateEmail(null, false, null, false, null, 1, user2); // Must see self write.
 
         Timestamp ver4 = Timestamp.nextVersion();
 
         primIdx.commitWrite(user.id, ver4);
-        validate(null, false, null, false, ver4, 1, user2);
+        validateEmail(null, false, null, false, ver4, 1, user2); // Must see committed version.
 
         // Reindex new email.
-        User user3 = new User(1, "test1@verygoodmail.com", 1);
+        User user3 = new User(1, "test1@newmail.com", 1);
 
         primIdx.addWrite(user.id, user3, txId);
         emailIdx.put(user3.email, user.id);
 
-        validate(null, false, null, false, ver4, 1, user2);
-        validate(null, false, null, false, null, 1, user3);
+        validateEmail(null, false, null, false, ver4, 1, user2);
+        validateEmail(null, false, null, false, null, 1, user3);
 
         Timestamp ver5 = Timestamp.nextVersion();
 
         primIdx.commitWrite(user.id, ver5);
-        validate(null, false, null, false, ver5, 1, user3);
+        validateEmail(null, false, null, false, ver5, 1, user3);
     }
 
-    private void validate(
+    private void validateEmail(
             @Nullable String lower,
             boolean fromInclusive,
             @Nullable String upper,
             boolean toInclusive,
             @Nullable Timestamp timestamp,
             int expSize,
-            Object expVal
+            @Nullable Object expVal
     ) {
         List<User> users = stream(spliteratorUnknownSize(
                 emailIdx.scan(lower, fromInclusive, upper, toInclusive, timestamp), ORDERED), false).collect(toList());
@@ -241,6 +247,13 @@ public class MVIndexTest {
 
             assertEquals(i + 1, stream(spliteratorUnknownSize(iter, ORDERED), false).count());
         }
+
+        List<User> scanned = stream(spliteratorUnknownSize(deptIdx.scan(0, true, 0, true, commits.get(commits.size() - 1)), ORDERED), false).collect(toList());
+        List<User> scanned2 = stream(spliteratorUnknownSize(deptIdx.scan(0, true, 1, false, commits.get(commits.size() - 1)), ORDERED), false).collect(toList());
+        List<User> scanned3 = stream(spliteratorUnknownSize(deptIdx.scan(0, true, 1, true, commits.get(commits.size() - 1)), ORDERED), false).collect(toList());
+        List<User> scanned4 = stream(spliteratorUnknownSize(deptIdx.scan(null, true, 1, false, commits.get(commits.size() - 1)), ORDERED), false).collect(toList());
+
+        System.out.println();
     }
 
     private static class PrimaryIndex<PK extends Comparable<PK>, T> {
@@ -366,7 +379,7 @@ public class MVIndexTest {
          * @param ts The timestamp.
          * @return The iterator.
          */
-        public Iterator<T> scan(@Nullable PK lower, boolean fromInclusive, @Nullable PK upper, boolean toInclusive, Timestamp ts, UUID txId) {
+        public Iterator<T> scan(@Nullable PK lower, boolean fromInclusive, @Nullable PK upper, boolean toInclusive, Timestamp ts) {
             Iterator<Entry<PK, VersionedValue<T>>> iter;
 
             if (lower == null && upper != null) {
@@ -418,20 +431,7 @@ public class MVIndexTest {
     }
 
     private static class SecondaryIndex<SK extends Comparable<SK>, PK extends Comparable<PK>, T> {
-        private TreeMap<Map.Entry<SK, PK>, Boolean> map = new TreeMap<>(new Comparator<Entry<SK, PK>>() {
-            @Override
-            public int compare(Entry<SK, PK> o1, Entry<SK, PK> o2) {
-                int cmp = o1.getKey().compareTo(o2.getKey());
-
-                if (cmp != 0)
-                    return cmp;
-
-                if (o1.getValue() == null || o2.getValue() == null)
-                    return cmp;
-                else
-                    return o1.getValue().compareTo(o2.getValue());
-            }
-        });
+        private TreeMap<SK, Set<PK>> map = new TreeMap<>();
 
         private PrimaryIndex<PK, T> primIdx;
 
@@ -443,44 +443,76 @@ public class MVIndexTest {
         }
 
         public void put(SK secondaryKey, PK primaryKey) {
-            map.put(new IgniteBiTuple<>(secondaryKey, primaryKey), Boolean.TRUE);
+            map.compute(secondaryKey, (sk, pks) -> {
+                if (pks == null)
+                    pks = new HashSet<>();
+
+                pks.add(primaryKey);
+
+                return pks;
+            });
         }
 
         public void remove(SK secondaryKey, PK primaryKey) {
-            map.remove(new IgniteBiTuple<>(secondaryKey, primaryKey));
+            map.compute(secondaryKey, (sk, pks) -> {
+                pks.remove(primaryKey);
+
+                return pks.isEmpty() ? null : pks;
+            });
         }
 
-        public Iterator<T> scan(@Nullable SK lower, boolean fromInclusive, @Nullable SK upper, boolean toInclusive,
-                @Nullable Timestamp timestamp) {
-            Iterator<Entry<Entry<SK, PK>, Boolean>> iter;
+        public Iterator<T> scan(
+                @Nullable SK lower,
+                boolean fromInclusive,
+                @Nullable SK upper,
+                boolean toInclusive,
+                @Nullable Timestamp timestamp
+        ) {
+            Iterator<Entry<SK, Set<PK>>> iter;
 
             if (lower == null && upper != null) {
-                iter = map.headMap(new IgniteBiTuple<>(upper, null), toInclusive).entrySet().iterator();
+                iter = map.headMap(upper, toInclusive).entrySet().iterator();
             } else if (lower != null && upper == null) {
-                iter = map.tailMap(new IgniteBiTuple<>(lower, null), fromInclusive).entrySet().iterator();
+                iter = map.tailMap(lower, fromInclusive).entrySet().iterator();
             } else if (lower != null) {
-                iter = map.subMap(new IgniteBiTuple<>(lower, null), fromInclusive, new IgniteBiTuple<>(upper, null), toInclusive).entrySet().iterator();
+                iter = map.subMap(lower, fromInclusive, upper, toInclusive).entrySet().iterator();
             } else {
                 iter = map.entrySet().iterator();
             }
 
             return new Iterator<T>() {
                 @Nullable T next;
+                SK sk;
+                Iterator<PK> subIter;
 
                 @Override
                 public boolean hasNext() {
                     if (next == null) {
                         while(true) {
-                            if (!iter.hasNext())
-                                return false;
+                            if (subIter == null) {
+                                if (!iter.hasNext())
+                                    return false;
 
-                            Entry<Entry<SK, PK>, Boolean> entry = iter.next();
+                                Entry<SK, Set<PK>> entry = iter.next();
 
-                            T versionedValue = primIdx.read(entry.getKey().getValue(), timestamp);
+                                sk = entry.getKey();
+                                subIter = entry.getValue().iterator();
+                            }
+
+                            if (!subIter.hasNext()) {
+                                subIter = null;
+                                sk = null;
+
+                                continue;
+                            }
+
+                            PK pk = subIter.next();
+
+                            T versionedValue = primIdx.read(pk, timestamp);
 
                             if (versionedValue != null) {
                                 // Filter out false positive matches.
-                                if (filter.test(entry.getKey().getKey(), versionedValue)) {
+                                if (filter.test(sk, versionedValue)) {
                                     this.next = versionedValue;
 
                                     return true;
