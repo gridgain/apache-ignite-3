@@ -18,6 +18,7 @@ import java.util.NoSuchElementException;
 import java.util.Objects;
 import java.util.TreeMap;
 import java.util.UUID;
+import java.util.function.BiPredicate;
 import java.util.stream.IntStream;
 import org.apache.ignite.internal.tostring.S;
 import org.apache.ignite.internal.tx.Timestamp;
@@ -25,12 +26,15 @@ import org.apache.ignite.lang.IgniteBiTuple;
 import org.jetbrains.annotations.Nullable;
 import org.junit.jupiter.api.Test;
 
+/**
+ *
+ */
 public class MVIndexTest {
     private PrimaryIndex<Integer, User> primIdx = new PrimaryIndex<>();
 
-    private SecondaryIndex<String, Integer, User> emailIdx = new SecondaryIndex<>(primIdx);
+    private SecondaryIndex<String, Integer, User> emailIdx = new SecondaryIndex<>(primIdx, (email, user) -> email.equals(user.getEmail()));
 
-    private SecondaryIndex<Integer, Integer, User> nameIdx = new SecondaryIndex(primIdx);
+    private SecondaryIndex<Integer, Integer, User> deptIdx = new SecondaryIndex<>(primIdx, (id, user) -> id.equals(user.getDepartmentId()));
 
     @Test
     public void testPrimaryIndexPutGet() {
@@ -168,9 +172,27 @@ public class MVIndexTest {
         emailIdx.put(user2.email, user.id);
 
         validate(txId, null, false, null, false, ver2, 1, user);
-        //validate(null, false, null, false, ver3, 1, user);
-        //validate(null, false, null, false, null, 1, user2);
-        //validate(null, false, null, false, ver3, 0, null);
+        validate(txId, null, false, null, false, ver3, 1, user);
+        validate(txId, null, false, null, false, null, 1, user2);
+
+        Timestamp ver4 = Timestamp.nextVersion();
+
+        primIdx.commitWrite(user.id, ver4);
+        validate(txId, null, false, null, false, ver4, 1, user2);
+
+        // Reindex new email.
+        User user3 = new User(1, "test1@verygoodmail.com", 1);
+
+        primIdx.addWrite(user.id, user3, txId);
+        emailIdx.put(user3.email, user.id);
+
+        validate(txId, null, false, null, false, ver4, 1, user2);
+        validate(txId, null, false, null, false, null, 1, user3);
+
+        Timestamp ver5 = Timestamp.nextVersion();
+
+        primIdx.commitWrite(user.id, ver5);
+        validate(txId, null, false, null, false, ver5, 1, user3);
     }
 
     private void validate(
@@ -210,13 +232,13 @@ public class MVIndexTest {
             primIdx.addWrite(user.id, user, txId);
             Timestamp timestamp = Timestamp.nextVersion();
             commits.add(timestamp);
-            nameIdx.put(user.deptId, user.id);
+            deptIdx.put(user.deptId, user.id);
             primIdx.commitWrite(user.id, timestamp);
         }
 
         for (int i = 0; i < commits.size(); i++) {
             Timestamp timestamp = commits.get(i);
-            Iterator<User> iter = nameIdx.scan(null, false, null, false, timestamp, txId);
+            Iterator<User> iter = deptIdx.scan(null, false, null, false, timestamp, txId);
 
             assertEquals(i + 1, stream(spliteratorUnknownSize(iter, ORDERED), false).count());
         }
@@ -420,8 +442,11 @@ public class MVIndexTest {
 
         private PrimaryIndex<PK, T> primIdx;
 
-        private SecondaryIndex(PrimaryIndex<PK, T> primIdx) {
+        private final BiPredicate<SK, T> filter;
+
+        private SecondaryIndex(PrimaryIndex<PK, T> primIdx, BiPredicate<SK, T> filter) {
             this.primIdx = primIdx;
+            this.filter = filter;
         }
 
         public void put(SK secondaryKey, PK primaryKey) {
@@ -457,8 +482,15 @@ public class MVIndexTest {
 
                             Entry<Entry<SK, PK>, Boolean> entry = iter.next();
 
-                            if ((this.next = primIdx.read(entry.getKey().getValue(), timestamp, txId)) != null) {
-                                return true;
+                            T versionedValue = primIdx.read(entry.getKey().getValue(), timestamp, txId);
+
+                            if (versionedValue != null) {
+                                // Filter out false positive matches.
+                                if (filter.test(entry.getKey().getKey(), versionedValue)) {
+                                    this.next = versionedValue;
+
+                                    return true;
+                                }
                             }
                         }
                     }
