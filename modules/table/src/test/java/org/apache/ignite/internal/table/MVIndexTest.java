@@ -9,24 +9,19 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
-import java.util.Map;
 import java.util.Map.Entry;
 import java.util.NoSuchElementException;
 import java.util.Objects;
 import java.util.Set;
 import java.util.TreeMap;
 import java.util.UUID;
-import java.util.function.BiFunction;
 import java.util.function.BiPredicate;
 import java.util.stream.IntStream;
 import org.apache.ignite.internal.tostring.S;
 import org.apache.ignite.internal.tx.Timestamp;
-import org.apache.ignite.lang.IgniteBiTuple;
-import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.junit.jupiter.api.Test;
 
@@ -134,40 +129,40 @@ public class MVIndexTest {
         primIdx.commitWrite(user.id, ver2);
 
         // Must see self write.
-        validateEmail(null, false, null, false, null, 1, user);
-        validateEmail(email, true, null, false, null, 1, user);
-        validateEmail(null, false, email, true, null, 1, user);
-        validateEmail(email, true, email, true, null, 1, user);
-        validateEmail(email, false, null, false, null, 0, null);
-        validateEmail(null, false, email, false, null, 0, null);
-        validateEmail(email, false, email, false, null, 0, null);
+        validateScan(emailIdx, null, false, null, false, null, 1, user);
+        validateScan(emailIdx, email, true, null, false, null, 1, user);
+        validateScan(emailIdx, null, false, email, true, null, 1, user);
+        validateScan(emailIdx, email, true, email, true, null, 1, user);
+        validateScan(emailIdx, email, false, null, false, null, 0, null);
+        validateScan(emailIdx, null, false, email, false, null, 0, null);
+        validateScan(emailIdx, email, false, email, false, null, 0, null);
 
         // Must not see below write.
-        validateEmail(null, false, null, false, ver0, 0, null);
-        validateEmail(email, true, null, false, ver0, 0, null);
-        validateEmail(null, false, email, true, ver0, 0, null);
-        validateEmail(email, true, email, true, ver0, 0, null);
-        validateEmail(email, false, null, false, ver0, 0, null);
-        validateEmail(null, false, email, false, ver0, 0, null);
-        validateEmail(email, false, email, false, ver0, 0, null);
+        validateScan(emailIdx, null, false, null, false, ver0, 0, null);
+        validateScan(emailIdx, email, true, null, false, ver0, 0, null);
+        validateScan(emailIdx, null, false, email, true, ver0, 0, null);
+        validateScan(emailIdx, email, true, email, true, ver0, 0, null);
+        validateScan(emailIdx, email, false, null, false, ver0, 0, null);
+        validateScan(emailIdx, null, false, email, false, ver0, 0, null);
+        validateScan(emailIdx, email, false, email, false, ver0, 0, null);
 
         // Must not see uncommitted write.
-        validateEmail(null, false, null, false, ver1, 0, null);
-        validateEmail(email, true, null, false, ver1, 0, null);
-        validateEmail(null, false, email, true, ver1, 0, null);
-        validateEmail(email, true, email, true, ver1, 0, null);
-        validateEmail(email, false, null, false, ver1, 0, null);
-        validateEmail(null, false, email, false, ver1, 0, null);
-        validateEmail(email, false, email, false, ver1, 0, null);
+        validateScan(emailIdx, null, false, null, false, ver1, 0, null);
+        validateScan(emailIdx, email, true, null, false, ver1, 0, null);
+        validateScan(emailIdx, null, false, email, true, ver1, 0, null);
+        validateScan(emailIdx, email, true, email, true, ver1, 0, null);
+        validateScan(emailIdx, email, false, null, false, ver1, 0, null);
+        validateScan(emailIdx, null, false, email, false, ver1, 0, null);
+        validateScan(emailIdx, email, false, email, false, ver1, 0, null);
 
         // Must see committed write.
-        validateEmail(null, false, null, false, ver2, 1, user);
-        validateEmail(email, true, null, false, ver2, 1, user);
-        validateEmail(null, false, email, true, ver2, 1, user);
-        validateEmail(email, true, email, true, ver2, 1, user);
-        validateEmail(email, false, null, false, ver2, 0, null);
-        validateEmail(null, false, email, false, ver2, 0, null);
-        validateEmail(email, false, email, false, ver2, 0, null);
+        validateScan(emailIdx, null, false, null, false, ver2, 1, user);
+        validateScan(emailIdx, email, true, null, false, ver2, 1, user);
+        validateScan(emailIdx, null, false, email, true, ver2, 1, user);
+        validateScan(emailIdx, email, true, email, true, ver2, 1, user);
+        validateScan(emailIdx, email, false, null, false, ver2, 0, null);
+        validateScan(emailIdx, null, false, email, false, ver2, 0, null);
+        validateScan(emailIdx, email, false, email, false, ver2, 0, null);
 
         Timestamp ver3 = Timestamp.nextVersion();
 
@@ -177,14 +172,14 @@ public class MVIndexTest {
         primIdx.addWrite(user.id, user2, txId);
         emailIdx.put(user2.email, user.id);
 
-        validateEmail(null, false, null, false, ver2, 1, user); // Must not see uncommitted version.
-        validateEmail(null, false, null, false, ver3, 1, user); // Must not see uncommitted version.
-        validateEmail(null, false, null, false, null, 1, user2); // Must see self write.
+        validateScan(emailIdx, null, false, null, false, ver2, 1, user); // Must not see uncommitted version.
+        validateScan(emailIdx, null, false, null, false, ver3, 1, user); // Must not see uncommitted version.
+        validateScan(emailIdx, null, false, null, false, null, 1, user2); // Must see self write.
 
         Timestamp ver4 = Timestamp.nextVersion();
 
         primIdx.commitWrite(user.id, ver4);
-        validateEmail(null, false, null, false, ver4, 1, user2); // Must see committed version.
+        validateScan(emailIdx, null, false, null, false, ver4, 1, user2); // Must see committed version.
 
         // Reindex new email.
         User user3 = new User(1, "test1@newmail.com", 1);
@@ -192,32 +187,33 @@ public class MVIndexTest {
         primIdx.addWrite(user.id, user3, txId);
         emailIdx.put(user3.email, user.id);
 
-        validateEmail(null, false, null, false, ver4, 1, user2);
-        validateEmail(null, false, null, false, null, 1, user3);
+        validateScan(emailIdx, null, false, null, false, ver4, 1, user2);
+        validateScan(emailIdx, null, false, null, false, null, 1, user3);
 
         Timestamp ver5 = Timestamp.nextVersion();
 
         primIdx.commitWrite(user.id, ver5);
-        validateEmail(null, false, null, false, ver5, 1, user3);
+        validateScan(emailIdx, null, false, null, false, ver5, 1, user3);
     }
 
-    private void validateEmail(
-            @Nullable String lower,
+    private <SK extends Comparable<SK>, PK extends Comparable<PK>, T> void validateScan(
+            SecondaryIndex<SK, PK, T> idx,
+            @Nullable SK lower,
             boolean fromInclusive,
-            @Nullable String upper,
+            @Nullable SK upper,
             boolean toInclusive,
             @Nullable Timestamp timestamp,
             int expSize,
-            @Nullable Object expVal
+            @Nullable T expVal
     ) {
-        List<User> users = stream(spliteratorUnknownSize(
-                emailIdx.scan(lower, fromInclusive, upper, toInclusive, timestamp), ORDERED), false).collect(toList());
+        List<T> users = stream(spliteratorUnknownSize(
+                idx.scan(lower, fromInclusive, upper, toInclusive, timestamp), ORDERED), false).collect(toList());
 
         if (expSize == 0) {
-            assertTrue(users.isEmpty());
+            assertTrue(users.isEmpty(), users.toString());
         }
         else {
-            assertEquals(expSize, users.size());
+            assertEquals(expSize, users.size(), users.toString());
         }
 
         if (expSize > 0) {
@@ -248,12 +244,13 @@ public class MVIndexTest {
             assertEquals(i + 1, stream(spliteratorUnknownSize(iter, ORDERED), false).count());
         }
 
-        List<User> scanned = stream(spliteratorUnknownSize(deptIdx.scan(0, true, 0, true, commits.get(commits.size() - 1)), ORDERED), false).collect(toList());
-        List<User> scanned2 = stream(spliteratorUnknownSize(deptIdx.scan(0, true, 1, false, commits.get(commits.size() - 1)), ORDERED), false).collect(toList());
-        List<User> scanned3 = stream(spliteratorUnknownSize(deptIdx.scan(0, true, 1, true, commits.get(commits.size() - 1)), ORDERED), false).collect(toList());
-        List<User> scanned4 = stream(spliteratorUnknownSize(deptIdx.scan(null, true, 1, false, commits.get(commits.size() - 1)), ORDERED), false).collect(toList());
-
-        System.out.println();
+        validateScan(deptIdx, 0, true, 0, true, commits.get(commits.size() - 1), 5, users.get(0));
+        validateScan(deptIdx, 0, true, 1, false, commits.get(commits.size() - 1), 5, users.get(0));
+        validateScan(deptIdx, 0, true, 1, true, commits.get(commits.size() - 1), 10, users.get(0));
+        validateScan(deptIdx, null, true, 1, false, commits.get(commits.size() - 1), 5, users.get(0));
+        validateScan(deptIdx, 0, true, 1, true, commits.get(commits.size() - 2), 9, users.get(0));
+        validateScan(deptIdx, 1, true, 1, true, commits.get(commits.size() - 1), 5, users.get(5));
+        validateScan(deptIdx, 0, false, 1, true, commits.get(commits.size() - 1), 5, users.get(5));
     }
 
     private static class PrimaryIndex<PK extends Comparable<PK>, T> {
@@ -542,7 +539,7 @@ public class MVIndexTest {
         private @Nullable Timestamp begin;
         private @Nullable Timestamp end;
         private T value;
-        private @Nullable UUID id;
+        private @Nullable UUID id; // Lock holder for uncommitted version.
         private @Nullable VersionedValue<T> next;
 
         private VersionedValue(@Nullable Timestamp begin, @Nullable Timestamp end,T value, @Nullable VersionedValue<T> next) {
