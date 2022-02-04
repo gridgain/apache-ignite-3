@@ -26,9 +26,17 @@ import org.jetbrains.annotations.Nullable;
 import org.junit.jupiter.api.Test;
 
 /**
- *
+ * Tests a multi versioned user store.
+ * <p>A user object has two secondary indexes: by email and by department id.
+ * <p>Implementation details:
+ * <ul>
+ *     <li>A primary index stores a map: PrimaryKey -> version chain.</li>
+ *     <li>In the HEAD of each chain either current(last committed) version or uncommented version. Old versions are deeper in the chain</li>
+ *     <li>A secondary index store a map: SecondaryKey -> PrimaryKey. Then the index is scanned, a corresponding version chain is
+ *     traversed until corresponding value is not found.</li>
+ * </ul>
  */
-public class MVIndexTest {
+public class MVUserStoreTest {
     private PrimaryIndex<Integer, User> primIdx = new PrimaryIndex<>();
 
     private SecondaryIndex<String, Integer, User> emailIdx = new SecondaryIndex<>(primIdx, (email, user) -> email.equals(user.getEmail()));
