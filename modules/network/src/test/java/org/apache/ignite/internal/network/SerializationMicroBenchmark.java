@@ -34,6 +34,7 @@ import org.apache.ignite.internal.network.serialization.marshal.MarshalException
 import org.apache.ignite.internal.network.serialization.marshal.MarshalledObject;
 import org.apache.ignite.internal.network.serialization.marshal.UnmarshalException;
 import org.apache.ignite.internal.network.serialization.marshal.UserObjectMarshaller;
+import org.apache.ignite.internal.util.FastTimestamps;
 import org.jetbrains.annotations.Nullable;
 import org.objenesis.strategy.StdInstantiatorStrategy;
 import org.openjdk.jmh.annotations.Benchmark;
@@ -44,6 +45,7 @@ import org.openjdk.jmh.annotations.Mode;
 import org.openjdk.jmh.annotations.OutputTimeUnit;
 import org.openjdk.jmh.annotations.Scope;
 import org.openjdk.jmh.annotations.State;
+import org.openjdk.jmh.annotations.Threads;
 import org.openjdk.jmh.annotations.Warmup;
 import org.openjdk.jmh.infra.Blackhole;
 import org.openjdk.jmh.runner.Runner;
@@ -59,6 +61,7 @@ import org.openjdk.jmh.runner.options.OptionsBuilder;
 @BenchmarkMode(Mode.AverageTime)
 @OutputTimeUnit(TimeUnit.NANOSECONDS)
 @State(Scope.Thread)
+@Threads(4)
 public class SerializationMicroBenchmark {
 
     static TestClass smallObject;
@@ -142,31 +145,41 @@ public class SerializationMicroBenchmark {
     }
 
     @Benchmark
+    public long System_currentTimeMillis() {
+        return System.currentTimeMillis();
+    }
+
+    @Benchmark
+    public long System_coarseCurrentTimeMillis() {
+        return FastTimestamps.coarseCurrentTimeMillis();
+    }
+
+    //@Benchmark
     public byte[] serialization_01_small_jdk() {
         return serializeWithJdk(smallObject);
     }
 
-    @Benchmark
+    //@Benchmark
     public byte[] serialization_11_medium_jdk() {
         return serializeWithJdk(mediumObject);
     }
 
-    @Benchmark
+    //@Benchmark
     public byte[] serialization_21_large_jdk() {
         return serializeWithJdk(largeObject);
     }
 
-    @Benchmark
+    //@Benchmark
     public void serialization_02_small_uos(Blackhole blackhole) {
         benchmarkUosSerialization(smallObject, blackhole);
     }
 
-    @Benchmark
+    //@Benchmark
     public void serialization_12_medium_uos(Blackhole blackhole) {
         benchmarkUosSerialization(mediumObject, blackhole);
     }
 
-    @Benchmark
+    //@Benchmark
     public void serialization_22_large_uos(Blackhole blackhole) {
         benchmarkUosSerialization(largeObject, blackhole);
     }
@@ -182,32 +195,32 @@ public class SerializationMicroBenchmark {
         }
     }
 
-    @Benchmark
+    //@Benchmark
     public byte[] serialization_03_small_kryo() {
         return serializeWithKryo(smallObject);
     }
 
-    @Benchmark
+    //@Benchmark
     public byte[] serialization_13_medium_kryo() {
         return serializeWithKryo(mediumObject);
     }
 
-    @Benchmark
+    //@Benchmark
     public byte[] serialization_23_large_kryo() {
         return serializeWithKryo(largeObject);
     }
 
-    @Benchmark
+    //@Benchmark
     public Object deserialization_01_small_jdk() {
         return deserializeWithJava(SerializationMicroBenchmark.smallSerializedWithJava);
     }
 
-    @Benchmark
+    //@Benchmark
     public Object deserialization_11_medium_jdk() {
         return deserializeWithJava(SerializationMicroBenchmark.mediumSerializedWithJava);
     }
 
-    @Benchmark
+    //@Benchmark
     public Object deserialization_21_large_jdk() {
         return deserializeWithJava(SerializationMicroBenchmark.largeSerializedWithJava);
     }
@@ -220,17 +233,17 @@ public class SerializationMicroBenchmark {
         }
     }
 
-    @Benchmark
+    //@Benchmark
     public Object deserialization_02_small_uos() {
         return deserializeWithUos(smallSerializedWithUos);
     }
 
-    @Benchmark
+    //@Benchmark
     public Object deserialization_12_medium_uos() {
         return deserializeWithUos(mediumSerializedWithUos);
     }
 
-    @Benchmark
+    //@Benchmark
     public Object deserialization_22_large_uos() {
         return deserializeWithUos(largeSerializedWithUos);
     }
@@ -244,17 +257,17 @@ public class SerializationMicroBenchmark {
         }
     }
 
-    @Benchmark
+    //@Benchmark
     public Object deserialization_03_small_kryo() {
         return deserializeWithKryo(smallSerializedWithKryo);
     }
 
-    @Benchmark
+    //@Benchmark
     public Object deserialization_13_medium_kryo() {
         return deserializeWithKryo(mediumSerializedWithKryo);
     }
 
-    @Benchmark
+    //@Benchmark
     public Object deserialization_23_large_kryo() {
         return deserializeWithKryo(largeSerializedWithKryo);
     }
