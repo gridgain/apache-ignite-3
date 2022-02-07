@@ -332,7 +332,7 @@ public class MVUserStoreTest {
             return read(top, timestamp);
         }
 
-        public T read(VersionedValue<T> top, @Nullable Timestamp timestamp) {
+        private T read(VersionedValue<T> top, @Nullable Timestamp timestamp) {
             if (top == null)
                 return null;
 
