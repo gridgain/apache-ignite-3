@@ -135,6 +135,7 @@ public class MVUserStoreTest {
 
         Iterator<User> iter = primIdx.scan(null, false, null, false, null);
 
+        // New transaction updates a committed value.
         UUID txId2 = UUID.randomUUID();
 
         while (iter.hasNext()) {
@@ -157,6 +158,7 @@ public class MVUserStoreTest {
 
         Iterator<User> iter3 = primIdx.scan(null, false, null, false, null);
 
+        // New transaction removes a committed value.
         UUID txId3 = UUID.randomUUID();
 
         while (iter3.hasNext()) {
