@@ -5,6 +5,7 @@ import static java.util.Spliterators.spliteratorUnknownSize;
 import static java.util.stream.Collectors.toList;
 import static java.util.stream.StreamSupport.stream;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -116,6 +117,59 @@ public class MVUserStoreTest {
             Iterator<User> iter = primIdx.scan(null, false, null, false, timestamp);
             assertEquals(i + 1, stream(spliteratorUnknownSize(iter, ORDERED), false).count());
         }
+    }
+
+    @Test
+    public void testPrimaryIndexPutScanLatest() {
+        List<User> users = IntStream.range(0, 10).mapToObj(i -> new User(i, "test" + i + "@badmail.com", i)).collect(toList());
+        List<Timestamp> commits = new ArrayList<>();
+
+        UUID txId = UUID.randomUUID();
+
+        for (User user : users) {
+            primIdx.addWrite(user.id, user, txId);
+            Timestamp timestamp = Timestamp.nextVersion();
+            commits.add(timestamp);
+            primIdx.commitWrite(user.id, timestamp);
+        }
+
+        Iterator<User> iter = primIdx.scan(null, false, null, false, null);
+
+        UUID txId2 = UUID.randomUUID();
+
+        while (iter.hasNext()) {
+            User user = iter.next();
+
+            primIdx.addWrite(user.id, new User(user.id, "hacked@hacked.org", user.deptId), txId2);
+        }
+
+        Iterator<User> iter2 = primIdx.scan(null, false, null, false, null);
+
+        Timestamp commit2 = Timestamp.nextVersion();
+
+        while (iter2.hasNext()) {
+            User user = iter2.next();
+
+            assertEquals("hacked@hacked.org", user.getEmail());
+
+            primIdx.commitWrite(user.id, commit2);
+        }
+
+        Iterator<User> iter3 = primIdx.scan(null, false, null, false, null);
+
+        UUID txId3 = UUID.randomUUID();
+
+        while (iter3.hasNext()) {
+            User user = iter3.next();
+
+            assertEquals("hacked@hacked.org", user.getEmail());
+
+            primIdx.addWrite(user.id, null, txId3);
+        }
+
+        Iterator<User> iter4 = primIdx.scan(null, false, null, false, null);
+
+        assertFalse(iter4.hasNext());
     }
 
     @Test
@@ -271,9 +325,11 @@ public class MVUserStoreTest {
          * <p>Uncommitted values can be read using {@code null} timestamp.
          *
          * @param key The primary key.
-         * @param val The value.
+         * @param val The value or null for tombstone.
+         * @param txId Txn id.
+         * @return Version chain head.
          */
-        public void addWrite(PK key, T val, UUID txId) {
+        public VersionedValue addWrite(PK key, @Nullable T val, UUID txId) {
             VersionedValue<T> top = map.get(key);
 
             if (top == null) {
@@ -292,12 +348,12 @@ public class MVUserStoreTest {
                 top.setValue(val);
                 top.setNext(next);
             }
+
+            return top;
         }
 
         public void commitWrite(PK pk, Timestamp timestamp) {
             VersionedValue<T> top = map.get(pk);
-
-            assert top == map.lastEntry().getValue();
 
             top.setBegin(timestamp);
             top.setId(null);
@@ -324,15 +380,15 @@ public class MVUserStoreTest {
         /**
          * @param pk The primary key.
          * @param timestamp The timestamp.
-         * @return Versioned value.
+         * @return Versioned value or null if a tombstone or not found.
          */
-        public T read(PK pk, @Nullable Timestamp timestamp) {
+        public @Nullable T read(PK pk, @Nullable Timestamp timestamp) {
             VersionedValue<T> top = map.get(pk);
 
             return read(top, timestamp);
         }
 
-        private T read(VersionedValue<T> top, @Nullable Timestamp timestamp) {
+        private @Nullable T read(VersionedValue<T> top, @Nullable Timestamp timestamp) {
             if (top == null)
                 return null;
 
@@ -353,7 +409,7 @@ public class MVUserStoreTest {
             return null;
         }
 
-        public void cleanupCompletedVersions(Timestamp timestamp) {
+        public void cleanupCompletedVersions(@Nullable PK lower, boolean fromInclusive, @Nullable PK upper, boolean toInclusive, Timestamp timestamp) {
             // TODO
         }
 
@@ -384,7 +440,7 @@ public class MVUserStoreTest {
          * @param ts The timestamp.
          * @return The iterator.
          */
-        public Iterator<T> scan(@Nullable PK lower, boolean fromInclusive, @Nullable PK upper, boolean toInclusive, Timestamp ts) {
+        public Iterator<T> scan(@Nullable PK lower, boolean fromInclusive, @Nullable PK upper, boolean toInclusive, @Nullable Timestamp ts) {
             Iterator<Entry<PK, VersionedValue<T>>> iter;
 
             if (lower == null && upper != null) {
@@ -428,10 +484,6 @@ public class MVUserStoreTest {
                     return val;
                 }
             };
-        }
-
-        public void remove(@Nullable PK lower, boolean fromInclusive, @Nullable PK upper, boolean toInclusive) {
-            // TODO
         }
     }
 
@@ -550,7 +602,7 @@ public class MVUserStoreTest {
         private @Nullable UUID id; // Lock holder for uncommitted version.
         private @Nullable VersionedValue<T> next;
 
-        private VersionedValue(@Nullable Timestamp begin, @Nullable Timestamp end,T value, @Nullable VersionedValue<T> next) {
+        private VersionedValue(@Nullable Timestamp begin, @Nullable Timestamp end, @Nullable T value, @Nullable VersionedValue<T> next) {
             this.begin = begin;
             this.end = end;
             this.value = value;
@@ -573,11 +625,11 @@ public class MVUserStoreTest {
             this.end = end;
         }
 
-        public T getValue() {
+        public @Nullable T getValue() {
             return value;
         }
 
-        public void setValue(T value) {
+        public void setValue(@Nullable T value) {
             this.value = value;
         }
 
