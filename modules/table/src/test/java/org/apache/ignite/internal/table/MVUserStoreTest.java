@@ -31,7 +31,7 @@ import org.junit.jupiter.api.Test;
  * <p>Implementation details:
  * <ul>
  *     <li>A primary index stores a map: PrimaryKey -> version chain.</li>
- *     <li>In the HEAD of each chain either current(last committed) version or uncommented version. Old versions are deeper in the chain</li>
+ *     <li>In the HEAD of each chain either current(last committed) version or uncommited version. Older versions are deeper in the chain</li>
  *     <li>A secondary index store a map: SecondaryKey -> PrimaryKey. Then the index is scanned, a corresponding version chain is
  *     traversed until corresponding value is not found.</li>
  * </ul>
