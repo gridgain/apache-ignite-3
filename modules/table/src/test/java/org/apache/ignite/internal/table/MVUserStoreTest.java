@@ -23,6 +23,7 @@ import java.util.function.BiPredicate;
 import java.util.stream.IntStream;
 import org.apache.ignite.internal.tostring.S;
 import org.apache.ignite.internal.tx.Timestamp;
+import org.apache.ignite.internal.tx.impl.HeapLockManager;
 import org.jetbrains.annotations.Nullable;
 import org.junit.jupiter.api.Test;
 
@@ -38,6 +39,8 @@ import org.junit.jupiter.api.Test;
  * </ul>
  */
 public class MVUserStoreTest {
+    private HeapLockManager lockManager = new HeapLockManager();
+
     private PrimaryIndex<Integer, User> primIdx = new PrimaryIndex<>();
 
     private SecondaryIndex<String, Integer, User> emailIdx = new SecondaryIndex<>(primIdx, (email, user) -> email.equals(user.getEmail()));
@@ -332,8 +335,11 @@ public class MVUserStoreTest {
          * @return Version chain head.
          */
         public VersionedValue addWrite(PK key, @Nullable T val, UUID txId) {
+            // TODO lockManager.tryAcquire(key, txId)
+
             VersionedValue<T> top = map.get(key);
 
+            // TODO replicate chain head
             if (top == null) {
                 top = new VersionedValue<>(null, null, val, null);
 
@@ -355,6 +361,8 @@ public class MVUserStoreTest {
         }
 
         public void commitWrite(PK pk, Timestamp timestamp) {
+            Objects.requireNonNull(timestamp);
+
             VersionedValue<T> top = map.get(pk);
 
             top.setBegin(timestamp);
@@ -362,6 +370,8 @@ public class MVUserStoreTest {
 
             if (top.next != null)
                 top.next.end = timestamp;
+
+            // TODO lockManager.tryRelease(key, txId);
         }
 
         public void abortWrite(PK pk) {
@@ -377,6 +387,8 @@ public class MVUserStoreTest {
                 top.setValue(top.next.value);
                 top.setNext(top.next);
             }
+
+            // TODO lockManager.tryRelease(key, txId);
         }
 
         /**
@@ -395,6 +407,8 @@ public class MVUserStoreTest {
                 return null;
 
             if (timestamp == null) {
+                // TODO lockManager.tryAcquireShared(key, txId);
+
                 return top.value;
             }
 
