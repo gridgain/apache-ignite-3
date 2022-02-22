@@ -68,6 +68,7 @@ import org.apache.ignite.internal.configuration.util.ConfigurationUtil;
 import org.apache.ignite.internal.manager.EventListener;
 import org.apache.ignite.internal.manager.IgniteComponent;
 import org.apache.ignite.internal.manager.Producer;
+import org.apache.ignite.internal.metastorage.MetaStorageManager;
 import org.apache.ignite.internal.raft.Loza;
 import org.apache.ignite.internal.schema.SchemaDescriptor;
 import org.apache.ignite.internal.schema.SchemaUtils;
@@ -89,6 +90,7 @@ import org.apache.ignite.internal.tx.TxManager;
 import org.apache.ignite.internal.util.ByteUtils;
 import org.apache.ignite.internal.util.IgniteObjectName;
 import org.apache.ignite.internal.util.IgniteSpinBusyLock;
+import org.apache.ignite.lang.ByteArray;
 import org.apache.ignite.lang.IgniteException;
 import org.apache.ignite.lang.IgniteInternalException;
 import org.apache.ignite.lang.IgniteLogger;
@@ -142,6 +144,9 @@ public class TableManager extends Producer<TableEvent, TableEventParameters> imp
     /** Transaction manager. */
     private final TxManager txManager;
 
+    /** Meta storage manager. */
+    private final MetaStorageManager metaStorageMgr;
+
     /** Partitions store directory. */
     private final Path partitionsStoreDir;
 
@@ -185,7 +190,8 @@ public class TableManager extends Producer<TableEvent, TableEventParameters> imp
             BaselineManager baselineMgr,
             TopologyService topologyService,
             Path partitionsStoreDir,
-            TxManager txManager
+            TxManager txManager,
+            MetaStorageManager metaStorageMgr
     ) {
         this.tablesCfg = tablesCfg;
         this.dataStorageCfg = dataStorageCfg;
@@ -193,6 +199,7 @@ public class TableManager extends Producer<TableEvent, TableEventParameters> imp
         this.baselineMgr = baselineMgr;
         this.partitionsStoreDir = partitionsStoreDir;
         this.txManager = txManager;
+        this.metaStorageMgr = metaStorageMgr;
 
         netAddrResolver = addr -> {
             ClusterNode node = topologyService.getByAddress(addr);
@@ -223,6 +230,20 @@ public class TableManager extends Producer<TableEvent, TableEventParameters> imp
         ((ExtendedTableConfiguration) tablesCfg.tables().any()).assignments().listen(assignmentsCtx -> {
             return onUpdateAssignments(assignmentsCtx);
         });
+
+        ((ExtendedTableConfiguration) tablesCfg.tables().any()).replicas().listen(replicasCtx -> {
+                    if (!busyLock.enterBusy()) {
+                        return CompletableFuture.completedFuture(new NodeStoppingException());
+                    }
+                    try {
+                        // Multi invoke supposed to be here
+                        metaStorageMgr.put(new ByteArray("some key"), null);
+
+                        return CompletableFuture.completedFuture(null);
+                    } finally {
+                        busyLock.leaveBusy();
+                    }
+                });
 
         tablesCfg.tables().listenElements(new ConfigurationNamedListListener<>() {
             @Override
@@ -329,6 +350,7 @@ public class TableManager extends Producer<TableEvent, TableEventParameters> imp
         if (!busyLock.enterBusy()) {
             return CompletableFuture.failedFuture(new NodeStoppingException());
         }
+
 
         try {
             updateAssignmentInternal(assignmentsCtx);
