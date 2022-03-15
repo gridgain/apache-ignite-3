@@ -20,7 +20,15 @@ package org.apache.ignite.internal.table.distributed;
 import static java.util.Collections.unmodifiableMap;
 import static org.apache.ignite.configuration.schemas.store.DataStorageConfigurationSchema.DEFAULT_DATA_REGION_NAME;
 import static org.apache.ignite.internal.configuration.util.ConfigurationUtil.getByInternalId;
-import static org.apache.ignite.internal.utils.RebalanceUtil.updateAssignmentsKeys;
+import static org.apache.ignite.internal.metastorage.client.Conditions.notExists;
+import static org.apache.ignite.internal.metastorage.client.Conditions.revision;
+import static org.apache.ignite.internal.metastorage.client.Operations.ops;
+import static org.apache.ignite.internal.metastorage.client.Operations.put;
+import static org.apache.ignite.internal.metastorage.client.Operations.remove;
+import static org.apache.ignite.internal.utils.RebalanceUtil.partAssignmentsPendingKey;
+import static org.apache.ignite.internal.utils.RebalanceUtil.partAssignmentsPlannedKey;
+import static org.apache.ignite.internal.utils.RebalanceUtil.partAssignmentsStableKey;
+import static org.apache.ignite.internal.utils.RebalanceUtil.updatePendingAssignmentsKeys;
 
 import it.unimi.dsi.fastutil.ints.Int2ObjectOpenHashMap;
 import java.io.IOException;
@@ -45,7 +53,6 @@ import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
-import org.apache.ignite.Ignite;
 import org.apache.ignite.configuration.ConfigurationChangeException;
 import org.apache.ignite.configuration.ConfigurationProperty;
 import org.apache.ignite.configuration.NamedListView;
@@ -70,7 +77,11 @@ import org.apache.ignite.internal.manager.EventListener;
 import org.apache.ignite.internal.manager.IgniteComponent;
 import org.apache.ignite.internal.manager.Producer;
 import org.apache.ignite.internal.metastorage.MetaStorageManager;
+import org.apache.ignite.internal.metastorage.client.If;
+import org.apache.ignite.internal.metastorage.client.WatchEvent;
+import org.apache.ignite.internal.metastorage.client.WatchListener;
 import org.apache.ignite.internal.raft.Loza;
+import org.apache.ignite.internal.raft.server.RaftGroupEventsListener;
 import org.apache.ignite.internal.schema.SchemaDescriptor;
 import org.apache.ignite.internal.schema.SchemaUtils;
 import org.apache.ignite.internal.schema.marshaller.schema.SchemaSerializerImpl;
@@ -91,6 +102,8 @@ import org.apache.ignite.internal.tx.TxManager;
 import org.apache.ignite.internal.util.ByteUtils;
 import org.apache.ignite.internal.util.IgniteObjectName;
 import org.apache.ignite.internal.util.IgniteSpinBusyLock;
+import org.apache.ignite.internal.utils.RebalanceUtil;
+import org.apache.ignite.lang.ByteArray;
 import org.apache.ignite.lang.IgniteException;
 import org.apache.ignite.lang.IgniteInternalException;
 import org.apache.ignite.lang.IgniteLogger;
@@ -102,6 +115,11 @@ import org.apache.ignite.lang.TableNotFoundException;
 import org.apache.ignite.network.ClusterNode;
 import org.apache.ignite.network.NetworkAddress;
 import org.apache.ignite.network.TopologyService;
+import org.apache.ignite.raft.client.Peer;
+import org.apache.ignite.raft.client.service.RaftGroupListener;
+import org.apache.ignite.raft.client.service.RaftGroupService;
+import org.apache.ignite.raft.jraft.Status;
+import org.apache.ignite.raft.jraft.entity.PeerId;
 import org.apache.ignite.table.Table;
 import org.apache.ignite.table.manager.IgniteTables;
 import org.jetbrains.annotations.NotNull;
@@ -227,37 +245,7 @@ public class TableManager extends Producer<TableEvent, TableEventParameters> imp
             }
         });
 
-        ((ExtendedTableConfiguration) tablesCfg.tables().any()).assignments().listen(assignmentsCtx -> {
-            return onUpdateAssignments(assignmentsCtx);
-        });
-
-        ((ExtendedTableConfiguration) tablesCfg.tables().any()).replicas().listen(replicasCtx -> {
-                    if (!busyLock.enterBusy()) {
-                        return CompletableFuture.completedFuture(new NodeStoppingException());
-                    }
-                    try {
-                        TableConfiguration tableCfg = replicasCtx.config(TableConfiguration.class);
-
-                        int partCount = tableCfg.partitions().value();
-
-                        int newReplicas = replicasCtx.newValue();
-
-                        CompletableFuture<?>[] futures = new CompletableFuture<?>[partCount];
-
-                        for (int i = 0; i < partCount; i++) {
-                            String partId = partitionRaftGroupName(((ExtendedTableConfiguration) tableCfg).id().value(), i);
-
-                            futures[i] = updateAssignmentsKeys(partId, baselineMgr.baselineNodes(), partCount, newReplicas,
-                                    replicasCtx.storageRevision(), metaStorageMgr);
-                        }
-
-                        return CompletableFuture.allOf(futures);
-                    } catch (NodeStoppingException e) {
-                        return CompletableFuture.completedFuture(new NodeStoppingException());
-                    } finally {
-                        busyLock.leaveBusy();
-                    }
-                });
+        ((ExtendedTableConfiguration) tablesCfg.tables().any()).assignments().listen(this::onUpdateAssignments);
 
         tablesCfg.tables().listenElements(new ConfigurationNamedListListener<>() {
             @Override
@@ -486,6 +474,7 @@ public class TableManager extends Producer<TableEvent, TableEventParameters> imp
             // Create new raft nodes according to new assignments.
             tablesByIdVv.update(causalityToken, tablesById -> {
                 InternalTable internalTable = tablesById.get(tblId).internalTable();
+                var tblName = tablesById.get(tblId).name();
 
                 try {
                     futures[partId] = raftMgr.updateRaftGroup(
@@ -493,8 +482,11 @@ public class TableManager extends Producer<TableEvent, TableEventParameters> imp
                             newPartitionAssignment,
                             toAdd,
                             () -> new PartitionListener(tblId,
-                                    new VersionedRowStore(internalTable.storage().getOrCreatePartition(partId),
-                                            txManager))
+                                    new VersionedRowStore(internalTable.storage().getOrCreatePartition(partId), txManager)),
+                            () -> raftGroupEventsListener(
+                                    tablesById.get(tblId).name(),
+                                    partId, tablesCfg.tables().get(tblName),
+                                    partitionRaftGroupName(tblId, partId))
                     ).thenAccept(
                             updatedRaftGroupService -> ((InternalTableImpl) internalTable)
                                     .updateInternalTableRaftGroupService(partId, updatedRaftGroupService)
@@ -597,6 +589,33 @@ public class TableManager extends Producer<TableEvent, TableEventParameters> imp
 
         tableStorage.start();
 
+        ((ExtendedTableConfiguration) tablesCfg.tables().get(name)).replicas().listen(replicasCtx -> {
+            if (!busyLock.enterBusy()) {
+                return CompletableFuture.completedFuture(new NodeStoppingException());
+            }
+            try {
+                int partCount = tableCfg.partitions().value();
+
+                int newReplicas = replicasCtx.newValue();
+
+                CompletableFuture<?>[] futures = new CompletableFuture<?>[partCount];
+
+                for (int i = 0; i < partCount; i++) {
+                    String partId = partitionRaftGroupName(((ExtendedTableConfiguration) tableCfg).id().value(), i);
+
+                    futures[i] = updatePendingAssignmentsKeys(
+                            partId, raftMgr.service().topologyService().allMembers(),
+                            partCount, newReplicas,
+                            replicasCtx.storageRevision(), metaStorageMgr, i);
+                }
+
+                return CompletableFuture.allOf(futures);
+            } finally {
+                busyLock.leaveBusy();
+            }
+        });
+
+
         InternalTableImpl internalTable = new InternalTableImpl(name, tblId, new Int2ObjectOpenHashMap<>(partitions),
                 partitions, netAddrResolver, txManager, tableStorage);
 
@@ -644,7 +663,33 @@ public class TableManager extends Producer<TableEvent, TableEventParameters> imp
             throw new IgniteInternalException(IgniteStringFormatter.format("Cannot create a table [name={}, id={}]", name, tblId), th);
         });
 
-        CompletableFuture.allOf(tablesByIdVv.get(causalityToken), tablesVv.get(causalityToken)).thenRun(() -> {
+        CompletableFuture.allOf(tablesByIdVv.get(causalityToken), tablesVv.get(causalityToken))
+                .thenRun(() -> {
+                    List<CompletableFuture<Long>> futs = new ArrayList<>();
+                    for (int p = 0; p < partitions; p++) {
+                        int partId = p;
+                        futs.add(registerListener(
+                                name,
+                                p,
+                                RebalanceUtil.partAssignmentsPendingKey(partitionRaftGroupName(tblId, p)),
+                                () -> {return ((List<List<ClusterNode>>) ByteUtils.fromBytes(((ExtendedTableConfiguration) tableCfg).assignments().value())).get(partId); },
+                                partitionRaftGroupName(tblId, p),
+                                () -> raftGroupEventsListener(
+                                        name,
+                                        partId, tableCfg,
+                                        partitionRaftGroupName(tblId, partId)),
+                                () -> new PartitionListener(tblId,
+                                        new VersionedRowStore(tableStorage.getOrCreatePartition(partId), txManager))
+                        ));
+                    }
+
+                    CompletableFuture.allOf(futs.toArray(CompletableFuture[]::new))
+                            .exceptionally((th) -> {
+                                LOG.error("Failed listener registration.", th);
+                                return null;
+                            });
+                })
+                .thenRun(() -> {
             fireEvent(TableEvent.CREATE, new TableEventParameters(causalityToken, table), null);
 
             completeApiCreateFuture(table);
@@ -737,7 +782,7 @@ public class TableManager extends Producer<TableEvent, TableEventParameters> imp
      * Drops local structures for a table.
      *
      * @param causalityToken Causality token.
-     * @param name           Table name.
+     * @param name           Table name
      * @param tblId          Table id.
      * @param assignment     Affinity assignment.
      */
@@ -1405,153 +1450,90 @@ public class TableManager extends Producer<TableEvent, TableEventParameters> imp
         return new IgniteException(th);
     }
 
-    /**
-     * Sets the nodes as baseline for all tables created by the manager.
-     *
-     * @param nodes New baseline nodes.
-     * @throws NodeStoppingException If an implementation stopped before the method was invoked.
-     */
-    public void setBaseline(Set<String> nodes) throws NodeStoppingException {
-        if (!busyLock.enterBusy()) {
-            throw new NodeStoppingException();
-        }
-        try {
-            setBaselineInternal(nodes);
-        } finally {
-            busyLock.leaveBusy();
-        }
-    }
-
-    /**
-     * Internal method for setting a baseline.
-     *
-     * @param nodes Names of baseline nodes.
-     */
-    private void setBaselineInternal(Set<String> nodes) throws NodeStoppingException {
-        if (nodes == null || nodes.isEmpty()) {
-            throw new IgniteException("New baseline can't be null or empty");
-        }
-
-        var currClusterMembers = new HashSet<>(baselineMgr.nodes());
-
-        var currClusterMemberNames =
-                currClusterMembers.stream().map(ClusterNode::name).collect(Collectors.toSet());
-
-        for (String nodeName : nodes) {
-            if (!currClusterMemberNames.contains(nodeName)) {
-                throw new IgniteException("Node '" + nodeName + "' not in current network cluster membership. "
-                        + " Adding not alive nodes is not supported yet.");
+    public RaftGroupEventsListener raftGroupEventsListener(String tableName, int partitionId,
+            TableConfiguration view, String partId) {
+        return new RaftGroupEventsListener() {
+            @Override
+            public void onLeaderElected() {
             }
-        }
 
-        var newBaseline = currClusterMembers
-                .stream().filter(n -> nodes.contains(n.name())).collect(Collectors.toSet());
+            @Override
+            public void onNewPeersConfigurationApplied(List<PeerId> peers) {
+                var keys = metaStorageMgr.getAll(Set.of(partAssignmentsPlannedKey(partId), partAssignmentsPendingKey(partId))).join();
+                org.apache.ignite.internal.metastorage.client.Entry plannedEntry = keys.get(partAssignmentsPlannedKey(partId));
+                org.apache.ignite.internal.metastorage.client.Entry pendingEntry = keys.get(partAssignmentsPendingKey(partId));
 
-        updateAssignments(currClusterMembers);
-
-        if (!newBaseline.equals(currClusterMembers)) {
-            updateAssignments(newBaseline);
-        }
-    }
-
-    /**
-     * Update assignments for all current tables according to input nodes list. These approach has known issues {@link
-     * Ignite#setBaseline(Set)}.
-     *
-     * @param clusterNodes Set of nodes for assignment.
-     */
-    private void updateAssignments(Set<ClusterNode> clusterNodes) {
-        var setBaselineFut = new CompletableFuture<>();
-
-        var changePeersQueue = new ArrayList<Supplier<CompletableFuture<Void>>>();
-
-        tablesCfg.tables()
-                .change(tbls -> {
-                    changePeersQueue.clear();
-
-                    for (int i = 0; i < tbls.size(); i++) {
-                        tbls.createOrUpdate(tbls.get(i).name(), changeX -> {
-                            ExtendedTableChange change = (ExtendedTableChange) changeX;
-                            byte[] currAssignments = change.assignments();
-
-                            List<List<ClusterNode>> recalculatedAssignments = AffinityUtils.calculateAssignments(
-                                    clusterNodes,
-                                    change.partitions(),
-                                    change.replicas());
-
-                            if (!recalculatedAssignments.equals(ByteUtils.fromBytes(currAssignments))) {
-                                change.changeAssignments(ByteUtils.toBytes(recalculatedAssignments));
-
-                                changePeersQueue.add(() ->
-                                        updateRaftTopology(
-                                                (List<List<ClusterNode>>) ByteUtils.fromBytes(currAssignments),
-                                                recalculatedAssignments,
-                                                change.id()));
-                            }
-                        });
-                    }
-                })
-                .thenCompose((v) -> {
-                    CompletableFuture<?>[] changePeersFutures = new CompletableFuture<?>[changePeersQueue.size()];
-
-                    int i = 0;
-
-                    for (Supplier<CompletableFuture<Void>> task : changePeersQueue) {
-                        changePeersFutures[i++] = task.get();
-                    }
-
-                    return CompletableFuture.allOf(changePeersFutures);
-                })
-                .whenComplete((res, th) -> {
-                    if (th != null) {
-                        setBaselineFut.completeExceptionally(th);
-                    } else {
-                        setBaselineFut.complete(null);
-                    }
+                view.change(ch -> {
+                    List<List<ClusterNode>> assignments = (List<List<ClusterNode>>) ByteUtils.fromBytes(((ExtendedTableChange) ch).assignments());
+                    assignments.set(partitionId, ((List<ClusterNode>) ByteUtils.fromBytes(pendingEntry.value())));
+                    ((ExtendedTableChange) ch).changeAssignments(ByteUtils.toBytes(assignments));
                 });
 
-        setBaselineFut.join();
+                if (plannedEntry.value() != null) {
+                    if (!metaStorageMgr.invoke(If.iif(
+                            revision(partAssignmentsPlannedKey(partId)).eq(plannedEntry.revision()),
+                            ops(
+                                    put(partAssignmentsStableKey(partId), pendingEntry.value()),
+                                    put(partAssignmentsPendingKey(partId), plannedEntry.value()),
+                                    remove(partAssignmentsPlannedKey(partId)))
+                                    .yield(true),
+                            ops().yield(false))).join().getAsBoolean()) {
+                        onNewPeersConfigurationApplied(peers);
+                        return;
+                    }
+                } else {
+                    if (!metaStorageMgr.invoke(If.iif(
+                            notExists(partAssignmentsPlannedKey(partId)),
+                            ops(put(partAssignmentsStableKey(partId), pendingEntry.value()), remove(partAssignmentsPendingKey(partId))).yield(true),
+                            ops().yield(false))).join().getAsBoolean()) {
+                        onNewPeersConfigurationApplied(peers);
+                        return;
+                    }
+                }
+            }
+
+            @Override
+            public void onReconfigurationError(Status status) {}
+        };
     }
 
-    /**
-     * Update raft groups of table partitions to new peers list.
-     *
-     * @param oldAssignments Old assignment.
-     * @param newAssignments New assignment.
-     * @param tblId Table ID.
-     * @return Future, which completes, when update finished.
-     */
-    private CompletableFuture<Void> updateRaftTopology(
-            List<List<ClusterNode>> oldAssignments,
-            List<List<ClusterNode>> newAssignments,
-            UUID tblId) {
-        CompletableFuture<?>[] futures = new CompletableFuture<?>[oldAssignments.size()];
+    private CompletableFuture<Long> registerListener(
+            String tableName, int partNumber, ByteArray pendingAssignments,
+            Supplier<List<ClusterNode>> assignments, String groupId,
+            Supplier<RaftGroupEventsListener> raftGroupEventsListenerSupplier,
+            Supplier<RaftGroupListener> raftGrpLsnr) {
+        return metaStorageMgr.registerWatch(pendingAssignments, new WatchListener() {
+            @Override
+            public boolean onUpdate(@NotNull WatchEvent evt) {
+                List<ClusterNode> newPeers = ((List<ClusterNode>) ByteUtils.fromBytes(evt.entryEvent().newEntry().value()));
+                RaftGroupService raftGrpSvc = null;
+                try {
+                    var deltaPeers = newPeers.stream()
+                            .filter(p -> !assignments.get().contains(p))
+                            .collect(Collectors.toList());
+                    raftGrpSvc = raftMgr.updateRaftGroup(groupId, assignments.get(), deltaPeers, raftGrpLsnr, raftGroupEventsListenerSupplier).join();
 
-        // TODO: IGNITE-15554 Add logic for assignment recalculation in case of partitions or replicas changes
-        // TODO: Until IGNITE-15554 is implemented it's safe to iterate over partitions and replicas cause there will
-        // TODO: be exact same amount of partitions and replicas for both old and new assignments
-        for (int i = 0; i < oldAssignments.size(); i++) {
-            final int p = i;
+                raftGrpSvc.refreshLeader().join();
+                if (new Peer(raftGrpSvc.clusterService().topologyService().localMember().address()).equals(raftGrpSvc.leader())) {
 
-            List<ClusterNode> oldPartitionAssignment = oldAssignments.get(p);
-            List<ClusterNode> newPartitionAssignment = newAssignments.get(p);
+                    var newNodes = newPeers.stream().map(n -> new Peer(n.address())).collect(Collectors.toList());
+                    raftGrpSvc.changePeersAsync(newNodes).join();
 
-            try {
-                futures[i] = raftMgr.changePeers(
-                        partitionRaftGroupName(tblId, p),
-                        oldPartitionAssignment,
-                        newPartitionAssignment
-                ).exceptionally(th -> {
-                    LOG.error("Failed to update raft peers for group " + partitionRaftGroupName(tblId, p)
-                            + "from " + oldPartitionAssignment + " to " + newPartitionAssignment, th);
-                    return null;
-                });
-            } catch (NodeStoppingException e) {
-                throw new AssertionError("Loza was stopped before Table manager", e);
+                }
+                } catch (NodeStoppingException e) {
+                    // noop
+                } finally {
+                    if (raftGrpSvc != null)
+                        raftGrpSvc.shutdown();
+                }
+                return true;
             }
-        }
 
-        return CompletableFuture.allOf(futures);
+            @Override
+            public void onError(@NotNull Throwable e) {
+                LOG.error("Error while processing pending assignments event", e);
+            }
+        });
     }
 
     /**

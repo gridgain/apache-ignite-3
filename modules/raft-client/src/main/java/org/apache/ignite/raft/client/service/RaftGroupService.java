@@ -143,6 +143,7 @@ public interface RaftGroupService {
      */
     CompletableFuture<Void> changePeers(List<Peer> peers);
 
+    CompletableFuture<Void> changePeersAsync(List<Peer> peers);
     /**
      * Adds learners (non-voting members).
      *

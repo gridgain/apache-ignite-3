@@ -199,7 +199,7 @@ public interface Node extends Lifecycle<NodeOptions>, Describer {
      * @return the status of the call.
      * @see ChangePeersAsyncStatus
      */
-    ChangePeersAsyncStatus changePeersAsync(final Configuration newPeers, long term);
+    void changePeersAsync(final Configuration newPeers, long term, final Closure done);
 
     /**
      * Reset the configuration of this node individually, without any replication to other peers before this node

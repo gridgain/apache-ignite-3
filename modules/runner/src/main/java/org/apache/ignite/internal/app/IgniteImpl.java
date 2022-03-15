@@ -472,10 +472,6 @@ public class IgniteImpl implements Ignite {
     @Override
     public void setBaseline(Set<String> baselineNodes) {
         try {
-            // TODO: delete this when main functionality of the rebalance will be implemented
-            // TODO: https://issues.apache.org/jira/browse/IGNITE-16011
-            distributedTblMgr.setBaseline(baselineNodes);
-
             baselineMgr.setBaseline(baselineNodes);
         } catch (NodeStoppingException e) {
             throw new IgniteException(e);

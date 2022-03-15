@@ -918,14 +918,17 @@ public class MetaStorageManager implements IgniteComponent {
 
         long appliedRevision = appliedRevisionBytes == null ? 0L : bytesToLong(appliedRevisionBytes);
 
-        if (revision <= appliedRevision) {
+        if (revision < appliedRevision) {
             throw new IgniteInternalException(String.format(
                     "Current revision (%d) must be greater than the revision in the Vault (%d)",
                     revision, appliedRevision
             ));
         }
 
-        vaultMgr.putAll(batch).join();
+        // skip already process revision
+        if (revision != appliedRevision) {
+            vaultMgr.putAll(batch).join();
+        }
     }
 
     /**
