@@ -21,7 +21,7 @@ package org.apache.ignite.raft.jraft.rpc;
 
 import java.util.Collection;
 import org.apache.ignite.network.annotations.Marshallable;
-import org.apache.ignite.raft.jraft.ChangePeersAsyncStatus;
+import org.apache.ignite.raft.client.ChangePeersAsyncStatus;
 import org.apache.ignite.raft.jraft.RaftMessageGroup;
 import org.apache.ignite.network.annotations.Transferable;
 import org.apache.ignite.raft.jraft.RaftMessageGroup.RpcClientMessageGroup;

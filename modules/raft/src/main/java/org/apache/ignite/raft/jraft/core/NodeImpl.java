@@ -37,7 +37,7 @@ import java.util.stream.Collectors;
 import org.apache.ignite.internal.thread.NamedThreadFactory;
 import org.apache.ignite.lang.IgniteLogger;
 import org.apache.ignite.raft.client.Peer;
-import org.apache.ignite.raft.jraft.ChangePeersAsyncStatus;
+import org.apache.ignite.raft.client.ChangePeersAsyncStatus;
 import org.apache.ignite.raft.jraft.Closure;
 import org.apache.ignite.raft.jraft.FSMCaller;
 import org.apache.ignite.raft.jraft.JRaftServiceFactory;

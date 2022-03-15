@@ -21,6 +21,7 @@ import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeoutException;
 import org.apache.ignite.network.ClusterService;
+import org.apache.ignite.raft.client.ChangePeersAsyncStatus;
 import org.apache.ignite.raft.client.Command;
 import org.apache.ignite.raft.client.Peer;
 import org.apache.ignite.raft.client.ReadCommand;
@@ -143,6 +144,7 @@ public interface RaftGroupService {
      */
     CompletableFuture<Void> changePeers(List<Peer> peers);
 
+    CompletableFuture<ChangePeersAsyncStatus> changePeersAsync(List<Peer> peers);
     /**
      * Adds learners (non-voting members).
      *

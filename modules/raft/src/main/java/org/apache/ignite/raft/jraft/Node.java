@@ -17,6 +17,7 @@
 package org.apache.ignite.raft.jraft;
 
 import java.util.List;
+import org.apache.ignite.raft.client.ChangePeersAsyncStatus;
 import org.apache.ignite.raft.jraft.closure.ReadIndexClosure;
 import org.apache.ignite.raft.jraft.conf.Configuration;
 import org.apache.ignite.raft.jraft.core.NodeMetrics;

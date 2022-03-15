@@ -15,7 +15,7 @@
  * limitations under the License.
  */
 
-package org.apache.ignite.raft.jraft;
+package org.apache.ignite.raft.client;
 
 /**
  * Returning status of the {@link Node#changePeersAsync(org.apache.ignite.raft.jraft.conf.Configuration, long)} method invocation.

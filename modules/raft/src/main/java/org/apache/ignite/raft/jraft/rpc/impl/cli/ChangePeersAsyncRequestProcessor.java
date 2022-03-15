@@ -18,7 +18,7 @@ package org.apache.ignite.raft.jraft.rpc.impl.cli;
 
 import java.util.List;
 import java.util.concurrent.Executor;
-import org.apache.ignite.raft.jraft.ChangePeersAsyncStatus;
+import org.apache.ignite.raft.client.ChangePeersAsyncStatus;
 import org.apache.ignite.raft.jraft.RaftMessagesFactory;
 import org.apache.ignite.raft.jraft.conf.Configuration;
 import org.apache.ignite.raft.jraft.entity.PeerId;

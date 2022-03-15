@@ -29,6 +29,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
 import org.apache.ignite.internal.manager.IgniteComponent;
+import org.apache.ignite.internal.raft.server.RaftGroupEventsListener;
 import org.apache.ignite.internal.raft.server.RaftServer;
 import org.apache.ignite.internal.raft.server.impl.JraftServerImpl;
 import org.apache.ignite.internal.thread.NamedThreadFactory;
@@ -141,6 +142,23 @@ public class Loza implements IgniteComponent {
         raftServer.stop();
     }
 
+    public CompletableFuture<RaftGroupService> prepareRaftGroup(
+            String groupId,
+            List<ClusterNode> nodes,
+            Supplier<RaftGroupListener> lsnrSupplier,
+            RaftGroupEventsListener raftGroupEventsListener
+    ) throws NodeStoppingException {
+        if (!busyLock.enterBusy()) {
+            throw new NodeStoppingException();
+        }
+
+        try {
+            return prepareRaftGroupInternal(groupId, nodes, lsnrSupplier, raftGroupEventsListener);
+        } finally {
+            busyLock.leaveBusy();
+        }
+    }
+
     /**
      * Creates a raft group service providing operations on a raft group. If {@code nodes} contains the current node, then raft group starts
      * on the current node.
@@ -165,7 +183,7 @@ public class Loza implements IgniteComponent {
         }
 
         try {
-            return prepareRaftGroupInternal(groupId, nodes, lsnrSupplier);
+            return prepareRaftGroupInternal(groupId, nodes, lsnrSupplier, null);
         } finally {
             busyLock.leaveBusy();
         }
@@ -180,7 +198,7 @@ public class Loza implements IgniteComponent {
      * @return Future representing pending completion of the operation.
      */
     private CompletableFuture<RaftGroupService> prepareRaftGroupInternal(String groupId, List<ClusterNode> nodes,
-            Supplier<RaftGroupListener> lsnrSupplier) {
+            Supplier<RaftGroupListener> lsnrSupplier, RaftGroupEventsListener raftGroupEventsListener) {
         assert !nodes.isEmpty();
 
         List<Peer> peers = nodes.stream().map(n -> new Peer(n.address())).collect(Collectors.toList());
@@ -188,6 +206,41 @@ public class Loza implements IgniteComponent {
         String locNodeName = clusterNetSvc.topologyService().localMember().name();
 
         boolean hasLocalRaft = nodes.stream().anyMatch(n -> locNodeName.equals(n.name()));
+
+        if (hasLocalRaft) {
+            if (!raftServer.startRaftGroup(groupId, raftGroupEventsListener, lsnrSupplier.get(), peers)) {
+                throw new IgniteInternalException(IgniteStringFormatter.format(
+                        "Raft group on the node is already started [node={}, raftGrp={}]",
+                        locNodeName,
+                        groupId
+                ));
+            }
+        }
+
+        return RaftGroupServiceImpl.start(
+                groupId,
+                clusterNetSvc,
+                FACTORY,
+                RETRY_TIMEOUT,
+                RPC_TIMEOUT,
+                peers,
+                true,
+                DELAY,
+                executor
+        );
+    }
+
+    public CompletableFuture<RaftGroupService> startRaftGroupIfNeeded(
+            String groupId,
+            List<ClusterNode> newNodes,
+            List<ClusterNode> currentNodes,
+            Supplier<RaftGroupListener> lsnrSupplier) {
+
+        List<Peer> peers = newNodes.stream().map(n -> new Peer(n.address())).collect(Collectors.toList());
+
+        String locNodeName = clusterNetSvc.topologyService().localMember().name();
+
+        boolean hasLocalRaft = newNodes.stream().anyMatch(n -> locNodeName.equals(n.name()));
 
         if (hasLocalRaft) {
             if (!raftServer.startRaftGroup(groupId, lsnrSupplier.get(), peers)) {

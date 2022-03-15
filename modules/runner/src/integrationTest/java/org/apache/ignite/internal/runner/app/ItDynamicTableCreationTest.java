@@ -147,7 +147,7 @@ class ItDynamicTableCreationTest {
      * Check dynamic table creation.
      */
     @Test
-    void testDynamicSimpleTableCreation() {
+    void testDynamicSimpleTableCreation() throws InterruptedException {
         startGrid();
 
         // Create table on node 0.
@@ -190,6 +190,59 @@ class ItDynamicTableCreationTest {
 
         assertThrows(IllegalArgumentException.class, () -> kvView1.get(null, keyTuple1).value("key"));
         assertThrows(IllegalArgumentException.class, () -> kvView1.get(null, keyTuple2).value("key"));
+    }
+
+    /**
+     * Check dynamic table creation.
+     */
+    @Test
+    void testRebalance() throws InterruptedException {
+        startGrid();
+
+        // Create table on node 0.
+        TableDefinition schTbl1 = SchemaBuilders.tableBuilder("PUBLIC", "tbl1").columns(
+                SchemaBuilders.column("key", ColumnType.INT64).build(),
+                SchemaBuilders.column("val", ColumnType.INT32).asNullable(true).build()
+        ).withPrimaryKey("key").build();
+
+        clusterNodes.get(0).tables().createTable(schTbl1.canonicalName(), tblCh ->
+                SchemaConfigurationConverter.convert(schTbl1, tblCh)
+                        .changeReplicas(1)
+                        .changePartitions(10)
+        );
+
+        // Put data on node 1.
+        Table tbl1 = clusterNodes.get(1).tables().table(schTbl1.canonicalName());
+        RecordView<Tuple> recView1 = tbl1.recordView();
+        KeyValueView<Tuple, Tuple> kvView1 = tbl1.keyValueView();
+
+        recView1.insert(null, Tuple.create().set("key", 1L).set("val", 111));
+        kvView1.put(null, Tuple.create().set("key", 2L), Tuple.create().set("val", 222));
+
+        // Get data on node 2.
+        Table tbl2 = clusterNodes.get(2).tables().table(schTbl1.canonicalName());
+        RecordView<Tuple> recView2 = tbl2.recordView();
+        KeyValueView<Tuple, Tuple> kvView2 = tbl2.keyValueView();
+
+        final Tuple keyTuple1 = Tuple.create().set("key", 1L);
+        final Tuple keyTuple2 = Tuple.create().set("key", 2L);
+
+        assertThrows(IllegalArgumentException.class, () -> kvView2.get(null, keyTuple1).value("key"));
+        assertThrows(IllegalArgumentException.class, () -> kvView2.get(null, keyTuple2).value("key"));
+        assertEquals(1, (Long) recView2.get(null, keyTuple1).value("key"));
+        assertEquals(2, (Long) recView2.get(null, keyTuple2).value("key"));
+
+        assertEquals(111, (Integer) recView2.get(null, keyTuple1).value("val"));
+        assertEquals(111, (Integer) kvView2.get(null, keyTuple1).value("val"));
+        assertEquals(222, (Integer) recView2.get(null, keyTuple2).value("val"));
+        assertEquals(222, (Integer) kvView2.get(null, keyTuple2).value("val"));
+
+        assertThrows(IllegalArgumentException.class, () -> kvView1.get(null, keyTuple1).value("key"));
+        assertThrows(IllegalArgumentException.class, () -> kvView1.get(null, keyTuple2).value("key"));
+
+        clusterNodes.get(0).tables().alterTable(schTbl1.canonicalName(), tblCh -> tblCh.changeReplicas(3));
+
+        Thread.sleep(100000);
     }
 
     /**

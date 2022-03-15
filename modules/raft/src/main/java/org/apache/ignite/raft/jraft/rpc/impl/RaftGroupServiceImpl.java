@@ -56,6 +56,7 @@ import org.apache.ignite.lang.IgniteLogger;
 import org.apache.ignite.network.ClusterService;
 import org.apache.ignite.network.NetworkAddress;
 import org.apache.ignite.network.NetworkMessage;
+import org.apache.ignite.raft.client.ChangePeersAsyncStatus;
 import org.apache.ignite.raft.client.Command;
 import org.apache.ignite.raft.client.Peer;
 import org.apache.ignite.raft.client.ReadCommand;
@@ -65,6 +66,8 @@ import org.apache.ignite.raft.jraft.entity.PeerId;
 import org.apache.ignite.raft.jraft.error.RaftError;
 import org.apache.ignite.raft.jraft.rpc.ActionRequest;
 import org.apache.ignite.raft.jraft.rpc.ActionResponse;
+import org.apache.ignite.raft.jraft.rpc.CliRequests.ChangePeersAsyncRequest;
+import org.apache.ignite.raft.jraft.rpc.CliRequests.ChangePeersAsyncResponse;
 import org.apache.ignite.raft.jraft.rpc.RpcRequests;
 import org.jetbrains.annotations.NotNull;
 
@@ -331,6 +334,29 @@ public class RaftGroupServiceImpl implements RaftGroupService {
             this.peers = parsePeerList(resp.newPeersList());
 
             return null;
+        });
+    }
+
+    @Override public CompletableFuture<ChangePeersAsyncStatus> changePeersAsync(List<Peer> peers) {
+        Peer leader = this.leader;
+
+        if (leader == null)
+            return refreshLeader().thenCompose(res -> changePeersAsync(peers));
+
+        List<String> peersToChange = peers.stream().map(p -> PeerId.fromPeer(p).toString())
+                .collect(Collectors.toList());
+
+        ChangePeersAsyncRequest req = factory.changePeersAsyncRequest().groupId(groupId)
+                .newPeersList(peersToChange).build();
+
+        CompletableFuture<ChangePeersAsyncResponse> fut = new CompletableFuture<>();
+
+        sendWithRetry(leader, req, currentTimeMillis() + timeout, fut);
+
+        return fut.thenApply(resp -> {
+            this.peers = parsePeerList(resp.newPeersList());
+
+            return resp.status();
         });
     }
 

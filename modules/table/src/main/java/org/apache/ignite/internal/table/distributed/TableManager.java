@@ -20,6 +20,7 @@ package org.apache.ignite.internal.table.distributed;
 import static org.apache.ignite.configuration.schemas.store.DataStorageConfigurationSchema.DEFAULT_DATA_REGION_NAME;
 import static org.apache.ignite.internal.configuration.util.ConfigurationUtil.directProxy;
 import static org.apache.ignite.internal.configuration.util.ConfigurationUtil.getByInternalId;
+import static org.apache.ignite.internal.utils.RebalanceUtil.partAssignmentsPendingKey;
 import static org.apache.ignite.internal.utils.RebalanceUtil.updateAssignmentsKeys;
 
 import it.unimi.dsi.fastutil.ints.Int2ObjectOpenHashMap;
@@ -53,6 +54,7 @@ import org.apache.ignite.configuration.schemas.table.TableConfiguration;
 import org.apache.ignite.configuration.schemas.table.TableView;
 import org.apache.ignite.configuration.schemas.table.TablesConfiguration;
 import org.apache.ignite.configuration.validation.ConfigurationValidationException;
+import org.apache.ignite.internal.RebalanceManager;
 import org.apache.ignite.internal.affinity.AffinityUtils;
 import org.apache.ignite.internal.baseline.BaselineManager;
 import org.apache.ignite.internal.causality.VersionedValue;
@@ -65,6 +67,7 @@ import org.apache.ignite.internal.manager.EventListener;
 import org.apache.ignite.internal.manager.IgniteComponent;
 import org.apache.ignite.internal.manager.Producer;
 import org.apache.ignite.internal.metastorage.MetaStorageManager;
+import org.apache.ignite.internal.metastorage.client.StatementResult;
 import org.apache.ignite.internal.raft.Loza;
 import org.apache.ignite.internal.schema.SchemaDescriptor;
 import org.apache.ignite.internal.schema.SchemaUtils;
@@ -86,6 +89,7 @@ import org.apache.ignite.internal.tx.TxManager;
 import org.apache.ignite.internal.util.ByteUtils;
 import org.apache.ignite.internal.util.IgniteObjectName;
 import org.apache.ignite.internal.util.IgniteSpinBusyLock;
+import org.apache.ignite.lang.ByteArray;
 import org.apache.ignite.lang.IgniteException;
 import org.apache.ignite.lang.IgniteInternalException;
 import org.apache.ignite.lang.IgniteLogger;
@@ -312,6 +316,26 @@ public class TableManager extends Producer<TableEvent, TableEventParameters> imp
                                     }
                                 });
 
+                        for (int i = 0; i < ctx.newValue().partitions(); i++) {
+                            ExtendedTableConfiguration tblCfg = (ExtendedTableConfiguration) tablesCfg.tables().get(tblName);
+                            int finalI = i;
+                            RebalanceManager.registerListener(
+                                    tblName,
+                                    RebalanceUtil.partAssignmentsPendingKey(tblCfg.id().value().toString(), String.valueOf(i)),
+                                    tablesCfg,
+                                    partitionRaftGroupName(tblCfg.id().value(), i),
+                                    metaStorageMgr,
+                                    raftMgr,
+                                    () -> {
+                                        try {
+                                            return new PartitionListener(tblId,
+                                                    new VersionedRowStore(table(tblId).internalTable().storage().getOrCreatePartition(finalI),
+                                                            txManager));
+                                        } catch (NodeStoppingException e) {
+                                            throw new RuntimeException(e);
+                                        }
+                                    }).exceptionally(e -> { LOG.error("NONONON", e); return 1L; });
+                        }
                         ((ExtendedTableConfiguration) tablesCfg.tables().get(tblName)).replicas()
                                 .listen(replicasCtx -> {
                                     if (!busyLock.enterBusy()) {
@@ -553,7 +577,8 @@ public class TableManager extends Producer<TableEvent, TableEventParameters> imp
                                 partitionRaftGroupName(tblId, p),
                                 assignment.get(p),
                                 () -> new PartitionListener(tblId,
-                                        new VersionedRowStore(tableStorage.getOrCreatePartition(partId), txManager))
+                                        new VersionedRowStore(tableStorage.getOrCreatePartition(partId), txManager)),
+                                RebalanceManager.raftGroupEventsListener(name, p, tableCfg, LOG)
                         )
                 );
             } catch (NodeStoppingException e) {

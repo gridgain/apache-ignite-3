@@ -363,7 +363,7 @@ public final class Utils {
         }
         try (final FileChannel fc = FileChannel.open(file.toPath(), isDir ? StandardOpenOption.READ
             : StandardOpenOption.WRITE)) {
-            fc.force(true);
+//            fc.force(true);
         }
     }
 
