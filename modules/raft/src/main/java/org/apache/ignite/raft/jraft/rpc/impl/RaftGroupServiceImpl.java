@@ -520,8 +520,6 @@ public class RaftGroupServiceImpl implements RaftGroupService {
                 if (err != null) {
                     if (recoverable(err)) {
                         executor.schedule(() -> {
-                            LOG.error("zzz", err);
-
                             sendWithRetry(randomNode(), req, stopTime, fut);
 
                             return null;
