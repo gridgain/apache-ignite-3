@@ -28,6 +28,9 @@ import org.apache.ignite.table.Table;
 import org.apache.ignite.table.Tuple;
 import org.junit.jupiter.api.Test;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+
 public class ItRestartTest extends AbstractBasicIntegrationTest {
     @Override protected int nodes() {
         return 4;
@@ -51,13 +54,16 @@ public class ItRestartTest extends AbstractBasicIntegrationTest {
 
         CLUSTER_NODES.set(nodes() - 1, newNode);
 
-        assertQry("select * from t1")
+        checkTableWithData(CLUSTER_NODES.get(nodes() - 1), "t1", String::valueOf);
+        checkTableWithData(CLUSTER_NODES.get(nodes() - 1), "t2", String::valueOf);
+
+        /*assertQry("select * from t1")
             .returns(0, "0")
             .check();
 
         assertQry("select * from t2")
             .returns(0, "0")
-            .check();
+            .check();*/
     }
 
     private QueryChecker assertQry(String qry) {
@@ -92,6 +98,24 @@ public class ItRestartTest extends AbstractBasicIntegrationTest {
             Tuple val = Tuple.create().set("name", valueProducer.apply(i));
 
             table.keyValueView().put(null, key, val);
+        }
+    }
+
+    /**
+     * Checks the table exists and validates all data in it.
+     *
+     * @param ignite Ignite.
+     * @param valueProducer Producer to predict a value.
+     */
+    private void checkTableWithData(Ignite ignite, String name, IntFunction<String> valueProducer) {
+        Table table = ignite.tables().table("PUBLIC." + name);
+
+        assertNotNull(table);
+
+        for (int i = 0; i < 1; i++) {
+            Tuple row = table.keyValueView().get(null, Tuple.create().set("id", i));
+
+            assertEquals(valueProducer.apply(i), row.stringValue("name"));
         }
     }
 }
