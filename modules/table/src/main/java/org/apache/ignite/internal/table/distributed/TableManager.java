@@ -557,9 +557,9 @@ public class TableManager extends Producer<TableEvent, TableEventParameters> imp
         });
 
         CompletableFuture.allOf(tablesByIdVv.get(causalityToken), tablesVv.get(causalityToken)).thenRun(() -> {
-            completeApiCreateFuture(table);
-
             fireEvent(TableEvent.CREATE, new TableEventParameters(causalityToken, table), null);
+
+            completeApiCreateFuture(table);
         });
     }
 
