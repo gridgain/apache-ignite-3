@@ -5,14 +5,23 @@ import static org.apache.ignite.internal.testframework.IgniteTestUtils.testNodeN
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.Mockito.mock;
 
+import io.scalecube.cluster.Cluster;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.locks.LockSupport;
 import java.util.function.Consumer;
+import java.util.function.Function;
+import java.util.function.Supplier;
+import java.util.function.UnaryOperator;
+import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import org.apache.ignite.configuration.RootKey;
 import org.apache.ignite.configuration.schemas.runner.ClusterConfiguration;
@@ -20,10 +29,14 @@ import org.apache.ignite.configuration.schemas.runner.NodeConfiguration;
 import org.apache.ignite.configuration.schemas.store.DataStorageConfiguration;
 import org.apache.ignite.configuration.schemas.table.TablesConfiguration;
 import org.apache.ignite.internal.baseline.BaselineManager;
+import org.apache.ignite.internal.configuration.ConfigurationListenerHolder;
 import org.apache.ignite.internal.configuration.ConfigurationManager;
 import org.apache.ignite.internal.configuration.ConfigurationModule;
 import org.apache.ignite.internal.configuration.ConfigurationModules;
 import org.apache.ignite.internal.configuration.ServiceLoaderModulesProvider;
+import org.apache.ignite.internal.configuration.notifications.ConfigurationStorageRevisionListener;
+import org.apache.ignite.internal.configuration.notifications.ConfigurationStorageRevisionListenerHolder;
+import org.apache.ignite.internal.configuration.schema.ExtendedTableConfiguration;
 import org.apache.ignite.internal.manager.IgniteComponent;
 import org.apache.ignite.internal.metastorage.MetaStorageManager;
 import org.apache.ignite.internal.metastorage.server.SimpleInMemoryKeyValueStorage;
@@ -37,9 +50,12 @@ import org.apache.ignite.internal.testframework.WorkDirectoryExtension;
 import org.apache.ignite.internal.tx.LockManager;
 import org.apache.ignite.internal.tx.TxManager;
 import org.apache.ignite.internal.tx.impl.HeapLockManager;
+import org.apache.ignite.internal.util.ByteUtils;
+import org.apache.ignite.internal.utils.RebalanceUtil;
 import org.apache.ignite.internal.vault.VaultManager;
 import org.apache.ignite.internal.vault.persistence.PersistentVaultService;
 import org.apache.ignite.lang.ByteArray;
+import org.apache.ignite.network.ClusterNode;
 import org.apache.ignite.network.ClusterService;
 import org.apache.ignite.network.NetworkAddress;
 import org.apache.ignite.network.StaticNodeFinder;
@@ -50,6 +66,7 @@ import org.apache.ignite.schema.definition.TableDefinition;
 import org.apache.ignite.utils.ClusterServiceTestUtils;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInfo;
+import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.extension.ExtendWith;
 
 @ExtendWith(WorkDirectoryExtension.class)
@@ -59,9 +76,12 @@ public class ItRebalanceDistributedTest {
     public static final String HOST = "localhost";
     private static TestScaleCubeClusterServiceFactory testScaleCubeClusterServiceFactory = new TestScaleCubeClusterServiceFactory();
 
+    private static StaticNodeFinder finder = new StaticNodeFinder(List.of(new NetworkAddress(HOST, BASE_PORT), new NetworkAddress(HOST, BASE_PORT + 1), new NetworkAddress(HOST, BASE_PORT + 2)));
+
     private static String firstName;
 
     @Test
+    @Timeout(20)
     void test(@WorkDirectory Path workDir, TestInfo testInfo) throws Exception {
         List<Node> nodes = new ArrayList<>();
         for (int i = 0; i < 3; i++) {
@@ -86,6 +106,7 @@ public class ItRebalanceDistributedTest {
 
         assertEquals(1, nodes.get(0).clusterCfgMgr.configurationRegistry().getConfiguration(TablesConfiguration.KEY).tables().get("PUBLIC.TBL1").replicas().value());
 
+        nodes.get(0).tableManager.alterTable("PUBLIC.TBL1", ch -> ch.changeReplicas(2));
         nodes.get(0).tableManager.alterTable("PUBLIC.TBL1", ch -> ch.changeReplicas(3));
 
         UUID tableId = ((TableImpl) nodes.get(0).tableManager.table("PUBLIC.TBL1")).internalTable().tableId();
@@ -93,10 +114,18 @@ public class ItRebalanceDistributedTest {
         assertEquals(3, nodes.get(0).clusterCfgMgr.configurationRegistry().getConfiguration(TablesConfiguration.KEY).tables().get("PUBLIC.TBL1").replicas().value());
 
         System.out.println("AAND");
-//        for (byte i = 0; i < 256; i++)
-//            nodes.get(0).metaStorageManager.prefix(ByteArray.fromString(tableId.toString())).forEach(e -> System.out.println(new ByteArray(e.key()).toString()));
 
-        Thread.sleep(5000);
+        Supplier<List<List<ClusterNode>>> getNodes = () -> {
+            return (List<List<ClusterNode>>) ByteUtils.fromBytes(((ExtendedTableConfiguration) nodes.get(0).clusterCfgMgr.configurationRegistry().getConfiguration(TablesConfiguration.KEY).tables().get("PUBLIC.TBL1")).assignments().value());
+        };
+        while (getNodes.get().get(0).size() != 3) {
+            LockSupport.parkNanos(1000_000_000);
+//            System.out.println(((List<List<ClusterNode>>) ByteUtils.fromBytes(nodes.get(0).metaStorageManager.get(RebalanceUtil.partAssignmentsStableKey(tableId + "_part_" + 0)).join().value())).get(0).stream().map(ClusterNode::toString).collect(
+//                    Collectors.joining(",")));
+//            System.out.println(((List<List<ClusterNode>>) ByteUtils.fromBytes(nodes.get(0).metaStorageManager.get(RebalanceUtil.partAssignmentsPlannedKey(tableId + "_part_" + 0)).join().value())).get(0).stream().map(ClusterNode::toString).collect(
+//                    Collectors.joining(",")));
+        }
+        assertEquals(3, getNodes.get().size());
         nodes.get(0).metaStorageManager.prefix(ByteArray.fromString(tableId.toString())).forEach(e -> System.out.println(new ByteArray(e.key()).toString()));
         for (Node node : nodes) {
             node.stop();
@@ -151,7 +180,7 @@ public class ItRebalanceDistributedTest {
             clusterService = ClusterServiceTestUtils.clusterService(
                     testInfo,
                     addr.port(),
-                    new StaticNodeFinder(List.of(new NetworkAddress(host, BASE_PORT), new NetworkAddress(host, BASE_PORT + 1), new NetworkAddress(host, BASE_PORT + 2))),
+                    finder,
                     testScaleCubeClusterServiceFactory
             );
 
@@ -184,6 +213,16 @@ public class ItRebalanceDistributedTest {
                     modules.distributed().polymorphicSchemaExtensions()
             );
 
+//            var fieldRevisionListenerHolder = new StorageRevisionListenerHolderImpl();
+//            var revisionUpdater = (Consumer<Long> consumer) -> {
+//                consumer.accept(0L);
+//
+//                fieldRevisionListenerHolder.listenUpdateStorageRevision(newStorageRevision -> {
+//                    consumer.accept(newStorageRevision);
+//
+//                    return CompletableFuture.completedFuture(null);
+//                });
+//            };
             Consumer<Consumer<Long>> registry = (c) -> {
                 clusterCfgMgr.configurationRegistry().listenUpdateStorageRevision(newStorageRevision -> {
                     c.accept(newStorageRevision);
@@ -239,16 +278,21 @@ public class ItRebalanceDistributedTest {
             var config = String.format("{\"node\": {\"metastorageNodes\": [ \"%s\" ]}}", firstName);
 
             nodeCfgMgr.bootstrap(config);
+//            clusterService.start();
+//
+//            // this is needed to avoid assertion errors
+////            cfgStorage.registerConfigurationListener(changedEntries -> completedFuture(null));
+//            clusterCfgMgr.start();
 
-            Stream.of(clusterService, clusterCfgMgr, raftManager, txManager, metaStorageManager, baselineMgr, tableManager).forEach(IgniteComponent::start);
+
+
+            Stream.of(raftManager, txManager, metaStorageManager, baselineMgr, tableManager).forEach(IgniteComponent::start);
+
 
             CompletableFuture.allOf(
                     nodeCfgMgr.configurationRegistry().notifyCurrentConfigurationListeners(),
                     clusterCfgMgr.configurationRegistry().notifyCurrentConfigurationListeners()
             ).get();
-
-            // this is needed to avoid assertion errors
-            cfgStorage.registerConfigurationListener(changedEntries -> completedFuture(null));
 
             // deploy watches to propagate data from the metastore into the vault
             metaStorageManager.deployWatches();
@@ -268,6 +312,48 @@ public class ItRebalanceDistributedTest {
             for (IgniteComponent component : components) {
                 component.stop();
             }
+        }
+    }
+
+    private static class StorageRevisionListenerHolderImpl implements ConfigurationStorageRevisionListenerHolder {
+        final AtomicLong storageRev = new AtomicLong();
+
+        final AtomicLong notificationListenerCnt = new AtomicLong();
+
+        final ConfigurationListenerHolder<ConfigurationStorageRevisionListener> listeners = new ConfigurationListenerHolder<>();
+
+        /** {@inheritDoc} */
+        @Override
+        public void listenUpdateStorageRevision(ConfigurationStorageRevisionListener listener) {
+            listeners.addListener(listener, notificationListenerCnt.get());
+        }
+
+        /** {@inheritDoc} */
+        @Override
+        public void stopListenUpdateStorageRevision(ConfigurationStorageRevisionListener listener) {
+            listeners.removeListener(listener);
+        }
+
+        private Collection<CompletableFuture<?>> notifyStorageRevisionListeners(long storageRevision, long notificationNumber) {
+            List<CompletableFuture<?>> futures = new ArrayList<>();
+
+            for (Iterator<ConfigurationStorageRevisionListener> it = listeners.listeners(notificationNumber); it.hasNext(); ) {
+                ConfigurationStorageRevisionListener listener = it.next();
+
+                try {
+                    CompletableFuture<?> future = listener.onUpdate(storageRevision);
+
+                    assert future != null;
+
+                    if (future.isCompletedExceptionally() || future.isCancelled() || !future.isDone()) {
+                        futures.add(future);
+                    }
+                } catch (Throwable t) {
+                    futures.add(CompletableFuture.failedFuture(t));
+                }
+            }
+
+            return futures;
         }
     }
 }

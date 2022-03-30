@@ -102,10 +102,10 @@ public class BaselineManager implements IgniteComponent {
         }
 
         try {
-            List<String> baselineNodeNames = List.of(clusterConfiguration.baselineNodes().value());
+//            List<String> baselineNodeNames = List.of(clusterConfiguration.baselineNodes().value());
 
             return clusterSvc.topologyService().allMembers().stream()
-                    .filter(node -> baselineNodeNames.contains(node.name()))
+//                    .filter(node -> baselineNodeNames.contains(node.name()))
                     .collect(Collectors.toList());
         } finally {
             busyLock.leaveBusy();

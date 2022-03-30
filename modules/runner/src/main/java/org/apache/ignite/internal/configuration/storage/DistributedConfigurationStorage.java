@@ -282,7 +282,7 @@ public class DistributedConfigurationStorage implements ConfigurationStorage {
 
                     long newChangeId = masterKeyEntry.revision();
 
-                    assert newChangeId > changeId.get();
+                    assert newChangeId > changeId.get() : "New change Id " + newChangeId + ", but current " + changeId.get();
 
                     changeId.set(newChangeId);
 

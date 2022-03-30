@@ -209,11 +209,11 @@ public class Loza implements IgniteComponent {
 
         if (hasLocalRaft) {
             if (!raftServer.startRaftGroup(groupId, raftGroupEventsListener, lsnrSupplier.get(), peers)) {
-                throw new IgniteInternalException(IgniteStringFormatter.format(
-                        "Raft group on the node is already started [node={}, raftGrp={}]",
-                        locNodeName,
-                        groupId
-                ));
+//                throw new IgniteInternalException(IgniteStringFormatter.format(
+//                        "Raft group on the node is already started [node={}, raftGrp={}]",
+//                        locNodeName,
+//                        groupId
+//                ));
             }
         }
 
@@ -236,19 +236,19 @@ public class Loza implements IgniteComponent {
             List<ClusterNode> currentNodes,
             Supplier<RaftGroupListener> lsnrSupplier) {
 
-        List<Peer> peers = newNodes.stream().map(n -> new Peer(n.address())).collect(Collectors.toList());
+        List<Peer> peers = currentNodes.stream().map(n -> new Peer(n.address())).collect(Collectors.toList());
 
         String locNodeName = clusterNetSvc.topologyService().localMember().name();
 
-        boolean hasLocalRaft = newNodes.stream().anyMatch(n -> locNodeName.equals(n.name()));
+        boolean hasLocalRaft = newNodes.stream().filter(n -> !currentNodes.contains(n)).anyMatch(n -> locNodeName.equals(n.name()));
 
         if (hasLocalRaft) {
             if (!raftServer.startRaftGroup(groupId, lsnrSupplier.get(), peers)) {
-                throw new IgniteInternalException(IgniteStringFormatter.format(
-                        "Raft group on the node is already started [node={}, raftGrp={}]",
-                        locNodeName,
-                        groupId
-                ));
+//                throw new IgniteInternalException(IgniteStringFormatter.format(
+//                        "Raft group on the node is already started [node={}, raftGrp={}]",
+//                        locNodeName,
+//                        groupId
+//                ));
             }
         }
 
@@ -259,7 +259,7 @@ public class Loza implements IgniteComponent {
                 RETRY_TIMEOUT,
                 RPC_TIMEOUT,
                 peers,
-                true,
+                false,
                 DELAY,
                 executor
         );
@@ -313,11 +313,11 @@ public class Loza implements IgniteComponent {
 
         if (deltaNodes.stream().anyMatch(n -> locNodeName.equals(n.name()))) {
             if (!raftServer.startRaftGroup(groupId, lsnrSupplier.get(), peers)) {
-                throw new IgniteInternalException(IgniteStringFormatter.format(
-                        "Raft group on the node is already started [node={}, raftGrp={}]",
-                        locNodeName,
-                        groupId
-                ));
+//                throw new IgniteInternalException(IgniteStringFormatter.format(
+//                        "Raft group on the node is already started [node={}, raftGrp={}]",
+//                        locNodeName,
+//                        groupId
+//                ));
             }
         }
 

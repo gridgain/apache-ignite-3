@@ -93,6 +93,8 @@ public class RaftGroupServiceImpl implements RaftGroupService {
     /** */
     private volatile Peer leader;
 
+    private volatile long term;
+
     /** */
     private volatile List<Peer> peers;
 
@@ -247,6 +249,7 @@ public class RaftGroupServiceImpl implements RaftGroupService {
 
         return fut.thenApply(resp -> {
             leader = parsePeer(resp.leaderId());
+            term = resp.currentTerm();
 
             return null;
         });
@@ -338,6 +341,7 @@ public class RaftGroupServiceImpl implements RaftGroupService {
     }
 
     @Override public CompletableFuture<ChangePeersAsyncStatus> changePeersAsync(List<Peer> peers) {
+        LOG.error("[R] ChangePeersAsync");
         Peer leader = this.leader;
 
         if (leader == null)
@@ -347,6 +351,7 @@ public class RaftGroupServiceImpl implements RaftGroupService {
                 .collect(Collectors.toList());
 
         ChangePeersAsyncRequest req = factory.changePeersAsyncRequest().groupId(groupId)
+                .term(term)
                 .newPeersList(peersToChange).build();
 
         CompletableFuture<ChangePeersAsyncResponse> fut = new CompletableFuture<>();
@@ -549,7 +554,9 @@ public class RaftGroupServiceImpl implements RaftGroupService {
                 }
 
                 if (err != null) {
+                    LOG.error("[R] Peer " + peer + " " + req, err);
                     if (recoverable(err)) {
+                        LOG.error("OPS ", err);
                         executor.schedule(() -> {
                             sendWithRetry(randomNode(), req, stopTime, fut);
 

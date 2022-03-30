@@ -113,45 +113,45 @@ public class IgniteImpl implements Ignite {
     private final String name;
 
     /** Vault manager. */
-    private final VaultManager vaultMgr;
+    public final VaultManager vaultMgr;
 
     /** Sql query engine. */
-    private final SqlQueryProcessor qryEngine;
+    public final SqlQueryProcessor qryEngine;
 
     /** Configuration manager that handles node (local) configuration. */
-    private final ConfigurationManager nodeCfgMgr;
+    public final ConfigurationManager nodeCfgMgr;
 
     /** Cluster service (cluster network manager). */
-    private final ClusterService clusterSvc;
+    public final ClusterService clusterSvc;
 
     private final ComputeComponent computeComponent;
 
     /** Netty bootstrap factory. */
-    private final NettyBootstrapFactory nettyBootstrapFactory;
+    public final NettyBootstrapFactory nettyBootstrapFactory;
 
     /** Raft manager. */
-    private final Loza raftMgr;
+    public final Loza raftMgr;
 
     /** Meta storage manager. */
-    private final MetaStorageManager metaStorageMgr;
+    public final MetaStorageManager metaStorageMgr;
 
     /** Configuration manager that handles cluster (distributed) configuration. */
-    private final ConfigurationManager clusterCfgMgr;
+    public final ConfigurationManager clusterCfgMgr;
 
     /** Baseline manager. */
-    private final BaselineManager baselineMgr;
+    public final BaselineManager baselineMgr;
 
     /** Transactions manager. */
-    private final TxManager txManager;
+    public final TxManager txManager;
 
     /** Distributed table manager. */
-    private final TableManager distributedTblMgr;
+    public final TableManager distributedTblMgr;
 
     /** Rest module. */
-    private final RestComponent restComponent;
+    public final RestComponent restComponent;
 
     /** Client handler module. */
-    private final ClientHandlerModule clientHandlerModule;
+    public final ClientHandlerModule clientHandlerModule;
 
     /** Node status. Adds ability to stop currently starting node. */
     private final AtomicReference<Status> status = new AtomicReference<>(Status.STARTING);

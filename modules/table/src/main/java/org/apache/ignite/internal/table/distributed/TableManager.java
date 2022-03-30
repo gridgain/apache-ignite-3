@@ -20,7 +20,6 @@ package org.apache.ignite.internal.table.distributed;
 import static org.apache.ignite.configuration.schemas.store.DataStorageConfigurationSchema.DEFAULT_DATA_REGION_NAME;
 import static org.apache.ignite.internal.configuration.util.ConfigurationUtil.directProxy;
 import static org.apache.ignite.internal.configuration.util.ConfigurationUtil.getByInternalId;
-import static org.apache.ignite.internal.utils.RebalanceUtil.partAssignmentsPendingKey;
 import static org.apache.ignite.internal.utils.RebalanceUtil.updateAssignmentsKeys;
 
 import it.unimi.dsi.fastutil.ints.Int2ObjectOpenHashMap;
@@ -67,7 +66,6 @@ import org.apache.ignite.internal.manager.EventListener;
 import org.apache.ignite.internal.manager.IgniteComponent;
 import org.apache.ignite.internal.manager.Producer;
 import org.apache.ignite.internal.metastorage.MetaStorageManager;
-import org.apache.ignite.internal.metastorage.client.StatementResult;
 import org.apache.ignite.internal.raft.Loza;
 import org.apache.ignite.internal.schema.SchemaDescriptor;
 import org.apache.ignite.internal.schema.SchemaUtils;
@@ -89,7 +87,7 @@ import org.apache.ignite.internal.tx.TxManager;
 import org.apache.ignite.internal.util.ByteUtils;
 import org.apache.ignite.internal.util.IgniteObjectName;
 import org.apache.ignite.internal.util.IgniteSpinBusyLock;
-import org.apache.ignite.lang.ByteArray;
+import org.apache.ignite.internal.utils.RebalanceUtil;
 import org.apache.ignite.lang.IgniteException;
 import org.apache.ignite.lang.IgniteInternalException;
 import org.apache.ignite.lang.IgniteLogger;
@@ -321,8 +319,9 @@ public class TableManager extends Producer<TableEvent, TableEventParameters> imp
                             int finalI = i;
                             RebalanceManager.registerListener(
                                     tblName,
-                                    RebalanceUtil.partAssignmentsPendingKey(tblCfg.id().value().toString(), String.valueOf(i)),
-                                    tablesCfg,
+                                    i,
+                                    RebalanceUtil.partAssignmentsPendingKey(partitionRaftGroupName(tblCfg.id().value(), i)),
+                                    tblCfg,
                                     partitionRaftGroupName(tblCfg.id().value(), i),
                                     metaStorageMgr,
                                     raftMgr,
@@ -354,7 +353,7 @@ public class TableManager extends Producer<TableEvent, TableEventParameters> imp
                                             String partId = partitionRaftGroupName(((ExtendedTableConfiguration) tableCfg).id().value(), i);
 
                                             futures[i] = updateAssignmentsKeys(partId, baselineMgr.baselineNodes(), partCount, newReplicas,
-                                                    replicasCtx.storageRevision(), metaStorageMgr);
+                                                    replicasCtx.storageRevision(), metaStorageMgr, i);
                                         }
 
                                         return CompletableFuture.allOf(futures);
@@ -578,7 +577,7 @@ public class TableManager extends Producer<TableEvent, TableEventParameters> imp
                                 assignment.get(p),
                                 () -> new PartitionListener(tblId,
                                         new VersionedRowStore(tableStorage.getOrCreatePartition(partId), txManager)),
-                                RebalanceManager.raftGroupEventsListener(name, p, tableCfg, LOG)
+                                RebalanceManager.raftGroupEventsListener(name, p, tableCfg, LOG, metaStorageMgr, partitionRaftGroupName(tblId, partId), raftMgr.service().topologyService())
                         )
                 );
             } catch (NodeStoppingException e) {
