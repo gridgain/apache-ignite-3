@@ -232,15 +232,16 @@ public class Loza implements IgniteComponent {
 
     public CompletableFuture<RaftGroupService> startRaftGroupIfNeeded(
             String groupId,
-            List<ClusterNode> newNodes,
             List<ClusterNode> currentNodes,
+            List<ClusterNode> newNodes,
             Supplier<RaftGroupListener> lsnrSupplier) {
 
         List<Peer> peers = currentNodes.stream().map(n -> new Peer(n.address())).collect(Collectors.toList());
 
         String locNodeName = clusterNetSvc.topologyService().localMember().name();
 
-        boolean hasLocalRaft = newNodes.stream().filter(n -> !currentNodes.contains(n)).anyMatch(n -> locNodeName.equals(n.name()));
+//        boolean hasLocalRaft = newNodes.stream().filter(n -> !currentNodes.contains(n)).anyMatch(n -> locNodeName.equals(n.name()));
+        boolean hasLocalRaft = newNodes.stream().anyMatch(n -> locNodeName.equals(n.name()));
 
         if (hasLocalRaft) {
             if (!raftServer.startRaftGroup(groupId, lsnrSupplier.get(), peers)) {
@@ -259,7 +260,7 @@ public class Loza implements IgniteComponent {
                 RETRY_TIMEOUT,
                 RPC_TIMEOUT,
                 peers,
-                false,
+                true,
                 DELAY,
                 executor
         );
@@ -294,6 +295,21 @@ public class Loza implements IgniteComponent {
         }
     }
 
+    public CompletableFuture<RaftGroupService> updateRaftGroupClient(
+            String groupId,
+            Collection<ClusterNode> nodes
+    ) throws NodeStoppingException {
+        if (!busyLock.enterBusy()) {
+            throw new NodeStoppingException();
+        }
+
+        try {
+            return updateRaftGroupInternalClient(groupId, nodes);
+        } finally {
+            busyLock.leaveBusy();
+        }
+    }
+
     /**
      * Internal method for updating a raft group.
      *
@@ -320,6 +336,23 @@ public class Loza implements IgniteComponent {
 //                ));
             }
         }
+
+        return RaftGroupServiceImpl.start(
+                groupId,
+                clusterNetSvc,
+                FACTORY,
+                RETRY_TIMEOUT,
+                peers,
+                true,
+                DELAY,
+                executor
+        );
+    }
+
+    private CompletableFuture<RaftGroupService> updateRaftGroupInternalClient(String groupId, Collection<ClusterNode> nodes) {
+        assert !nodes.isEmpty();
+
+        List<Peer> peers = nodes.stream().map(n -> new Peer(n.address())).collect(Collectors.toList());
 
         return RaftGroupServiceImpl.start(
                 groupId,

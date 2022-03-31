@@ -228,7 +228,7 @@ public class VersionedValue<T> {
     public T update(long causalityToken, Function<T, T> complete, Function<Throwable, T> fail) {
         long  actualToken0 = actualToken;
 
-        assert actualToken0 + 1 == causalityToken : IgniteStringFormatter.format("Token must be greater than actual by exactly 1 "
+        assert actualToken0 + 1 <= causalityToken : IgniteStringFormatter.format("Token must be greater than actual by exactly 1 "
                 + "[token={}, actual={}]", causalityToken, actualToken0);
 
         Entry<Long, CompletableFuture<T>> histEntry = history.floorEntry(actualToken0);

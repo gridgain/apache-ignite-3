@@ -55,14 +55,13 @@ public class RebalanceManager {
         return tableName + "." + partition + ".assignments.planned";
     }
 
-    public static CompletableFuture<Long> registerListener(String tableName, int partNumber, ByteArray pendingAssignments, ExtendedTableConfiguration tablesCfg, String groupId, MetaStorageManager mgr, Loza loza, Supplier<RaftGroupListener> raftGrpLsnr) {
+    public static CompletableFuture<Long> registerListener(String tableName, int partNumber, ByteArray pendingAssignments, Supplier<List<ClusterNode>> assignments, String groupId, MetaStorageManager mgr, Loza loza, Supplier<RaftGroupListener> raftGrpLsnr) {
         System.out.println("LISTEN KEY " + pendingAssignments);
         return mgr.registerWatch(pendingAssignments, new WatchListener() {
             @Override
             public boolean onUpdate(@NotNull WatchEvent evt) {
                 List<ClusterNode> newPeers = ((List<ClusterNode>) ByteUtils.fromBytes(evt.entryEvent().newEntry().value()));
-                List<ClusterNode> currentPeers = ((List<List<ClusterNode>>) ByteUtils.fromBytes(tablesCfg.assignments().value())).get(partNumber);
-                var raftGrpSvc = loza.startRaftGroupIfNeeded(groupId, newPeers, currentPeers, raftGrpLsnr).join();
+                var raftGrpSvc = loza.startRaftGroupIfNeeded(groupId, assignments.get(), newPeers, raftGrpLsnr).join();
 
                 raftGrpSvc.refreshLeader().join();
                 System.out.println("Current peer " +new Peer(raftGrpSvc.clusterService().topologyService().localMember().address()) + "leader is "  + raftGrpSvc.leader());
@@ -111,29 +110,29 @@ public class RebalanceManager {
 
             @Override
             public void onNewPeersConfigurationApplied(List<PeerId> peers) {
-                Entry entry = mgr.get(partAssignmentsPlannedKey(partId)).join();
-                System.out.println("KEY " + partAssignmentsPendingKey(partId).toString());
-                if (entry.value() != null) {
-                    if (!mgr.invoke(If.iif(
-                            revision(partAssignmentsPlannedKey(partId)).eq(entry.revision()),
-                            ops(
-                                    put(partAssignmentsStableKey(partId), ByteUtils.toBytes(peers)),
-                                    put(partAssignmentsPendingKey(partId), entry.value()),
-                                    remove(partAssignmentsPlannedKey(partId)))
-                                    .yield(true),
-                            ops().yield(false))).join().getAsBoolean()) {
-                        onNewPeersConfigurationApplied(peers);
-                        return;
-                    }
-                } else {
-                    if (!mgr.invoke(If.iif(
-                            revision(partAssignmentsPlannedKey(partId)).eq(entry.revision()),
-                            ops(put(partAssignmentsStableKey(partId), ByteUtils.toBytes(peers)), remove(partAssignmentsPendingKey(partId))).yield(true),
-                            ops().yield(false))).join().getAsBoolean()) {
-                        onNewPeersConfigurationApplied(peers);
-                        return;
-                    }
-                }
+//                Entry entry = mgr.get(partAssignmentsPlannedKey(partId)).join();
+//                System.out.println("KEY " + partAssignmentsPendingKey(partId).toString());
+//                if (entry.value() != null) {
+//                    if (!mgr.invoke(If.iif(
+//                            revision(partAssignmentsPlannedKey(partId)).eq(entry.revision()),
+//                            ops(
+//                                    put(partAssignmentsStableKey(partId), ByteUtils.toBytes(peers)),
+//                                    put(partAssignmentsPendingKey(partId), entry.value()),
+//                                    remove(partAssignmentsPlannedKey(partId)))
+//                                    .yield(true),
+//                            ops().yield(false))).join().getAsBoolean()) {
+//                        onNewPeersConfigurationApplied(peers);
+//                        return;
+//                    }
+//                } else {
+//                    if (!mgr.invoke(If.iif(
+//                            revision(partAssignmentsPlannedKey(partId)).eq(entry.revision()),
+//                            ops(put(partAssignmentsStableKey(partId), ByteUtils.toBytes(peers)), remove(partAssignmentsPendingKey(partId))).yield(true),
+//                            ops().yield(false))).join().getAsBoolean()) {
+//                        onNewPeersConfigurationApplied(peers);
+//                        return;
+//                    }
+//                }
 
                 view.change(ch -> {
                     List<List<ClusterNode>> assignments = (List<List<ClusterNode>>) ByteUtils.fromBytes(((ExtendedTableChange) ch).assignments());

@@ -46,6 +46,7 @@ public class IgniteLogger {
      */
     protected IgniteLogger(@NotNull Class<?> cls) {
         log = System.getLogger(Objects.requireNonNull(cls).getName());
+        log.isLoggable(Level.ALL);
     }
 
     /**

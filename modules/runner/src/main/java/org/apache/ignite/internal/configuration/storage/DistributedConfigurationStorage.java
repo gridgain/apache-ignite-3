@@ -282,8 +282,17 @@ public class DistributedConfigurationStorage implements ConfigurationStorage {
 
                     long newChangeId = masterKeyEntry.revision();
 
-                    assert newChangeId > changeId.get() : "New change Id " + newChangeId + ", but current " + changeId.get();
+//                    System.out.println("----------------------------------------");
+//                    if (events.single())
+//                        System.out.println(events.entryEvent().newEntry().key());
+//                    else
+//                        events.entryEvents().forEach(e -> System.out.println(e.newEntry().key().toString()));
+                    if (newChangeId < changeId.get())
+                        System.exit(22);
+                    assert newChangeId >= changeId.get() : "New change Id " + newChangeId + ", but current " + changeId.get();
 
+                    if (newChangeId == changeId.get())
+                        return true;
                     changeId.set(newChangeId);
 
                     lsnr.onEntriesChanged(new Data(data, newChangeId)).join();

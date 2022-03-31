@@ -314,27 +314,27 @@ public class TableManager extends Producer<TableEvent, TableEventParameters> imp
                                     }
                                 });
 
-                        for (int i = 0; i < ctx.newValue().partitions(); i++) {
-                            ExtendedTableConfiguration tblCfg = (ExtendedTableConfiguration) tablesCfg.tables().get(tblName);
-                            int finalI = i;
-                            RebalanceManager.registerListener(
-                                    tblName,
-                                    i,
-                                    RebalanceUtil.partAssignmentsPendingKey(partitionRaftGroupName(tblCfg.id().value(), i)),
-                                    tblCfg,
-                                    partitionRaftGroupName(tblCfg.id().value(), i),
-                                    metaStorageMgr,
-                                    raftMgr,
-                                    () -> {
-                                        try {
-                                            return new PartitionListener(tblId,
-                                                    new VersionedRowStore(table(tblId).internalTable().storage().getOrCreatePartition(finalI),
-                                                            txManager));
-                                        } catch (NodeStoppingException e) {
-                                            throw new RuntimeException(e);
-                                        }
-                                    }).exceptionally(e -> { LOG.error("NONONON", e); return 1L; });
-                        }
+//                        for (int i = 0; i < ctx.newValue().partitions(); i++) {
+//                            ExtendedTableConfiguration tblCfg = (ExtendedTableConfiguration) tablesCfg.tables().get(tblName);
+//                            int finalI = i;
+//                            RebalanceManager.registerListener(
+//                                    tblName,
+//                                    i,
+//                                    RebalanceUtil.partAssignmentsPendingKey(partitionRaftGroupName(tblCfg.id().value(), i)),
+//                                    tblCfg,
+//                                    partitionRaftGroupName(tblCfg.id().value(), i),
+//                                    metaStorageMgr,
+//                                    raftMgr,
+//                                    () -> {
+//                                        try {
+//                                            return new PartitionListener(tblId,
+//                                                    new VersionedRowStore(table(tblId).internalTable().storage().getOrCreatePartition(finalI),
+//                                                            txManager));
+//                                        } catch (NodeStoppingException e) {
+//                                            throw new RuntimeException(e);
+//                                        }
+//                                    }).exceptionally(e -> { LOG.error("NONONON", e); return 1L; });
+//                        }
                         ((ExtendedTableConfiguration) tablesCfg.tables().get(tblName)).replicas()
                                 .listen(replicasCtx -> {
                                     if (!busyLock.enterBusy()) {
@@ -405,13 +405,9 @@ public class TableManager extends Producer<TableEvent, TableEventParameters> imp
                                 InternalTable internalTable = tablesById.get(tblId).internalTable();
 
                                 try {
-                                    return raftMgr.updateRaftGroup(
+                                    return raftMgr.updateRaftGroupClient(
                                             partitionRaftGroupName(tblId, partId),
-                                            newPartitionAssignment,
-                                            toAdd,
-                                            () -> new PartitionListener(tblId,
-                                                    new VersionedRowStore(internalTable.storage().getOrCreatePartition(partId),
-                                                            txManager))
+                                            newPartitionAssignment
                                     ).thenAccept(
                                             updatedRaftGroupService -> ((InternalTableImpl) internalTable)
                                                     .updateInternalTableRaftGroupService(partId, updatedRaftGroupService)
@@ -567,6 +563,7 @@ public class TableManager extends Producer<TableEvent, TableEventParameters> imp
 
         tableStorage.start();
 
+        List<CompletableFuture<Long>> futs = new ArrayList<>();
         for (int p = 0; p < partitions; p++) {
             int partId = p;
 
@@ -583,8 +580,21 @@ public class TableManager extends Producer<TableEvent, TableEventParameters> imp
             } catch (NodeStoppingException e) {
                 throw new AssertionError("Loza was stopped before Table manager", e);
             }
+            futs.add(RebalanceManager.registerListener(
+                    name,
+                    p,
+                    RebalanceUtil.partAssignmentsPendingKey(partitionRaftGroupName(tblId, p)),
+                    () -> {return ((List<List<ClusterNode>>) ByteUtils.fromBytes(((ExtendedTableConfiguration) tableCfg).assignments().value())).get(partId); },
+                    partitionRaftGroupName(tblId, p),
+                    metaStorageMgr,
+                    raftMgr,
+                    () -> new PartitionListener(tblId,
+                            new VersionedRowStore(tableStorage.getOrCreatePartition(partId), txManager))
+            ));
         }
 
+        CompletableFuture.allOf(futs.toArray(CompletableFuture[]::new)).thenRunAsync(() ->
+                System.out.println("All listeners ready"));
         CompletableFuture.allOf(partitionsGroupsFutures.toArray(CompletableFuture[]::new)).thenRun(() -> {
             Int2ObjectOpenHashMap<RaftGroupService> partitionMap = new Int2ObjectOpenHashMap<>(partitions);
 

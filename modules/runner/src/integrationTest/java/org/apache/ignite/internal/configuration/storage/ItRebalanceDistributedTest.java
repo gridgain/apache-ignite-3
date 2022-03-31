@@ -278,21 +278,16 @@ public class ItRebalanceDistributedTest {
             var config = String.format("{\"node\": {\"metastorageNodes\": [ \"%s\" ]}}", firstName);
 
             nodeCfgMgr.bootstrap(config);
-//            clusterService.start();
-//
-//            // this is needed to avoid assertion errors
-////            cfgStorage.registerConfigurationListener(changedEntries -> completedFuture(null));
-//            clusterCfgMgr.start();
 
 
-
-            Stream.of(raftManager, txManager, metaStorageManager, baselineMgr, tableManager).forEach(IgniteComponent::start);
+            Stream.of(clusterService, clusterCfgMgr, raftManager, txManager, metaStorageManager, baselineMgr, tableManager).forEach(IgniteComponent::start);
 
 
             CompletableFuture.allOf(
                     nodeCfgMgr.configurationRegistry().notifyCurrentConfigurationListeners(),
                     clusterCfgMgr.configurationRegistry().notifyCurrentConfigurationListeners()
             ).get();
+
 
             // deploy watches to propagate data from the metastore into the vault
             metaStorageManager.deployWatches();
