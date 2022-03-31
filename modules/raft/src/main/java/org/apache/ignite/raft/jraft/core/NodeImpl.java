@@ -448,7 +448,10 @@ public class NodeImpl implements Node, RaftServerService {
                 this.done = (Status status) -> {
                     if (node.getOptions().getRaftGrpEvtsLsnr() != null) {
                         if (status.isOk()) {
-                            node.getOptions().getRaftGrpEvtsLsnr().onNewPeersConfigurationApplied(resultPeers);
+                            if (this.node.isLeader()) {
+                                System.out.println("I'm " + this.node.serverId + " and I'm is a leader!!!" );
+                                node.getOptions().getRaftGrpEvtsLsnr().onNewPeersConfigurationApplied(resultPeers);
+                            }
                         } else {
                             node.getOptions().getRaftGrpEvtsLsnr().onReconfigurationError(status);
                         }

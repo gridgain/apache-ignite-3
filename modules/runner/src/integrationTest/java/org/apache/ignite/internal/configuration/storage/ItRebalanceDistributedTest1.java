@@ -84,7 +84,7 @@ public class ItRebalanceDistributedTest1 {
     private static String firstName;
 
     @Test
-    void test() throws Exception {
+    void test1Rebalance() throws Exception {
 
         var nodes = startGrid();
 
@@ -125,6 +125,109 @@ public class ItRebalanceDistributedTest1 {
 //        for (Node node : nodes) {
 //            node.stop();
 //        }
+    }
+
+    @Test
+    void test2Rebalance() throws Exception {
+
+        var nodes = startGrid();
+
+        TableDefinition schTbl1 = SchemaBuilders.tableBuilder("PUBLIC", "tbl1").columns(
+                SchemaBuilders.column("key", ColumnType.INT64).build(),
+                SchemaBuilders.column("val", ColumnType.INT32).asNullable(true).build()
+        ).withPrimaryKey("key").build();
+
+        nodes.get(0).distributedTblMgr.createTable(
+                "PUBLIC.tbl1",
+                tblChanger -> SchemaConfigurationConverter.convert(schTbl1, tblChanger)
+                        .changeReplicas(1)
+                        .changePartitions(1));
+
+        assertEquals(1, nodes.get(0).clusterCfgMgr.configurationRegistry().getConfiguration(TablesConfiguration.KEY).tables().get("PUBLIC.TBL1").replicas().value());
+
+        nodes.get(0).distributedTblMgr.alterTable("PUBLIC.TBL1", ch -> ch.changeReplicas(2));
+        nodes.get(0).distributedTblMgr.alterTable("PUBLIC.TBL1", ch -> ch.changeReplicas(3));
+
+        UUID tableId = ((TableImpl) nodes.get(0).distributedTblMgr.table("PUBLIC.TBL1")).internalTable().tableId();
+
+        assertEquals(3, nodes.get(0).clusterCfgMgr.configurationRegistry().getConfiguration(TablesConfiguration.KEY).tables().get("PUBLIC.TBL1").replicas().value());
+
+        System.out.println("AAND");
+
+        Supplier<List<List<ClusterNode>>> getNodes = () -> {
+            return (List<List<ClusterNode>>) ByteUtils.fromBytes(((ExtendedTableConfiguration) nodes.get(0).clusterCfgMgr.configurationRegistry().getConfiguration(TablesConfiguration.KEY).tables().get("PUBLIC.TBL1")).assignments().value());
+        };
+        while (getNodes.get().get(0).size() != 3) {
+            LockSupport.parkNanos(1000_000_000);
+//            System.out.println(((List<List<ClusterNode>>) ByteUtils.fromBytes(nodes.get(0).metaStorageManager.get(RebalanceUtil.partAssignmentsStableKey(tableId + "_part_" + 0)).join().value())).get(0).stream().map(ClusterNode::toString).collect(
+//                    Collectors.joining(",")));
+//            System.out.println(((List<List<ClusterNode>>) ByteUtils.fromBytes(nodes.get(0).metaStorageManager.get(RebalanceUtil.partAssignmentsPlannedKey(tableId + "_part_" + 0)).join().value())).get(0).stream().map(ClusterNode::toString).collect(
+//                    Collectors.joining(",")));
+        }
+        assertEquals(3, getNodes.get().get(0).size());
+//        nodes.get(0).metaStorageMgr.prefix(ByteArray.fromString(tableId.toString())).forEach(e -> System.out.println(new ByteArray(e.key()).toString()));
+//        for (Node node : nodes) {
+//            node.stop();
+//        }
+    }
+
+    @Test
+    void test3Rebalance() throws Exception {
+
+        var nodes = startGrid();
+
+        TableDefinition schTbl1 = SchemaBuilders.tableBuilder("PUBLIC", "tbl1").columns(
+                SchemaBuilders.column("key", ColumnType.INT64).build(),
+                SchemaBuilders.column("val", ColumnType.INT32).asNullable(true).build()
+        ).withPrimaryKey("key").build();
+
+        nodes.get(0).distributedTblMgr.createTable(
+                "PUBLIC.tbl1",
+                tblChanger -> SchemaConfigurationConverter.convert(schTbl1, tblChanger)
+                        .changeReplicas(1)
+                        .changePartitions(1));
+
+        assertEquals(1,
+                nodes.get(0).clusterCfgMgr.configurationRegistry().getConfiguration(TablesConfiguration.KEY).tables().get("PUBLIC.TBL1")
+                        .replicas().value());
+
+        nodes.get(0).distributedTblMgr.alterTable("PUBLIC.TBL1", ch -> ch.changeReplicas(2));
+        nodes.get(0).distributedTblMgr.alterTable("PUBLIC.TBL1", ch -> ch.changeReplicas(3));
+
+        UUID tableId = ((TableImpl) nodes.get(0).distributedTblMgr.table("PUBLIC.TBL1")).internalTable().tableId();
+
+        assertEquals(3,
+                nodes.get(0).clusterCfgMgr.configurationRegistry().getConfiguration(TablesConfiguration.KEY).tables().get("PUBLIC.TBL1")
+                        .replicas().value());
+
+        System.out.println("AAND");
+
+        Supplier<List<List<ClusterNode>>> getNodes = () -> {
+            return (List<List<ClusterNode>>) ByteUtils.fromBytes(
+                    ((ExtendedTableConfiguration) nodes.get(0).clusterCfgMgr.configurationRegistry()
+                            .getConfiguration(TablesConfiguration.KEY).tables().get("PUBLIC.TBL1")).assignments().value());
+        };
+        while (getNodes.get().get(0).size() != 3) {
+            LockSupport.parkNanos(1000_000_000);
+//            System.out.println(((List<List<ClusterNode>>) ByteUtils.fromBytes(nodes.get(0).metaStorageManager.get(RebalanceUtil.partAssignmentsStableKey(tableId + "_part_" + 0)).join().value())).get(0).stream().map(ClusterNode::toString).collect(
+//                    Collectors.joining(",")));
+//            System.out.println(((List<List<ClusterNode>>) ByteUtils.fromBytes(nodes.get(0).metaStorageManager.get(RebalanceUtil.partAssignmentsPlannedKey(tableId + "_part_" + 0)).join().value())).get(0).stream().map(ClusterNode::toString).collect(
+//                    Collectors.joining(",")));
+        }
+        assertEquals(3, getNodes.get().get(0).size());
+        nodes.get(0).distributedTblMgr.alterTable("PUBLIC.TBL1", ch -> ch.changeReplicas(2));
+        while (getNodes.get().get(0).size() != 2) {
+            LockSupport.parkNanos(1000_000_000);
+//            System.out.println(((List<List<ClusterNode>>) ByteUtils.fromBytes(nodes.get(0).metaStorageManager.get(RebalanceUtil.partAssignmentsStableKey(tableId + "_part_" + 0)).join().value())).get(0).stream().map(ClusterNode::toString).collect(
+//                    Collectors.joining(",")));
+//            System.out.println(((List<List<ClusterNode>>) ByteUtils.fromBytes(nodes.get(0).metaStorageManager.get(RebalanceUtil.partAssignmentsPlannedKey(tableId + "_part_" + 0)).join().value())).get(0).stream().map(ClusterNode::toString).collect(
+//                    Collectors.joining(",")));
+        }
+//        nodes.get(0).metaStorageMgr.prefix(ByteArray.fromString(tableId.toString())).forEach(e -> System.out.println(new ByteArray(e.key()).toString()));
+//        for (Node node : nodes) {
+//            node.stop();
+//        }
+        assertEquals(2, getNodes.get().get(0).size());
     }
 
     @NotNull

@@ -14,6 +14,7 @@ import static org.apache.ignite.internal.utils.RebalanceUtil.partAssignmentsStab
 
 import java.util.Collection;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.CompletableFuture;
 import java.util.function.Supplier;
@@ -60,6 +61,14 @@ public class RebalanceManager {
         return mgr.registerWatch(pendingAssignments, new WatchListener() {
             @Override
             public boolean onUpdate(@NotNull WatchEvent evt) {
+                if (!evt.single()) System.exit(2);
+                if (evt.entryEvent().newEntry().value() == null) return true;
+                System.out.println("Entry event is single " + evt.single());
+                if (evt.entryEvent().newEntry().value() != null)
+                    System.out.println("Received update for single: " + evt.single() + " with " + ByteUtils.fromBytes(evt.entryEvent().newEntry().value()));
+                else
+                    System.out.println("Null new pending items");
+
                 List<ClusterNode> newPeers = ((List<ClusterNode>) ByteUtils.fromBytes(evt.entryEvent().newEntry().value()));
                 var raftGrpSvc = loza.startRaftGroupIfNeeded(groupId, assignments.get(), newPeers, raftGrpLsnr).join();
 
@@ -84,7 +93,7 @@ public class RebalanceManager {
 
                 }
                 raftGrpSvc.shutdown();
-                return false;
+                return true;
             }
 
             @Override
@@ -110,35 +119,43 @@ public class RebalanceManager {
 
             @Override
             public void onNewPeersConfigurationApplied(List<PeerId> peers) {
-//                Entry entry = mgr.get(partAssignmentsPlannedKey(partId)).join();
-//                System.out.println("KEY " + partAssignmentsPendingKey(partId).toString());
-//                if (entry.value() != null) {
-//                    if (!mgr.invoke(If.iif(
-//                            revision(partAssignmentsPlannedKey(partId)).eq(entry.revision()),
-//                            ops(
-//                                    put(partAssignmentsStableKey(partId), ByteUtils.toBytes(peers)),
-//                                    put(partAssignmentsPendingKey(partId), entry.value()),
-//                                    remove(partAssignmentsPlannedKey(partId)))
-//                                    .yield(true),
-//                            ops().yield(false))).join().getAsBoolean()) {
-//                        onNewPeersConfigurationApplied(peers);
-//                        return;
-//                    }
-//                } else {
-//                    if (!mgr.invoke(If.iif(
-//                            revision(partAssignmentsPlannedKey(partId)).eq(entry.revision()),
-//                            ops(put(partAssignmentsStableKey(partId), ByteUtils.toBytes(peers)), remove(partAssignmentsPendingKey(partId))).yield(true),
-//                            ops().yield(false))).join().getAsBoolean()) {
-//                        onNewPeersConfigurationApplied(peers);
-//                        return;
-//                    }
-//                }
+                System.out.println("onNewPeersConfigurationApplied " + peers);
+                var keys = mgr.getAll(Set.of(partAssignmentsPlannedKey(partId), partAssignmentsPendingKey(partId))).join();
+                Entry plannedEntry = keys.get(partAssignmentsPlannedKey(partId));
+                Entry pendingEntry = keys.get(partAssignmentsPendingKey(partId));
+                System.out.println("Old pending keys: " + ByteUtils.fromBytes(pendingEntry.value()));
+                if (plannedEntry.value() != null) System.out.println("Old planned keys: " + ByteUtils.fromBytes(plannedEntry.value()));
+                if (plannedEntry.value() != null) {
+                    if (!mgr.invoke(If.iif(
+                            revision(partAssignmentsPlannedKey(partId)).eq(plannedEntry.revision()),
+                            ops(
+                                    put(partAssignmentsStableKey(partId), pendingEntry.value()),
+                                    put(partAssignmentsPendingKey(partId), plannedEntry.value()),
+                                    remove(partAssignmentsPlannedKey(partId)))
+                                    .yield(true),
+                            ops().yield(false))).join().getAsBoolean()) {
+                        onNewPeersConfigurationApplied(peers);
+                        return;
+                    }
+                } else {
+                    if (!mgr.invoke(If.iif(
+                            notExists(partAssignmentsPlannedKey(partId)),
+                            ops(put(partAssignmentsStableKey(partId), pendingEntry.value()), remove(partAssignmentsPendingKey(partId))).yield(true),
+                            ops().yield(false))).join().getAsBoolean()) {
+                        onNewPeersConfigurationApplied(peers);
+                        return;
+                    }
+                }
+
+//                System.out.println("New Pending keys: " + " " +
+//                        ((List<ClusterNode>) ByteUtils.fromBytes(mgr.get(partAssignmentsPendingKey(partId)).join().value())).toString());
+
+//                System.out.println("New Planned keys: " + " " +
+//                        ((List<ClusterNode>) ByteUtils.fromBytes(mgr.get(partAssignmentsPlannedKey(partId)).join().value())).toString());
 
                 view.change(ch -> {
                     List<List<ClusterNode>> assignments = (List<List<ClusterNode>>) ByteUtils.fromBytes(((ExtendedTableChange) ch).assignments());
-                    var clusterNodes = topologyService.allMembers().stream().filter(m -> peers.stream().anyMatch(p -> new NetworkAddress(p.getEndpoint().getIp(), p.getEndpoint().getPort()).equals(m.address()))).collect(
-                            Collectors.toList());
-                    assignments.set(partitionId, clusterNodes);
+                    assignments.set(partitionId, ((List<ClusterNode>) ByteUtils.fromBytes(pendingEntry.value())));
                     ((ExtendedTableChange) ch).changeAssignments(ByteUtils.toBytes(assignments));
                 });
 
