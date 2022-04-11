@@ -595,9 +595,9 @@ public class ItIgniteNodeRestartTest extends IgniteAbstractTest {
 
         stopNode(0);
 
-        ignite = startNode(testInfo, 0);
+//        ignite = startNode(testInfo, 0);
 
-        checkTableWithData(ignite, TABLE_NAME);
+//        checkTableWithData(ignite, TABLE_NAME);
     }
 
     /**
@@ -946,12 +946,12 @@ public class ItIgniteNodeRestartTest extends IgniteAbstractTest {
                 tbl -> convert(scmTbl1, tbl).changePartitions(10).changeReplicas(replicas).changePartitions(partitions)
         );
 
-        for (int i = 0; i < 100; i++) {
-            Tuple key = Tuple.create().set("id", i);
-            Tuple val = Tuple.create().set("name", VALUE_PRODUCER.apply(i));
-
-            table.keyValueView().put(null, key, val);
-        }
+//        for (int i = 0; i < 100; i++) {
+//            Tuple key = Tuple.create().set("id", i);
+//            Tuple val = Tuple.create().set("name", VALUE_PRODUCER.apply(i));
+//
+//            table.keyValueView().put(null, key, val);
+//        }
     }
 
     /**

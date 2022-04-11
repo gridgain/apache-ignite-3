@@ -330,17 +330,19 @@ public class TableManager extends Producer<TableEvent, TableEventParameters> imp
      * @return A future.
      */
     private CompletableFuture<?> onUpdateAssignments(ConfigurationNotificationEvent<byte[]> assignmentsCtx) {
-        if (!busyLock.enterBusy()) {
-            return CompletableFuture.failedFuture(new NodeStoppingException());
-        }
+        throw new RuntimeException();
 
-        try {
-            updateAssignmentInternal(assignmentsCtx);
-        } finally {
-            busyLock.leaveBusy();
-        }
-
-        return CompletableFuture.completedFuture(null);
+//        if (!busyLock.enterBusy()) {
+//            return CompletableFuture.failedFuture(new NodeStoppingException());
+//        }
+//
+//        try {
+//            updateAssignmentInternal(assignmentsCtx);
+//        } finally {
+//            busyLock.leaveBusy();
+//        }
+//
+//        return CompletableFuture.completedFuture(null);
     }
 
     /**
@@ -854,6 +856,7 @@ public class TableManager extends Producer<TableEvent, TableEventParameters> imp
                     } else {
                         LOG.error(IgniteStringFormatter.format("Table wasn't created [name={}]", name), ex);
 
+                        // tblFut is completed so a completeExceptionally does not affect anything
                         tblFut.completeExceptionally(ex);
 
                         tableCreateFuts.values().removeIf(fut -> fut == tblFut);
