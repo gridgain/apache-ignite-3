@@ -43,17 +43,15 @@ public class TableImpl implements Table {
     private final InternalTable tbl;
 
     /** Schema registry. */
-    private final SchemaRegistry schemaReg;
+    private SchemaRegistry schemaReg;
 
     /**
      * Constructor.
      *
      * @param tbl       The table.
-     * @param schemaReg Table schema registry.
      */
-    public TableImpl(InternalTable tbl, SchemaRegistry schemaReg) {
+    public TableImpl(InternalTable tbl) {
         this.tbl = tbl;
-        this.schemaReg = schemaReg;
     }
 
     /**
@@ -73,6 +71,15 @@ public class TableImpl implements Table {
     /** {@inheritDoc} */
     @Override public @NotNull String name() {
         return tbl.name();
+    }
+
+    /**
+     * Sets a schema view for the table.
+     *
+     * @param schemaReg Schema register.
+     */
+    public void schemaView(SchemaRegistry schemaReg) {
+        this.schemaReg = schemaReg;
     }
 
     /**

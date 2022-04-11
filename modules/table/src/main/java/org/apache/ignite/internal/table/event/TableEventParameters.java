@@ -34,14 +34,28 @@ public class TableEventParameters extends EventParameters {
     /** Table instance. */
     private final TableImpl table;
 
+    /** Schema descriptor. */
+    private final byte[] schemaBytes;
+
+    /**
+     * Constructor.
+     *
+     * @param causalityToken   Causality token.
+     * @param table            Table instance.
+     */
+    public TableEventParameters(long causalityToken, TableImpl table) {
+        this(causalityToken, table.tableId(), table.name(), table, null);
+    }
+
     /**
      * Constructor.
      *
      * @param causalityToken Causality token.
-     * @param table Table instance.
+     * @param table          Table instance.
+     * @param schemaBytes    Bytes of Schema descriptor.
      */
-    public TableEventParameters(long causalityToken, TableImpl table) {
-        this(causalityToken, table.tableId(), table.name(), table);
+    public TableEventParameters(long causalityToken, TableImpl table, byte[] schemaBytes) {
+        this(causalityToken, table.tableId(), table.name(), table, schemaBytes);
     }
 
     /**
@@ -52,26 +66,37 @@ public class TableEventParameters extends EventParameters {
      * @param tableName Table name.
      */
     public TableEventParameters(long causalityToken, UUID tableId, String tableName) {
-        this(causalityToken, tableId, tableName, null);
+        this(causalityToken, tableId, tableName, null, null);
     }
 
     /**
      * Constructor.
      *
      * @param causalityToken Causality token.
-     * @param tableId   Table identifier.
-     * @param tableName Table name.
-     * @param table     Table instance.
+     * @param tableId        Table identifier.
+     * @param tableName      Table name.
+     * @param table          Table instance.
+     * @param schemaBytes    Bytes of Schema descriptor.
      */
-    public TableEventParameters(long causalityToken, UUID tableId, String tableName, TableImpl table) {
+    public TableEventParameters(long causalityToken, UUID tableId, String tableName, TableImpl table, byte[] schemaBytes) {
         super(causalityToken);
         this.tableId = tableId;
         this.tableName = tableName;
         this.table = table;
+        this.schemaBytes = schemaBytes;
     }
 
     /**
-     * Get the table identifier.
+     * Gets the schema descriptor.
+     *
+     * @return Schema descriptor.
+     */
+    public byte[] schemaBytes() {
+        return schemaBytes;
+    }
+
+    /**
+     * Gets the table identifier.
      *
      * @return Table id.
      */

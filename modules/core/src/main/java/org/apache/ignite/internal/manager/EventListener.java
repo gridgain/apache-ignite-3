@@ -40,5 +40,6 @@ public interface EventListener<P extends EventParameters> {
      *
      * @param exception An exception which was the reason that the listener was removed. It cannot be {@code null}.
      */
-    void remove(@NotNull Throwable exception);
+    default void remove(@NotNull Throwable exception) {
+    }
 }

@@ -363,15 +363,11 @@ public class TableManager extends Producer<TableEvent, TableEventParameters> imp
 
         long causalityToken = schemasCtx.storageRevision();
 
-        SchemaDescriptor schemaDescriptor = SchemaSerializerImpl.INSTANCE.deserialize((schemasCtx.newValue().schema()));
-
         tablesByIdVv.update(causalityToken, tablesById -> {
             TableImpl table = tablesById.get(tblId);
 
-            ((SchemaRegistryImpl) table.schemaView()).onSchemaRegistered(schemaDescriptor);
-
             if (schemaDescriptor.version() != INITIAL_SCHEMA_VERSION) {
-                fireEvent(TableEvent.ALTER, new TableEventParameters(causalityToken, table), null);
+                fireEvent(TableEvent.ALTER, new TableEventParameters(causalityToken, table, schemasCtx.newValue().schema()), null);
             }
 
             return tablesById;
@@ -498,29 +494,7 @@ public class TableManager extends Producer<TableEvent, TableEventParameters> imp
         InternalTableImpl internalTable = new InternalTableImpl(name, tblId, new Int2ObjectOpenHashMap<>(partitions),
                 partitions, netAddrResolver, clusterNodeResolver, txManager, tableStorage);
 
-        var schemaRegistry = new SchemaRegistryImpl(v -> {
-            if (!busyLock.enterBusy()) {
-                throw new IgniteException(new NodeStoppingException());
-            }
-
-            try {
-                return tableSchema(tblId, v);
-            } finally {
-                busyLock.leaveBusy();
-            }
-        }, () -> {
-            if (!busyLock.enterBusy()) {
-                throw new IgniteException(new NodeStoppingException());
-            }
-
-            try {
-                return latestSchemaVersion(tblId);
-            } finally {
-                busyLock.leaveBusy();
-            }
-        });
-
-        var table = new TableImpl(internalTable, schemaRegistry);
+        var table = new TableImpl(internalTable);
 
         tablesVv.update(causalityToken, previous -> {
             var val = new HashMap<>(previous);
@@ -543,7 +517,11 @@ public class TableManager extends Producer<TableEvent, TableEventParameters> imp
         });
 
         CompletableFuture.allOf(tablesByIdVv.get(causalityToken), tablesVv.get(causalityToken)).thenRun(() -> {
-            fireEvent(TableEvent.CREATE, new TableEventParameters(causalityToken, table), null);
+            fireEvent(TableEvent.CREATE, new TableEventParameters(
+                    causalityToken,
+                    table,
+                    getSchemaDescriptorLocally(INITIAL_SCHEMA_VERSION, tableCfg)
+            ), null);
 
             completeApiCreateFuture(table);
         });
@@ -571,7 +549,7 @@ public class TableManager extends Producer<TableEvent, TableEventParameters> imp
      * @param schemaVer Schema version.
      * @return Schema descriptor.
      */
-    private SchemaDescriptor tableSchema(UUID tblId, int schemaVer) {
+    public SchemaDescriptor tableSchema(UUID tblId, int schemaVer) {
         TableImpl table = tablesByIdVv.latest().get(tblId);
 
         assert table != null : "Table is undefined [tblId=" + tblId + ']';
@@ -623,10 +601,13 @@ public class TableManager extends Producer<TableEvent, TableEventParameters> imp
      * @return Schema descriptor.
      */
     @NotNull
-    private SchemaDescriptor getSchemaDescriptorLocally(int schemaVer, ExtendedTableConfiguration tblCfg) {
-        SchemaConfiguration schemaCfg = tblCfg.schemas().get(String.valueOf(schemaVer));
+    private SchemaDescriptor getSchemaDescriptorLocally(int schemaVer, TableConfiguration tblCfg) {
+        var extTblCfg = ((ExtendedTableConfiguration)tblCfg);
 
-        assert schemaCfg != null;
+        SchemaConfiguration schemaCfg = extTblCfg.schemas().get(String.valueOf(schemaVer));
+
+        assert schemaCfg != null : IgniteStringFormatter.format("Schema has already truncated [tblId={}, id={}]",
+                extTblCfg.id(), schemaVer);
 
         return SchemaSerializerImpl.INSTANCE.deserialize(schemaCfg.schema().value());
     }
@@ -1109,7 +1090,7 @@ public class TableManager extends Producer<TableEvent, TableEventParameters> imp
      * @param tblId Table id.
      * @return The latest schema version.
      */
-    private int latestSchemaVersion(UUID tblId) {
+    public int latestSchemaVersion(UUID tblId) {
         try {
             NamedListView<SchemaView> tblSchemas = ((ExtendedTableConfiguration) getByInternalId(directProxy(tablesCfg.tables()), tblId))
                     .schemas().value();
@@ -1470,7 +1451,7 @@ public class TableManager extends Producer<TableEvent, TableEventParameters> imp
      * @return An accessor for distributive property.
      * @see #getMetadataLocallyOnly
      */
-    private <T extends ConfigurationProperty<?>> T directProxy(T property) {
+    public <T extends ConfigurationProperty<?>> T directProxy(T property) {
         return getMetadataLocallyOnly ? property : ConfigurationUtil.directProxy(property);
     }
 }
