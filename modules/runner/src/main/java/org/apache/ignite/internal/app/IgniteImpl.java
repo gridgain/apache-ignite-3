@@ -58,6 +58,7 @@ import org.apache.ignite.internal.raft.Loza;
 import org.apache.ignite.internal.recovery.ConfigurationCatchUpListener;
 import org.apache.ignite.internal.recovery.RecoveryCompletionFutureFactory;
 import org.apache.ignite.internal.rest.RestComponent;
+import org.apache.ignite.internal.schema.SchemaManager;
 import org.apache.ignite.internal.sql.engine.QueryProcessor;
 import org.apache.ignite.internal.sql.engine.SqlQueryProcessor;
 import org.apache.ignite.internal.sql.engine.message.SqlQueryMessagesSerializationRegistryInitializer;
@@ -169,6 +170,9 @@ public class IgniteImpl implements Ignite {
     /** Data storage manager. */
     private final DataStorageManager dataStorageMgr;
 
+    /** Table schema manager. */
+    private final SchemaManager schemaManager;
+
     /**
      * The Constructor.
      *
@@ -261,6 +265,11 @@ public class IgniteImpl implements Ignite {
         dataStorageMgr = new DataStorageManager(
                 clusterCfgMgr.configurationRegistry(),
                 getPartitionsStorePath(workDir)
+        );
+
+        schemaManager = new SchemaManager(
+                registry,
+                clusterCfgMgr.configurationRegistry().getConfiguration(TablesConfiguration.KEY)
         );
 
         distributedTblMgr = new TableManager(

@@ -64,7 +64,10 @@ import org.apache.ignite.internal.manager.IgniteComponent;
 import org.apache.ignite.internal.manager.Producer;
 import org.apache.ignite.internal.raft.Loza;
 import org.apache.ignite.internal.schema.SchemaDescriptor;
+import org.apache.ignite.internal.schema.SchemaManager;
 import org.apache.ignite.internal.schema.SchemaUtils;
+import org.apache.ignite.internal.schema.event.SchemaEvent;
+import org.apache.ignite.internal.schema.event.SchemaEventParameters;
 import org.apache.ignite.internal.schema.marshaller.schema.SchemaSerializerImpl;
 import org.apache.ignite.internal.schema.registry.SchemaRegistryImpl;
 import org.apache.ignite.internal.storage.DataStorageManager;
@@ -131,6 +134,9 @@ public class TableManager extends Producer<TableEvent, TableEventParameters> imp
     /** Data storage manager. */
     private final DataStorageManager dataStorageMgr;
 
+    /** Table schema manager. */
+    private final SchemaManager schemaManager;
+
     /** Here a table future stores during creation (until the table can be provided to client). */
     private final Map<UUID, CompletableFuture<Table>> tableCreateFuts = new ConcurrentHashMap<>();
 
@@ -169,13 +175,15 @@ public class TableManager extends Producer<TableEvent, TableEventParameters> imp
             BaselineManager baselineMgr,
             TopologyService topologyService,
             TxManager txManager,
-            DataStorageManager dataStorageMgr
+            DataStorageManager dataStorageMgr,
+            SchemaManager schemaManager
     ) {
         this.tablesCfg = tablesCfg;
         this.raftMgr = raftMgr;
         this.baselineMgr = baselineMgr;
         this.txManager = txManager;
         this.dataStorageMgr = dataStorageMgr;
+        this.schemaManager = schemaManager;
 
         netAddrResolver = addr -> {
             ClusterNode node = topologyService.getByAddress(addr);
@@ -195,12 +203,12 @@ public class TableManager extends Producer<TableEvent, TableEventParameters> imp
     /** {@inheritDoc} */
     @Override
     public void start() {
-        ((ExtendedTableConfiguration) tablesCfg.tables().any()).schemas().listenElements(new ConfigurationNamedListListener<>() {
-            @Override
-            public CompletableFuture<?> onCreate(ConfigurationNotificationEvent<SchemaView> schemasCtx) {
-                return onSchemaCreate(schemasCtx);
-            }
-        });
+//        ((ExtendedTableConfiguration) tablesCfg.tables().any()).schemas().listenElements(new ConfigurationNamedListListener<>() {
+//            @Override
+//            public CompletableFuture<?> onCreate(ConfigurationNotificationEvent<SchemaView> schemasCtx) {
+//                return onSchemaCreate(schemasCtx);
+//            }
+//        });
 
         ((ExtendedTableConfiguration) tablesCfg.tables().any()).assignments().listen(assignmentsCtx -> {
             return onUpdateAssignments(assignmentsCtx);
@@ -222,6 +230,46 @@ public class TableManager extends Producer<TableEvent, TableEventParameters> imp
             @Override
             public CompletableFuture<?> onDelete(ConfigurationNotificationEvent<TableView> ctx) {
                 return onTableDelete(ctx);
+            }
+        });
+
+        schemaManager.listen(SchemaEvent.CREATE, new EventListener<SchemaEventParameters>() {
+            @Override
+            public boolean notify(@NotNull SchemaEventParameters parameters, @Nullable Throwable exception) {
+                long causalityToken = parameters.causalityToken();
+
+                UUID tblId = parameters.tableId();
+
+                SchemaDescriptor schemaDescriptor = parameters.schemaDescriptor();
+
+                if (!busyLock.enterBusy()) {
+                    if (schemaDescriptor.version() != INITIAL_SCHEMA_VERSION) {
+                        fireEvent(
+                                TableEvent.ALTER,
+                                new TableEventParameters(causalityToken, tblId, null),
+                                new NodeStoppingException()
+                        );
+                    }
+
+                    throw  new IgniteException(new NodeStoppingException());
+                }
+
+                try {
+                    if (schemaDescriptor.version() != INITIAL_SCHEMA_VERSION) {
+                        TableImpl table = tablesByIdVv.latest().get(tblId);
+
+                        fireEvent(TableEvent.ALTER, new TableEventParameters(causalityToken, table), null);
+                    }
+                } finally {
+                    busyLock.leaveBusy();
+                }
+
+                return false;
+            }
+
+            @Override
+            public void remove(@NotNull Throwable exception) {
+
             }
         });
     }
@@ -319,37 +367,37 @@ public class TableManager extends Producer<TableEvent, TableEventParameters> imp
      * @param schemasCtx Schemas configuration context.
      * @return A future.
      */
-    private CompletableFuture<?> onSchemaCreate(ConfigurationNotificationEvent<SchemaView> schemasCtx) {
-        long causalityToken = schemasCtx.storageRevision();
-
-        ExtendedTableConfiguration tblCfg = schemasCtx.config(ExtendedTableConfiguration.class);
-
-        UUID tblId = tblCfg.id().value();
-
-        String tblName = tblCfg.name().value();
-
-        SchemaDescriptor schemaDescriptor = SchemaSerializerImpl.INSTANCE.deserialize((schemasCtx.newValue().schema()));
-
-        if (!busyLock.enterBusy()) {
-            if (schemaDescriptor.version() != INITIAL_SCHEMA_VERSION) {
-                fireEvent(
-                        TableEvent.ALTER,
-                        new TableEventParameters(causalityToken, tblId, tblName),
-                        new NodeStoppingException()
-                );
-            }
-
-            return CompletableFuture.failedFuture(new NodeStoppingException());
-        }
-
-        try {
-            createSchemaInternal(schemasCtx);
-        } finally {
-            busyLock.leaveBusy();
-        }
-
-        return CompletableFuture.completedFuture(null);
-    }
+//    private CompletableFuture<?> onSchemaCreate(ConfigurationNotificationEvent<SchemaView> schemasCtx) {
+//        long causalityToken = schemasCtx.storageRevision();
+//
+//        ExtendedTableConfiguration tblCfg = schemasCtx.config(ExtendedTableConfiguration.class);
+//
+//        UUID tblId = tblCfg.id().value();
+//
+//        String tblName = tblCfg.name().value();
+//
+//        SchemaDescriptor schemaDescriptor = SchemaSerializerImpl.INSTANCE.deserialize((schemasCtx.newValue().schema()));
+//
+//        if (!busyLock.enterBusy()) {
+//            if (schemaDescriptor.version() != INITIAL_SCHEMA_VERSION) {
+//                fireEvent(
+//                        TableEvent.ALTER,
+//                        new TableEventParameters(causalityToken, tblId, tblName),
+//                        new NodeStoppingException()
+//                );
+//            }
+//
+//            return CompletableFuture.failedFuture(new NodeStoppingException());
+//        }
+//
+//        try {
+//            createSchemaInternal(schemasCtx);
+//        } finally {
+//            busyLock.leaveBusy();
+//        }
+//
+//        return CompletableFuture.completedFuture(null);
+//    }
 
     /**
      * Internal method to create a schema.
@@ -498,6 +546,7 @@ public class TableManager extends Producer<TableEvent, TableEventParameters> imp
         InternalTableImpl internalTable = new InternalTableImpl(name, tblId, new Int2ObjectOpenHashMap<>(partitions),
                 partitions, netAddrResolver, clusterNodeResolver, txManager, tableStorage);
 
+        //TODO: Registry should initialize in Schema manager.
         var schemaRegistry = new SchemaRegistryImpl(v -> {
             if (!busyLock.enterBusy()) {
                 throw new IgniteException(new NodeStoppingException());
@@ -518,7 +567,7 @@ public class TableManager extends Producer<TableEvent, TableEventParameters> imp
             } finally {
                 busyLock.leaveBusy();
             }
-        });
+        }, null);
 
         var table = new TableImpl(internalTable, schemaRegistry);
 
@@ -658,6 +707,8 @@ public class TableManager extends Producer<TableEvent, TableEventParameters> imp
                         th);
             });
 
+            schemaManager.dropRegistry(causalityToken, tblId);
+
             AtomicReference<TableImpl> tableHolder = new AtomicReference<>();
 
             tablesByIdVv.update(causalityToken, previousVal -> {
@@ -679,7 +730,7 @@ public class TableManager extends Producer<TableEvent, TableEventParameters> imp
 
             table.internalTable().storage().destroy();
 
-            CompletableFuture.allOf(tablesByIdVv.get(causalityToken), tablesVv.get(causalityToken)).thenRun(() ->
+            CompletableFuture.allOf(tablesByIdVv.get(causalityToken), tablesVv.get(causalityToken), schemaManager.getSchemaRegistry(causalityToken, tblId)).thenRun(() ->
                     fireEvent(TableEvent.DROP, new TableEventParameters(causalityToken, table), null)
             );
         } catch (Exception e) {
