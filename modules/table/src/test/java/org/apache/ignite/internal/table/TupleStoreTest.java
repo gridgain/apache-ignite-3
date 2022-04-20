@@ -398,6 +398,7 @@ class TupleHashIndexImpl implements HashIndex<VersionChain<Tuple>> {
         // Must validate uniquess before insert.
         // TODO code generation ?
         if (unique) {
+            // TODO the simplest solution is to iterate until a duplicate is found. this can be optimized.
             Iterator<VersionChain<Tuple>> iter = scan(key);
 
             while (iter.hasNext()) {
