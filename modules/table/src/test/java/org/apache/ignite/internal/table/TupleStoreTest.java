@@ -370,6 +370,9 @@ interface HashIndex<T> {
     boolean delete(Tuple key, T rowId);
 }
 
+/**
+ * TODO multicolumn support.
+ */
 class TupleHashIndexImpl implements HashIndex<VersionChain<Tuple>> {
     private final boolean unique;
     private final String column;
