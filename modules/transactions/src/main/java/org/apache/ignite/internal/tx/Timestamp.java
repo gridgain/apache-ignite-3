@@ -142,6 +142,33 @@ public class Timestamp implements Comparable<Timestamp>, Serializable {
     }
 
     /**
+     * Generates new monotonically increasing timestamp.
+     * TODO https://issues.apache.org/jira/browse/IGNITE-15129
+     *
+     * @return Next timestamp (monotonically increasing).
+     */
+    public static synchronized UUID nextUUID() {
+        long timestamp = Clock.systemUTC().instant().toEpochMilli() - EPOCH;
+
+        long newTime = Math.max(localTime, timestamp);
+
+        if (newTime == localTime) {
+            cntr = (cntr + 1) & 0xFFFF;
+
+            if (cntr == 0) {
+                newTime = waitForNextMillisecond(newTime);
+            }
+        } else {
+            cntr = 0;
+        }
+
+        localTime = newTime;
+
+        // Will overflow in a late future.
+        return new UUID(newTime << 16 | cntr, localNodeId);
+    }
+
+    /**
      * Waits until a time will pass after a timestamp.
      *
      * @param lastTimestamp The timestamp.
