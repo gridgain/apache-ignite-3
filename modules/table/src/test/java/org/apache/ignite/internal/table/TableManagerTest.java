@@ -45,6 +45,7 @@ import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Phaser;
 import java.util.function.Consumer;
+import java.util.function.Function;
 import org.apache.ignite.configuration.NamedListView;
 import org.apache.ignite.configuration.schemas.store.UnknownDataStorageConfigurationSchema;
 import org.apache.ignite.configuration.schemas.table.HashIndexConfigurationSchema;
@@ -64,18 +65,20 @@ import org.apache.ignite.internal.configuration.testframework.ConfigurationExten
 import org.apache.ignite.internal.configuration.testframework.InjectConfiguration;
 import org.apache.ignite.internal.configuration.testframework.InjectRevisionListenerHolder;
 import org.apache.ignite.internal.metastorage.MetaStorageManager;
+import org.apache.ignite.internal.pagememory.configuration.schema.UnsafeMemoryAllocatorConfigurationSchema;
 import org.apache.ignite.internal.raft.Loza;
 import org.apache.ignite.internal.schema.SchemaDescriptor;
+import org.apache.ignite.internal.schema.SchemaManager;
 import org.apache.ignite.internal.schema.SchemaUtils;
 import org.apache.ignite.internal.schema.configuration.SchemaConfigurationConverter;
 import org.apache.ignite.internal.schema.marshaller.schema.SchemaSerializerImpl;
 import org.apache.ignite.internal.storage.DataStorageManager;
 import org.apache.ignite.internal.storage.DataStorageModules;
-import org.apache.ignite.internal.storage.rocksdb.RocksDbDataStorageModule;
-import org.apache.ignite.internal.storage.rocksdb.RocksDbStorageEngine;
-import org.apache.ignite.internal.storage.rocksdb.configuration.schema.RocksDbDataStorageChange;
-import org.apache.ignite.internal.storage.rocksdb.configuration.schema.RocksDbDataStorageConfigurationSchema;
-import org.apache.ignite.internal.storage.rocksdb.configuration.schema.RocksDbStorageEngineConfiguration;
+import org.apache.ignite.internal.storage.pagememory.PageMemoryDataStorageModule;
+import org.apache.ignite.internal.storage.pagememory.PageMemoryStorageEngine;
+import org.apache.ignite.internal.storage.pagememory.configuration.schema.PageMemoryDataStorageChange;
+import org.apache.ignite.internal.storage.pagememory.configuration.schema.PageMemoryDataStorageConfigurationSchema;
+import org.apache.ignite.internal.storage.pagememory.configuration.schema.PageMemoryStorageEngineConfiguration;
 import org.apache.ignite.internal.table.distributed.TableManager;
 import org.apache.ignite.internal.testframework.IgniteAbstractTest;
 import org.apache.ignite.internal.tx.LockManager;
@@ -162,7 +165,7 @@ public class TableManagerTest extends IgniteAbstractTest {
     private ConfigurationStorageRevisionListenerHolder fieldRevisionListenerHolder;
 
     /** Revision updater. */
-    private Consumer<Consumer<Long>> revisionUpdater;
+    private Consumer<Function<Long, CompletableFuture<?>>> revisionUpdater;
 
     /** Tables configuration. */
     @InjectConfiguration(
@@ -172,18 +175,20 @@ public class TableManagerTest extends IgniteAbstractTest {
                     SortedIndexConfigurationSchema.class,
                     PartialIndexConfigurationSchema.class,
                     UnknownDataStorageConfigurationSchema.class,
-                    RocksDbDataStorageConfigurationSchema.class
+                    PageMemoryDataStorageConfigurationSchema.class
             }
     )
     private TablesConfiguration tblsCfg;
 
-    @InjectConfiguration
-    private RocksDbStorageEngineConfiguration rocksDbEngineConfig;
+    @InjectConfiguration(polymorphicExtensions = UnsafeMemoryAllocatorConfigurationSchema.class)
+    private PageMemoryStorageEngineConfiguration pageMemoryEngineConfig;
 
     @Mock
     private ConfigurationRegistry configRegistry;
 
     private DataStorageManager dsm;
+
+    private SchemaManager sm;
 
     /** Test node. */
     private final ClusterNode node = new ClusterNode(
@@ -198,15 +203,13 @@ public class TableManagerTest extends IgniteAbstractTest {
     /** Before all test scenarios. */
     @BeforeEach
     void before() {
-        revisionUpdater = (Consumer<Long> consumer) -> {
-            consumer.accept(0L);
+        revisionUpdater = (Function<Long, CompletableFuture<?>> function) -> {
+            function.apply(0L).join();
 
             fieldRevisionListenerHolder.listenUpdateStorageRevision(newStorageRevision -> {
                 log.info("Notify about revision: {}", newStorageRevision);
 
-                consumer.accept(newStorageRevision);
-
-                return CompletableFuture.completedFuture(null);
+                return function.apply(newStorageRevision);
             });
         };
 
@@ -224,6 +227,8 @@ public class TableManagerTest extends IgniteAbstractTest {
         tblManagerFut.join().stop();
 
         dsm.stop();
+
+        sm.stop();
     }
 
     /**
@@ -241,13 +246,16 @@ public class TableManagerTest extends IgniteAbstractTest {
                 bm,
                 ts,
                 tm,
-                dsm = createDataStorageManager(configRegistry, workDir, rocksDbEngineConfig),
-                msm
+                dsm = createDataStorageManager(configRegistry, workDir, pageMemoryEngineConfig),
+                msm,
+                sm = new SchemaManager(revisionUpdater, tblsCfg)
         );
 
-        tblManagerFut.complete(tableManager);
+        sm.start();
 
         tableManager.start();
+
+        tblManagerFut.complete(tableManager);
 
         TableDefinition scmTbl = SchemaBuilders.tableBuilder("PUBLIC", PRECONFIGURED_TABLE_NAME).columns(
                 SchemaBuilders.column("key", ColumnType.INT64).build(),
@@ -260,7 +268,7 @@ public class TableManagerTest extends IgniteAbstractTest {
                         .changeReplicas(REPLICAS)
                         .changePartitions(PARTITIONS);
 
-                tableChange.changeDataStorage(c -> c.convert(RocksDbDataStorageChange.class));
+                tableChange.changeDataStorage(c -> c.convert(PageMemoryDataStorageChange.class));
 
                 var extConfCh = ((ExtendedTableChange) tableChange);
 
@@ -288,7 +296,7 @@ public class TableManagerTest extends IgniteAbstractTest {
 
         assertNotNull(tableManager.table(scmTbl.canonicalName()));
 
-        checkTableDataStorage(tblsCfg.tables().value(), RocksDbStorageEngine.ENGINE_NAME);
+        checkTableDataStorage(tblsCfg.tables().value(), PageMemoryStorageEngine.ENGINE_NAME);
     }
 
     /**
@@ -309,7 +317,7 @@ public class TableManagerTest extends IgniteAbstractTest {
 
         assertSame(table, tblManagerFut.join().table(scmTbl.canonicalName()));
 
-        checkTableDataStorage(tblsCfg.tables().value(), RocksDbStorageEngine.ENGINE_NAME);
+        checkTableDataStorage(tblsCfg.tables().value(), PageMemoryStorageEngine.ENGINE_NAME);
     }
 
     /**
@@ -606,9 +614,12 @@ public class TableManagerTest extends IgniteAbstractTest {
                 bm,
                 ts,
                 tm,
-                dsm = createDataStorageManager(configRegistry, workDir, rocksDbEngineConfig),
-                msm
+                dsm = createDataStorageManager(configRegistry, workDir, pageMemoryEngineConfig),
+                msm,
+                sm = new SchemaManager(revisionUpdater, tblsCfg)
         );
+
+        sm.start();
 
         tableManager.start();
 
@@ -620,11 +631,11 @@ public class TableManagerTest extends IgniteAbstractTest {
     private DataStorageManager createDataStorageManager(
             ConfigurationRegistry mockedRegistry,
             Path storagePath,
-            RocksDbStorageEngineConfiguration config
+            PageMemoryStorageEngineConfiguration config
     ) {
-        when(mockedRegistry.getConfiguration(RocksDbStorageEngineConfiguration.KEY)).thenReturn(config);
+        when(mockedRegistry.getConfiguration(PageMemoryStorageEngineConfiguration.KEY)).thenReturn(config);
 
-        DataStorageModules dataStorageModules = new DataStorageModules(List.of(new RocksDbDataStorageModule()));
+        DataStorageModules dataStorageModules = new DataStorageModules(List.of(new PageMemoryDataStorageModule()));
 
         DataStorageManager manager = new DataStorageManager(
                 tblsCfg,
