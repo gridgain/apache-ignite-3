@@ -23,11 +23,14 @@ import static org.apache.ignite.internal.testframework.IgniteTestUtils.testNodeN
 import static org.apache.ignite.internal.testframework.matchers.CompletableFutureMatcher.willCompleteSuccessfully;
 import static org.hamcrest.MatcherAssert.assertThat;
 
+import java.io.File;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.stream.IntStream;
+import org.apache.commons.io.FileUtils;
 import org.apache.ignite.Ignite;
 import org.apache.ignite.IgnitionManager;
 import org.apache.ignite.internal.app.IgniteImpl;
@@ -125,6 +128,9 @@ public abstract class AbstractClusterIntegrationTest extends BaseIgniteAbstractT
                 .collect(toList());
 
         IgniteUtils.closeAll(closeables);
+
+        FileUtils.deleteDirectory(WORK_DIR.toFile());
+        Files.createDirectories(WORK_DIR);
 
         LOG.info("End tearDown()");
     }

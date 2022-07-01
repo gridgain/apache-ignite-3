@@ -285,6 +285,16 @@ public class TableManager extends Producer<TableEvent, TableEventParameters> imp
      * @param causalityToken Causality token.
      */
     public void onSqlSchemaReady(long causalityToken) {
+        if (Math.random() < 0.33) {
+            try {
+                Thread.sleep(5000);
+            } catch (InterruptedException e) {
+                // ignore
+            }
+        }
+
+        LOG.info("SCHEMA READY FOR " + causalityToken);
+
         tablesByIdVv.complete(causalityToken);
     }
 

@@ -46,6 +46,7 @@ import org.apache.ignite.internal.app.IgniteImpl;
 import org.apache.ignite.network.ClusterNode;
 import org.apache.ignite.table.Tuple;
 import org.apache.ignite.table.mapper.Mapper;
+import org.junit.jupiter.api.RepeatedTest;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -239,7 +240,8 @@ class ItComputeTest extends AbstractClusterIntegrationTest {
                 .collect(toList());
     }
 
-    @Test
+//    @Test
+    @RepeatedTest(100)
     void executesColocatedByClassNameWithTupleKey() throws Exception {
         createTestTableWithOneRow();
 
