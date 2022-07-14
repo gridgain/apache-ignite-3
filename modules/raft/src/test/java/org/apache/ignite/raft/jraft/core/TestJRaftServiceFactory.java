@@ -16,13 +16,15 @@
  */
 package org.apache.ignite.raft.jraft.core;
 
+import org.apache.ignite.hlc.SystemHybridClock;
+import org.apache.ignite.hlc.SystemTimeProvider;
 import org.apache.ignite.raft.jraft.option.RaftOptions;
 import org.apache.ignite.raft.jraft.storage.LogStorage;
 import org.apache.ignite.raft.jraft.storage.impl.LocalLogStorage;
 
 public class TestJRaftServiceFactory extends DefaultJRaftServiceFactory {
     public TestJRaftServiceFactory() {
-        super(null);
+        super(null, new SystemHybridClock(new SystemTimeProvider()));
     }
 
     @Override

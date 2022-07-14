@@ -104,9 +104,9 @@ public class RaftGroupService {
 
         assert this.nodeOptions.getRpcClient() != null;
 
-        this.node = new NodeImpl(groupId, serverId, nodeOptions.getClock());
+        this.node = new NodeImpl(groupId, serverId);
 
-        if (!this.node.init(this.nodeOptions)) {
+        if (!this.node.init(this.nodeOptions)) {//
             LOG.warn("Stopping partially started node [groupId={}, serverId={}]", groupId, serverId);
             this.node.shutdown();
 

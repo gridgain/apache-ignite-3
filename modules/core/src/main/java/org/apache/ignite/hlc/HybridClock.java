@@ -34,5 +34,5 @@ public interface HybridClock {
      * @param requestTime Timestamp from request.
      * @return The hybrid timestamp.
      */
-    HybridTimestamp tick(HybridTimestamp requestTime);
+    HybridTimestamp update(HybridTimestamp requestTime);
 }

@@ -60,7 +60,7 @@ class SystemHybridClockTest {
     }
 
     /**
-     * Tests a {@link SystemHybridClock#tick(HybridTimestamp)}.
+     * Tests a {@link SystemHybridClock#update(HybridTimestamp)}.
      */
     @Test
     public void testTick() {
@@ -69,25 +69,25 @@ class SystemHybridClockTest {
         SystemHybridClock clock = new SystemHybridClock(new SystemTimeProvider());
 
         assertTimestampEquals(100, new HybridTimestamp(100, 1),
-                () -> clock.tick(new HybridTimestamp(50, 1)));
+                () -> clock.update(new HybridTimestamp(50, 1)));
 
         assertTimestampEquals(100, new HybridTimestamp(100, 2),
-                () -> clock.tick(new HybridTimestamp(60, 1000)));
+                () -> clock.update(new HybridTimestamp(60, 1000)));
 
         assertTimestampEquals(200, new HybridTimestamp(200, 0),
-                () -> clock.tick(new HybridTimestamp(70, 1)));
+                () -> clock.update(new HybridTimestamp(70, 1)));
 
         assertTimestampEquals(50, new HybridTimestamp(200, 1),
-                () -> clock.tick(new HybridTimestamp(70, 1)));
+                () -> clock.update(new HybridTimestamp(70, 1)));
 
         assertTimestampEquals(500, new HybridTimestamp(500, 0),
-                () -> clock.tick(new HybridTimestamp(70, 1)));
+                () -> clock.update(new HybridTimestamp(70, 1)));
 
         assertTimestampEquals(500, new HybridTimestamp(600, 1),
-                () -> clock.tick(new HybridTimestamp(600, 0)));
+                () -> clock.update(new HybridTimestamp(600, 0)));
 
         assertTimestampEquals(500, new HybridTimestamp(600, 2),
-                () -> clock.tick(new HybridTimestamp(600, 0)));
+                () -> clock.update(new HybridTimestamp(600, 0)));
     }
 
     private void assertTimestampEquals(long sysTime, HybridTimestamp expTs, Supplier<HybridTimestamp> clo) {

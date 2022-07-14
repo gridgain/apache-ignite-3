@@ -54,7 +54,7 @@ public class SystemHybridClock implements HybridClock {
 
     /** {@inheritDoc} */
     @Override
-    public synchronized HybridTimestamp tick(HybridTimestamp requestTime) {
+    public synchronized HybridTimestamp update(HybridTimestamp requestTime) {
         HybridTimestamp now = new HybridTimestamp(physicalTimeProvider.getPhysicalTime(), -1);
 
         latestTime = HybridTimestamp.max(now, requestTime, latestTime);

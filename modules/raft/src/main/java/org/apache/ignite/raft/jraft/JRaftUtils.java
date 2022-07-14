@@ -57,7 +57,7 @@ public final class JRaftUtils {
      * @return true if bootstrap success
      */
     public static boolean bootstrap(final BootstrapOptions opts) throws InterruptedException {
-        final NodeImpl node = new NodeImpl("bootstrap", new PeerId("127.0.0.1", 0), new SystemHybridClock(new SystemTimeProvider()));
+        final NodeImpl node = new NodeImpl("bootstrap", new PeerId("127.0.0.1", 0));
 
         NodeOptions nodeOpts = opts.getNodeOptions();
 

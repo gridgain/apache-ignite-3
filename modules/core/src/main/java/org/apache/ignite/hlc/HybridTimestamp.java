@@ -25,6 +25,9 @@ import org.jetbrains.annotations.Nullable;
  * A hybrid timestamp that combines physical clock and logical clock.
  */
 public class HybridTimestamp implements Comparable<HybridTimestamp>, Serializable {
+    /** Serial version uid. */
+    private static final long serialVersionUID = 0L;
+
     /** Physical clock. */
     private final long physical;
 
