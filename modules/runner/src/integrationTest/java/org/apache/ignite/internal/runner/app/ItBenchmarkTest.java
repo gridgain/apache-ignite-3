@@ -1,6 +1,7 @@
 package org.apache.ignite.internal.runner.app;
 
 
+import static java.util.stream.Collectors.joining;
 import static java.util.stream.Collectors.toList;
 import static org.apache.ignite.internal.sql.engine.util.CursorUtils.getAllFromCursor;
 import static org.apache.ignite.internal.testframework.IgniteTestUtils.await;
@@ -15,6 +16,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
+import java.util.stream.IntStream;
 import org.apache.ignite.Ignite;
 import org.apache.ignite.IgnitionManager;
 import org.apache.ignite.internal.app.IgniteImpl;
@@ -83,7 +85,142 @@ public class ItBenchmarkTest {
     }
 
     @Test
-    void testYCSBLikeKV() {
+    void testKVInsertsYCSB() {
+
+        ((IgniteImpl) clusterNodes.get(0)).queryEngine().queryAsync("PUBLIC", ""
+                + "CREATE TABLE usertable (\n"
+                + "    ycsb_key int PRIMARY KEY,\n"
+                + "    field1   varchar(100),\n"
+                + "    field2   varchar(100),\n"
+                + "    field3   varchar(100),\n"
+                + "    field4   varchar(100),\n"
+                + "    field5   varchar(100),\n"
+                + "    field6   varchar(100),\n"
+                + "    field7   varchar(100),\n"
+                + "    field8   varchar(100),\n"
+                + "    field9   varchar(100),\n"
+                + "    field10  varchar(100)\n"
+                + ");").get(0).join();
+        String[] fields = new String[10];
+        Tuple t = Tuple.create();
+        for (int i = 0; i < 10; i++) {
+            fields[i] = "a".repeat(100);
+            t.set("field" + 1, "a".repeat(100));
+        }
+
+        Table tbl1 = clusterNodes.get(0).tables().table("PUBLIC.usertable");
+        KeyValueView<Tuple, Tuple> kvView1 = tbl1.keyValueView();
+
+        final int[] id = {0};
+        for (int k = 0; k < 1000; k++) {
+            final var j = k;
+            measure("Inserts take: ", () -> {
+                for (int i = 0; i < 1000; i++) {
+                    kvView1.put(null, Tuple.create().set("ycsb_key", id[0]++), t);
+                }
+            });
+        }
+    }
+
+    @Test
+    void testSQLInsertsYCSB() {
+
+        ((IgniteImpl) clusterNodes.get(0)).queryEngine().queryAsync("PUBLIC", ""
+                + "CREATE TABLE usertable (\n"
+                + "    ycsb_key int PRIMARY KEY,\n"
+                + "    field1   varchar(100),\n"
+                + "    field2   varchar(100),\n"
+                + "    field3   varchar(100),\n"
+                + "    field4   varchar(100),\n"
+                + "    field5   varchar(100),\n"
+                + "    field6   varchar(100),\n"
+                + "    field7   varchar(100),\n"
+                + "    field8   varchar(100),\n"
+                + "    field9   varchar(100),\n"
+                + "    field10  varchar(100)\n"
+                + ");").get(0).join();
+        String[] fields = new String[10];
+        String val = "a".repeat(100);
+        var fieldsQ = IntStream.range(1, 11).mapToObj(i -> "field" + String.valueOf(i)).collect(joining(","));
+        var valQ = IntStream.range(1, 11).mapToObj(i -> "'" + val + "'").collect(joining(","));
+
+        var q = ((IgniteImpl) clusterNodes.get(0)).queryEngine();
+
+        final int[] id = {0};
+        for (int k = 0; k < 1000; k++) {
+            final var j = k;
+            measure("Inserts take: ", () -> {
+                for (int i = 0; i < 1000; i++) {
+                    var insertQuery = String.format("insert into usertable(%s, %s) values(%s, %s);",
+                            "ycsb_key", fieldsQ, id[0]++, valQ);
+                    q.queryAsync("PUBLIC", insertQuery).get(0).join();
+                }
+            });
+        }
+    }
+
+    @Test
+    void testKVInserts() {
+
+        ((IgniteImpl) clusterNodes.get(0)).queryEngine().queryAsync("PUBLIC", ""
+                + "create table tbl1(key int primary key, val varchar)").get(0).join();
+
+        Table tbl1 = clusterNodes.get(0).tables().table("PUBLIC.tbl1");
+        KeyValueView<Tuple, Tuple> kvView1 = tbl1.keyValueView();
+
+        var longStr = "a".repeat(16_000);
+
+        var selectSql = "select val from tbl1 where key = 1";
+
+        final int[] id = {0};
+
+        for (int i = 0; i < 1000; i++) {
+            kvView1.put(null, Tuple.create().set("key", id[0]++), Tuple.create().set("val", longStr));
+        }
+
+        for (int k = 0; k < 1000; k++) {
+            final var j = k;
+            measure("Inserts take: ", () -> {
+                for (int i = 0; i < 1000; i++) {
+                    kvView1.put(null, Tuple.create().set("key", id[0]++), Tuple.create().set("val", longStr));
+                }
+            });
+        }
+    }
+
+    @Test
+    void testSQLInserts() {
+
+        ((IgniteImpl) clusterNodes.get(0)).queryEngine().queryAsync("PUBLIC", ""
+                + "create table tbl1(key int primary key, val varchar)").get(0).join();
+
+        var q = ((IgniteImpl) clusterNodes.get(0)).queryEngine();
+
+        Table tbl1 = clusterNodes.get(0).tables().table("PUBLIC.tbl1");
+        KeyValueView<Tuple, Tuple> kvView1 = tbl1.keyValueView();
+
+        var longStr = "a".repeat(16_000);
+
+        var selectSql = "select val from tbl1 where key = 1";
+
+        final int[] id = {0};
+
+        for (int i = 0; i < 1000; i++) {
+            kvView1.put(null, Tuple.create().set("key", id[0]++), Tuple.create().set("val", longStr));
+        }
+
+        for (int k = 0; k < 1000; k++) {
+            final var j = k;
+            measure("Inserts take: ", () -> {
+                for (int i = 0; i < 1000; i++) {
+                    q.queryAsync("PUBLIC", String.format("insert into tbl1(key, val) values(%s, '%s')", id[0]++, longStr)).get(0).join();
+                }
+            });
+        }
+    }
+
+    @Test
+        void testYCSBLikeKV() {
         ((IgniteImpl) clusterNodes.get(0)).queryEngine().queryAsync("PUBLIC", ""
                 + "CREATE TABLE usertable (\n"
                 + "    ycsb_key int PRIMARY KEY,\n"

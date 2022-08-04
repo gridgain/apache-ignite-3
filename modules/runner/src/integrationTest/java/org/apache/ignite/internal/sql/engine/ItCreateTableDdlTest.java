@@ -83,6 +83,14 @@ public class ItCreateTableDdlTest extends AbstractBasicIntegrationTest {
         );
     }
 
+    @Test
+    public void test() {
+        sql("create table t (id int primary key, val int)");
+        sql("insert into t values (1, 1)");
+        sql("select * from t");
+        sql("select * from t");
+    }
+
     /**
      * Check invalid colocation columns configuration:
      * - not PK columns;
