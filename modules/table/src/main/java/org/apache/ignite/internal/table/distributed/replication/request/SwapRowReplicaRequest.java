@@ -15,47 +15,23 @@
  * limitations under the License.
  */
 
-package org.apache.ignite.internal.table.distributed.replicator.action;
+package org.apache.ignite.internal.table.distributed.replication.request;
+
+import org.apache.ignite.internal.replicator.message.ReplicaRequest;
+import org.apache.ignite.internal.schema.BinaryRow;
+import org.apache.ignite.internal.table.distributed.replicator.action.RequestType;
+import org.apache.ignite.network.annotations.Marshallable;
 
 /**
- * Transaction operation type.
+ * Dual row replica request.
  */
-public enum RequestType {
-    RW_GET,
+public interface SwapRowReplicaRequest extends ReplicaRequest {
+    @Marshallable
+    BinaryRow binaryRow();
 
-    RW_GET_ALL,
+    @Marshallable
+    BinaryRow oldBinaryRow();
 
-    RW_DELETE,
-
-    RW_DELETE_ALL,
-
-    RW_DELETE_EXACT,
-
-    RW_DELETE_EXACT_ALL,
-
-    RW_INSERT,
-
-    RW_INSERT_ALL,
-
-    RW_UPSERT,
-
-    RW_UPSERT_ALL,
-
-    RW_REPLACE,
-
-    RW_REPLACE_IF_EXIST,
-
-    RW_GET_AND_DELETE,
-
-    RW_GET_AND_REPLACE,
-
-    RW_GET_AND_UPSERT,
-
-    RW_SCAN,
-
-    RO_GET,
-
-    RO_GET_ALL,
-
-    RO_SCAN
+    @Marshallable
+    RequestType requestType();
 }
