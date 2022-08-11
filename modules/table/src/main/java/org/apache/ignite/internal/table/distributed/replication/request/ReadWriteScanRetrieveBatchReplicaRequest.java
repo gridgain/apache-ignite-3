@@ -21,7 +21,7 @@ import org.apache.ignite.internal.table.distributed.TableMessageGroup;
 import org.apache.ignite.network.annotations.Transferable;
 
 /**
- * Read write scan retrieve batch replica request.
+ * Scan retrieve batch replica request.
  */
 @Transferable(TableMessageGroup.RW_SCAN_RETRIEVE_BATCH_REPLICA_REQUEST)
 public interface ReadWriteScanRetrieveBatchReplicaRequest extends ScanRetrieveBatchReplicaRequest, ReadWriteReplicaRequest {

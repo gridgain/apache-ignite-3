@@ -17,8 +17,10 @@
 
 package org.apache.ignite.internal.table.distributed.replication.request;
 
+import java.util.function.Predicate;
 import org.apache.ignite.internal.replicator.message.ReplicaRequest;
-import org.apache.ignite.lang.IgniteUuid;
+import org.apache.ignite.internal.schema.BinaryRow;
+import org.apache.ignite.network.annotations.Marshallable;
 
 /**
  * Scan retrieve batch replica request.
@@ -27,6 +29,14 @@ public interface ScanRetrieveBatchReplicaRequest extends ReplicaRequest {
     /** Batch counter. */
     int batchCounter();
 
-    /** Id of scan that is associated with the current command. */
-    IgniteUuid scanId();
+    /** The id uniquely determines a cursor for the transaction. */
+    long scanId();
+
+    /**
+     * Gets a scan row filter. The filter has a sense only for first request, for the second one and followings the field is ignored.
+     *
+     * @return Row filter predicate.
+     */
+    @Marshallable
+    Predicate<BinaryRow> rowFilter();
 }

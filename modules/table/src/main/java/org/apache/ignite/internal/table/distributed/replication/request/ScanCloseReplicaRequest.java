@@ -17,12 +17,12 @@
 
 package org.apache.ignite.internal.table.distributed.replication.request;
 
-import org.apache.ignite.internal.table.distributed.TableMessageGroup;
-import org.apache.ignite.network.annotations.Transferable;
+import org.apache.ignite.internal.replicator.message.ReplicaRequest;
 
 /**
- * Read write scan replica request.
+ * Scan retrieve batch replica request.
  */
-@Transferable(TableMessageGroup.RW_SCAN_INIT_REPLICA_REQUEST)
-public interface ReadWriteScanInitReplicaRequest extends ScanInitReplicaRequest, ReadWriteReplicaRequest {
+public interface ScanCloseReplicaRequest extends ReplicaRequest {
+    /** The id uniquely determines a cursor for the transaction. */
+    long scanId();
 }

@@ -26,8 +26,6 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentNavigableMap;
 import java.util.concurrent.ConcurrentSkipListMap;
-import java.util.concurrent.atomic.AtomicLong;
-import java.util.function.Predicate;
 import java.util.stream.Collectors;
 import org.apache.ignite.internal.logger.IgniteLogger;
 import org.apache.ignite.internal.logger.Loggers;
@@ -45,7 +43,7 @@ import org.apache.ignite.internal.table.distributed.command.InsertCommand;
 import org.apache.ignite.internal.table.distributed.command.UpsertAllCommand;
 import org.apache.ignite.internal.table.distributed.command.UpsertCommand;
 import org.apache.ignite.internal.table.distributed.replication.request.ReadWriteMultiRowReplicaRequest;
-import org.apache.ignite.internal.table.distributed.replication.request.ReadWriteScanInitReplicaRequest;
+import org.apache.ignite.internal.table.distributed.replication.request.ReadWriteScanCloseReplicaRequest;
 import org.apache.ignite.internal.table.distributed.replication.request.ReadWriteScanRetrieveBatchReplicaRequest;
 import org.apache.ignite.internal.table.distributed.replication.request.ReadWriteSingleRowReplicaRequest;
 import org.apache.ignite.internal.table.distributed.replication.request.ReadWriteSwapRowReplicaRequest;
@@ -92,9 +90,6 @@ public class PartitionReplicaListener implements ReplicaListener {
 
     /** Cursors map. */
     private final ConcurrentNavigableMap<IgniteUuid, Cursor<BinaryRow>> cursors;
-
-    /** Generator of sequential long integers. It uses for creating a cursor id. */
-    private AtomicLong internalIdGenerator = new AtomicLong();
 
     /**
      * The constructor.
@@ -144,13 +139,56 @@ public class PartitionReplicaListener implements ReplicaListener {
             return processMultiEntryAction((ReadWriteMultiRowReplicaRequest) request);
         } else if (request instanceof ReadWriteSwapRowReplicaRequest) {
             return processTwoEntriesAction((ReadWriteSwapRowReplicaRequest) request);
-        } else if (request instanceof ReadWriteScanInitReplicaRequest) {
-            return processScanInitAction((ReadWriteScanInitReplicaRequest) request);
         } else if (request instanceof ReadWriteScanRetrieveBatchReplicaRequest) {
             return processScanRetrieveBatchAction((ReadWriteScanRetrieveBatchReplicaRequest) request);
+        } else if (request instanceof ReadWriteScanCloseReplicaRequest) {
+            return processScanCloseAction((ReadWriteScanCloseReplicaRequest) request);
         } else {
-            throw  new UnsupportedReplicaRequestException(request.getClass());
+            throw new UnsupportedReplicaRequestException(request.getClass());
         }
+    }
+
+    /**
+     * Close all cursors connected with a transaction.
+     *
+     * @param txId Transaction id.
+     * @throws Exception When an issue happens on cursor closing.
+     */
+    public void closeAllTransactionCursors(UUID txId) throws Exception {
+        var lowCursorId = new IgniteUuid(txId, Long.MIN_VALUE);
+        var upperCursorId = new IgniteUuid(txId, Long.MAX_VALUE);
+
+        Map<IgniteUuid, Cursor<BinaryRow>> txCursors = cursors.subMap(lowCursorId, true, upperCursorId, true);
+
+        for (Cursor<BinaryRow> cursor : txCursors.values()) {
+            cursor.close();
+        }
+
+        txCursors.clear();
+    }
+
+    /**
+     * Precesses scan close request.
+     *
+     * @param request Scan close request operation.
+     * @return Listener response.
+     */
+    private CompletableFuture<Object> processScanCloseAction(ReadWriteScanCloseReplicaRequest request) {
+        UUID txId = request.transactionId();
+
+        IgniteUuid cursorId = new IgniteUuid(txId, request.scanId());
+
+        Cursor<BinaryRow> cursor = cursors.remove(cursorId);
+
+        if (cursor != null) {
+            try {
+                cursor.close();
+            } catch (Exception e) {
+                return CompletableFuture.failedFuture(e);
+            }
+        }
+
+        return CompletableFuture.completedFuture(null);
     }
 
     /**
@@ -160,38 +198,21 @@ public class PartitionReplicaListener implements ReplicaListener {
      * @return Listener response.
      */
     private CompletableFuture<Object> processScanRetrieveBatchAction(ReadWriteScanRetrieveBatchReplicaRequest request) {
-        int batchCount = request.batchCounter();
-        IgniteUuid cursorId = request.scanId();
-
-        ArrayList<BinaryRow> batchRows = new ArrayList<>(batchCount);
-
-        Cursor<BinaryRow> cursor = cursors.get(cursorId);
-
-        for (int i = 0; i < batchCount || !cursor.hasNext(); i++) {
-            batchRows.add(cursor.next());
-        }
-
-        return CompletableFuture.completedFuture(batchRows);
-    }
-
-    /**
-     * Precesses scan init request.
-     *
-     * @param request Scan request operation.
-     * @return Listener response.
-     */
-    private CompletableFuture<Object> processScanInitAction(ReadWriteScanInitReplicaRequest request) {
         UUID txId = request.transactionId();
-        Predicate<BinaryRow> keyFilter = request.keyFilter();
+        int batchCount = request.batchCounter();
 
-        return lockManager.acquire(txId, new LockKey(tableId), LockMode.SHARED).thenApply(tblLock -> {
-            Cursor<BinaryRow> cursor = mvDataStorage.scan(keyFilter, txId);
+        IgniteUuid cursorId = new IgniteUuid(txId, request.scanId());
 
-            var cursorId = new IgniteUuid(txId, internalIdGenerator.getAndIncrement());
+        return lockManager.acquire(cursorId.globalId(), new LockKey(tableId), LockMode.SHARED).thenCompose(tblLock -> {
+            ArrayList<BinaryRow> batchRows = new ArrayList<>(batchCount);
 
-            cursors.put(cursorId, cursor);
+            Cursor<BinaryRow> cursor = cursors.computeIfAbsent(cursorId, id -> mvDataStorage.scan(request.rowFilter(), txId));
 
-            return cursorId;
+            for (int i = 0; i < batchCount || !cursor.hasNext(); i++) {
+                batchRows.add(cursor.next());
+            }
+
+            return CompletableFuture.completedFuture(batchRows);
         });
     }
 

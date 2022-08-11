@@ -17,15 +17,12 @@
 
 package org.apache.ignite.internal.table.distributed.replication.request;
 
-import java.util.function.Predicate;
-import org.apache.ignite.internal.replicator.message.ReplicaRequest;
-import org.apache.ignite.internal.schema.BinaryRow;
-import org.apache.ignite.network.annotations.Marshallable;
+import org.apache.ignite.internal.table.distributed.TableMessageGroup;
+import org.apache.ignite.network.annotations.Transferable;
 
 /**
- * Scan replica request.
+ * Scan retrieve batch replica request.
  */
-public interface ScanInitReplicaRequest extends ReplicaRequest {
-    @Marshallable
-    Predicate<BinaryRow> keyFilter();
+@Transferable(TableMessageGroup.RW_SCAN_CLOSE_REPLICA_REQUEST)
+public interface ReadWriteScanCloseReplicaRequest extends ScanCloseReplicaRequest, ReadWriteReplicaRequest {
 }

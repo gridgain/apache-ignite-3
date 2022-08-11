@@ -433,7 +433,6 @@ public class TableManager extends Producer<TableEvent, TableEventParameters> imp
             return failedFuture(new NodeStoppingException());
         }
 
-
         try {
             updateAssignmentInternal(assignmentsCtx);
         } finally {
