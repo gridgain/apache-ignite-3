@@ -197,7 +197,7 @@ public class InternalTableImpl implements InternalTable {
         if (clusterNode != null) {
             try {
                 fut = replicaSvc.invoke(clusterNode, op.apply(tx0, partGroupId));
-            } catch (NodeStoppingException e) {
+            } catch (Throwable e) {
                 throw new TransactionException(format("Failed to enlist a key into a transaction"));
             }
         } else {
@@ -205,7 +205,7 @@ public class InternalTableImpl implements InternalTable {
                     primaryReplicaNode -> {
                         try {
                             return replicaSvc.invoke(primaryReplicaNode, op.apply(tx0, partGroupId));
-                        } catch (NodeStoppingException e) {
+                        } catch (Throwable e) {
                             throw new TransactionException(format("Failed to enlist a key into a transaction"));
                         }
                     });
@@ -249,7 +249,7 @@ public class InternalTableImpl implements InternalTable {
             if (clusterNode != null) {
                 try {
                     fut = replicaSvc.invoke(clusterNode, op.apply(partToRows.getValue(), tx0, partGroupId));
-                } catch (NodeStoppingException e) {
+                } catch (Throwable e) {
                     throw new TransactionException(format("Failed to enlist a key into a transaction"));
                 }
             } else {
@@ -257,7 +257,7 @@ public class InternalTableImpl implements InternalTable {
                     try {
                         return replicaSvc.invoke(primaryReplicaNode,
                                 op.apply(partToRows.getValue(), tx0, partGroupId));
-                    } catch (NodeStoppingException e) {
+                    } catch (Throwable e) {
                         throw new TransactionException(format("Failed to enlist a key into a transaction"));
                     }
                 });
