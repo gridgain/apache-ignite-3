@@ -17,7 +17,7 @@
 
 package org.apache.ignite.internal.table.distributed;
 
-import org.apache.ignite.internal.table.distributed.replication.request.ReadWriteSwapRowReplicaRequest;
+import org.apache.ignite.internal.table.distributed.replication.request.ReadWriteScanInitReplicaRequest;
 import org.apache.ignite.network.annotations.MessageGroup;
 
 /**
@@ -36,7 +36,17 @@ public class TableMessageGroup {
     public static final short RW_MULTI_ROW_REPLICA_REQUEST = 1;
 
     /**
-     * Message type for {@link ReadWriteSwapRowReplicaRequest}.
+     * Message type for {@link org.apache.ignite.internal.table.distributed.replication.request.ReadWriteSwapRowReplicaRequest}.
      */
     public static final short RW_DUAL_ROW_REPLICA_REQUEST = 2;
+
+    /**
+     * Message type for {@link ReadWriteScanInitReplicaRequest}.
+     */
+    public static final short RW_SCAN_INIT_REPLICA_REQUEST = 3;
+
+    /**
+     * Message type for {@link org.apache.ignite.internal.table.distributed.replication.request.ReadWriteScanRetrieveBatchReplicaRequest}.
+     */
+    public static final short RW_SCAN_RETRIEVE_BATCH_REPLICA_REQUEST = 4;
 }

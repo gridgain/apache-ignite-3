@@ -24,6 +24,10 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentNavigableMap;
+import java.util.concurrent.ConcurrentSkipListMap;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.Predicate;
 import java.util.stream.Collectors;
 import org.apache.ignite.internal.logger.IgniteLogger;
 import org.apache.ignite.internal.logger.Loggers;
@@ -41,6 +45,8 @@ import org.apache.ignite.internal.table.distributed.command.InsertCommand;
 import org.apache.ignite.internal.table.distributed.command.UpsertAllCommand;
 import org.apache.ignite.internal.table.distributed.command.UpsertCommand;
 import org.apache.ignite.internal.table.distributed.replication.request.ReadWriteMultiRowReplicaRequest;
+import org.apache.ignite.internal.table.distributed.replication.request.ReadWriteScanInitReplicaRequest;
+import org.apache.ignite.internal.table.distributed.replication.request.ReadWriteScanRetrieveBatchReplicaRequest;
 import org.apache.ignite.internal.table.distributed.replication.request.ReadWriteSingleRowReplicaRequest;
 import org.apache.ignite.internal.table.distributed.replication.request.ReadWriteSwapRowReplicaRequest;
 import org.apache.ignite.internal.tx.Lock;
@@ -48,9 +54,11 @@ import org.apache.ignite.internal.tx.LockKey;
 import org.apache.ignite.internal.tx.LockManager;
 import org.apache.ignite.internal.tx.LockMode;
 import org.apache.ignite.internal.util.CollectionUtils;
+import org.apache.ignite.internal.util.Cursor;
 import org.apache.ignite.lang.ErrorGroups.Replicator;
 import org.apache.ignite.lang.IgniteInternalException;
 import org.apache.ignite.lang.IgniteStringFormatter;
+import org.apache.ignite.lang.IgniteUuid;
 import org.apache.ignite.raft.client.service.RaftGroupService;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -82,6 +90,12 @@ public class PartitionReplicaListener implements ReplicaListener {
     /** Dummy primary index. */
     private final ConcurrentHashMap<ByteBuffer, RowId> primaryIndex;
 
+    /** Cursors map. */
+    private final ConcurrentNavigableMap<IgniteUuid, Cursor<BinaryRow>> cursors;
+
+    /** Generator of sequential long integers. It uses for creating a cursor id. */
+    private AtomicLong internalIdGenerator = new AtomicLong();
+
     /**
      * The constructor.
      *
@@ -105,6 +119,20 @@ public class PartitionReplicaListener implements ReplicaListener {
         //TODO: IGNITE-17479 Integrate indexes into replicaListener command handlers
         this.indexScanId = new UUID(tableId.getMostSignificantBits(), tableId.getLeastSignificantBits() + 1);
         this.indexPkId = new UUID(tableId.getMostSignificantBits(), tableId.getLeastSignificantBits() + 2);
+
+        cursors = new ConcurrentSkipListMap<>((o1, o2) -> {
+            if (o1 == o2) {
+                return 0;
+            }
+
+            int res = o1.globalId().compareTo(o2.globalId());
+
+            if (res == 0) {
+                res = Long.compare(o1.localId(), o2.localId());
+            }
+
+            return res;
+        });
     }
 
     /** {@inheritDoc} */
@@ -116,9 +144,55 @@ public class PartitionReplicaListener implements ReplicaListener {
             return processMultiEntryAction((ReadWriteMultiRowReplicaRequest) request);
         } else if (request instanceof ReadWriteSwapRowReplicaRequest) {
             return processTwoEntriesAction((ReadWriteSwapRowReplicaRequest) request);
+        } else if (request instanceof ReadWriteScanInitReplicaRequest) {
+            return processScanInitAction((ReadWriteScanInitReplicaRequest) request);
+        } else if (request instanceof ReadWriteScanRetrieveBatchReplicaRequest) {
+            return processScanRetrieveBatchAction((ReadWriteScanRetrieveBatchReplicaRequest) request);
         } else {
             throw  new UnsupportedReplicaRequestException(request.getClass());
         }
+    }
+
+    /**
+     * Precesses scan retrieve batch request.
+     *
+     * @param request Scan retrieve batch request operation.
+     * @return Listener response.
+     */
+    private CompletableFuture<Object> processScanRetrieveBatchAction(ReadWriteScanRetrieveBatchReplicaRequest request) {
+        int batchCount = request.batchCounter();
+        IgniteUuid cursorId = request.scanId();
+
+        ArrayList<BinaryRow> batchRows = new ArrayList<>(batchCount);
+
+        Cursor<BinaryRow> cursor = cursors.get(cursorId);
+
+        for (int i = 0; i < batchCount || !cursor.hasNext(); i++) {
+            batchRows.add(cursor.next());
+        }
+
+        return CompletableFuture.completedFuture(batchRows);
+    }
+
+    /**
+     * Precesses scan init request.
+     *
+     * @param request Scan request operation.
+     * @return Listener response.
+     */
+    private CompletableFuture<Object> processScanInitAction(ReadWriteScanInitReplicaRequest request) {
+        UUID txId = request.transactionId();
+        Predicate<BinaryRow> keyFilter = request.keyFilter();
+
+        return lockManager.acquire(txId, new LockKey(tableId), LockMode.SHARED).thenApply(tblLock -> {
+            Cursor<BinaryRow> cursor = mvDataStorage.scan(keyFilter, txId);
+
+            var cursorId = new IgniteUuid(txId, internalIdGenerator.getAndIncrement());
+
+            cursors.put(cursorId, cursor);
+
+            return cursorId;
+        });
     }
 
     /**
