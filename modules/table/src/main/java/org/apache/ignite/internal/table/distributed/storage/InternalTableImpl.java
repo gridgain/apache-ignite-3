@@ -294,10 +294,10 @@ public class InternalTableImpl implements InternalTable {
                         .groupId(partGroupId)
                         .transactionId(tx.id())
                         .scanId(scanId)
-                        .batchCounter(batchSize)
+                        .batchSize(batchSize)
                         .build());
             } catch (Throwable e) {
-                throw new TransactionException(format("Failed to enlist rows into a transaction"));
+                throw new TransactionException(format("Failed to enlist cursor into a transaction"));
             }
         } else {
             fut = enlist(partId, tx0).thenCompose(
@@ -307,10 +307,10 @@ public class InternalTableImpl implements InternalTable {
                                     .groupId(partGroupId)
                                     .transactionId(tx.id())
                                     .scanId(scanId)
-                                    .batchCounter(batchSize)
+                                    .batchSize(batchSize)
                                     .build());
                         } catch (Throwable e) {
-                            throw new TransactionException(format("Failed to enlist rows into a transaction"));
+                            throw new TransactionException(format("Failed to enlist cursor into a transaction"));
                         }
                     });
         }
@@ -753,7 +753,7 @@ public class InternalTableImpl implements InternalTable {
         /**
          * The constructor.
          *
-         * @param raftGrpSvc {@link RaftGroupService} to run corresponding raft commands.
+         * @param retrieveBatch Closure that gets a new batch from the remote replica.
          */
         PartitionScanPublisher(BiFunction<Long, Integer, CompletableFuture<Collection<BinaryRow>>> retrieveBatch) {
             this.retrieveBatch = retrieveBatch;

@@ -26,7 +26,6 @@ import java.util.Collections;
 import java.util.Iterator;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
 import org.apache.ignite.internal.schema.BinaryRow;
 import org.apache.ignite.internal.storage.DataRow;
@@ -54,10 +53,10 @@ import org.apache.ignite.internal.table.distributed.command.UpsertCommand;
 import org.apache.ignite.internal.table.distributed.command.response.MultiRowsResponse;
 import org.apache.ignite.internal.table.distributed.command.response.SingleRowResponse;
 import org.apache.ignite.internal.table.distributed.storage.VersionedRowStore;
+import org.apache.ignite.internal.tx.LockKey;
 import org.apache.ignite.internal.tx.LockManager;
 import org.apache.ignite.internal.tx.TxManager;
 import org.apache.ignite.internal.tx.TxState;
-import org.apache.ignite.internal.util.Cursor;
 import org.apache.ignite.lang.IgniteInternalException;
 import org.apache.ignite.raft.client.Command;
 import org.apache.ignite.raft.client.ReadCommand;
@@ -75,7 +74,7 @@ public class PartitionListener implements RaftGroupListener {
     /**
      * Lock context id.
      *
-     * @see org.apache.ignite.internal.tx.LockKey#contextId
+     * @see LockKey#contextId()
      */
     private final UUID lockContextId;
 
@@ -505,46 +504,5 @@ public class PartitionListener implements RaftGroupListener {
     @TestOnly
     public VersionedRowStore getStorage() {
         return storage;
-    }
-
-    /**
-     * Cursor meta information: origin node id and type.
-     */
-    private static class CursorMeta {
-        /** Cursor. */
-        private final Cursor<BinaryRow> cursor;
-
-        /** Id of the node that creates cursor. */
-        private final String requesterNodeId;
-
-        /** Batch counter of a cursor. */
-        private final AtomicInteger batchCounter;
-
-        /**
-         * The constructor.
-         *
-         * @param cursor          The cursor.
-         * @param requesterNodeId Id of the node that creates cursor.
-         */
-        CursorMeta(Cursor<BinaryRow> cursor, String requesterNodeId, AtomicInteger batchCounter) {
-            this.cursor = cursor;
-            this.requesterNodeId = requesterNodeId;
-            this.batchCounter = batchCounter;
-        }
-
-        /** Returns cursor. */
-        public Cursor<BinaryRow> cursor() {
-            return cursor;
-        }
-
-        /** Returns id of the node that creates cursor. */
-        public String requesterNodeId() {
-            return requesterNodeId;
-        }
-
-        /** Returns batch counter of a cursor. */
-        public AtomicInteger batchCounter() {
-            return batchCounter;
-        }
     }
 }

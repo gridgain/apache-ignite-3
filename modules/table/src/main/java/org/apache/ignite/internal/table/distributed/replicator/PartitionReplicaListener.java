@@ -29,6 +29,7 @@ import java.util.concurrent.ConcurrentSkipListMap;
 import java.util.stream.Collectors;
 import org.apache.ignite.internal.logger.IgniteLogger;
 import org.apache.ignite.internal.logger.Loggers;
+import org.apache.ignite.internal.replicator.exception.ReplicationException;
 import org.apache.ignite.internal.replicator.exception.UnsupportedReplicaRequestException;
 import org.apache.ignite.internal.replicator.listener.ReplicaListener;
 import org.apache.ignite.internal.replicator.message.ReplicaRequest;
@@ -88,7 +89,10 @@ public class PartitionReplicaListener implements ReplicaListener {
     /** Dummy primary index. */
     private final ConcurrentHashMap<ByteBuffer, RowId> primaryIndex;
 
-    /** Cursors map. */
+    /**
+     * Cursors map. The key of the map is internal Ignite uuid which consists of a transaction id ({@link UUID}) and a cursor id ({@link
+     * Long}).
+     */
     private final ConcurrentNavigableMap<IgniteUuid, Cursor<BinaryRow>> cursors;
 
     /**
@@ -142,7 +146,9 @@ public class PartitionReplicaListener implements ReplicaListener {
         } else if (request instanceof ReadWriteScanRetrieveBatchReplicaRequest) {
             return processScanRetrieveBatchAction((ReadWriteScanRetrieveBatchReplicaRequest) request);
         } else if (request instanceof ReadWriteScanCloseReplicaRequest) {
-            return processScanCloseAction((ReadWriteScanCloseReplicaRequest) request);
+            processScanCloseAction((ReadWriteScanCloseReplicaRequest) request);
+
+            return CompletableFuture.completedFuture(null);
         } else {
             throw new UnsupportedReplicaRequestException(request.getClass());
         }
@@ -154,17 +160,31 @@ public class PartitionReplicaListener implements ReplicaListener {
      * @param txId Transaction id.
      * @throws Exception When an issue happens on cursor closing.
      */
-    public void closeAllTransactionCursors(UUID txId) throws Exception {
+    public void closeAllTransactionCursors(UUID txId) {
         var lowCursorId = new IgniteUuid(txId, Long.MIN_VALUE);
         var upperCursorId = new IgniteUuid(txId, Long.MAX_VALUE);
 
         Map<IgniteUuid, Cursor<BinaryRow>> txCursors = cursors.subMap(lowCursorId, true, upperCursorId, true);
 
+        ReplicationException ex = null;
+
         for (Cursor<BinaryRow> cursor : txCursors.values()) {
-            cursor.close();
+            try {
+                cursor.close();
+            } catch (Exception e) {
+                if (ex == null) {
+                    ex = new ReplicationException(Replicator.REPLICA_COMMON_ERR,
+                            IgniteStringFormatter.format("Close cursor exception [msg={}]", e.getMessage()), e);
+                } else {
+                    ex.addSuppressed(e);
+                }
+            }
         }
 
         txCursors.clear();
+
+        if (ex != null)
+            throw ex;
     }
 
     /**
@@ -173,7 +193,7 @@ public class PartitionReplicaListener implements ReplicaListener {
      * @param request Scan close request operation.
      * @return Listener response.
      */
-    private CompletableFuture<Object> processScanCloseAction(ReadWriteScanCloseReplicaRequest request) {
+    private void processScanCloseAction(ReadWriteScanCloseReplicaRequest request) {
         UUID txId = request.transactionId();
 
         IgniteUuid cursorId = new IgniteUuid(txId, request.scanId());
@@ -184,11 +204,10 @@ public class PartitionReplicaListener implements ReplicaListener {
             try {
                 cursor.close();
             } catch (Exception e) {
-                return CompletableFuture.failedFuture(e);
+                throw new ReplicationException(Replicator.REPLICA_COMMON_ERR,
+                        IgniteStringFormatter.format("Close cursor exception [msg={}]", e.getMessage()), e);
             }
         }
-
-        return CompletableFuture.completedFuture(null);
     }
 
     /**
@@ -199,11 +218,11 @@ public class PartitionReplicaListener implements ReplicaListener {
      */
     private CompletableFuture<Object> processScanRetrieveBatchAction(ReadWriteScanRetrieveBatchReplicaRequest request) {
         UUID txId = request.transactionId();
-        int batchCount = request.batchCounter();
+        int batchCount = request.batchSize();
 
         IgniteUuid cursorId = new IgniteUuid(txId, request.scanId());
 
-        return lockManager.acquire(cursorId.globalId(), new LockKey(tableId), LockMode.SHARED).thenCompose(tblLock -> {
+        return lockManager.acquire(txId, new LockKey(tableId), LockMode.SHARED).thenCompose(tblLock -> {
             ArrayList<BinaryRow> batchRows = new ArrayList<>(batchCount);
 
             Cursor<BinaryRow> cursor = cursors.computeIfAbsent(cursorId, id -> mvDataStorage.scan(request.rowFilter(), txId));
@@ -802,7 +821,7 @@ public class PartitionReplicaListener implements ReplicaListener {
     /**
      * Precesses two actions.
      *
-     * @param action Two actions operation.
+     * @param request Two actions operation request.
      * @return Listener response.
      */
     private CompletableFuture<Object> processTwoEntriesAction(ReadWriteSwapRowReplicaRequest request) {

@@ -26,8 +26,8 @@ import org.apache.ignite.network.annotations.Marshallable;
  * Scan retrieve batch replica request.
  */
 public interface ScanRetrieveBatchReplicaRequest extends ReplicaRequest {
-    /** Batch counter. */
-    int batchCounter();
+    /** Batch size. */
+    int batchSize();
 
     /** The id uniquely determines a cursor for the transaction. */
     long scanId();
