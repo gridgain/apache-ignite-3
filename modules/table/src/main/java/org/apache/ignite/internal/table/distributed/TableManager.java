@@ -34,6 +34,7 @@ import static org.apache.ignite.internal.utils.RebalanceUtil.stablePartAssignmen
 import static org.apache.ignite.internal.utils.RebalanceUtil.updatePendingAssignmentsKeys;
 
 import it.unimi.dsi.fastutil.ints.Int2ObjectOpenHashMap;
+import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
@@ -92,6 +93,7 @@ import org.apache.ignite.internal.schema.event.SchemaEventParameters;
 import org.apache.ignite.internal.schema.marshaller.schema.SchemaSerializerImpl;
 import org.apache.ignite.internal.storage.DataStorageManager;
 import org.apache.ignite.internal.storage.MvPartitionStorage;
+import org.apache.ignite.internal.storage.RowId;
 import org.apache.ignite.internal.storage.engine.MvTableStorage;
 import org.apache.ignite.internal.table.IgniteTablesInternal;
 import org.apache.ignite.internal.table.InternalTable;
@@ -100,7 +102,6 @@ import org.apache.ignite.internal.table.distributed.raft.PartitionListener;
 import org.apache.ignite.internal.table.distributed.raft.RebalanceRaftGroupEventsListener;
 import org.apache.ignite.internal.table.distributed.raft.snapshot.PartitionSnapshotStorageFactory;
 import org.apache.ignite.internal.table.distributed.storage.InternalTableImpl;
-import org.apache.ignite.internal.table.distributed.storage.VersionedRowStore;
 import org.apache.ignite.internal.table.event.TableEvent;
 import org.apache.ignite.internal.table.event.TableEventParameters;
 import org.apache.ignite.internal.thread.NamedThreadFactory;
@@ -498,6 +499,8 @@ public class TableManager extends Producer<TableEvent, TableEventParameters> imp
 
                     String grpId = partitionRaftGroupName(tblId, partId);
 
+                    ConcurrentHashMap<ByteBuffer, RowId> primaryIndex = new ConcurrentHashMap<>();
+
                     if (raftMgr.shouldHaveRaftGroupLocally(nodes)) {
                         MvPartitionStorage partitionStorage = internalTbl.storage().getOrCreateMvPartition(partId);
 
@@ -506,7 +509,7 @@ public class TableManager extends Producer<TableEvent, TableEventParameters> imp
                         raftMgr.startRaftGroupNode(
                                 grpId,
                                 newPartAssignment,
-                                new PartitionListener(tblId, new VersionedRowStore(partitionStorage, txManager)),
+                                new PartitionListener(tblId, partitionStorage, txManager, primaryIndex),
                                 new RebalanceRaftGroupEventsListener(
                                         metaStorageMgr,
                                         tablesCfg.tables().get(tablesById.get(tblId).name()),
@@ -1349,7 +1352,9 @@ public class TableManager extends Producer<TableEvent, TableEventParameters> imp
 
                             RaftGroupListener raftGrpLsnr = new PartitionListener(
                                     tblId,
-                                    new VersionedRowStore(partitionStorage, txManager)
+                                    partitionStorage,
+                                    txManager,
+                                    new ConcurrentHashMap<>()
                             );
 
                             RaftGroupEventsListener raftGrpEvtsLsnr = new RebalanceRaftGroupEventsListener(

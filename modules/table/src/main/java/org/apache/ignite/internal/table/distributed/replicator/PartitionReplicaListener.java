@@ -20,6 +20,7 @@ package org.apache.ignite.internal.table.distributed.replicator;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
@@ -36,10 +37,9 @@ import org.apache.ignite.internal.storage.MvPartitionStorage;
 import org.apache.ignite.internal.storage.RowId;
 import org.apache.ignite.internal.table.distributed.command.DeleteAllCommand;
 import org.apache.ignite.internal.table.distributed.command.DeleteCommand;
-import org.apache.ignite.internal.table.distributed.command.InsertAllCommand;
+import org.apache.ignite.internal.table.distributed.command.InsertAndUpdateAllCommand;
 import org.apache.ignite.internal.table.distributed.command.InsertCommand;
-import org.apache.ignite.internal.table.distributed.command.UpsertAllCommand;
-import org.apache.ignite.internal.table.distributed.command.UpsertCommand;
+import org.apache.ignite.internal.table.distributed.command.UpdateCommand;
 import org.apache.ignite.internal.table.distributed.replication.request.ReadWriteMultiRowReplicaRequest;
 import org.apache.ignite.internal.table.distributed.replication.request.ReadWriteSingleRowReplicaRequest;
 import org.apache.ignite.internal.table.distributed.replication.request.ReadWriteSwapRowReplicaRequest;
@@ -47,7 +47,6 @@ import org.apache.ignite.internal.tx.Lock;
 import org.apache.ignite.internal.tx.LockKey;
 import org.apache.ignite.internal.tx.LockManager;
 import org.apache.ignite.internal.tx.LockMode;
-import org.apache.ignite.internal.util.CollectionUtils;
 import org.apache.ignite.lang.ErrorGroups.Replicator;
 import org.apache.ignite.lang.IgniteInternalException;
 import org.apache.ignite.lang.IgniteStringFormatter;
@@ -223,7 +222,7 @@ public class PartitionReplicaListener implements ReplicaListener {
                 }
 
                 return CompletableFuture.allOf(deleteLockFuts).thenApply(ignore -> {
-                    Collection<BinaryRow> rowsToDelete = new ArrayList<>();
+                    Collection<RowId> rowIdsToDelete = new ArrayList<>();
                     Collection<BinaryRow> result = new ArrayList<>();
 
                     int futNum = 0;
@@ -232,15 +231,14 @@ public class PartitionReplicaListener implements ReplicaListener {
                         RowId lockedRowId = deleteLockFuts[futNum++].join();
 
                         if (lockedRowId != null) {
-                            rowsToDelete.add(keyToRows.get(searchKey));
+                            rowIdsToDelete.add(lockedRowId);
                         } else {
                             result.add(keyToRows.get(searchKey));
                         }
                     }
 
-                    //TODO: IGNITE-17477 RAFT commands have to apply a row id.
-                    CompletableFuture raftFut = rowsToDelete.isEmpty() ? CompletableFuture.completedFuture(null)
-                            : raftClient.run(new DeleteAllCommand(rowsToDelete, txId));
+                    CompletableFuture raftFut = rowIdsToDelete.isEmpty() ? CompletableFuture.completedFuture(null)
+                            : raftClient.run(new DeleteAllCommand(rowIdsToDelete, txId));
 
                     //TODO: IGNITE-17508 Exception handling in the partition replication listener for RAFT futures
                     return raftFut.thenApply(ignored -> result);
@@ -256,7 +254,7 @@ public class PartitionReplicaListener implements ReplicaListener {
                 }
 
                 return CompletableFuture.allOf(deleteExactLockFuts).thenApply(ignore -> {
-                    Collection<BinaryRow> rowsToDelete = new ArrayList<>();
+                    Collection<RowId> rowIdsToDelete = new ArrayList<>();
                     Collection<BinaryRow> result = new ArrayList<>();
 
                     int futNum = 0;
@@ -265,15 +263,14 @@ public class PartitionReplicaListener implements ReplicaListener {
                         RowId lockedRowId = deleteExactLockFuts[futNum++].join();
 
                         if (lockedRowId != null) {
-                            rowsToDelete.add(keyToRows.get(searchKey));
+                            rowIdsToDelete.add(lockedRowId);
                         } else {
                             result.add(keyToRows.get(searchKey));
                         }
                     }
 
-                    //TODO: IGNITE-17477 RAFT commands have to apply a row id.
-                    CompletableFuture raftFut = rowsToDelete.isEmpty() ? CompletableFuture.completedFuture(null)
-                            : raftClient.run(new DeleteAllCommand(rowsToDelete, txId));
+                    CompletableFuture raftFut = rowIdsToDelete.isEmpty() ? CompletableFuture.completedFuture(null)
+                            : raftClient.run(new DeleteAllCommand(rowIdsToDelete, txId));
 
                     //TODO: IGNITE-17508 Exception handling in the partition replication listener for RAFT futures
                     return raftFut.thenApply(ignored -> result);
@@ -304,9 +301,8 @@ public class PartitionReplicaListener implements ReplicaListener {
                         }
                     }
 
-                    //TODO: IGNITE-17477 RAFT commands have to apply a row id.
                     CompletableFuture raftFut = rowsToInsert.isEmpty() ? CompletableFuture.completedFuture(null)
-                            : raftClient.run(new InsertAllCommand(rowsToInsert, txId));
+                            : raftClient.run(new InsertAndUpdateAllCommand(rowsToInsert, null, txId));
 
                     //TODO: IGNITE-17508 Exception handling in the partition replication listener for RAFT futures
                     return raftFut.thenApply(ignored -> result);
@@ -323,7 +319,7 @@ public class PartitionReplicaListener implements ReplicaListener {
 
                 return CompletableFuture.allOf(upsertLockFuts).thenApply(ignore -> {
                     Collection<BinaryRow> rowsToInsert = new ArrayList<>();
-                    Collection<BinaryRow> rowsToUpdate = new ArrayList<>();
+                    Map<RowId, BinaryRow> rowsToUpdate = new HashMap<>();
 
                     int futNum = 0;
 
@@ -331,19 +327,14 @@ public class PartitionReplicaListener implements ReplicaListener {
                         RowId lockedRow = upsertLockFuts[futNum++].join();
 
                         if (lockedRow != null) {
-                            rowsToUpdate.add(keyToRows.get(searchKey));
+                            rowsToUpdate.put(lockedRow, keyToRows.get(searchKey));
                         } else {
                             rowsToInsert.add(keyToRows.get(searchKey));
                         }
                     }
 
-                    //TODO: IGNITE-17477 RAFT commands have to apply a row id.
-                    // Need to introduce a new operation, which has to insert colletion and update another colletion.
-                    // The upsert all operation, not need any more.
-                    Collection<BinaryRow> rowsToUpsert = CollectionUtils.concat(rowsToUpdate, rowsToInsert);
-
                     CompletableFuture raftFut = rowsToInsert.isEmpty() ? CompletableFuture.completedFuture(null)
-                            : raftClient.run(new UpsertAllCommand(rowsToUpsert, txId));
+                            : raftClient.run(new InsertAndUpdateAllCommand(rowsToInsert, rowsToUpdate, txId));
 
                     //TODO: IGNITE-17508 Exception handling in the partition replication listener for RAFT futures
                     return raftFut.thenApply(ignored -> null);
@@ -387,8 +378,7 @@ public class PartitionReplicaListener implements ReplicaListener {
                 return lockFut.thenCompose(lockedRowId -> {
                     boolean removed = lockedRowId != null;
 
-                    //TODO: IGNITE-17477 RAFT commands have to apply a row id.
-                    CompletableFuture raftFut = removed ? raftClient.run(new DeleteCommand(searchRow, txId)) :
+                    CompletableFuture raftFut = removed ? raftClient.run(new DeleteCommand(lockedRowId, txId)) :
                             CompletableFuture.completedFuture(null);
 
                     //TODO: IGNITE-17508 Exception handling in the partition replication listener for RAFT futures
@@ -401,7 +391,7 @@ public class PartitionReplicaListener implements ReplicaListener {
                 return lockFut.thenCompose(lockedRowId -> {
                     BinaryRow lockedRow = lockedRowId != null ? mvDataStorage.read(lockedRowId, txId) : null;
 
-                    CompletableFuture raftFut = lockedRowId != null ? raftClient.run(new DeleteCommand(searchRow, txId)) :
+                    CompletableFuture raftFut = lockedRowId != null ? raftClient.run(new DeleteCommand(lockedRowId, txId)) :
                             CompletableFuture.completedFuture(null);
 
                     //TODO: IGNITE-17508 Exception handling in the partition replication listener for RAFT futures
@@ -414,8 +404,7 @@ public class PartitionReplicaListener implements ReplicaListener {
                 return lockFut.thenCompose(lockedRow -> {
                     boolean removed = lockedRow != null;
 
-                    //TODO: IGNITE-17477 RAFT commands have to apply a row id.
-                    CompletableFuture raftFut = removed ? raftClient.run(new DeleteCommand(searchRow, txId)) :
+                    CompletableFuture raftFut = removed ? raftClient.run(new DeleteCommand(lockedRow, txId)) :
                             CompletableFuture.completedFuture(null);
 
                     //TODO: IGNITE-17508 Exception handling in the partition replication listener for RAFT futures
@@ -428,7 +417,6 @@ public class PartitionReplicaListener implements ReplicaListener {
                 return lockFut.thenApply(lockedRowId -> {
                     boolean inserted = lockedRowId == null;
 
-                    //TODO: IGNITE-17477 RAFT commands have to apply a row id.
                     CompletableFuture raftFut = lockedRowId == null ? raftClient.run(new InsertCommand(searchRow, txId)) :
                             CompletableFuture.completedFuture(null);
 
@@ -440,10 +428,7 @@ public class PartitionReplicaListener implements ReplicaListener {
                 CompletableFuture<RowId> lockFut = takeLocksForUpsert(searchKey, indexId, txId);
 
                 return lockFut.thenApply(lockedRowId -> {
-                    //TODO: IGNITE-17477 RAFT commands have to apply a row id.
-                    // Instead of Upsert operation, need to implement update operation.
-                    // The new operation will be only updating existed value.
-                    CompletableFuture raftFut = lockedRowId != null ? raftClient.run(new UpsertCommand(searchRow, txId)) :
+                    CompletableFuture raftFut = lockedRowId != null ? raftClient.run(new UpdateCommand(lockedRowId, searchRow, txId)) :
                             raftClient.run(new InsertCommand(searchRow, txId));
 
                     //TODO: IGNITE-17508 Exception handling in the partition replication listener for RAFT futures
@@ -465,11 +450,9 @@ public class PartitionReplicaListener implements ReplicaListener {
                                         return rowLockFut.thenApply(rowLock -> {
                                             BinaryRow result = rowId != null ? mvDataStorage.read(rowId, txId) : null;
 
-                                            //TODO: IGNITE-17477 RAFT commands have to apply a row id.
-                                            // Instead of Upsert operation, need to implement update operation.
-                                            // The new operation will be only updating existed value.
-                                            CompletableFuture raftFut = rowId != null ? raftClient.run(new UpsertCommand(searchRow, txId)) :
-                                                    raftClient.run(new InsertCommand(searchRow, txId));
+                                            CompletableFuture raftFut =
+                                                    rowId != null ? raftClient.run(new UpdateCommand(rowId, searchRow, txId)) :
+                                                            raftClient.run(new InsertCommand(searchRow, txId));
 
                                             //TODO: IGNITE-17508 Exception handling in the partition replication listener for RAFT futures
                                             return raftFut.thenApply(ignored -> result);
@@ -505,11 +488,8 @@ public class PartitionReplicaListener implements ReplicaListener {
                                 }
 
                                 return rowLockFut.thenApply(lockedRow -> {
-                                    //TODO: IGNITE-17477 RAFT commands have to apply a row id.
-                                    // Instead of Upsert operation, need to implement update operation.
-                                    // The new operation will be only updating existed value.
                                     CompletableFuture raftFut = lockedRow == null ? CompletableFuture.completedFuture(null) :
-                                            raftClient.run(new UpsertCommand(lockedRow, txId));
+                                            raftClient.run(new UpdateCommand(lockedRowId, lockedRow, txId));
 
                                     //TODO: IGNITE-17508 Exception handling in the partition replication listener for RAFT futures
                                     return raftFut.thenApply(ignored -> lockedRow);
@@ -523,10 +503,7 @@ public class PartitionReplicaListener implements ReplicaListener {
                 return lockFut.thenApply(lockedRowId -> {
                     boolean replaced = lockedRowId != null;
 
-                    //TODO: IGNITE-17477 RAFT commands have to apply a row id.
-                    // Instead of Upsert operation, need to implement update operation.
-                    // The new operation will be only updating existed value.
-                    CompletableFuture raftFut = replaced ? raftClient.run(new UpsertCommand(searchRow, txId)) :
+                    CompletableFuture raftFut = replaced ? raftClient.run(new UpdateCommand(lockedRowId, searchRow, txId)) :
                             CompletableFuture.completedFuture(null);
 
                     //TODO: IGNITE-17508 Exception handling in the partition replication listener for RAFT futures
@@ -727,10 +704,7 @@ public class PartitionReplicaListener implements ReplicaListener {
                 return lockFut.thenApply(lockedRowId -> {
                     boolean replaced = lockedRowId != null;
 
-                    //TODO: IGNITE-17477 RAFT commands have to apply a row id.
-                    // Instead of Upsert operation, need to implement update operation.
-                    // The new operation will be only updating existed value.
-                    CompletableFuture raftFut = replaced ? raftClient.run(new UpsertCommand(searchRow, txId)) :
+                    CompletableFuture raftFut = replaced ? raftClient.run(new UpdateCommand(lockedRowId, searchRow, txId)) :
                             CompletableFuture.completedFuture(null);
 
                     //TODO: IGNITE-17508 Exception handling in the partition replication listener for RAFT futures
