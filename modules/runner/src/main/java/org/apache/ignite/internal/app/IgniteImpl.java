@@ -55,6 +55,7 @@ import org.apache.ignite.internal.configuration.ServiceLoaderModulesProvider;
 import org.apache.ignite.internal.configuration.storage.ConfigurationStorage;
 import org.apache.ignite.internal.configuration.storage.DistributedConfigurationStorage;
 import org.apache.ignite.internal.configuration.storage.LocalConfigurationStorage;
+import org.apache.ignite.internal.index.IndexManager;
 import org.apache.ignite.internal.logger.IgniteLogger;
 import org.apache.ignite.internal.logger.Loggers;
 import org.apache.ignite.internal.metastorage.MetaStorageManager;
@@ -78,6 +79,7 @@ import org.apache.ignite.internal.storage.DataStorageModule;
 import org.apache.ignite.internal.storage.DataStorageModules;
 import org.apache.ignite.internal.table.distributed.TableManager;
 import org.apache.ignite.internal.table.distributed.TableTxManagerImpl;
+import org.apache.ignite.internal.tx.LockManager;
 import org.apache.ignite.internal.tx.TxManager;
 import org.apache.ignite.internal.tx.impl.HeapLockManager;
 import org.apache.ignite.internal.tx.impl.IgniteTransactionsImpl;
@@ -178,6 +180,8 @@ public class IgniteImpl implements Ignite {
     /** Distributed table manager. */
     private final TableManager distributedTblMgr;
 
+    private final IndexManager indexManager;
+
     /** Rest module. */
     private final RestComponent restComponent;
 
@@ -263,9 +267,11 @@ public class IgniteImpl implements Ignite {
 
         raftMgr = new Loza(clusterSvc, workDir, clock);
 
-        replicaMgr = new ReplicaManager(clusterSvc);
+        LockManager lockMgr = new HeapLockManager();
 
-        txManager = new TableTxManagerImpl(clusterSvc, new HeapLockManager());
+        txManager = new TableTxManagerImpl(clusterSvc, lockMgr);
+
+        replicaMgr = new ReplicaManager(clusterSvc);
 
         cmgMgr = new ClusterManagementGroupManager(
                 vaultMgr,
@@ -335,6 +341,8 @@ public class IgniteImpl implements Ignite {
                 registry,
                 clusterCfgMgr.configurationRegistry().getConfiguration(TablesConfiguration.KEY),
                 raftMgr,
+                replicaMgr,
+                lockMgr,
                 replicaSvc,
                 baselineMgr,
                 clusterSvc.topologyService(),
@@ -342,6 +350,16 @@ public class IgniteImpl implements Ignite {
                 dataStorageMgr,
                 metaStorageMgr,
                 schemaManager
+        );
+
+        indexManager = new IndexManager(
+                distributedTblMgr,
+                clusterCfgMgr.configurationRegistry()
+                        .getConfiguration(TablesConfiguration.KEY)
+                        .tables()
+                        .any()
+                        .indices()
+                        ::listenElements
         );
 
         qryEngine = new SqlQueryProcessor(
@@ -459,6 +477,7 @@ public class IgniteImpl implements Ignite {
                                     dataStorageMgr,
                                     schemaManager,
                                     distributedTblMgr,
+                                    indexManager,
                                     qryEngine,
                                     clientHandlerModule
                             );
@@ -538,6 +557,11 @@ public class IgniteImpl implements Ignite {
 
     public QueryProcessor queryEngine() {
         return qryEngine;
+    }
+
+    @TestOnly
+    public IndexManager indexManager() {
+        return indexManager;
     }
 
     /** {@inheritDoc} */

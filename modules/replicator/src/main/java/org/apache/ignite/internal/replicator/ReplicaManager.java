@@ -17,6 +17,7 @@
 
 package org.apache.ignite.internal.replicator;
 
+import java.util.Collection;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
@@ -26,18 +27,22 @@ import org.apache.ignite.internal.logger.Loggers;
 import org.apache.ignite.internal.manager.IgniteComponent;
 import org.apache.ignite.internal.replicator.exception.ReplicaAlreadyIsStartedException;
 import org.apache.ignite.internal.replicator.listener.ReplicaListener;
+import org.apache.ignite.internal.replicator.message.ErrorReplicaResponseBuilder;
 import org.apache.ignite.internal.replicator.message.ReplicaMessageGroup;
 import org.apache.ignite.internal.replicator.message.ReplicaMessagesFactory;
 import org.apache.ignite.internal.replicator.message.ReplicaRequest;
 import org.apache.ignite.internal.util.IgniteSpinBusyLock;
 import org.apache.ignite.lang.ErrorGroups.Replicator;
 import org.apache.ignite.lang.IgniteException;
+import org.apache.ignite.lang.IgniteInternalException;
 import org.apache.ignite.lang.IgniteStringFormatter;
 import org.apache.ignite.lang.NodeStoppingException;
+import org.apache.ignite.network.ClusterNode;
 import org.apache.ignite.network.ClusterService;
 import org.apache.ignite.network.NetworkAddress;
 import org.apache.ignite.network.NetworkMessage;
 import org.apache.ignite.network.NetworkMessageHandler;
+import org.apache.ignite.raft.client.service.RaftGroupService;
 import org.jetbrains.annotations.Nullable;
 
 /**
@@ -95,19 +100,23 @@ public class ReplicaManager implements IgniteComponent {
     /**
      * Starts a replica. If a replica with the same partition id is already exist the method throws an exception.
      *
-     * @param replicaGrpId   Replication group id.
+     * @param replicaGrpId Replication group id.
+     * @param raftGroupService Raft group service.
      * @param listener Replica listener.
      * @return Replica.
      * @throws NodeStoppingException Is thrown when the node is stopping.
      * @throws ReplicaAlreadyIsStartedException Is thrown when a replica with the same replication group id already started.
      */
-    public Replica startReplica(String replicaGrpId, ReplicaListener listener) throws NodeStoppingException {
+    public Replica startReplica(
+            String replicaGrpId,
+            RaftGroupService raftGroupService,
+            ReplicaListener listener) throws NodeStoppingException {
         if (!busyLock.enterBusy()) {
             throw new NodeStoppingException();
         }
 
         try {
-            return startReplicaInternal(replicaGrpId, listener);
+            return startReplicaInternal(replicaGrpId, raftGroupService, listener);
         } finally {
             busyLock.leaveBusy();
         }
@@ -117,11 +126,12 @@ public class ReplicaManager implements IgniteComponent {
      * Internal method for start a replica.
      *
      * @param replicaGrpId   Replication group id.
+     * @param raftGroupService Raft group service.
      * @param listener Replica listener.
      * @return Replica.
      */
-    private Replica startReplicaInternal(String replicaGrpId, ReplicaListener listener) {
-        var replica = new Replica(replicaGrpId, listener);
+    private Replica startReplicaInternal(String replicaGrpId, RaftGroupService raftGroupService, ReplicaListener listener) {
+        var replica = new Replica(replicaGrpId, raftGroupService, listener);
 
         Replica previous = replicas.putIfAbsent(replicaGrpId, replica);
 
@@ -204,31 +214,34 @@ public class ReplicaManager implements IgniteComponent {
                     CompletableFuture<Object> result = replica.processRequest(request);
 
                     result.handle((res, ex) -> {
+                        NetworkMessage msg;
+
                         if (ex == null) {
-                            clusterNetSvc.messagingService().respond(
-                                    senderAddr,
-                                    REPLICA_MESSAGES_FACTORY.replicaResponse().result(res).build(),
-                                    correlationId);
+                            msg = REPLICA_MESSAGES_FACTORY.replicaResponse().result(res).build();
                         } else {
                             var traceId = UUID.randomUUID();
 
                             LOG.warn("Exception was thrown [traceId={}]", ex, traceId);
 
-                            clusterNetSvc.messagingService().respond(
-                                    senderAddr,
-                                    REPLICA_MESSAGES_FACTORY
-                                            .errorReplicaResponse()
-                                            .errorMessage(
-                                                    IgniteStringFormatter.format("Process replication response finished with exception "
-                                                            + "[replicaGrpId={}, msg={}]", request.groupId(), ex.getMessage()))
-                                            .errorCode(Replicator.REPLICA_COMMON_ERR)
-                                            .errorClassName(ex.getClass().getName())
-                                            .errorTraceId(traceId)
-                                            .build(),
-                                    correlationId);
+                            ErrorReplicaResponseBuilder errorBuilder = REPLICA_MESSAGES_FACTORY
+                                    .errorReplicaResponse()
+                                    .errorClassName(ex.getClass().getName())
+                                    .errorTraceId(traceId);
 
-
+                            if (ex instanceof IgniteInternalException) {
+                                msg = errorBuilder.errorMessage(ex.getMessage())
+                                        .errorCode(((IgniteInternalException) ex).code())
+                                        .build();
+                            } else {
+                                msg = errorBuilder.errorMessage(
+                                                IgniteStringFormatter.format("Process replication response finished with "
+                                                        + "exception [replicaGrpId={}, msg={}]", request.groupId(), ex.getMessage()))
+                                        .errorCode(Replicator.REPLICA_COMMON_ERR)
+                                        .build();
+                            }
                         }
+
+                        clusterNetSvc.messagingService().respond(senderAddr, msg, correlationId);
 
                         return null;
                     });
@@ -249,5 +262,15 @@ public class ReplicaManager implements IgniteComponent {
         busyLock.block();
 
         assert replicas.isEmpty() : IgniteStringFormatter.format("There are replicas alive [replicas={}]", replicas.keySet());
+    }
+
+    /**
+     * Determines whether a replication group should be started locally
+     * according to a collection of nodes that should have a replication group.
+     */
+    public boolean shouldHaveReplicationGroupLocally(Collection<ClusterNode> replicas) {
+        String locNodeName = clusterNetSvc.topologyService().localMember().name();
+
+        return replicas.stream().anyMatch(r -> locNodeName.equals(r.name()));
     }
 }

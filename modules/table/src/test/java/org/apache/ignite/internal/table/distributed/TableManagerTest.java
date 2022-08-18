@@ -67,7 +67,6 @@ import org.apache.ignite.configuration.schemas.table.ConstantValueDefaultConfigu
 import org.apache.ignite.configuration.schemas.table.FunctionCallDefaultConfigurationSchema;
 import org.apache.ignite.configuration.schemas.table.HashIndexConfigurationSchema;
 import org.apache.ignite.configuration.schemas.table.NullValueDefaultConfigurationSchema;
-import org.apache.ignite.configuration.schemas.table.PartialIndexConfigurationSchema;
 import org.apache.ignite.configuration.schemas.table.SortedIndexConfigurationSchema;
 import org.apache.ignite.configuration.schemas.table.TableChange;
 import org.apache.ignite.configuration.schemas.table.TableView;
@@ -87,6 +86,7 @@ import org.apache.ignite.internal.logger.Loggers;
 import org.apache.ignite.internal.metastorage.MetaStorageManager;
 import org.apache.ignite.internal.pagememory.configuration.schema.UnsafeMemoryAllocatorConfigurationSchema;
 import org.apache.ignite.internal.raft.Loza;
+import org.apache.ignite.internal.replicator.ReplicaManager;
 import org.apache.ignite.internal.schema.SchemaDescriptor;
 import org.apache.ignite.internal.schema.SchemaManager;
 import org.apache.ignite.internal.schema.SchemaUtils;
@@ -173,6 +173,10 @@ public class TableManagerTest extends IgniteAbstractTest {
     @Mock
     private Loza rm;
 
+    /** Replica manager. */
+    @Mock
+    private ReplicaManager replicaMgr;
+
     /** TX manager. */
     @Mock(lenient = true)
     private TxManager tm;
@@ -212,7 +216,6 @@ public class TableManagerTest extends IgniteAbstractTest {
             polymorphicExtensions = {
                     HashIndexConfigurationSchema.class,
                     SortedIndexConfigurationSchema.class,
-                    PartialIndexConfigurationSchema.class,
                     UnknownDataStorageConfigurationSchema.class,
                     RocksDbDataStorageConfigurationSchema.class,
                     ConstantValueDefaultConfigurationSchema.class,
@@ -463,6 +466,7 @@ public class TableManagerTest extends IgniteAbstractTest {
         tableManager.stop();
 
         verify(rm, times(PARTITIONS)).stopRaftGroup(anyString());
+        verify(replicaMgr, times(PARTITIONS)).stopReplica(anyString());
     }
 
     /**
@@ -761,6 +765,8 @@ public class TableManagerTest extends IgniteAbstractTest {
                 revisionUpdater,
                 tblsCfg,
                 rm,
+                replicaMgr,
+                null,
                 null,
                 bm,
                 ts,
