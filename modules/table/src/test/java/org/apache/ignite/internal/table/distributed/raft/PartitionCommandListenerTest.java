@@ -45,8 +45,9 @@ import org.apache.ignite.internal.schema.NativeTypes;
 import org.apache.ignite.internal.schema.SchemaDescriptor;
 import org.apache.ignite.internal.schema.row.Row;
 import org.apache.ignite.internal.schema.row.RowAssembler;
+import org.apache.ignite.internal.storage.MvPartitionStorage;
 import org.apache.ignite.internal.storage.RowId;
-import org.apache.ignite.internal.storage.basic.TestMvPartitionStorage;
+import org.apache.ignite.internal.storage.chm.TestConcurrentHashMapMvPartitionStorage;
 import org.apache.ignite.internal.table.distributed.command.DeleteAllCommand;
 import org.apache.ignite.internal.table.distributed.command.DeleteCommand;
 import org.apache.ignite.internal.table.distributed.command.InsertAndUpdateAllCommand;
@@ -89,7 +90,7 @@ public class PartitionCommandListenerTest {
     private ConcurrentHashMap<ByteBuffer, RowId> primaryIndex = new ConcurrentHashMap<>();
 
     /** Partition storage. */
-    private TestMvPartitionStorage mvPartitionStorage = new TestMvPartitionStorage(List.of(), 0);
+    private MvPartitionStorage mvPartitionStorage = new TestConcurrentHashMapMvPartitionStorage(0);
 
     /**
      * Initializes a table listener before tests.

@@ -34,6 +34,7 @@ import javax.naming.OperationNotSupportedException;
 import org.apache.ignite.internal.replicator.ReplicaService;
 import org.apache.ignite.internal.schema.BinaryRow;
 import org.apache.ignite.internal.schema.BinaryRowEx;
+import org.apache.ignite.internal.storage.chm.TestConcurrentHashMapMvPartitionStorage;
 import org.apache.ignite.internal.storage.engine.MvTableStorage;
 import org.apache.ignite.internal.table.distributed.raft.PartitionListener;
 import org.apache.ignite.internal.table.distributed.storage.InternalTableImpl;
@@ -148,7 +149,7 @@ public class DummyInternalTableImpl extends InternalTableImpl {
 
         UUID tblId = UUID.randomUUID();
 
-        var mvPartStorage = new TestMvPartitionStorage(List.of(), 0);
+        var mvPartStorage = new TestConcurrentHashMapMvPartitionStorage(0);
 
         partitionListener = new PartitionListener(
                 tblId,

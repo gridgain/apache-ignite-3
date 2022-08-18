@@ -42,7 +42,7 @@ import org.apache.ignite.internal.schema.row.Row;
 import org.apache.ignite.internal.schema.row.RowAssembler;
 import org.apache.ignite.internal.storage.MvPartitionStorage;
 import org.apache.ignite.internal.storage.RowId;
-import org.apache.ignite.internal.storage.basic.TestMvPartitionStorage;
+import org.apache.ignite.internal.storage.chm.TestConcurrentHashMapMvPartitionStorage;
 import org.apache.ignite.internal.storage.engine.MvTableStorage;
 import org.apache.ignite.internal.table.distributed.TableTxManagerImpl;
 import org.apache.ignite.internal.table.distributed.raft.PartitionListener;
@@ -219,7 +219,7 @@ public class ItTablePersistenceTest extends ItAbstractListenerSnapshotTest<Parti
 
                     txManager.start(); // Init listener.
 
-                    var testMpPartStorage = new TestMvPartitionStorage(List.of(), 0);
+                    var testMpPartStorage = new TestConcurrentHashMapMvPartitionStorage(0);
 
                     PartitionListener listener = new PartitionListener(
                             UUID.randomUUID(),
