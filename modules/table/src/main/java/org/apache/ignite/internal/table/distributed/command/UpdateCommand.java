@@ -24,10 +24,10 @@ import org.apache.ignite.raft.client.WriteCommand;
 import org.jetbrains.annotations.NotNull;
 
 /**
- * The command inserts or updates a value for the key specified.
+ * The command updates a row specified by the row id specified.
  */
 public class UpdateCommand extends PartitionCommand implements WriteCommand {
-    /** Id of row that will update. */
+    /** Id of row that will be updated. */
     private final RowId rowId;
 
     /** Binary row. */

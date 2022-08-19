@@ -24,7 +24,7 @@ import org.apache.ignite.raft.client.WriteCommand;
 import org.jetbrains.annotations.NotNull;
 
 /**
- * The command deletes entries by the passed keys.
+ * The command deletes entries by the passed row ids.
  */
 public class DeleteAllCommand extends PartitionCommand implements WriteCommand {
     /** Ids of the rows that will be deleted. */

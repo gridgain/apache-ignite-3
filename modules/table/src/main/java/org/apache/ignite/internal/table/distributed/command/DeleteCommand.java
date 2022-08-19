@@ -23,7 +23,7 @@ import org.apache.ignite.raft.client.WriteCommand;
 import org.jetbrains.annotations.NotNull;
 
 /**
- * The command deletes a entry by passed key.
+ * The command deletes a entry by passed row id.
  */
 public class DeleteCommand extends PartitionCommand implements WriteCommand {
     /** Id of the row to be deleted. */

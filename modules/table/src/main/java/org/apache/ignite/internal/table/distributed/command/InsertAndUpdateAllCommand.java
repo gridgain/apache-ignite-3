@@ -26,7 +26,7 @@ import org.apache.ignite.raft.client.WriteCommand;
 import org.jetbrains.annotations.NotNull;
 
 /**
- * The command inserts a batch rows.
+ * The command inserts or update a batch rows.
  */
 public class InsertAndUpdateAllCommand extends PartitionCommand implements WriteCommand {
     /** Binary rows. */
@@ -51,7 +51,7 @@ public class InsertAndUpdateAllCommand extends PartitionCommand implements Write
     }
 
     /**
-     * Gets a collection of binary rows.
+     * Gets rows to insert.
      *
      * @return Binary rows.
      */
@@ -60,9 +60,9 @@ public class InsertAndUpdateAllCommand extends PartitionCommand implements Write
     }
 
     /**
-     * Get rows to update.
+     * Gets rows to update.
      *
-     * @return Rows to update.
+     * @return Binary rows.
      */
     public Map<RowId, BinaryRow> getRowsToUpdate() {
         return rowsToUpdate;

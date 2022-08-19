@@ -24,6 +24,7 @@ import java.nio.file.Path;
 import java.util.Collection;
 import java.util.Iterator;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
@@ -43,6 +44,7 @@ import org.apache.ignite.internal.table.distributed.command.PartitionCommand;
 import org.apache.ignite.internal.table.distributed.command.UpdateCommand;
 import org.apache.ignite.internal.tx.LockKey;
 import org.apache.ignite.internal.tx.LockManager;
+import org.apache.ignite.internal.tx.LockMode;
 import org.apache.ignite.internal.tx.Timestamp;
 import org.apache.ignite.internal.tx.TxManager;
 import org.apache.ignite.internal.tx.TxState;
@@ -53,6 +55,7 @@ import org.apache.ignite.raft.client.ReadCommand;
 import org.apache.ignite.raft.client.WriteCommand;
 import org.apache.ignite.raft.client.service.CommandClosure;
 import org.apache.ignite.raft.client.service.RaftGroupListener;
+import org.apache.ignite.raft.jraft.util.concurrent.ConcurrentHashSet;
 import org.apache.ignite.tx.TransactionException;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.TestOnly;
@@ -78,11 +81,19 @@ public class PartitionListener implements RaftGroupListener {
     /** Dummy primary index. */
     private final ConcurrentHashMap<ByteBuffer, RowId> primaryIndex;
 
+    /** Keys that were inserted by the transaction. */
+    private ConcurrentHashMap<UUID, Set<RowId>> txsInsertedKeys = new ConcurrentHashMap<>();
+
+    /** Keys that were removed by the transaction. */
+    private ConcurrentHashMap<UUID, Set<RowId>> txsRemovedKeys = new ConcurrentHashMap<>();
+
     /**
      * The constructor.
      *
      * @param tableId Table id.
      * @param store  The storage.
+     * @param txManager Transaction manager.
+     * @param primaryIndex Primary index map.
      */
     public PartitionListener(
             UUID tableId,
@@ -193,6 +204,8 @@ public class PartitionListener implements RaftGroupListener {
 
         primaryIndex.put(row.keySlice(), rowId);
 
+        txsInsertedKeys.computeIfAbsent(txId, entry -> new ConcurrentHashSet<RowId>()).add(rowId);
+
         storage.lastAppliedIndex(commandIndex);
     }
 
@@ -208,6 +221,8 @@ public class PartitionListener implements RaftGroupListener {
 
         storage.addWrite(rowId, null, txId);
 
+        txsRemovedKeys.computeIfAbsent(txId, entry -> new ConcurrentHashSet<RowId>()).add(rowId);
+
         storage.lastAppliedIndex(commandIndex);
     }
 
@@ -216,8 +231,6 @@ public class PartitionListener implements RaftGroupListener {
      *
      * @param cmd Command.
      * @param commandIndex Index of the RAFT command.
-     *
-     * @param cmd Command.
      */
     private void handleUpdateCommand(UpdateCommand cmd, long commandIndex) {
         BinaryRow row = cmd.getRow();
@@ -245,6 +258,8 @@ public class PartitionListener implements RaftGroupListener {
                 RowId rowId = storage.insert(row,  txId);
 
                 primaryIndex.put(row.keySlice(), rowId);
+
+                txsInsertedKeys.computeIfAbsent(txId, entry -> new ConcurrentHashSet<RowId>()).add(rowId);
             }
         }
 
@@ -262,7 +277,6 @@ public class PartitionListener implements RaftGroupListener {
      *
      * @param cmd Command.
      * @param commandIndex Index of the RAFT command.
-     * @return Result.
      */
     private void handleDeleteAllCommand(DeleteAllCommand cmd, long commandIndex) {
         UUID txId = cmd.getTxId();
@@ -270,6 +284,8 @@ public class PartitionListener implements RaftGroupListener {
 
         for (RowId rowId : rowIds) {
             storage.addWrite(rowId, null, txId);
+
+            txsRemovedKeys.computeIfAbsent(txId, entry -> new ConcurrentHashSet<RowId>()).add(rowId);
         }
 
         storage.lastAppliedIndex(commandIndex);
@@ -296,25 +312,35 @@ public class PartitionListener implements RaftGroupListener {
             lockManager.locks(txId)
                     .forEachRemaining(
                             lock -> {
-                                storage.commitWrite((RowId) lock.lockKey().key(), new Timestamp(txId));
+                                if (lock.lockMode() == LockMode.EXCLUSIVE && lock.lockKey().key() instanceof RowId) {
+                                    storage.commitWrite((RowId) lock.lockKey().key(), new Timestamp(txId));
+                                }
                             }
                     );
         } else /*if (txManager.state(txId) == TxState.ABORTED)*/ {
             lockManager.locks(txId)
                     .forEachRemaining(
                             lock -> {
-                                storage.abortWrite((RowId) lock.lockKey().key());
+                                if (lock.lockMode() == LockMode.EXCLUSIVE && lock.lockKey().key() instanceof RowId) {
+                                    storage.abortWrite((RowId) lock.lockKey().key());
+                                }
                             }
                     );
         }
 
         // TODO: tmp
         if (/*txManager.state(txId) == TxState.COMMITED*/cmd.finish()) {
-            //storage.pendingKeys.getOrDefault(txId, Collections.emptyList())
-                    //.forEach(key -> storageOld.commitWrite((ByteBuffer) key, txId));
+            for (RowId rowId : txsRemovedKeys.get(txId)) {
+                primaryIndex.remove(rowId);
+            }
         } else /*if (txManager.state(txId) == TxState.ABORTED)*/ {
-            //storage.pendingKeys.getOrDefault(txId, Collections.emptyList()).forEach(key -> storageOld.abortWrite((ByteBuffer) key));
+            for (RowId rowId : txsInsertedKeys.get(txId)) {
+                primaryIndex.remove(rowId);
+            }
         }
+
+        txsRemovedKeys.remove(txId);
+        txsInsertedKeys.remove(txId);
 
         storage.lastAppliedIndex(commandIndex);
 
