@@ -30,7 +30,8 @@ import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Function;
-import org.apache.ignite.internal.table.distributed.command.FinishTxCommand;
+import org.apache.ignite.hlc.HybridClock;
+import org.apache.ignite.internal.table.distributed.command.TxCleanupCommand;
 import org.apache.ignite.internal.table.distributed.raft.PartitionListener;
 import org.apache.ignite.internal.tx.TxManager;
 import org.apache.ignite.internal.tx.TxState;
@@ -71,7 +72,10 @@ public class MessagingServiceTestUtils {
 
                     txManager.changeState(txId, TxState.PENDING, txFinishRequest.commit() ? TxState.COMMITED : TxState.ABORTED);
 
-                    FinishTxCommand finishTxCommand = new FinishTxCommand(txId, txFinishRequest.commit());
+                    HybridClock clock = new HybridClock();
+
+                    // TODO: https://issues.apache.org/jira/browse/IGNITE-17523
+                    TxCleanupCommand finishTxCommand = new TxCleanupCommand(txId, txFinishRequest.commit(), clock.now());
 
                     partitionListeners.forEach(partitionListener ->
                             partitionListener.onWrite(iterator(finishTxCommand, raftIndexFactory.apply(partitionListener)))

@@ -17,14 +17,16 @@
 
 package org.apache.ignite.internal.tx.impl;
 
+import java.util.ArrayList;
 import java.util.Collections;
-import java.util.HashMap;
-import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.TreeMap;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentSkipListMap;
 import java.util.concurrent.ExecutionException;
 import org.apache.ignite.internal.logger.IgniteLogger;
 import org.apache.ignite.internal.logger.Loggers;
@@ -34,7 +36,6 @@ import org.apache.ignite.internal.tx.TxState;
 import org.apache.ignite.lang.IgniteBiTuple;
 import org.apache.ignite.network.ClusterNode;
 import org.apache.ignite.network.NetworkAddress;
-import org.apache.ignite.raft.client.Peer;
 import org.apache.ignite.raft.client.service.RaftGroupService;
 import org.apache.ignite.tx.TransactionException;
 import org.jetbrains.annotations.NotNull;
@@ -62,7 +63,9 @@ public class TransactionImpl implements InternalTransaction {
     private Set<RaftGroupService> enlistedRafts = Collections.newSetFromMap(new ConcurrentHashMap<>());
 
     /** Enlisted replication groups: replication group id -> (primary replica node, raft term). */
-    private Map<String, IgniteBiTuple<ClusterNode, Long>> enlisted = new ConcurrentHashMap<>();
+    private Map<String, IgniteBiTuple<ClusterNode, Long>> enlisted = new ConcurrentSkipListMap<>();
+
+    private volatile List<CompletableFuture>  enlistedResults = new ArrayList<>();
 
     /**
      * The constructor.
@@ -156,40 +159,33 @@ public class TransactionImpl implements InternalTransaction {
      * @return The future.
      */
     private CompletableFuture<Void> finish(boolean commit) {
-        Map<NetworkAddress, Set<String>> tmp = new HashMap<>();
+        TreeMap<ClusterNode, List<String>> groups = new TreeMap<>();
 
-        // Group by common leader addresses.
-        for (RaftGroupService svc : enlistedRafts) {
-            NetworkAddress addr = svc.leader().address();
+        // TODO: sanpwc better conversion required.
+        enlisted.forEach((groupId, groupMeta) -> {
+            ClusterNode recipientNode = groupMeta.get1();
 
-            tmp.computeIfAbsent(addr, k -> new HashSet<>()).add(svc.groupId());
-        }
-
-        CompletableFuture[] futs = new CompletableFuture[tmp.size() + 1];
-
-        int i = 0;
-
-        for (Map.Entry<NetworkAddress, Set<String>> entry : tmp.entrySet()) {
-            boolean local = address.equals(entry.getKey());
-
-            futs[i++] = txManager.finishRemote(entry.getKey(), commit, entry.getValue(), id);
-
-            LOG.debug("finish [addr={}, commit={}, txId={}, local={}, groupIds={}",
-                    address, commit, id, local, entry.getValue());
-        }
-
-        Set<NetworkAddress> allEnlistedNodes = new HashSet<>();
-
-        for (RaftGroupService svc : enlistedRafts) {
-            for (Peer peer : svc.peers()) {
-                allEnlistedNodes.add(peer.address());
+            if (groups.containsKey(recipientNode)) {
+                groups.get(recipientNode).add(groupId);
+            } else {
+                groups.put(recipientNode, new ArrayList<>()).add(groupId);
             }
-        }
+        });
 
-        // Handle coordinator's tx.
-        futs[i] = allEnlistedNodes.contains(address) ? CompletableFuture.completedFuture(null) :
-                commit ? txManager.commitAsync(id) : txManager.rollbackAsync(id);
+        return CompletableFuture.allOf(enlistedResults.toArray(new CompletableFuture[0])).thenAccept(
+                ignored -> txManager.finish(
+                        enlisted.entrySet().iterator().next().getValue().get1(),
+                        commit,
+                        groups,
+                        id
+                )
+        );
+        // TODO: sanpwc add debug log.
+    }
 
-        return CompletableFuture.allOf(futs);
+    /** {@inheritDoc} */
+    @Override
+    public void enlistResultFuture(CompletableFuture resultFuture) {
+        enlistedResults.add(resultFuture);
     }
 }

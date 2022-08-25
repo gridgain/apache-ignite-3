@@ -74,12 +74,12 @@ import org.apache.ignite.internal.storage.rocksdb.configuration.schema.RocksDbDa
 import org.apache.ignite.internal.storage.rocksdb.configuration.schema.RocksDbStorageEngineConfiguration;
 import org.apache.ignite.internal.table.TableImpl;
 import org.apache.ignite.internal.table.distributed.TableManager;
-import org.apache.ignite.internal.table.distributed.TableTxManagerImpl;
 import org.apache.ignite.internal.testframework.WorkDirectory;
 import org.apache.ignite.internal.testframework.WorkDirectoryExtension;
 import org.apache.ignite.internal.tx.LockManager;
 import org.apache.ignite.internal.tx.TxManager;
 import org.apache.ignite.internal.tx.impl.HeapLockManager;
+import org.apache.ignite.internal.tx.impl.TxManagerImpl;
 import org.apache.ignite.internal.util.ByteUtils;
 import org.apache.ignite.internal.vault.VaultManager;
 import org.apache.ignite.internal.vault.persistence.PersistentVaultService;
@@ -364,6 +364,8 @@ public class ItRebalanceDistributedTest {
 
         private final Loza raftManager;
 
+        private final ReplicaManager replicaManager;
+
         private final MetaStorageManager metaStorageManager;
 
         private final DistributedConfigurationStorage cfgStorage;
@@ -381,8 +383,6 @@ public class ItRebalanceDistributedTest {
         private final ClusterManagementGroupManager cmgManager;
 
         private final SchemaManager schemaManager;
-
-        private final ReplicaManager replicaMgr;
 
         /**
          * Constructor that simply creates a subset of components of this node.
@@ -415,7 +415,15 @@ public class ItRebalanceDistributedTest {
 
             raftManager = new Loza(clusterService, dir, new HybridClock());
 
-            txManager = new TableTxManagerImpl(clusterService, lockManager);
+            replicaManager = new ReplicaManager(clusterService);
+
+            ReplicaService replicaSvc = new ReplicaService(
+                    replicaManager,
+                    clusterService.messagingService(),
+                    clusterService.topologyService()
+            );
+
+            txManager = new TxManagerImpl(clusterService, replicaSvc, lockManager);
 
             List<RootKey<?, ?>> rootKeys = List.of(
                     TablesConfiguration.KEY);
@@ -480,10 +488,6 @@ public class ItRebalanceDistributedTest {
 
             schemaManager = new SchemaManager(registry, tablesCfg);
 
-            replicaMgr = new ReplicaManager(clusterService);
-
-            ReplicaService replicaSvc = new ReplicaService(replicaMgr, clusterService.messagingService(), clusterService.topologyService());
-
             tableManager = new TableManager(
                     registry,
                     tablesCfg,
@@ -496,7 +500,8 @@ public class ItRebalanceDistributedTest {
                     txManager,
                     dataStorageMgr,
                     metaStorageManager,
-                    schemaManager);
+                    schemaManager,
+                    new HybridClock());
         }
 
         /**
@@ -507,7 +512,7 @@ public class ItRebalanceDistributedTest {
 
             nodeCfgMgr.start();
 
-            Stream.of(clusterService, clusterCfgMgr, dataStorageMgr, raftManager, replicaMgr, txManager, cmgManager,
+            Stream.of(clusterService, clusterCfgMgr, dataStorageMgr, raftManager, replicaManager, txManager, cmgManager,
                     metaStorageManager, baselineMgr, schemaManager, tableManager).forEach(IgniteComponent::start);
 
             CompletableFuture.allOf(
@@ -524,7 +529,7 @@ public class ItRebalanceDistributedTest {
          */
         void stop() throws Exception {
             var components =
-                    List.of(tableManager, schemaManager, baselineMgr, metaStorageManager, cmgManager, dataStorageMgr, replicaMgr,
+                    List.of(tableManager, schemaManager, baselineMgr, metaStorageManager, cmgManager, dataStorageMgr, replicaManager,
                             raftManager, txManager, clusterCfgMgr, clusterService, nodeCfgMgr, vaultManager);
 
             for (IgniteComponent igniteComponent : components) {

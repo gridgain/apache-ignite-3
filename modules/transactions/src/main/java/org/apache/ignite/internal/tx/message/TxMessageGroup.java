@@ -33,4 +33,9 @@ public class TxMessageGroup {
      * Message type for {@link TxFinishResponse}.
      */
     public static final short TX_FINISH_RESPONSE = 1;
+
+    /**
+     * Message type for {@link TxCleanupRequest}.
+     */
+    public static final short TX_CLEANUP_REQUEST = 2;
 }
