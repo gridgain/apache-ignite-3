@@ -585,8 +585,7 @@ public class TableManager extends Producer<TableEvent, TableEventParameters> imp
                                             newPartAssignment,
                                             new PartitionListener(
                                                     partitionStorage,
-                                                    // TODO: sanpwc not sure that it's proper path
-                                                    // TODO: create ticket for proper storage usage
+                                                    // TODO: https://issues.apache.org/jira/browse/IGNITE-17579 TxStateStorage management.
                                                     new TxStateRocksDbStorage(Paths.get("tx_state_storage" + tblId + partId)),
                                                     txManager,
                                                     new ConcurrentHashMap<>()
@@ -1508,8 +1507,7 @@ public class TableManager extends Producer<TableEvent, TableEventParameters> imp
 
                             RaftGroupListener raftGrpLsnr = new PartitionListener(
                                     partitionStorage,
-                                    // TODO: sanpwc not sure that it's proper path
-                                    // TODO: create ticket for proper storage usage
+                                    // TODO: https://issues.apache.org/jira/browse/IGNITE-17579 TxStateStorage management.
                                     new TxStateRocksDbStorage(Paths.get("tx_state_storage" + tblId + partId)),
                                     txManager,
                                     new ConcurrentHashMap<>()

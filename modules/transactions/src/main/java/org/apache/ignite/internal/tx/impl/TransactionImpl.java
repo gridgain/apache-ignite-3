@@ -175,7 +175,7 @@ public class TransactionImpl implements InternalTransaction {
         return CompletableFuture.allOf(enlistedResults.toArray(new CompletableFuture[0])).thenAccept(
                 ignored -> txManager.finish(
                         enlisted.entrySet().iterator().next().getValue().get1(),
-                        commit,
+                        commit,        // TODO: sanpwc add debug log.
                         groups,
                         id
                 )

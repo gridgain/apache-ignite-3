@@ -17,25 +17,22 @@
 
 package org.apache.ignite.internal.tx.message;
 
-import java.util.List;
-import java.util.TreeMap;
 import java.util.UUID;
+import org.apache.ignite.hlc.HybridTimestamp;
 import org.apache.ignite.internal.replicator.message.ReplicaRequest;
-import org.apache.ignite.network.ClusterNode;
 import org.apache.ignite.network.annotations.Marshallable;
 import org.apache.ignite.network.annotations.Transferable;
 
 /**
- * Transaction finish request that will trigger following actions processing.
+ * Transaction cleanup replica request that will trigger following actions processing.
  *
  *  <ol>
- *      <li>Evaluate commit timestamp.</li>
- *      <li>Run specific raft {@code FinishTxCommand} command, that will apply txn state to corresponding txStateStorage.</li>
- *      <li>Send cleanup requests to all enlisted primary replicas.</li>
+ *      <li>Convert all pending entries(writeIntents) to either regular values(TxState.COMMITED) or remove them (TxState.ABORTED).</li>
+ *      <li>Release all locks that were held on local replica by given transaction.</li>
  *  </ol>
  */
-@Transferable(value = TxMessageGroup.TX_FINISH_REQUEST)
-public interface TxFinishRequest extends ReplicaRequest {
+@Transferable(value = TxMessageGroup.TX_CLEANUP_REQUEST)
+public interface TxCleanupReplicaRequest extends ReplicaRequest {
     /**
      * Returns transaction Id.
      *
@@ -52,10 +49,10 @@ public interface TxFinishRequest extends ReplicaRequest {
     boolean commit();
 
     /**
-     * Returns enlisted partition groups aggregated by expected primary replica nodes.
+     * Returns transaction commit timestamp.
      *
-     * @return Enlisted partition groups aggregated by expected primary replica nodes.
+     * @return Commit timestamp.
      */
     @Marshallable
-    TreeMap<ClusterNode, List<String>> groups();
+    HybridTimestamp commitTimestamp();
 }

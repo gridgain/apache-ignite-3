@@ -38,7 +38,7 @@ import org.apache.ignite.internal.tx.LockMode;
 import org.apache.ignite.internal.tx.Timestamp;
 import org.apache.ignite.internal.tx.TxManager;
 import org.apache.ignite.internal.tx.TxState;
-import org.apache.ignite.internal.tx.message.TxFinishRequest;
+import org.apache.ignite.internal.tx.message.TxFinishReplicaRequest;
 import org.apache.ignite.internal.tx.message.TxFinishResponse;
 import org.apache.ignite.internal.tx.message.TxMessagesFactory;
 import org.apache.ignite.lang.NodeStoppingException;
@@ -196,7 +196,7 @@ public class TxManagerImpl implements TxManager {
     ) {
         assert groups != null && !groups.isEmpty();
 
-        TxFinishRequest req = FACTORY.txFinishRequest()
+        TxFinishReplicaRequest req = FACTORY.txFinishReplicaRequest()
                 .groupId(groups.firstEntry().getValue().get(0))
                 .groups(groups)
                 .commit(commit)
@@ -225,12 +225,12 @@ public class TxManagerImpl implements TxManager {
             boolean commit,
             HybridTimestamp commitTimestamp
     ) {
-        // TODO: sanpwc create ticket for grouping replica requests.
+        // TODO: https://issues.apache.org/jira/browse/IGNITE-17582 Grouping replica requests.
         replicationGroupIds.forEach(groupId -> {
             try {
                 replicaService.invoke(
                         recipientNode,
-                        FACTORY.txCleanupRequest()
+                        FACTORY.txCleanupReplicaRequest()
                                 .groupId(groupId)
                                 .txId(txId)
                                 .commit(commit)

@@ -328,7 +328,7 @@ public class PartitionListener implements RaftGroupListener {
         Set<RowId> pendingRowIds = new HashSet<>(removedRowIds);
         pendingRowIds.addAll(insertedRowIds);
 
-        // TODO: should we either have HybridTimestamp in commitAsync method.
+        // TODO: https://issues.apache.org/jira/browse/IGNITE-17577 Use HybridTimestamp instead.
         Timestamp commitTimestamp = new Timestamp(cmd.commitTimestamp().getPhysical(), cmd.commitTimestamp().getLogical());
 
         if (cmd.commit()) {

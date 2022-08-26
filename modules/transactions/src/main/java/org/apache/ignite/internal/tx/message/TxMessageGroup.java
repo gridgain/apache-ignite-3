@@ -25,7 +25,7 @@ import org.apache.ignite.network.annotations.MessageGroup;
 @MessageGroup(groupType = 5, groupName = "TxMessages")
 public class TxMessageGroup {
     /**
-     * Message type for {@link TxFinishRequest}.
+     * Message type for {@link TxFinishReplicaRequest}.
      */
     public static final short TX_FINISH_REQUEST = 0;
 
@@ -35,7 +35,7 @@ public class TxMessageGroup {
     public static final short TX_FINISH_RESPONSE = 1;
 
     /**
-     * Message type for {@link TxCleanupRequest}.
+     * Message type for {@link TxCleanupReplicaRequest}.
      */
     public static final short TX_CLEANUP_REQUEST = 2;
 }

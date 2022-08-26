@@ -59,8 +59,8 @@ import org.apache.ignite.internal.tx.LockKey;
 import org.apache.ignite.internal.tx.LockManager;
 import org.apache.ignite.internal.tx.LockMode;
 import org.apache.ignite.internal.tx.TxManager;
-import org.apache.ignite.internal.tx.message.TxCleanupRequest;
-import org.apache.ignite.internal.tx.message.TxFinishRequest;
+import org.apache.ignite.internal.tx.message.TxCleanupReplicaRequest;
+import org.apache.ignite.internal.tx.message.TxFinishReplicaRequest;
 import org.apache.ignite.internal.util.Cursor;
 import org.apache.ignite.lang.ErrorGroups.Replicator;
 import org.apache.ignite.lang.IgniteInternalException;
@@ -167,10 +167,10 @@ public class PartitionReplicaListener implements ReplicaListener {
             processScanCloseAction((ReadWriteScanCloseReplicaRequest) request);
 
             return CompletableFuture.completedFuture(null);
-        } else if (request instanceof TxFinishRequest) {
-            return processTxFinishAction((TxFinishRequest) request);
-        } else if (request instanceof TxCleanupRequest) {
-            return processTxCleanupAction((TxCleanupRequest) request);
+        } else if (request instanceof TxFinishReplicaRequest) {
+            return processTxFinishAction((TxFinishReplicaRequest) request);
+        } else if (request instanceof TxCleanupReplicaRequest) {
+            return processTxCleanupAction((TxCleanupReplicaRequest) request);
         } else {
             throw new UnsupportedReplicaRequestException(request.getClass());
         }
@@ -270,7 +270,7 @@ public class PartitionReplicaListener implements ReplicaListener {
      * @param request Transaction finish request.
      * @return future result of the operation.
      */
-    private CompletableFuture<Object> processTxFinishAction(TxFinishRequest request) {
+    private CompletableFuture<Object> processTxFinishAction(TxFinishReplicaRequest request) {
         HybridTimestamp commitTimestamp = hybridClock.now();
 
         List<String> aggregatedGroupIds = request.groups().values().stream().flatMap(List::stream).collect(Collectors.toList());
@@ -288,7 +288,7 @@ public class PartitionReplicaListener implements ReplicaListener {
                 )
         );
 
-        // TODO: sanpwc create ticket for async cleanup.
+        // TODO: https://issues.apache.org/jira/browse/IGNITE-17578
         chaneStateFuture.thenRun(
                 () -> request.groups().forEach(
                         (recipientNode, replicationGroupIds) -> txManager.cleanup(
@@ -317,7 +317,7 @@ public class PartitionReplicaListener implements ReplicaListener {
      * @param request Transaction cleanup request.
      * @return CompletableFuture of void.
      */
-    private CompletableFuture<Object> processTxCleanupAction(TxCleanupRequest request) {
+    private CompletableFuture<Object> processTxCleanupAction(TxCleanupReplicaRequest request) {
         return raftClient.run(new TxCleanupCommand(request.txId(), request.commit(), request.commitTimestamp())).thenApply(ignored -> {
             lockManager.locks(request.txId()).forEachRemaining(lock -> {
                 try {

@@ -192,7 +192,7 @@ public class ItTxDistributedTestSingleNode extends TxAbstractTest {
 
             raftServers.put(node, raftSrv);
 
-            // TODO: sanpwc inline replicaService
+            // TODO: https://issues.apache.org/jira/browse/IGNITE-17523 inline replicaService if necessary, stabilize.
             TxManagerImpl txMgr = new TxManagerImpl(cluster.get(i), null, new HeapLockManager());
 
             txMgr.start();
@@ -216,7 +216,7 @@ public class ItTxDistributedTestSingleNode extends TxAbstractTest {
         TxManager txMgr;
 
         if (startClient()) {
-            // TODO: sanpwc inline replicaService
+            // TODO: https://issues.apache.org/jira/browse/IGNITE-17523 inline replicaService if necessary, stabilize.
             txMgr = new TxManagerImpl(client, null, new HeapLockManager());
         } else {
             // Collocated mode.
@@ -293,8 +293,7 @@ public class ItTxDistributedTestSingleNode extends TxAbstractTest {
                         partNodes,
                         () -> new PartitionListener(
                                 testMpPartStorage,
-                                // TODO: sanpwc not sure that it's proper path
-                                // TODO: create ticket for proper storage usage
+                                // TODO: https://issues.apache.org/jira/browse/IGNITE-17581 Use TestConcurrentHashMapTxStateStrorage instead
                                 new TxStateRocksDbStorage(Paths.get("tx_state_storage" + tblId + partId)),
                                 txManagers.get(node),
                                 new ConcurrentHashMap<>()),

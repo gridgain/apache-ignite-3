@@ -26,7 +26,6 @@ import org.jetbrains.annotations.Nullable;
  * The result of an action.
  */
 @Transferable(value = TxMessageGroup.TX_FINISH_RESPONSE)
-// TODO: sanpwc remove.
 public interface TxFinishResponse extends NetworkMessage, Serializable {
     /**
      * Returns the error message.
