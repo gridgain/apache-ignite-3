@@ -22,6 +22,7 @@ import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
+import org.apache.ignite.hlc.HybridClock;
 import org.apache.ignite.internal.logger.IgniteLogger;
 import org.apache.ignite.internal.logger.Loggers;
 import org.apache.ignite.internal.manager.IgniteComponent;
@@ -69,13 +70,18 @@ public class ReplicaManager implements IgniteComponent {
     /** Replicas. */
     private final ConcurrentHashMap<String, Replica> replicas = new ConcurrentHashMap<>();
 
+    /** A hybrid logical clock. */
+    private final HybridClock clock;
+
     /**
      * Constructor for replica service.
      *
-     * @param clusterNetSvc                 Cluster network service.
+     * @param clusterNetSvc Cluster network service.
+     * @param clock A hybrid logical clock.
      */
-    public ReplicaManager(ClusterService clusterNetSvc) {
+    public ReplicaManager(ClusterService clusterNetSvc, HybridClock clock) {
         this.clusterNetSvc = clusterNetSvc;
+        this.clock = clock;
     }
 
     /**
@@ -207,6 +213,7 @@ public class ReplicaManager implements IgniteComponent {
                                                         request.groupId(), clusterNetSvc.topologyService().localMember()))
                                         .errorCode(Replicator.REPLICA_UNAVAILABLE_ERR)
                                         .errorTraceId(traceId)
+                                        .timestamp(clock.update(request.timestamp()))
                                         .build(),
                                 correlationId);
                     }
@@ -217,7 +224,11 @@ public class ReplicaManager implements IgniteComponent {
                         NetworkMessage msg;
 
                         if (ex == null) {
-                            msg = REPLICA_MESSAGES_FACTORY.replicaResponse().result(res).build();
+                            msg = REPLICA_MESSAGES_FACTORY
+                                    .replicaResponse()
+                                    .result(res)
+                                    .timestamp(clock.update(request.timestamp()))
+                                    .build();
                         } else {
                             var traceId = UUID.randomUUID();
 
@@ -226,7 +237,8 @@ public class ReplicaManager implements IgniteComponent {
                             ErrorReplicaResponseBuilder errorBuilder = REPLICA_MESSAGES_FACTORY
                                     .errorReplicaResponse()
                                     .errorClassName(ex.getClass().getName())
-                                    .errorTraceId(traceId);
+                                    .errorTraceId(traceId)
+                                    .timestamp(clock.update(request.timestamp()));
 
                             if (ex instanceof IgniteInternalException) {
                                 msg = errorBuilder.errorMessage(ex.getMessage())

@@ -19,6 +19,7 @@ package org.apache.ignite.internal.replicator;
 
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeoutException;
+import org.apache.ignite.hlc.HybridClock;
 import org.apache.ignite.internal.replicator.exception.ExceptionUtils;
 import org.apache.ignite.internal.replicator.exception.PrimaryReplicaMissException;
 import org.apache.ignite.internal.replicator.exception.ReplicaUnavailableException;
@@ -49,22 +50,28 @@ public class ReplicaService {
     /** Local node. */
     private final ClusterNode localNode;
 
+    /** A hybrid logical clock. */
+    private final HybridClock clock;
+
     /**
      * The constructor of replica client.
      *
      * @param replicaManager   Replica manager.
      * @param messagingService Cluster message service.
      * @param topologyService  Topology service.
+     * @param clock A hybrid logical clock.
      */
     public ReplicaService(
             ReplicaManager replicaManager,
             MessagingService messagingService,
-            TopologyService topologyService
+            TopologyService topologyService,
+            HybridClock clock
     ) {
         this.replicaManager = replicaManager;
         this.messagingService = messagingService;
 
         this.localNode = topologyService.localMember();
+        this.clock = clock;
     }
 
     /**
@@ -98,6 +105,8 @@ public class ReplicaService {
             } else {
                 assert response instanceof ReplicaResponse : IgniteStringFormatter.format("Unexpected message response [resp={}]",
                         response);
+
+                clock.update(((ReplicaResponse) response).timestamp());
 
                 if (response instanceof ErrorReplicaResponse) {
                     var errResp = (ErrorReplicaResponse) response;

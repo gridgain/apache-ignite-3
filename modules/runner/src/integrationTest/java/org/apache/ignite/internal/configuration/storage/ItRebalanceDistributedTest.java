@@ -480,9 +480,13 @@ public class ItRebalanceDistributedTest {
 
             schemaManager = new SchemaManager(registry, tablesCfg);
 
-            replicaMgr = new ReplicaManager(clusterService);
+            replicaMgr = new ReplicaManager(clusterService, Mockito.mock(HybridClock.class));
 
-            ReplicaService replicaSvc = new ReplicaService(replicaMgr, clusterService.messagingService(), clusterService.topologyService());
+            ReplicaService replicaSvc = new ReplicaService(
+                    replicaMgr,
+                    clusterService.messagingService(),
+                    clusterService.topologyService(),
+                    Mockito.mock(HybridClock.class));
 
             tableManager = new TableManager(
                     registry,
@@ -496,7 +500,8 @@ public class ItRebalanceDistributedTest {
                     txManager,
                     dataStorageMgr,
                     metaStorageManager,
-                    schemaManager);
+                    schemaManager,
+                    Mockito.mock(HybridClock.class));
         }
 
         /**

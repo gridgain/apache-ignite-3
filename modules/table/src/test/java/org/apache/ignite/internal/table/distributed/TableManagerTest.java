@@ -71,6 +71,7 @@ import org.apache.ignite.configuration.schemas.table.SortedIndexConfigurationSch
 import org.apache.ignite.configuration.schemas.table.TableChange;
 import org.apache.ignite.configuration.schemas.table.TableView;
 import org.apache.ignite.configuration.schemas.table.TablesConfiguration;
+import org.apache.ignite.hlc.HybridClock;
 import org.apache.ignite.internal.affinity.AffinityUtils;
 import org.apache.ignite.internal.baseline.BaselineManager;
 import org.apache.ignite.internal.configuration.ConfigurationRegistry;
@@ -130,6 +131,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.MockedStatic;
+import org.mockito.Mockito;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
@@ -773,7 +775,8 @@ public class TableManagerTest extends IgniteAbstractTest {
                 tm,
                 dsm = createDataStorageManager(configRegistry, workDir, rocksDbEngineConfig),
                 msm,
-                sm = new SchemaManager(revisionUpdater, tblsCfg)
+                sm = new SchemaManager(revisionUpdater, tblsCfg),
+                Mockito.mock(HybridClock.class)
         );
 
         sm.start();

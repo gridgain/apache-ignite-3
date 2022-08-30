@@ -205,9 +205,7 @@ public class IgniteImpl implements Ignite {
     /** Schema manager. */
     private final SchemaManager schemaManager;
 
-    /**
-     * A hybrid logical clock.
-     */
+    /** A hybrid logical clock. */
     private final HybridClock clock;
 
     /**
@@ -271,7 +269,7 @@ public class IgniteImpl implements Ignite {
 
         txManager = new TableTxManagerImpl(clusterSvc, lockMgr);
 
-        replicaMgr = new ReplicaManager(clusterSvc);
+        replicaMgr = new ReplicaManager(clusterSvc, clock);
 
         cmgMgr = new ClusterManagementGroupManager(
                 vaultMgr,
@@ -335,7 +333,7 @@ public class IgniteImpl implements Ignite {
             clusterCfgMgr.configurationRegistry().getConfiguration(TablesConfiguration.KEY)
         );
 
-        ReplicaService replicaSvc = new ReplicaService(replicaMgr, clusterSvc.messagingService(), clusterSvc.topologyService());
+        ReplicaService replicaSvc = new ReplicaService(replicaMgr, clusterSvc.messagingService(), clusterSvc.topologyService(), clock);
 
         distributedTblMgr = new TableManager(
                 registry,
@@ -349,7 +347,8 @@ public class IgniteImpl implements Ignite {
                 txManager,
                 dataStorageMgr,
                 metaStorageMgr,
-                schemaManager
+                schemaManager,
+                clock
         );
 
         indexManager = new IndexManager(

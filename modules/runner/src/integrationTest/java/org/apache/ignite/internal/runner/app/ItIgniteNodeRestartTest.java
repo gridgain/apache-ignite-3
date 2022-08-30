@@ -108,6 +108,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInfo;
+import org.mockito.Mockito;
 
 /**
  * These tests check node restart scenarios.
@@ -271,9 +272,13 @@ public class ItIgniteNodeRestartTest extends IgniteAbstractTest {
 
         SchemaManager schemaManager = new SchemaManager(registry, tblCfg);
 
-        ReplicaManager replicaMgr = new ReplicaManager(clusterSvc);
+        ReplicaManager replicaMgr = new ReplicaManager(clusterSvc, Mockito.mock(HybridClock.class));
 
-        ReplicaService replicaSvc = new ReplicaService(replicaMgr, clusterSvc.messagingService(), clusterSvc.topologyService());
+        ReplicaService replicaSvc = new ReplicaService(
+                replicaMgr,
+                clusterSvc.messagingService(),
+                clusterSvc.topologyService(),
+                Mockito.mock(HybridClock.class));
 
         TableManager tableManager = new TableManager(
                 registry,
@@ -287,7 +292,8 @@ public class ItIgniteNodeRestartTest extends IgniteAbstractTest {
                 txManager,
                 dataStorageManager,
                 metaStorageMgr,
-                schemaManager
+                schemaManager,
+                Mockito.mock(HybridClock.class)
         );
 
         // Preparing the result map.

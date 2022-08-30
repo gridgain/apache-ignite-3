@@ -17,6 +17,7 @@
 
 package org.apache.ignite.internal.replicator.message;
 
+import org.apache.ignite.hlc.HybridTimestamp;
 import org.apache.ignite.network.ClusterNode;
 import org.apache.ignite.network.NetworkMessage;
 import org.apache.ignite.network.annotations.Marshallable;
@@ -49,4 +50,7 @@ public interface ReplicaRequest extends NetworkMessage {
      */
     @Marshallable
     Long term();
+
+    @Marshallable
+    HybridTimestamp timestamp();
 }

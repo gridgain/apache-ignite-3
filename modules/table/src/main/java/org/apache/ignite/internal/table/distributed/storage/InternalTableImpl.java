@@ -37,6 +37,7 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.BiFunction;
 import java.util.function.Function;
 import java.util.stream.Collectors;
+import org.apache.ignite.hlc.HybridClock;
 import org.apache.ignite.internal.logger.IgniteLogger;
 import org.apache.ignite.internal.logger.Loggers;
 import org.apache.ignite.internal.replicator.ReplicaService;
@@ -110,6 +111,9 @@ public class InternalTableImpl implements InternalTable {
     /** Table messages factory. */
     private final TableMessagesFactory tableMessagesFactory;
 
+    /** A hybrid logical clock. */
+    private final HybridClock clock;
+
     /**
      * Constructor.
      *
@@ -120,6 +124,7 @@ public class InternalTableImpl implements InternalTable {
      * @param txManager Transaction manager.
      * @param tableStorage Table storage.
      * @param replicaSvc Replica service.
+     * @param clock A hybrid logical clock.
      */
     public InternalTableImpl(
             String tableName,
@@ -130,7 +135,8 @@ public class InternalTableImpl implements InternalTable {
             Function<NetworkAddress, ClusterNode> clusterNodeResolver,
             TxManager txManager,
             MvTableStorage tableStorage,
-            ReplicaService replicaSvc
+            ReplicaService replicaSvc,
+            HybridClock clock
     ) {
         this.tableName = tableName;
         this.tableId = tableId;
@@ -142,6 +148,7 @@ public class InternalTableImpl implements InternalTable {
         this.tableStorage = tableStorage;
         this.replicaSvc = replicaSvc;
         this.tableMessagesFactory = new TableMessagesFactory();
+        this.clock = clock;
     }
 
     /** {@inheritDoc} */
@@ -305,6 +312,7 @@ public class InternalTableImpl implements InternalTable {
                 .transactionId(tx0.id())
                 .scanId(scanId)
                 .batchSize(batchSize)
+                .timestamp(clock.now())
                 .build();
 
         if (primaryReplicaAndTerm != null) {
@@ -417,6 +425,7 @@ public class InternalTableImpl implements InternalTable {
                         .primaryReplica(params.replica())
                         .term(params.term())
                         .requestType(RequestType.RW_GET)
+                        .timestamp(clock.now())
                         .build()
         );
     }
@@ -434,6 +443,7 @@ public class InternalTableImpl implements InternalTable {
                         .primaryReplica(params.replica())
                         .term(params.term())
                         .requestType(RequestType.RW_GET_ALL)
+                        .timestamp(clock.now())
                         .build(),
                 this::collectMultiRowsResponses);
     }
@@ -451,6 +461,7 @@ public class InternalTableImpl implements InternalTable {
                         .primaryReplica(params.replica())
                         .term(params.term())
                         .requestType(RequestType.RW_UPSERT)
+                        .timestamp(clock.now())
                         .build());
     }
 
@@ -467,6 +478,7 @@ public class InternalTableImpl implements InternalTable {
                         .primaryReplica(params.replica())
                         .term(params.term())
                         .requestType(RequestType.RW_UPSERT_ALL)
+                        .timestamp(clock.now())
                         .build(),
                 CompletableFuture::allOf);
     }
@@ -484,6 +496,7 @@ public class InternalTableImpl implements InternalTable {
                         .primaryReplica(params.replica())
                         .term(params.term())
                         .requestType(RequestType.RW_GET_AND_UPSERT)
+                        .timestamp(clock.now())
                         .build()
         );
     }
@@ -501,6 +514,7 @@ public class InternalTableImpl implements InternalTable {
                         .primaryReplica(params.replica())
                         .term(params.term())
                         .requestType(RequestType.RW_INSERT)
+                        .timestamp(clock.now())
                         .build()
         );
     }
@@ -518,6 +532,7 @@ public class InternalTableImpl implements InternalTable {
                         .primaryReplica(params.replica())
                         .term(params.term())
                         .requestType(RequestType.RW_INSERT_ALL)
+                        .timestamp(clock.now())
                         .build(),
                 this::collectMultiRowsResponses);
     }
@@ -535,6 +550,7 @@ public class InternalTableImpl implements InternalTable {
                         .primaryReplica(params.replica())
                         .term(params.term())
                         .requestType(RequestType.RW_REPLACE)
+                        .timestamp(clock.now())
                         .build()
         );
     }
@@ -553,6 +569,7 @@ public class InternalTableImpl implements InternalTable {
                         .primaryReplica(params.replica())
                         .term(params.term())
                         .requestType(RequestType.RW_REPLACE_IF_EXIST)
+                        .timestamp(clock.now())
                         .build()
         );
     }
@@ -570,6 +587,7 @@ public class InternalTableImpl implements InternalTable {
                         .primaryReplica(params.replica())
                         .term(params.term())
                         .requestType(RequestType.RW_GET_AND_REPLACE)
+                        .timestamp(clock.now())
                         .build()
         );
     }
@@ -587,6 +605,7 @@ public class InternalTableImpl implements InternalTable {
                         .primaryReplica(params.replica())
                         .term(params.term())
                         .requestType(RequestType.RW_DELETE)
+                        .timestamp(clock.now())
                         .build()
         );
     }
@@ -604,6 +623,7 @@ public class InternalTableImpl implements InternalTable {
                         .primaryReplica(params.replica())
                         .term(params.term())
                         .requestType(RequestType.RW_DELETE_EXACT)
+                        .timestamp(clock.now())
                         .build()
         );
     }
@@ -621,6 +641,7 @@ public class InternalTableImpl implements InternalTable {
                         .primaryReplica(params.replica())
                         .term(params.term())
                         .requestType(RequestType.RW_GET_AND_DELETE)
+                        .timestamp(clock.now())
                         .build()
         );
     }
@@ -638,6 +659,7 @@ public class InternalTableImpl implements InternalTable {
                         .primaryReplica(params.replica())
                         .term(params.term())
                         .requestType(RequestType.RW_DELETE_ALL)
+                        .timestamp(clock.now())
                         .build(),
                 this::collectMultiRowsResponses);
     }
@@ -658,6 +680,7 @@ public class InternalTableImpl implements InternalTable {
                         .primaryReplica(params.replica())
                         .term(params.term())
                         .requestType(RequestType.RW_DELETE_EXACT_ALL)
+                        .timestamp(clock.now())
                         .build(),
                 this::collectMultiRowsResponses);
     }

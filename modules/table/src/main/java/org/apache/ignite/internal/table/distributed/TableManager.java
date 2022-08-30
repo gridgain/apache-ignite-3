@@ -67,6 +67,7 @@ import org.apache.ignite.configuration.schemas.table.TableConfiguration;
 import org.apache.ignite.configuration.schemas.table.TableView;
 import org.apache.ignite.configuration.schemas.table.TablesConfiguration;
 import org.apache.ignite.configuration.validation.ConfigurationValidationException;
+import org.apache.ignite.hlc.HybridClock;
 import org.apache.ignite.internal.affinity.AffinityUtils;
 import org.apache.ignite.internal.baseline.BaselineManager;
 import org.apache.ignite.internal.causality.VersionedValue;
@@ -224,6 +225,8 @@ public class TableManager extends Producer<TableEvent, TableEventParameters> imp
      */
     private final ExecutorService ioExecutor;
 
+    private final HybridClock clock;
+
     /** Rebalance scheduler pool size. */
     private static final int REBALANCE_SCHEDULER_POOL_SIZE = Math.min(Utils.cpus() * 3, 20);
 
@@ -253,7 +256,8 @@ public class TableManager extends Producer<TableEvent, TableEventParameters> imp
             TxManager txManager,
             DataStorageManager dataStorageMgr,
             MetaStorageManager metaStorageMgr,
-            SchemaManager schemaManager
+            SchemaManager schemaManager,
+            HybridClock clock
     ) {
         this.tablesCfg = tablesCfg;
         this.raftMgr = raftMgr;
@@ -265,6 +269,7 @@ public class TableManager extends Producer<TableEvent, TableEventParameters> imp
         this.dataStorageMgr = dataStorageMgr;
         this.metaStorageMgr = metaStorageMgr;
         this.schemaManager = schemaManager;
+        this.clock = clock;
 
         netAddrResolver = addr -> {
             ClusterNode node = topologyService.getByAddress(addr);
@@ -746,7 +751,7 @@ public class TableManager extends Producer<TableEvent, TableEventParameters> imp
         tableStorage.start();
 
         InternalTableImpl internalTable = new InternalTableImpl(name, tblId, new Int2ObjectOpenHashMap<>(partitions),
-                partitions, netAddrResolver, clusterNodeResolver, txManager, tableStorage, replicaSvc);
+                partitions, netAddrResolver, clusterNodeResolver, txManager, tableStorage, replicaSvc, clock);
 
         var table = new TableImpl(internalTable);
 
