@@ -23,7 +23,7 @@ import org.apache.ignite.hlc.HybridTimestamp;
 import org.apache.ignite.raft.client.WriteCommand;
 
 /**
- * State machine command to cleanup on transaction commit.
+ * State machine command to finish the transaction on commit or rollback.
  */
 public class FinishTxCommand extends PartitionCommand implements WriteCommand {
     /**

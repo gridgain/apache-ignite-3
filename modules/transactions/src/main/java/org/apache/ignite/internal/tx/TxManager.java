@@ -141,7 +141,16 @@ public interface TxManager extends IgniteComponent {
      */
     CompletableFuture<Void> finish(ClusterNode recipientNode, boolean commit, TreeMap<ClusterNode, List<String>> groups, UUID txId);
 
-    // TODO: sanpwc javadoc
+    /**
+     * Sends cleanup request to the specified primary replica.
+     *
+     * @param recipientNode Primary replica to process given cleanup request.
+     * @param replicationGroupIds Replication group id.
+     * @param txId Transaction id.
+     * @param commit {@code True} if a commit requested.
+     * @param commitTimestamp Commit timestamp.
+     * @return Completable future of Void.
+     */
     CompletableFuture<Void> cleanup(
             ClusterNode recipientNode,
             List<String> replicationGroupIds,

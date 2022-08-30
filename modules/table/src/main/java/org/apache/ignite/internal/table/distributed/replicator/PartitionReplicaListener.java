@@ -113,8 +113,12 @@ public class PartitionReplicaListener implements ReplicaListener {
      * The constructor.
      *
      * @param mvDataStorage Data storage.
-     * @param raftClient    Raft client.
-     * @param lockManager   Lock manager.
+     * @param raftClient Raft client.
+     * @param txManager Transaction manager.
+     * @param lockManager Lock manager.
+     * @param tableId Table id.
+     * @param primaryIndex Primary index.
+     * @param hybridClock Hybrid clock.
      */
     public PartitionReplicaListener(
             MvPartitionStorage mvDataStorage,
@@ -317,13 +321,13 @@ public class PartitionReplicaListener implements ReplicaListener {
      * @param request Transaction cleanup request.
      * @return CompletableFuture of void.
      */
-    private CompletableFuture<Object> processTxCleanupAction(TxCleanupReplicaRequest request) {
+    private CompletableFuture processTxCleanupAction(TxCleanupReplicaRequest request) {
         return raftClient.run(new TxCleanupCommand(request.txId(), request.commit(), request.commitTimestamp())).thenApply(ignored -> {
             lockManager.locks(request.txId()).forEachRemaining(lock -> {
                 try {
                     lockManager.release(lock);
                 } catch (LockException e) {
-                    assert false; // This shouldn't happen during tx finish.
+                    throw new AssertionError(e); // This shouldn't happen during tx finish.
                 }
             });
 

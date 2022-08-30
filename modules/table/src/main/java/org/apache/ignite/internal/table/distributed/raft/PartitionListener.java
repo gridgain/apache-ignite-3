@@ -23,7 +23,6 @@ import static org.apache.ignite.lang.IgniteStringFormatter.format;
 import java.nio.ByteBuffer;
 import java.nio.file.Path;
 import java.util.Collection;
-import java.util.HashSet;
 import java.util.Iterator;
 import java.util.Map;
 import java.util.Set;
@@ -88,6 +87,9 @@ public class PartitionListener implements RaftGroupListener {
 
     /** Keys that were removed by the transaction. */
     private ConcurrentHashMap<UUID, Set<RowId>> txsRemovedKeys = new ConcurrentHashMap<>();
+
+    /** Rows that were inserted, updated or removed. */
+    private ConcurrentHashMap<UUID, Set<RowId>> txsPendingRowIds = new ConcurrentHashMap<>();
 
     /**
      * The constructor.
@@ -185,7 +187,9 @@ public class PartitionListener implements RaftGroupListener {
 
         primaryIndex.put(row.keySlice(), rowId);
 
-        txsInsertedKeys.computeIfAbsent(txId, entry -> new ConcurrentHashSet<RowId>()).add(rowId);
+        txsInsertedKeys.computeIfAbsent(txId, entry -> new ConcurrentHashSet<>()).add(rowId);
+
+        txsPendingRowIds.computeIfAbsent(txId, entry -> new ConcurrentHashSet<>()).add(rowId);
 
         storage.lastAppliedIndex(commandIndex);
     }
@@ -202,7 +206,9 @@ public class PartitionListener implements RaftGroupListener {
 
         storage.addWrite(rowId, null, txId);
 
-        txsRemovedKeys.computeIfAbsent(txId, entry -> new ConcurrentHashSet<RowId>()).add(rowId);
+        txsRemovedKeys.computeIfAbsent(txId, entry -> new ConcurrentHashSet<>()).add(rowId);
+
+        txsPendingRowIds.computeIfAbsent(txId, entry -> new ConcurrentHashSet<>()).add(rowId);
 
         storage.lastAppliedIndex(commandIndex);
     }
@@ -219,6 +225,8 @@ public class PartitionListener implements RaftGroupListener {
         UUID txId = cmd.txId();
 
         storage.addWrite(rowId, row,  txId);
+
+        txsPendingRowIds.computeIfAbsent(txId, entry -> new ConcurrentHashSet<>()).add(rowId);
 
         storage.lastAppliedIndex(commandIndex);
     }
@@ -240,13 +248,17 @@ public class PartitionListener implements RaftGroupListener {
 
                 primaryIndex.put(row.keySlice(), rowId);
 
-                txsInsertedKeys.computeIfAbsent(txId, entry -> new ConcurrentHashSet<RowId>()).add(rowId);
+                txsInsertedKeys.computeIfAbsent(txId, entry -> new ConcurrentHashSet<>()).add(rowId);
+
+                txsPendingRowIds.computeIfAbsent(txId, entry -> new ConcurrentHashSet<>()).add(rowId);
             }
         }
 
         if (!CollectionUtils.nullOrEmpty(rowsToUpdate)) {
             for (Map.Entry<RowId, BinaryRow> entry : rowsToUpdate.entrySet()) {
                 storage.addWrite(entry.getKey(), entry.getValue(), txId);
+
+                txsPendingRowIds.computeIfAbsent(txId, entry0 -> new ConcurrentHashSet<>()).add(entry.getKey());
             }
         }
 
@@ -266,7 +278,9 @@ public class PartitionListener implements RaftGroupListener {
         for (RowId rowId : rowIds) {
             storage.addWrite(rowId, null, txId);
 
-            txsRemovedKeys.computeIfAbsent(txId, entry -> new ConcurrentHashSet<RowId>()).add(rowId);
+            txsRemovedKeys.computeIfAbsent(txId, entry -> new ConcurrentHashSet<>()).add(rowId);
+
+            txsPendingRowIds.computeIfAbsent(txId, entry -> new ConcurrentHashSet<>()).add(rowId);
         }
 
         storage.lastAppliedIndex(commandIndex);
@@ -325,8 +339,7 @@ public class PartitionListener implements RaftGroupListener {
 
         Set<RowId> insertedRowIds = txsInsertedKeys.get(txId);
 
-        Set<RowId> pendingRowIds = new HashSet<>(removedRowIds);
-        pendingRowIds.addAll(insertedRowIds);
+        Set<RowId> pendingRowIds = txsPendingRowIds.get(txId);
 
         // TODO: https://issues.apache.org/jira/browse/IGNITE-17577 Use HybridTimestamp instead.
         Timestamp commitTimestamp = new Timestamp(cmd.commitTimestamp().getPhysical(), cmd.commitTimestamp().getLogical());
@@ -349,6 +362,7 @@ public class PartitionListener implements RaftGroupListener {
 
         txsRemovedKeys.remove(txId);
         txsInsertedKeys.remove(txId);
+        txsPendingRowIds.remove(txId);
 
         storage.lastAppliedIndex(commandIndex);
     }

@@ -18,14 +18,11 @@
 package org.apache.ignite.internal.tx.impl;
 
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.TreeMap;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentSkipListMap;
 import java.util.concurrent.ExecutionException;
 import org.apache.ignite.internal.logger.IgniteLogger;
@@ -35,8 +32,6 @@ import org.apache.ignite.internal.tx.TxManager;
 import org.apache.ignite.internal.tx.TxState;
 import org.apache.ignite.lang.IgniteBiTuple;
 import org.apache.ignite.network.ClusterNode;
-import org.apache.ignite.network.NetworkAddress;
-import org.apache.ignite.raft.client.service.RaftGroupService;
 import org.apache.ignite.tx.TransactionException;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -56,12 +51,6 @@ public class TransactionImpl implements InternalTransaction {
     /** The transaction manager. */
     private final TxManager txManager;
 
-    /** The originator. */
-    private final NetworkAddress address;
-
-    /** Enlisted raft groups. */
-    private Set<RaftGroupService> enlistedRafts = Collections.newSetFromMap(new ConcurrentHashMap<>());
-
     /** Enlisted replication groups: replication group id -> (primary replica node, raft term). */
     private Map<String, IgniteBiTuple<ClusterNode, Long>> enlisted = new ConcurrentSkipListMap<>();
 
@@ -72,12 +61,10 @@ public class TransactionImpl implements InternalTransaction {
      *
      * @param txManager The tx manager.
      * @param id The id.
-     * @param address   The local address.
      */
-    public TransactionImpl(TxManager txManager, @NotNull UUID id, NetworkAddress address) {
+    public TransactionImpl(TxManager txManager, @NotNull UUID id) {
         this.txManager = txManager;
         this.id = id;
-        this.address = address;
     }
 
     /** {@inheritDoc} */
@@ -173,12 +160,16 @@ public class TransactionImpl implements InternalTransaction {
         });
 
         return CompletableFuture.allOf(enlistedResults.toArray(new CompletableFuture[0])).thenAccept(
-                ignored -> txManager.finish(
-                        enlisted.entrySet().iterator().next().getValue().get1(),
-                        commit,        // TODO: sanpwc add debug log.
-                        groups,
-                        id
-                )
+                ignored -> {
+                    if (!enlisted.isEmpty()) {
+                        txManager.finish(
+                                enlisted.entrySet().iterator().next().getValue().get1(),
+                                commit,
+                                groups,
+                                id
+                        );
+                    }
+                }
         );
         // TODO: sanpwc add debug log.
     }

@@ -88,7 +88,7 @@ public class TxManagerImpl implements TxManager {
 
         states.put(txId, TxState.PENDING);
 
-        return new TransactionImpl(this, txId, clusterService.topologyService().localMember().address());
+        return new TransactionImpl(this, txId);
     }
 
     /** {@inheritDoc} */
