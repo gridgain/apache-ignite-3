@@ -28,12 +28,14 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentNavigableMap;
 import java.util.concurrent.ConcurrentSkipListMap;
+import java.util.concurrent.TimeoutException;
 import java.util.stream.Collectors;
 import org.apache.ignite.hlc.HybridClock;
 import org.apache.ignite.hlc.HybridTimestamp;
 import org.apache.ignite.internal.logger.IgniteLogger;
 import org.apache.ignite.internal.logger.Loggers;
 import org.apache.ignite.internal.replicator.exception.ReplicationException;
+import org.apache.ignite.internal.replicator.exception.ReplicationTimeoutException;
 import org.apache.ignite.internal.replicator.exception.UnsupportedReplicaRequestException;
 import org.apache.ignite.internal.replicator.listener.ReplicaListener;
 import org.apache.ignite.internal.replicator.message.ReplicaRequest;
@@ -66,14 +68,15 @@ import org.apache.ignite.lang.ErrorGroups.Replicator;
 import org.apache.ignite.lang.IgniteInternalException;
 import org.apache.ignite.lang.IgniteStringFormatter;
 import org.apache.ignite.lang.IgniteUuid;
+import org.apache.ignite.raft.client.Command;
 import org.apache.ignite.raft.client.service.RaftGroupService;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 /** Partition replication listener. */
 public class PartitionReplicaListener implements ReplicaListener {
-    /** Logger. */
-    private static final IgniteLogger LOG = Loggers.forClass(PartitionReplicaListener.class);
+    /** Replication group id. */
+    private final String replicationGroupId;
 
     /** Primary key id. */
     public final UUID indexPkId;
@@ -125,6 +128,7 @@ public class PartitionReplicaListener implements ReplicaListener {
             RaftGroupService raftClient,
             TxManager txManager,
             LockManager lockManager,
+            String replicationGroupId,
             UUID tableId,
             ConcurrentHashMap<ByteBuffer, RowId> primaryIndex,
             HybridClock hybridClock
@@ -133,6 +137,7 @@ public class PartitionReplicaListener implements ReplicaListener {
         this.raftClient = raftClient;
         this.txManager = txManager;
         this.lockManager = lockManager;
+        this.replicationGroupId = replicationGroupId;
         this.tableId = tableId;
         this.primaryIndex = primaryIndex;
         this.hybridClock = hybridClock;
@@ -200,7 +205,8 @@ public class PartitionReplicaListener implements ReplicaListener {
             } catch (Exception e) {
                 if (ex == null) {
                     ex = new ReplicationException(Replicator.REPLICA_COMMON_ERR,
-                            IgniteStringFormatter.format("Close cursor exception [msg={}]", e.getMessage()), e);
+                            IgniteStringFormatter.format("Close cursor exception [replicaGrpId={}, msg={}]", replicationGroupId,
+                                    e.getMessage()), e);
                 } else {
                     ex.addSuppressed(e);
                 }
@@ -232,7 +238,8 @@ public class PartitionReplicaListener implements ReplicaListener {
                 cursor.close();
             } catch (Exception e) {
                 throw new ReplicationException(Replicator.REPLICA_COMMON_ERR,
-                        IgniteStringFormatter.format("Close cursor exception [msg={}]", e.getMessage()), e);
+                        IgniteStringFormatter.format("Close cursor exception [replicaGrpId={}, msg={}]", replicationGroupId,
+                                e.getMessage()), e);
             }
         }
     }
@@ -453,9 +460,8 @@ public class PartitionReplicaListener implements ReplicaListener {
                     }
 
                     CompletableFuture raftFut = rowIdsToDelete.isEmpty() ? CompletableFuture.completedFuture(null)
-                            : raftClient.run(new DeleteAllCommand(rowIdsToDelete, txId));
+                            : applyCmdWithExceptionHandling(new DeleteAllCommand(rowIdsToDelete, txId));
 
-                    //TODO: IGNITE-17508 Exception handling in the partition replication listener for RAFT futures
                     return raftFut.thenApply(ignored -> result);
                 });
             }
@@ -485,9 +491,8 @@ public class PartitionReplicaListener implements ReplicaListener {
                     }
 
                     CompletableFuture raftFut = rowIdsToDelete.isEmpty() ? CompletableFuture.completedFuture(null)
-                            : raftClient.run(new DeleteAllCommand(rowIdsToDelete, txId));
+                            : applyCmdWithExceptionHandling(new DeleteAllCommand(rowIdsToDelete, txId));
 
-                    //TODO: IGNITE-17508 Exception handling in the partition replication listener for RAFT futures
                     return raftFut.thenApply(ignored -> result);
                 });
             }
@@ -517,9 +522,8 @@ public class PartitionReplicaListener implements ReplicaListener {
                     }
 
                     CompletableFuture raftFut = rowsToInsert.isEmpty() ? CompletableFuture.completedFuture(null)
-                            : raftClient.run(new InsertAndUpdateAllCommand(rowsToInsert, null, txId));
+                            : applyCmdWithExceptionHandling(new InsertAndUpdateAllCommand(rowsToInsert, null, txId));
 
-                    //TODO: IGNITE-17508 Exception handling in the partition replication listener for RAFT futures
                     return raftFut.thenApply(ignored -> result);
                 });
             }
@@ -549,9 +553,8 @@ public class PartitionReplicaListener implements ReplicaListener {
                     }
 
                     CompletableFuture raftFut = rowsToInsert.isEmpty() ? CompletableFuture.completedFuture(null)
-                            : raftClient.run(new InsertAndUpdateAllCommand(rowsToInsert, rowsToUpdate, txId));
+                            : applyCmdWithExceptionHandling(new InsertAndUpdateAllCommand(rowsToInsert, rowsToUpdate, txId));
 
-                    //TODO: IGNITE-17508 Exception handling in the partition replication listener for RAFT futures
                     return raftFut.thenApply(ignored -> null);
                 });
             }
@@ -560,6 +563,30 @@ public class PartitionReplicaListener implements ReplicaListener {
                         IgniteStringFormatter.format("Unknown multi request [actionType={}]", request.requestType()));
             }
         }
+    }
+
+    /**
+     * Executes a command and handles exceptions. A result future can be finished with exception by following rules:
+     * <ul>
+     *     <li>If RAFT command cannot finish due to timeout, the future finished with {@link ReplicationTimeoutException}.</li>
+     *     <li>If RAFT command finish with a runtime exception, the exception is moved to the result future.</li>
+     *     <li>If RAFT command finish with any other exception, the future finished with {@link ReplicationException}.
+     *     The original exception is set as cause.</li>
+     * </ul>
+     *
+     * @param cmd Raft command.
+     * @return Raft future.
+     */
+    private CompletableFuture<Object> applyCmdWithExceptionHandling(Command cmd) {
+        return raftClient.run(cmd).exceptionally(throwable -> {
+            if (throwable instanceof TimeoutException) {
+                throw new ReplicationTimeoutException(replicationGroupId);
+            } else if (throwable instanceof RuntimeException) {
+                throw (RuntimeException) throwable;
+            } else {
+                throw new ReplicationException(replicationGroupId, throwable);
+            }
+        });
     }
 
     /**
@@ -593,10 +620,9 @@ public class PartitionReplicaListener implements ReplicaListener {
                 return lockFut.thenCompose(lockedRowId -> {
                     boolean removed = lockedRowId != null;
 
-                    CompletableFuture raftFut = removed ? raftClient.run(new DeleteCommand(lockedRowId, txId)) :
+                    CompletableFuture raftFut = removed ? applyCmdWithExceptionHandling(new DeleteCommand(lockedRowId, txId)) :
                             CompletableFuture.completedFuture(null);
 
-                    //TODO: IGNITE-17508 Exception handling in the partition replication listener for RAFT futures
                     return raftFut.thenApply(ignored -> removed);
                 });
             }
@@ -606,10 +632,9 @@ public class PartitionReplicaListener implements ReplicaListener {
                 return lockFut.thenCompose(lockedRowId -> {
                     BinaryRow lockedRow = lockedRowId != null ? mvDataStorage.read(lockedRowId, txId) : null;
 
-                    CompletableFuture raftFut = lockedRowId != null ? raftClient.run(new DeleteCommand(lockedRowId, txId)) :
+                    CompletableFuture raftFut = lockedRowId != null ? applyCmdWithExceptionHandling(new DeleteCommand(lockedRowId, txId)) :
                             CompletableFuture.completedFuture(null);
 
-                    //TODO: IGNITE-17508 Exception handling in the partition replication listener for RAFT futures
                     return raftFut.thenApply(ignored -> lockedRow);
                 });
             }
@@ -619,10 +644,9 @@ public class PartitionReplicaListener implements ReplicaListener {
                 return lockFut.thenCompose(lockedRow -> {
                     boolean removed = lockedRow != null;
 
-                    CompletableFuture raftFut = removed ? raftClient.run(new DeleteCommand(lockedRow, txId)) :
+                    CompletableFuture raftFut = removed ? applyCmdWithExceptionHandling(new DeleteCommand(lockedRow, txId)) :
                             CompletableFuture.completedFuture(null);
 
-                    //TODO: IGNITE-17508 Exception handling in the partition replication listener for RAFT futures
                     return raftFut.thenApply(ignored -> removed);
                 });
             }
@@ -632,10 +656,9 @@ public class PartitionReplicaListener implements ReplicaListener {
                 return lockFut.thenApply(lockedRowId -> {
                     boolean inserted = lockedRowId == null;
 
-                    CompletableFuture raftFut = lockedRowId == null ? raftClient.run(new InsertCommand(searchRow, txId)) :
+                    CompletableFuture raftFut = lockedRowId == null ? applyCmdWithExceptionHandling(new InsertCommand(searchRow, txId)) :
                             CompletableFuture.completedFuture(null);
 
-                    //TODO: IGNITE-17508 Exception handling in the partition replication listener for RAFT futures
                     return raftFut.thenApply(ignored -> inserted);
                 });
             }
@@ -643,10 +666,10 @@ public class PartitionReplicaListener implements ReplicaListener {
                 CompletableFuture<RowId> lockFut = takeLocksForUpsert(searchKey, indexId, txId);
 
                 return lockFut.thenApply(lockedRowId -> {
-                    CompletableFuture raftFut = lockedRowId != null ? raftClient.run(new UpdateCommand(lockedRowId, searchRow, txId)) :
-                            raftClient.run(new InsertCommand(searchRow, txId));
+                    CompletableFuture raftFut =
+                            lockedRowId != null ? applyCmdWithExceptionHandling(new UpdateCommand(lockedRowId, searchRow, txId)) :
+                                    applyCmdWithExceptionHandling(new InsertCommand(searchRow, txId));
 
-                    //TODO: IGNITE-17508 Exception handling in the partition replication listener for RAFT futures
                     return raftFut.thenApply(ignored -> null);
                 });
             }
@@ -666,10 +689,9 @@ public class PartitionReplicaListener implements ReplicaListener {
                                             BinaryRow result = rowId != null ? mvDataStorage.read(rowId, txId) : null;
 
                                             CompletableFuture raftFut =
-                                                    rowId != null ? raftClient.run(new UpdateCommand(rowId, searchRow, txId)) :
-                                                            raftClient.run(new InsertCommand(searchRow, txId));
+                                                    rowId != null ? applyCmdWithExceptionHandling(new UpdateCommand(rowId, searchRow, txId))
+                                                            : applyCmdWithExceptionHandling(new InsertCommand(searchRow, txId));
 
-                                            //TODO: IGNITE-17508 Exception handling in the partition replication listener for RAFT futures
                                             return raftFut.thenApply(ignored -> result);
                                         });
                                     });
@@ -704,9 +726,8 @@ public class PartitionReplicaListener implements ReplicaListener {
 
                                 return rowLockFut.thenApply(lockedRow -> {
                                     CompletableFuture raftFut = lockedRow == null ? CompletableFuture.completedFuture(null) :
-                                            raftClient.run(new UpdateCommand(lockedRowId, lockedRow, txId));
+                                            applyCmdWithExceptionHandling(new UpdateCommand(lockedRowId, lockedRow, txId));
 
-                                    //TODO: IGNITE-17508 Exception handling in the partition replication listener for RAFT futures
                                     return raftFut.thenApply(ignored -> lockedRow);
                                 });
                             });
@@ -718,10 +739,9 @@ public class PartitionReplicaListener implements ReplicaListener {
                 return lockFut.thenApply(lockedRowId -> {
                     boolean replaced = lockedRowId != null;
 
-                    CompletableFuture raftFut = replaced ? raftClient.run(new UpdateCommand(lockedRowId, searchRow, txId)) :
+                    CompletableFuture raftFut = replaced ? applyCmdWithExceptionHandling(new UpdateCommand(lockedRowId, searchRow, txId)) :
                             CompletableFuture.completedFuture(null);
 
-                    //TODO: IGNITE-17508 Exception handling in the partition replication listener for RAFT futures
                     return raftFut.thenApply(ignored -> replaced);
                 });
             }
@@ -919,10 +939,9 @@ public class PartitionReplicaListener implements ReplicaListener {
                 return lockFut.thenApply(lockedRowId -> {
                     boolean replaced = lockedRowId != null;
 
-                    CompletableFuture raftFut = replaced ? raftClient.run(new UpdateCommand(lockedRowId, searchRow, txId)) :
+                    CompletableFuture raftFut = replaced ? applyCmdWithExceptionHandling(new UpdateCommand(lockedRowId, searchRow, txId)) :
                             CompletableFuture.completedFuture(null);
 
-                    //TODO: IGNITE-17508 Exception handling in the partition replication listener for RAFT futures
                     return raftFut.thenApply(ignored -> replaced);
                 });
             }
