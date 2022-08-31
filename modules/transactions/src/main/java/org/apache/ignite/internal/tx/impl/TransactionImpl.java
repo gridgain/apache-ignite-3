@@ -161,15 +161,19 @@ public class TransactionImpl implements InternalTransaction {
 
         return CompletableFuture.allOf(enlistedResults.toArray(new CompletableFuture[0])).handle(
                 (ignored, ex) -> {
-                    assert ex == null || !commit : "Unable to commit the transaction with partially failed operations";
+                    if (ex != null && commit) {
+                        throw new TransactionException("Unable to commit the transaction with partially failed operations.");
+                    } else {
+                        if (!enlisted.isEmpty()) {
+                            txManager.finish(
+                                    enlisted.entrySet().iterator().next().getValue().get1(),
+                                    commit,
+                                    groups,
+                                    id
+                            );
+                        }
 
-                    if (!enlisted.isEmpty()) {
-                        txManager.finish(
-                                enlisted.entrySet().iterator().next().getValue().get1(),
-                                commit,
-                                groups,
-                                id
-                        );
+                        return null;
                     }
                 }
         );
