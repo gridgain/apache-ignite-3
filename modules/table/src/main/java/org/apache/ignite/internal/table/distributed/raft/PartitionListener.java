@@ -45,7 +45,6 @@ import org.apache.ignite.internal.table.distributed.command.InsertAndUpdateAllCo
 import org.apache.ignite.internal.table.distributed.command.InsertCommand;
 import org.apache.ignite.internal.table.distributed.command.TxCleanupCommand;
 import org.apache.ignite.internal.table.distributed.command.UpdateCommand;
-import org.apache.ignite.internal.table.distributed.replicator.PartitionReplicaListener;
 import org.apache.ignite.internal.tx.Timestamp;
 import org.apache.ignite.internal.tx.TxManager;
 import org.apache.ignite.internal.tx.TxMeta;
@@ -67,7 +66,7 @@ import org.jetbrains.annotations.TestOnly;
  */
 public class PartitionListener implements RaftGroupListener {
     /** Logger. */
-    private static final IgniteLogger LOG = Loggers.forClass(PartitionReplicaListener.class);
+    private static final IgniteLogger LOG = Loggers.forClass(PartitionListener.class);
 
     /** Versioned partition storage. */
     private final MvPartitionStorage storage;
