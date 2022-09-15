@@ -107,11 +107,15 @@ public class RocksDbMvTableStorageTest extends AbstractMvTableStorageTest {
 
         MvPartitionStorage partitionStorage0 = tableStorage.getOrCreateMvPartition(42);
 
-        RowId rowId0 = partitionStorage0.runConsistently(() -> partitionStorage0.insert(testData, txId));
+        RowId rowId0 = new RowId(1);
+
+        partitionStorage0.runConsistently(() -> partitionStorage0.addWrite(rowId0, testData, txId));
 
         MvPartitionStorage partitionStorage1 = tableStorage.getOrCreateMvPartition(1 << 8);
 
-        RowId rowId1 = partitionStorage1.runConsistently(() -> partitionStorage1.insert(testData, txId));
+        RowId rowId1 = new RowId(1);
+
+        partitionStorage1.runConsistently(() -> partitionStorage1.addWrite(rowId1, testData, txId));
 
         CompletableFuture<Void> destroyFuture = tableStorage.destroyPartition(42);
 
@@ -136,7 +140,9 @@ public class RocksDbMvTableStorageTest extends AbstractMvTableStorageTest {
 
         MvPartitionStorage partitionStorage0 = tableStorage.getOrCreateMvPartition(0);
 
-        RowId rowId0 = partitionStorage0.runConsistently(() -> partitionStorage0.insert(testData, txId));
+        RowId rowId0 = new RowId(1);
+
+        partitionStorage0.runConsistently(() -> partitionStorage0.addWrite(rowId0, testData, txId));
 
         tableStorage.stop();
 

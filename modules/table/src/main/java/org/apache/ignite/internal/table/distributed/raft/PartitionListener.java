@@ -164,13 +164,12 @@ public class PartitionListener implements RaftGroupListener {
 
         storage.addWrite(rowId, row,  txId);
 
+        txsPendingRowIds.computeIfAbsent(txId, entry -> new ConcurrentHashSet<>()).add(rowId);
+
         if (row == null) {
             // Remove entry.
             txsRemovedKeys.computeIfAbsent(txId, entry -> new ConcurrentHashSet<>()).add(rowId);
-        } else if (primaryIndex.contains(row.keySlice())) {
-            // Update entry.
-            txsPendingRowIds.computeIfAbsent(txId, entry -> new ConcurrentHashSet<>()).add(rowId);
-        } else {
+        } else if (!primaryIndex.contains(row.keySlice())) {
             // Insert entry.
             txsInsertedKeys.computeIfAbsent(txId, entry -> new ConcurrentHashSet<>()).add(rowId);
 
@@ -191,13 +190,12 @@ public class PartitionListener implements RaftGroupListener {
             for (Map.Entry<RowId, BinaryRow> entry : rowsToUpdate.entrySet()) {
                 storage.addWrite(entry.getKey(), entry.getValue(), txId);
 
+                txsPendingRowIds.computeIfAbsent(txId, entry0 -> new ConcurrentHashSet<>()).add(entry.getKey());
+
                 if (entry.getValue() == null) {
                     // Remove entry.
                     txsRemovedKeys.computeIfAbsent(txId, entry0 -> new ConcurrentHashSet<>()).add(entry.getKey());
-                } else if (primaryIndex.contains(entry.getValue().keySlice())) {
-                    // Update entry.
-                    txsPendingRowIds.computeIfAbsent(txId, entry0 -> new ConcurrentHashSet<>()).add(entry.getKey());
-                } else {
+                } else if (!primaryIndex.contains(entry.getValue().keySlice())) {
                     // Insert entry.
                     txsInsertedKeys.computeIfAbsent(txId, entry0 -> new ConcurrentHashSet<>()).add(entry.getKey());
 
