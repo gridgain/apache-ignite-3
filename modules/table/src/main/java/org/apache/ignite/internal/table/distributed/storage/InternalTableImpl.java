@@ -19,6 +19,7 @@ package org.apache.ignite.internal.table.distributed.storage;
 
 import static java.util.concurrent.CompletableFuture.completedFuture;
 import static java.util.concurrent.CompletableFuture.failedFuture;
+import static org.apache.ignite.lang.ErrorGroups.Transactions.TX_ERR;
 
 import it.unimi.dsi.fastutil.ints.Int2ObjectMap;
 import it.unimi.dsi.fastutil.ints.Int2ObjectOpenHashMap;
@@ -208,9 +209,9 @@ public class InternalTableImpl implements InternalTable {
             try {
                 fut = replicaSvc.invoke(primaryReplicaAndTerm.get1(), request);
             } catch (PrimaryReplicaMissException e) {
-                throw new TransactionException(e);
+                throw new TransactionException(e.traceId(), e.code(), e.getCause());
             } catch (Throwable e) {
-                throw new TransactionException("Failed to invoke the replica request.");
+                throw new TransactionException(TX_ERR, e);
             }
         } else {
             fut = enlistWithRetry(
@@ -267,9 +268,9 @@ public class InternalTableImpl implements InternalTable {
                 try {
                     fut = replicaSvc.invoke(primaryReplicaAndTerm.get1(), request);
                 } catch (PrimaryReplicaMissException e) {
-                    throw new TransactionException(e);
+                    throw new TransactionException(e.traceId(), e.code(), e.getCause());
                 } catch (Throwable e) {
-                    throw new TransactionException("Failed to invoke the replica request.");
+                    throw new TransactionException(TX_ERR, e);
                 }
             } else {
                 fut = enlistWithRetry(
@@ -326,9 +327,9 @@ public class InternalTableImpl implements InternalTable {
             try {
                 fut = replicaSvc.invoke(primaryReplicaAndTerm.get1(), request);
             } catch (PrimaryReplicaMissException e) {
-                throw new TransactionException(e);
+                throw new TransactionException(e.traceId(), e.code(), e.getCause());
             } catch (Throwable e) {
-                throw new TransactionException("Failed to invoke the replica request.");
+                throw new TransactionException(TX_ERR, e);
             }
         } else {
             fut = enlistWithRetry(tx0, partId, term -> requestBuilder.term(term).build(), ATTEMPTS_TO_ENLIST_PARTITION);
@@ -362,14 +363,16 @@ public class InternalTableImpl implements InternalTable {
                                         requestFunction.apply(primaryReplicaAndTerm.get2())
                                 );
                             } catch (PrimaryReplicaMissException e) {
-                                throw new TransactionException(e);
+                                throw new TransactionException(e.traceId(), e.code(), e.getCause());
                             } catch (Throwable e) {
                                 throw new TransactionException(
+                                        TX_ERR,
                                         IgniteStringFormatter.format(
                                                 "Failed to enlist partition[tableName={}, partId={}] into a transaction",
                                                 tableName,
                                                 partId
-                                                )
+                                                ),
+                                        e
                                 );
                             }
                         })
@@ -404,22 +407,27 @@ public class InternalTableImpl implements InternalTable {
      * @return The future.
      */
     private <T> CompletableFuture<T> postEnlist(CompletableFuture<T> fut, boolean implicit, InternalTransaction tx0) {
-        return fut.handle(new BiFunction<T, Throwable, CompletableFuture<T>>() {
-            @Override
-            public CompletableFuture<T> apply(T r, Throwable e) {
-                if (e != null) {
-                    return tx0.rollbackAsync().handle((ignored, err) -> {
-                        if (err != null) {
-                            e.addSuppressed(err);
-                        }
+        return fut.handle((BiFunction<T, Throwable, CompletableFuture<T>>) (r, e) -> {
+            if (e != null) {
+                TransactionException e0;
 
-                        throw (RuntimeException) e;
-                    }); // Preserve failed state.
+                if (e instanceof TransactionException) {
+                    e0 = (TransactionException) e;
                 } else {
-                    tx0.enlistResultFuture(fut);
-
-                    return implicit ? tx0.commitAsync().thenApply(ignored -> r) : completedFuture(r);
+                    e0 = new TransactionException(TX_ERR, "Failed to process an operation.", e);
                 }
+
+                return tx0.rollbackAsync().handle((ignored, err) -> {
+                    if (err != null) {
+                        e0.addSuppressed(err);
+                    }
+
+                    throw e0;
+                }); // Preserve failed state.
+            } else {
+                tx0.enlistResultFuture(fut);
+
+                return implicit ? tx0.commitAsync().thenApply(ignored -> r) : completedFuture(r);
             }
         }).thenCompose(x -> x);
     }

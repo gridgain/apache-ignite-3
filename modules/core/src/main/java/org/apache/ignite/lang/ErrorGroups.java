@@ -201,6 +201,9 @@ public class ErrorGroups {
 
         /** Failed to rollback a transaction. */
         public static final int TX_ROLLBACK_ERR = TX_ERR_GROUP.registerErrorCode(9);
+
+        /** Failed to process a transaction. */
+        public static final int TX_ERR = TX_ERR_GROUP.registerErrorCode(10);
     }
 
     /** Replicator error group. */
