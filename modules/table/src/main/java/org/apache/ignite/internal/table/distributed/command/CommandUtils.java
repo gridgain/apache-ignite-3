@@ -20,13 +20,19 @@ package org.apache.ignite.internal.table.distributed.command;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.ObjectInputStream;
+import java.io.ObjectOutputStream;
 import java.nio.ByteBuffer;
 import java.util.Collection;
+import java.util.Map;
+import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 import org.apache.ignite.internal.logger.IgniteLogger;
 import org.apache.ignite.internal.logger.Loggers;
 import org.apache.ignite.internal.schema.BinaryRow;
 import org.apache.ignite.internal.schema.ByteBufferRow;
+import org.apache.ignite.internal.storage.RowId;
+import org.apache.ignite.lang.ErrorGroups.Common;
 import org.apache.ignite.lang.IgniteInternalException;
 import org.jetbrains.annotations.Nullable;
 
@@ -135,6 +141,88 @@ public class CommandUtils {
             }
         } catch (IOException e) {
             LOG.warn("Unable to read rows from stream", e);
+        }
+    }
+
+    /**
+     * Writes a row map to byte array.
+     *
+     * @param map Map a row id to the binary row.
+     * @return Array of bytes.
+     */
+    public static byte[] writeRowMap(Map<RowId, BinaryRow> map) {
+        if (map == null) {
+            return null;
+        }
+
+        try (ByteArrayOutputStream baos = new ByteArrayOutputStream()) {
+            try (ObjectOutputStream oos = new ObjectOutputStream(baos)) {
+                oos.writeInt(map.size());
+
+                for (Map.Entry<RowId, BinaryRow> e : map.entrySet()) {
+                    oos.writeObject(e.getKey());
+
+                    if (e.getValue() == null) {
+                        oos.writeInt(0);
+                    } else {
+                        byte[] bytes = rowToBytes(e.getValue());
+
+                        oos.writeInt(bytes.length);
+                        oos.write(bytes);
+                    }
+                }
+
+            }
+
+            baos.flush();
+
+            return baos.toByteArray();
+        } catch (IOException e) {
+            LOG.warn("Unable to write the row map to stream [map={}]", e, map);
+
+            throw new IgniteInternalException(Common.UNEXPECTED_ERR, e);
+        }
+    }
+
+    /**
+     * Reads a row map from bytes.
+     *
+     * @param bytes Bytes to read.
+     * @param consumer Consumer for a key and a value for the map entry.
+     */
+    public static void readRowMap(byte[] bytes, BiConsumer<RowId, BinaryRow> consumer) {
+        if (bytes == null || bytes.length == 0) {
+            return;
+        }
+
+        try (ByteArrayInputStream bais = new ByteArrayInputStream(bytes)) {
+            try (ObjectInputStream ois = new ObjectInputStream(bais)) {
+                int size = ois.readInt();
+
+                for (int i = 0; i < size; i++) {
+                    RowId id = (RowId) ois.readObject();
+
+                    int len = ois.readInt();
+
+                    BinaryRow row = null;
+
+                    if (len != 0) {
+                        byte[] rowBytes = new byte[len];
+
+                        int read = ois.read(rowBytes);
+
+                        assert read == len;
+
+                        row = new ByteBufferRow(rowBytes);
+                    }
+
+                    consumer.accept(id, row);
+                }
+            }
+        } catch (IOException | ClassNotFoundException e) {
+            LOG.warn("Unable to read row map from stream [bytes={}]", e, bytes);
+
+            throw new IgniteInternalException(Common.UNEXPECTED_ERR, e);
         }
     }
 

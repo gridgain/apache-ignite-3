@@ -49,10 +49,7 @@ import org.apache.ignite.internal.schema.row.RowAssembler;
 import org.apache.ignite.internal.storage.MvPartitionStorage;
 import org.apache.ignite.internal.storage.RowId;
 import org.apache.ignite.internal.storage.chm.TestConcurrentHashMapMvPartitionStorage;
-import org.apache.ignite.internal.table.distributed.command.DeleteAllCommand;
-import org.apache.ignite.internal.table.distributed.command.DeleteCommand;
-import org.apache.ignite.internal.table.distributed.command.InsertAndUpdateAllCommand;
-import org.apache.ignite.internal.table.distributed.command.InsertCommand;
+import org.apache.ignite.internal.table.distributed.command.UpdateAllCommand;
 import org.apache.ignite.internal.table.distributed.command.UpdateCommand;
 import org.apache.ignite.internal.tx.Timestamp;
 import org.apache.ignite.internal.tx.impl.HeapLockManager;
@@ -263,18 +260,18 @@ public class PartitionCommandListenerTest {
                 return null;
             }).when(clo).result(any());
 
-            Set<BinaryRow> rows = new HashSet<>(KEY_COUNT);
+            HashMap<RowId, BinaryRow> rows = new HashMap<>(KEY_COUNT);
             UUID txId = Timestamp.nextVersion().toUuid();
 
             for (int i = 0; i < KEY_COUNT; i++) {
                 Row row = getTestRow(i, i);
 
-                rows.add(row);
+                rows.put(new RowId(1), row);
 
                 txs.add(new IgniteBiTuple<>(row, txId));
             }
 
-            when(clo.command()).thenReturn(new InsertAndUpdateAllCommand(rows, null, txId));
+            when(clo.command()).thenReturn(new UpdateAllCommand(rows, txId));
         }));
 
         txs.forEach(tuple -> mvPartitionStorage.commitWrite(primaryIndex.get(tuple.getKey().keySlice()), new Timestamp(tuple.getValue())));
@@ -309,7 +306,7 @@ public class PartitionCommandListenerTest {
                 txs.add(new IgniteBiTuple<>(row, txId));
             }
 
-            when(clo.command()).thenReturn(new InsertAndUpdateAllCommand(null, rows, txId));
+            when(clo.command()).thenReturn(new UpdateAllCommand(rows, txId));
         }));
 
         txs.forEach(tuple -> mvPartitionStorage.commitWrite(primaryIndex.get(tuple.getKey().keySlice()), new Timestamp(tuple.getValue())));
@@ -342,7 +339,7 @@ public class PartitionCommandListenerTest {
                 txs.add(new IgniteBiTuple<>(row, txId));
             }
 
-            when(clo.command()).thenReturn(new DeleteAllCommand(keyRows, txId));
+            when(clo.command()).thenReturn(new UpdateAllCommand(keyRows, txId));
         }));
 
         txs.forEach(
@@ -397,7 +394,7 @@ public class PartitionCommandListenerTest {
 
             when(clo.index()).thenReturn(raftIndex.incrementAndGet());
 
-            when(clo.command()).thenReturn(new DeleteCommand(rowId, txId));
+            when(clo.command()).thenReturn(new UpdateCommand(rowId, txId));
 
             doAnswer(invocation -> {
                 assertNull(invocation.getArgument(0));
@@ -457,7 +454,7 @@ public class PartitionCommandListenerTest {
 
             when(clo.index()).thenReturn(raftIndex.incrementAndGet());
 
-            when(clo.command()).thenReturn(new InsertCommand(row, txId));
+            when(clo.command()).thenReturn(new UpdateCommand(new RowId(1), row, txId));
 
             doAnswer(invocation -> {
                 assertNull(invocation.getArgument(0));
