@@ -280,16 +280,12 @@ public class PartitionListener implements RaftGroupListener {
     /** {@inheritDoc} */
     @Override
     public void onSnapshotSave(Path path, Consumer<Throwable> doneClo) {
-        // TODO: IGNITE-16644 Support snapshots.
-        CompletableFuture.completedFuture(null).whenComplete((unused, throwable) -> {
-            doneClo.accept(throwable);
-        });
+        storage.flush();
     }
 
     /** {@inheritDoc} */
     @Override
     public boolean onSnapshotLoad(Path path) {
-        // TODO: IGNITE-16644 Support snapshots.
         return true;
     }
 

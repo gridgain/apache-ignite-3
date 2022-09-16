@@ -48,9 +48,9 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
 /**
- * There are test on RAFT commands serialization.
+ * Test for partition RAFT commands serialization.
  */
-public class SerializationTest extends IgniteAbstractTest {
+public class PartitionRaftCommandsSerializationTest extends IgniteAbstractTest {
     /** Key-value marshaller for tests. */
     protected static KvMarshaller<TestKey, TestValue> kvMarshaller;
 

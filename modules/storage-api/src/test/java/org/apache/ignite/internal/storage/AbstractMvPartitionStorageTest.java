@@ -98,7 +98,7 @@ public abstract class AbstractMvPartitionStorageTest extends BaseMvStoragesTest 
      * Inserts a row inside of consistency closure.
      */
     protected RowId insert(BinaryRow binaryRow, UUID txId) {
-        RowId rowId = new RowId(1);
+        RowId rowId = new RowId(PARTITION_ID);
 
         storage.runConsistently(() -> storage.addWrite(rowId, binaryRow, txId));
 

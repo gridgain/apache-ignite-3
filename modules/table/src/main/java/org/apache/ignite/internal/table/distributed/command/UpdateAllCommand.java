@@ -30,9 +30,7 @@ import org.jetbrains.annotations.NotNull;
  * The command for update batch of entries.
  */
 public class UpdateAllCommand extends PartitionCommand {
-    /**
-     * Rows to update.
-     */
+    /** Rows to update. */
     private transient HashMap<RowId, BinaryRow> rowsToUpdate;
 
     /** Bytes representation of row to update map. */
@@ -82,7 +80,7 @@ public class UpdateAllCommand extends PartitionCommand {
 
         this.rowsToUpdate = rows;
 
-        rowsToUpdateBytes = CommandUtils.writeRowMap(rows);
+        rowsToUpdateBytes = CommandUtils.rowMapToBytes(rows);
     }
 
 

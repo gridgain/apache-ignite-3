@@ -74,7 +74,7 @@ public class CommandUtils {
         } catch (IOException e) {
             LOG.debug("unable to write rows to stream [rowsCount={}]", e, rows.size());
 
-            throw new IgniteInternalException(e);
+            throw new IgniteInternalException(Common.UNEXPECTED_ERR, e);
         }
     }
 
@@ -98,7 +98,7 @@ public class CommandUtils {
         } catch (IOException e) {
             LOG.debug("Unable to write row to stream [row={}]", e, row);
 
-            throw new IgniteInternalException(e);
+            throw new IgniteInternalException(Common.UNEXPECTED_ERR, e);
         }
     }
 
@@ -140,7 +140,9 @@ public class CommandUtils {
                 consumer.accept(new ByteBufferRow(rowBytes));
             }
         } catch (IOException e) {
-            LOG.warn("Unable to read rows from stream", e);
+            LOG.debug("Unable to read rows from stream", e);
+
+            throw new IgniteInternalException(Common.UNEXPECTED_ERR, e);
         }
     }
 
@@ -150,7 +152,7 @@ public class CommandUtils {
      * @param map Map a row id to the binary row.
      * @return Array of bytes.
      */
-    public static byte[] writeRowMap(Map<RowId, BinaryRow> map) {
+    public static byte[] rowMapToBytes(Map<RowId, BinaryRow> map) {
         if (map == null) {
             return null;
         }
@@ -160,7 +162,9 @@ public class CommandUtils {
                 oos.writeInt(map.size());
 
                 for (Map.Entry<RowId, BinaryRow> e : map.entrySet()) {
-                    oos.writeObject(e.getKey());
+                    oos.writeShort((short) e.getKey().partitionId());
+                    oos.writeLong(e.getKey().mostSignificantBits());
+                    oos.writeLong(e.getKey().leastSignificantBits());
 
                     if (e.getValue() == null) {
                         oos.writeInt(0);
@@ -178,7 +182,7 @@ public class CommandUtils {
 
             return baos.toByteArray();
         } catch (IOException e) {
-            LOG.warn("Unable to write the row map to stream [map={}]", e, map);
+            LOG.debug("Unable to write the row map to stream [map={}]", e, map);
 
             throw new IgniteInternalException(Common.UNEXPECTED_ERR, e);
         }
@@ -200,7 +204,11 @@ public class CommandUtils {
                 int size = ois.readInt();
 
                 for (int i = 0; i < size; i++) {
-                    RowId id = (RowId) ois.readObject();
+                    int  partId = ois.readShort() & 0xFFFF;
+                    long mostSignificantBits = ois.readLong();
+                    long leastSignificantBits = ois.readLong();
+
+                    RowId id = new RowId(partId, mostSignificantBits, leastSignificantBits);
 
                     int len = ois.readInt();
 
@@ -219,8 +227,8 @@ public class CommandUtils {
                     consumer.accept(id, row);
                 }
             }
-        } catch (IOException | ClassNotFoundException e) {
-            LOG.warn("Unable to read row map from stream [bytes={}]", e, bytes);
+        } catch (IOException e) {
+            LOG.debug("Unable to read row map from stream [bytes={}]", e, bytes);
 
             throw new IgniteInternalException(Common.UNEXPECTED_ERR, e);
         }

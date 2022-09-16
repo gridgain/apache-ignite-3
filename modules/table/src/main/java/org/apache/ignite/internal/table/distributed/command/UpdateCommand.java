@@ -39,8 +39,7 @@ public class UpdateCommand extends PartitionCommand {
     private byte[] rowBytes;
 
     /**
-     * Creates a new instance of UpdateCommand with the given row to be updated. The {@code rowId} should not be {@code
-     * null}.
+     * Creates a new instance of UpdateCommand with the given row to be updated. The {@code rowId} should not be {@code null}.
      *
      * @param rowId Row id.
      * @param row   Binary row.
