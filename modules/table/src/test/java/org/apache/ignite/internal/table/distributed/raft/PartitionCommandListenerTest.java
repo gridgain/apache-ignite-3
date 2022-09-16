@@ -71,6 +71,9 @@ public class PartitionCommandListenerTest {
     /** Key count. */
     public static final int KEY_COUNT = 100;
 
+    /** Partition id. */
+    public static final int PARTITION_ID = 0;
+
     /** Schema. */
     public static SchemaDescriptor SCHEMA = new SchemaDescriptor(
             1,
@@ -88,7 +91,7 @@ public class PartitionCommandListenerTest {
     private ConcurrentHashMap<ByteBuffer, RowId> primaryIndex = new ConcurrentHashMap<>();
 
     /** Partition storage. */
-    private MvPartitionStorage mvPartitionStorage = new TestConcurrentHashMapMvPartitionStorage(0);
+    private MvPartitionStorage mvPartitionStorage = new TestConcurrentHashMapMvPartitionStorage(PARTITION_ID);
 
     /**
      * Initializes a table listener before tests.
@@ -266,7 +269,7 @@ public class PartitionCommandListenerTest {
             for (int i = 0; i < KEY_COUNT; i++) {
                 Row row = getTestRow(i, i);
 
-                rows.put(new RowId(1), row);
+                rows.put(new RowId(PARTITION_ID), row);
 
                 txs.add(new IgniteBiTuple<>(row, txId));
             }
@@ -454,7 +457,7 @@ public class PartitionCommandListenerTest {
 
             when(clo.index()).thenReturn(raftIndex.incrementAndGet());
 
-            when(clo.command()).thenReturn(new UpdateCommand(new RowId(1), row, txId));
+            when(clo.command()).thenReturn(new UpdateCommand(new RowId(PARTITION_ID), row, txId));
 
             doAnswer(invocation -> {
                 assertNull(invocation.getArgument(0));

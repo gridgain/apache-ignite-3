@@ -689,7 +689,7 @@ public abstract class AbstractMvPartitionStorageTest extends BaseMvStoragesTest 
 
     private RowId commitAbortAndAddUncommitted() {
         return storage.runConsistently(() -> {
-            RowId rowId = new RowId(1);
+            RowId rowId = new RowId(PARTITION_ID);
 
             storage.addWrite(rowId, binaryRow, txId);
 
