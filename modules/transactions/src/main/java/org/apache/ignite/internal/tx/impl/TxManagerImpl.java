@@ -227,26 +227,25 @@ public class TxManagerImpl implements TxManager {
             HybridTimestamp commitTimestamp
     ) {
         var cleanupFutures = new CompletableFuture[replicationGroupIds.size()];
-        AtomicInteger cleanupFuturesCnt = new AtomicInteger(0);
 
         // TODO: https://issues.apache.org/jira/browse/IGNITE-17582 Grouping replica requests.
-        replicationGroupIds.forEach(groupId -> {
+        for (int i = 0; i < replicationGroupIds.size(); i++) {
             try {
-                cleanupFutures[cleanupFuturesCnt.getAndIncrement()] =
+                cleanupFutures[i] =
                         replicaService.invoke(
                                 recipientNode,
                                 FACTORY.txCleanupReplicaRequest()
-                                        .groupId(groupId.get1())
+                                        .groupId(replicationGroupIds.get(i).get1())
                                         .txId(txId)
                                         .commit(commit)
                                         .commitTimestamp(commitTimestamp)
-                                        .term(groupId.get2())
+                                        .term(replicationGroupIds.get(i).get2())
                                         .build()
                         );
             } catch (NodeStoppingException e) {
-                cleanupFutures[cleanupFuturesCnt.getAndIncrement()] = failedFuture(e);
+                cleanupFutures[i] = failedFuture(e);
             }
-        });
+        }
 
         return allOf(cleanupFutures);
     }
