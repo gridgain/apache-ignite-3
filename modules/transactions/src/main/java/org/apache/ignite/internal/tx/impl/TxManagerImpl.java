@@ -17,6 +17,7 @@
 
 package org.apache.ignite.internal.tx.impl;
 
+import static java.util.concurrent.CompletableFuture.allOf;
 import static java.util.concurrent.CompletableFuture.completedFuture;
 import static java.util.concurrent.CompletableFuture.failedFuture;
 import static org.apache.ignite.lang.IgniteStringFormatter.format;
@@ -27,6 +28,7 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.apache.ignite.hlc.HybridTimestamp;
 import org.apache.ignite.internal.replicator.ReplicaService;
 import org.apache.ignite.internal.tx.InternalTransaction;
@@ -38,14 +40,12 @@ import org.apache.ignite.internal.tx.Timestamp;
 import org.apache.ignite.internal.tx.TxManager;
 import org.apache.ignite.internal.tx.TxState;
 import org.apache.ignite.internal.tx.message.TxFinishReplicaRequest;
-import org.apache.ignite.internal.tx.message.TxFinishResponse;
 import org.apache.ignite.internal.tx.message.TxMessagesFactory;
 import org.apache.ignite.lang.IgniteBiTuple;
 import org.apache.ignite.lang.NodeStoppingException;
 import org.apache.ignite.network.ClusterNode;
 import org.apache.ignite.network.ClusterService;
 import org.apache.ignite.network.NetworkAddress;
-import org.apache.ignite.network.NetworkMessage;
 import org.apache.ignite.tx.TransactionException;
 
 /**
@@ -199,18 +199,11 @@ public class TxManagerImpl implements TxManager {
                 .term(term)
                 .build();
 
-        CompletableFuture<NetworkMessage> fut;
         try {
-            fut = replicaService.invoke(recipientNode, req);
+            return replicaService.invoke(recipientNode, req);
         } catch (NodeStoppingException e) {
-            throw new TransactionException("Failed to finish transaction. Node is stopping.");
-        } catch (Throwable t) {
-            throw new TransactionException("Failed to finish transaction.");
+            return failedFuture(e);
         }
-
-        // Submit response to a dedicated pool to avoid deadlocks. TODO: IGNITE-15389
-        return fut.thenApplyAsync(resp -> ((TxFinishResponse) resp).errorMessage()).thenCompose(msg ->
-                msg == null ? completedFuture(null) : failedFuture(new TransactionException(msg)));
     }
 
     /** {@inheritDoc} */
@@ -222,25 +215,29 @@ public class TxManagerImpl implements TxManager {
             boolean commit,
             HybridTimestamp commitTimestamp
     ) {
+        var cleanupFutures = new CompletableFuture[replicationGroupIds.size()];
+        AtomicInteger cleanupFuturesCnt = new AtomicInteger(0);
+
         // TODO: https://issues.apache.org/jira/browse/IGNITE-17582 Grouping replica requests.
         replicationGroupIds.forEach(groupId -> {
             try {
-                replicaService.invoke(
-                        recipientNode,
-                        FACTORY.txCleanupReplicaRequest()
-                                .groupId(groupId.get1())
-                                .txId(txId)
-                                .commit(commit)
-                                .commitTimestamp(commitTimestamp)
-                                .term(groupId.get2())
-                                .build()
-                );
+                cleanupFutures[cleanupFuturesCnt.getAndIncrement()] =
+                        replicaService.invoke(
+                                recipientNode,
+                                FACTORY.txCleanupReplicaRequest()
+                                        .groupId(groupId.get1())
+                                        .txId(txId)
+                                        .commit(commit)
+                                        .commitTimestamp(commitTimestamp)
+                                        .term(groupId.get2())
+                                        .build()
+                        );
             } catch (NodeStoppingException e) {
-                throw new TransactionException("Failed to perform tx cleanup, node is stopping.");
+                cleanupFutures[cleanupFuturesCnt.getAndIncrement()] = failedFuture(e);
             }
         });
 
-        return null;
+        return allOf(cleanupFutures);
     }
 
     /** {@inheritDoc} */
