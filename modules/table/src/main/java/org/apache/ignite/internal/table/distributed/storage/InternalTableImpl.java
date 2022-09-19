@@ -19,7 +19,6 @@ package org.apache.ignite.internal.table.distributed.storage;
 
 import static java.util.concurrent.CompletableFuture.completedFuture;
 import static java.util.concurrent.CompletableFuture.failedFuture;
-import static org.apache.ignite.lang.ErrorGroups.Transactions.TX_COMMIT_ERR;
 
 import it.unimi.dsi.fastutil.ints.Int2ObjectMap;
 import it.unimi.dsi.fastutil.ints.Int2ObjectOpenHashMap;
@@ -55,7 +54,6 @@ import org.apache.ignite.internal.table.distributed.replicator.action.RequestTyp
 import org.apache.ignite.internal.tx.InternalTransaction;
 import org.apache.ignite.internal.tx.TxManager;
 import org.apache.ignite.internal.tx.TxState;
-import org.apache.ignite.internal.util.ExceptionUtils;
 import org.apache.ignite.lang.Function3;
 import org.apache.ignite.lang.Function4;
 import org.apache.ignite.lang.IgniteBiTuple;
@@ -701,15 +699,7 @@ public class InternalTableImpl implements InternalTable {
 
         return new PartitionScanPublisher(
                 (scanId, batchSize) -> enlistCursorInTx(tx0, p, scanId, batchSize),
-                () -> {
-                    if (implicit) {
-                        try {
-                            tx0.commitAsync().get();
-                        } catch (Exception e) {
-                            ExceptionUtils.withCause(TransactionException::new, TX_COMMIT_ERR, e);
-                        }
-                    }
-                }
+                fut -> postEnlist(fut, implicit, tx0)
         );
     }
 
@@ -877,7 +867,7 @@ public class InternalTableImpl implements InternalTable {
         private final BiFunction<Long, Integer, CompletableFuture<Collection<BinaryRow>>> retrieveBatch;
 
         /** The closure will be invoked before the cursor closed. */
-        Runnable whenClose;
+        Function<CompletableFuture<Void>, CompletableFuture<Void>> onClose;
 
         /** True when the publisher has a subscriber, false otherwise. */
         private AtomicBoolean subscribed;
@@ -886,14 +876,14 @@ public class InternalTableImpl implements InternalTable {
          * The constructor.
          *
          * @param retrieveBatch Closure that gets a new batch from the remote replica.
-         * @param whenClose The closure will be applied when {@link Subscription#cancel} is invoked directly or the cursor is finished.
+         * @param onClose The closure will be applied when {@link Subscription#cancel} is invoked directly or the cursor is finished.
          */
         PartitionScanPublisher(
                 BiFunction<Long, Integer, CompletableFuture<Collection<BinaryRow>>> retrieveBatch,
-                Runnable whenClose
+                Function<CompletableFuture<Void>, CompletableFuture<Void>> onClose
         ) {
             this.retrieveBatch = retrieveBatch;
-            this.whenClose = whenClose;
+            this.onClose = onClose;
 
             this.subscribed = new AtomicBoolean(false);
         }
@@ -975,11 +965,28 @@ public class InternalTableImpl implements InternalTable {
             /** {@inheritDoc} */
             @Override
             public void cancel() {
+                cancel(null);
+            }
+
+            /**
+             * After the method is called, a subscriber won't be received updates from the publisher.
+             *
+             * @param t An exception which was thrown when entries were retrieving from the cursor.
+             */
+            public void cancel(Throwable t) {
                 if (!canceled.compareAndSet(false, true)) {
                     return;
                 }
 
-                whenClose.run();
+                onClose.apply(t == null ? completedFuture(null) : CompletableFuture.failedFuture(t)).handle((ignore, th) -> {
+                    if (th != null) {
+                        subscriber.onError(th);
+                    } else {
+                        subscriber.onComplete();
+                    }
+
+                    return null;
+                });
             }
 
             /**
@@ -996,8 +1003,6 @@ public class InternalTableImpl implements InternalTable {
                     if (binaryRows == null) {
                         cancel();
 
-                        subscriber.onComplete();
-
                         return;
                     } else {
                         binaryRows.forEach(subscriber::onNext);
@@ -1005,15 +1010,11 @@ public class InternalTableImpl implements InternalTable {
 
                     if (binaryRows.size() < n) {
                         cancel();
-
-                        subscriber.onComplete();
                     } else if (requestedItemsCnt.addAndGet(Math.negateExact(binaryRows.size())) > 0) {
                         scanBatch(INTERNAL_BATCH_SIZE);
                     }
                 }).exceptionally(t -> {
-                    cancel();
-
-                    subscriber.onError(t);
+                    cancel(t);
 
                     return null;
                 });
