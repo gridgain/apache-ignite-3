@@ -53,16 +53,12 @@ public class IndexValidatorImplTest extends AbstractTableIndexValidatorTest {
 
         UUID tableId = ids.get(0);
 
-        TablesView oldRoot = tablesCfg.value();
-
         tablesCfg.indexes().change(c -> c.create("schema.idx", idxCng -> idxCng.convert(HashIndexChange.class)
                 .changeColumnNames("ID2").changeTableId(tableId))).get();
 
         TablesView view = tablesCfg.value();
 
         when(ctxIdx.getNewRoot(any())).thenReturn(view);
-
-        when(ctxIdx.getOldRoot(any())).thenReturn(oldRoot);
 
         validate(IndexValidatorImpl.INSTANCE, mock(IndexValidator.class), ctxIdx, null);
     }
