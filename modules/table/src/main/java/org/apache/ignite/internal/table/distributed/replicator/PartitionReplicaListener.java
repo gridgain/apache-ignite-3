@@ -26,6 +26,7 @@ import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
@@ -36,6 +37,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 import org.apache.ignite.hlc.HybridClock;
 import org.apache.ignite.hlc.HybridTimestamp;
+import org.apache.ignite.internal.replicator.ReplicaService;
 import org.apache.ignite.internal.replicator.exception.PrimaryReplicaMissException;
 import org.apache.ignite.internal.replicator.exception.ReplicationException;
 import org.apache.ignite.internal.replicator.exception.ReplicationTimeoutException;
@@ -44,6 +46,7 @@ import org.apache.ignite.internal.replicator.listener.ReplicaListener;
 import org.apache.ignite.internal.replicator.message.ReplicaRequest;
 import org.apache.ignite.internal.schema.BinaryRow;
 import org.apache.ignite.internal.storage.MvPartitionStorage;
+import org.apache.ignite.internal.storage.ReadResult;
 import org.apache.ignite.internal.storage.RowId;
 import org.apache.ignite.internal.table.distributed.TableMessageGroup;
 import org.apache.ignite.internal.table.distributed.command.FinishTxCommand;
@@ -64,12 +67,14 @@ import org.apache.ignite.internal.tx.TxManager;
 import org.apache.ignite.internal.tx.message.TxCleanupReplicaRequest;
 import org.apache.ignite.internal.tx.message.TxFinishReplicaRequest;
 import org.apache.ignite.internal.tx.message.TxMessageGroup;
+import org.apache.ignite.internal.tx.storage.state.TxStateStorage;
 import org.apache.ignite.internal.util.Cursor;
 import org.apache.ignite.lang.ErrorGroups.Replicator;
 import org.apache.ignite.lang.IgniteBiTuple;
 import org.apache.ignite.lang.IgniteInternalException;
 import org.apache.ignite.lang.IgniteStringFormatter;
 import org.apache.ignite.lang.IgniteUuid;
+import org.apache.ignite.network.ClusterNode;
 import org.apache.ignite.raft.client.Command;
 import org.apache.ignite.raft.client.service.RaftGroupService;
 import org.jetbrains.annotations.NotNull;
@@ -111,6 +116,12 @@ public class PartitionReplicaListener implements ReplicaListener {
     /** Hybrid clock. */
     private final HybridClock hybridClock;
 
+    private final PlacementDriver placementDriver;
+
+    private final ReplicaService replicaService;
+
+    private final TxStateStorage txStateStorage;
+
     /**
      * Cursors map. The key of the map is internal Ignite uuid which consists of a transaction id ({@link UUID}) and a cursor id ({@link
      * Long}).
@@ -137,7 +148,10 @@ public class PartitionReplicaListener implements ReplicaListener {
             String replicationGroupId,
             UUID tableId,
             ConcurrentHashMap<ByteBuffer, RowId> primaryIndex,
-            HybridClock hybridClock
+            HybridClock hybridClock,
+            PlacementDriver placementDriver,
+            ReplicaService replicaService,
+            TxStateStorage txStateStorage
     ) {
         this.mvDataStorage = mvDataStorage;
         this.raftClient = raftClient;
@@ -148,6 +162,9 @@ public class PartitionReplicaListener implements ReplicaListener {
         this.tableId = tableId;
         this.primaryIndex = primaryIndex;
         this.hybridClock = hybridClock;
+        this.placementDriver = placementDriver;
+        this.replicaService = replicaService;
+        this.txStateStorage = txStateStorage;
 
         //TODO: IGNITE-17479 Integrate indexes into replicaListener command handlers
         this.indexScanId = new UUID(tableId.getMostSignificantBits(), tableId.getLeastSignificantBits() + 1);
@@ -615,6 +632,34 @@ public class PartitionReplicaListener implements ReplicaListener {
         UUID txId = request.transactionId();
 
         switch (request.requestType()) {
+            case RO_GET: {
+                RowId rowId = rowIdByKey(indexId, searchKey);
+
+                return CompletableFuture.supplyAsync(() -> {
+                    ReadResult readResult = mvDataStorage.read(rowId, hybridClock.now());
+
+                    if (readResult.transactionId() == null) {
+                        return readResult.transactionId() != null ? readResult.binaryRow() : null;
+                    } else {
+                        IgniteBiTuple<String, Set<ClusterNode>> assignment = placementDriver.getAssignments(
+                                new IgniteBiTuple<>(readResult.commitTableId(), readResult.commitPartitionId()));
+
+                        String replicationGroupId = assignment.get1();
+
+                        Set<ClusterNode> nodes = assignment.get2();
+
+                        boolean committed = true;
+                        //committed = replicaService.invoke(nodes.toArray()[0], new TxStateReq(readResult.transactionId(), replicationGroupId))
+
+                        if (committed) {
+                            return readResult.binaryRow();
+                        } else {
+                            return mvDataStorage.read(rowId, readResult.newestCommitTimestamp()).binaryRow();
+                        }
+
+                    }
+                });
+            }
             case RW_GET: {
                 CompletableFuture<RowId> lockFut = takeLocsForGet(searchKey, indexId, txId);
 

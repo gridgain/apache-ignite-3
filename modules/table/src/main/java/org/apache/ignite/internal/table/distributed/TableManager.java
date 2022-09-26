@@ -120,6 +120,7 @@ import org.apache.ignite.internal.table.distributed.raft.PartitionListener;
 import org.apache.ignite.internal.table.distributed.raft.RebalanceRaftGroupEventsListener;
 import org.apache.ignite.internal.table.distributed.raft.snapshot.PartitionSnapshotStorageFactory;
 import org.apache.ignite.internal.table.distributed.replicator.PartitionReplicaListener;
+import org.apache.ignite.internal.table.distributed.replicator.PlacementDriver;
 import org.apache.ignite.internal.table.distributed.storage.InternalTableImpl;
 import org.apache.ignite.internal.table.event.TableEvent;
 import org.apache.ignite.internal.table.event.TableEventParameters;
@@ -274,6 +275,8 @@ public class TableManager extends Producer<TableEvent, TableEventParameters> imp
 
     /** Assignment change event listeners. */
     private final CopyOnWriteArrayList<Consumer<IgniteTablesInternal>> assignmentsChangeListeners = new CopyOnWriteArrayList<>();
+
+    private final PlacementDriver placementDriver = new PlacementDriver();
 
     /** Rebalance scheduler pool size. */
     private static final int REBALANCE_SCHEDULER_POOL_SIZE = Math.min(Utils.cpus() * 3, 20);
@@ -676,6 +679,8 @@ public class TableManager extends Producer<TableEvent, TableEventParameters> imp
 
                 String grpId = partitionRaftGroupName(tblId, partId);
 
+                placementDriver.putAssignment(new IgniteBiTuple<>(tblId, partId), new IgniteBiTuple(grpId, nodes));
+
                 CompletableFuture<Void> startGroupFut = CompletableFuture.completedFuture(null);
 
                 if (raftMgr.shouldHaveRaftGroupLocally(nodes)) {
@@ -782,7 +787,10 @@ public class TableManager extends Producer<TableEvent, TableEventParameters> imp
                                                             grpId,
                                                             tblId,
                                                             new ConcurrentHashMap<>(),
-                                                            clock
+                                                            clock,
+                                                            placementDriver,
+                                                            replicaSvc,
+                                                            internalTbl.txStateStorage().getOrCreateTxStateStorage(partId)
                                                     )
                                             );
                                         } catch (NodeStoppingException ex) {
@@ -1717,6 +1725,8 @@ public class TableManager extends Producer<TableEvent, TableEventParameters> imp
                             ? ((List<Set<ClusterNode>>) ByteUtils.fromBytes(tblCfg.assignments().value())).get(part)
                             : ByteUtils.fromBytes(stableAssignments);
 
+                    placementDriver.putAssignment(new IgniteBiTuple<>(tblId, part), new IgniteBiTuple(partId, assignments));
+
                     ClusterNode localMember = raftMgr.topologyService().localMember();
 
                     var deltaPeers = newPeers.stream()
@@ -1779,7 +1789,10 @@ public class TableManager extends Producer<TableEvent, TableEventParameters> imp
                                             partId,
                                             tblId,
                                             new ConcurrentHashMap<>(),
-                                            clock
+                                            clock,
+                                            placementDriver,
+                                            replicaSvc,
+                                            tbl.internalTable().txStateStorage().getOrCreateTxStateStorage(part)
                                     )
                             );
                         }
