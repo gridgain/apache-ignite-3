@@ -70,4 +70,12 @@ public class Lock {
     public UUID txId() {
         return txId;
     }
+
+    @Override public String toString() {
+        return "Lock{" +
+            "lockKey=" + lockKey +
+            ", lockMode=" + lockMode +
+            ", txId=" + txId +
+            '}';
+    }
 }

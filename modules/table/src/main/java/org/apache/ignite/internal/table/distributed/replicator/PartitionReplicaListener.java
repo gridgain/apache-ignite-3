@@ -371,6 +371,7 @@ public class PartitionReplicaListener implements ReplicaListener {
      */
     private RowId rowIdByKey(@NotNull UUID indexId, ByteBuffer key) {
         if (indexPkId.equals(indexId)) {
+            //System.out.println("qqq primary index, key=" + key + ", row=" + primaryIndex.get(key));
             return primaryIndex.get(key);
         }
 
@@ -383,6 +384,7 @@ public class PartitionReplicaListener implements ReplicaListener {
                 }
             });
 
+            //System.out.println("qqq scan index, key=" + key + ", row=" + rowIdHolder[0]);
             return rowIdHolder[0];
         }
 
@@ -430,7 +432,7 @@ public class PartitionReplicaListener implements ReplicaListener {
                 int i = 0;
 
                 for (ByteBuffer searchKey : keyRows) {
-                    getLockFuts[i++] = takeLocsForGet(searchKey, indexId, txId);
+                    getLockFuts[i++] = takeLocksForGet(searchKey, indexId, txId);
                 }
 
                 return allOf(getLockFuts).thenApply(ignore -> {
@@ -616,10 +618,12 @@ public class PartitionReplicaListener implements ReplicaListener {
 
         switch (request.requestType()) {
             case RW_GET: {
-                CompletableFuture<RowId> lockFut = takeLocsForGet(searchKey, indexId, txId);
+                CompletableFuture<RowId> lockFut = takeLocksForGet(searchKey, indexId, txId);
 
                 return lockFut.thenApply(lockedRowId -> {
                     BinaryRow result = lockedRowId != null ? mvDataStorage.read(lockedRowId, txId) : null;
+
+                    System.out.println("qqq reading from storage, lockedRowId=" + lockedRowId + ", result=" + result);
 
                     return result;
                 });
@@ -913,9 +917,10 @@ public class PartitionReplicaListener implements ReplicaListener {
      * @param txId      Transaction id.
      * @return Future completes with {@link RowId} or {@code null} if there is no value for the key.
      */
-    private CompletableFuture<RowId> takeLocsForGet(ByteBuffer searchKey, UUID indexId, UUID txId) {
+    private CompletableFuture<RowId> takeLocksForGet(ByteBuffer searchKey, UUID indexId, UUID txId) {
         return lockManager.acquire(txId, new LockKey(indexId, searchKey), LockMode.S).thenCompose(idxLock -> { // Index S lock
             RowId rowId = rowIdByKey(indexId, searchKey);
+            //System.out.println("qqq acquired S lock for get, rowId=" + rowId);
 
             return lockManager.acquire(txId, new LockKey(tableId), LockMode.IS).thenCompose(tblLock -> { // IS lock on table
                 if (rowId != null) {

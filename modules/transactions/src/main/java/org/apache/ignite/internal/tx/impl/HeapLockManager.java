@@ -84,7 +84,9 @@ public class HeapLockManager implements LockManager {
 
             LockMode newLockMode = futureTuple.get2();
 
-            return futureTuple.get1().thenApply(res -> new Lock(lockKey, newLockMode, txId));
+            Lock lock = new Lock(lockKey, newLockMode, txId);
+
+            return futureTuple.get1().thenApply(res -> lock);
         }
     }
 

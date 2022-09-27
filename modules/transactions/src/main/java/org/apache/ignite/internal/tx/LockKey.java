@@ -77,4 +77,11 @@ public class LockKey {
         result = 31 * result + (key != null ? key.hashCode() : 0);
         return result;
     }
+
+    @Override public String toString() {
+        return "LockKey{" +
+            "contextId=" + contextId +
+            ", key=" + key +
+            '}';
+    }
 }
