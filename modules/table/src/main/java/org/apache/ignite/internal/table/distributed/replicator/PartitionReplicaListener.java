@@ -26,6 +26,7 @@ import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
@@ -49,6 +50,7 @@ import org.apache.ignite.internal.storage.MvPartitionStorage;
 import org.apache.ignite.internal.storage.ReadResult;
 import org.apache.ignite.internal.storage.RowId;
 import org.apache.ignite.internal.table.distributed.TableMessageGroup;
+import org.apache.ignite.internal.table.distributed.TableMessagesFactory;
 import org.apache.ignite.internal.table.distributed.command.FinishTxCommand;
 import org.apache.ignite.internal.table.distributed.command.TxCleanupCommand;
 import org.apache.ignite.internal.table.distributed.command.UpdateAllCommand;
@@ -59,11 +61,15 @@ import org.apache.ignite.internal.table.distributed.replication.request.ReadWrit
 import org.apache.ignite.internal.table.distributed.replication.request.ReadWriteScanRetrieveBatchReplicaRequest;
 import org.apache.ignite.internal.table.distributed.replication.request.ReadWriteSingleRowReplicaRequest;
 import org.apache.ignite.internal.table.distributed.replication.request.ReadWriteSwapRowReplicaRequest;
+import org.apache.ignite.internal.tx.TxMeta;
+import org.apache.ignite.internal.tx.message.TxMessagesFactory;
+import org.apache.ignite.internal.tx.message.TxStateReplicaRequest;
 import org.apache.ignite.internal.tx.Lock;
 import org.apache.ignite.internal.tx.LockKey;
 import org.apache.ignite.internal.tx.LockManager;
 import org.apache.ignite.internal.tx.LockMode;
 import org.apache.ignite.internal.tx.TxManager;
+import org.apache.ignite.internal.tx.TxState;
 import org.apache.ignite.internal.tx.message.TxCleanupReplicaRequest;
 import org.apache.ignite.internal.tx.message.TxFinishReplicaRequest;
 import org.apache.ignite.internal.tx.message.TxMessageGroup;
@@ -75,6 +81,7 @@ import org.apache.ignite.lang.IgniteInternalException;
 import org.apache.ignite.lang.IgniteStringFormatter;
 import org.apache.ignite.lang.IgniteUuid;
 import org.apache.ignite.network.ClusterNode;
+import org.apache.ignite.network.NetworkAddress;
 import org.apache.ignite.raft.client.Command;
 import org.apache.ignite.raft.client.service.RaftGroupService;
 import org.jetbrains.annotations.NotNull;
@@ -121,6 +128,8 @@ public class PartitionReplicaListener implements ReplicaListener {
     private final ReplicaService replicaService;
 
     private final TxStateStorage txStateStorage;
+
+    private static final TxMessagesFactory FACTORY = new TxMessagesFactory();
 
     /**
      * Cursors map. The key of the map is internal Ignite uuid which consists of a transaction id ({@link UUID}) and a cursor id ({@link
@@ -188,28 +197,46 @@ public class PartitionReplicaListener implements ReplicaListener {
     /** {@inheritDoc} */
     @Override
     public CompletableFuture<Object> invoke(ReplicaRequest request) {
-        return ensureReplicaIsPrimary(request)
-                .thenCompose((ignore) -> {
-                    if (request instanceof ReadWriteSingleRowReplicaRequest) {
-                        return processSingleEntryAction((ReadWriteSingleRowReplicaRequest) request);
-                    } else if (request instanceof ReadWriteMultiRowReplicaRequest) {
-                        return processMultiEntryAction((ReadWriteMultiRowReplicaRequest) request);
-                    } else if (request instanceof ReadWriteSwapRowReplicaRequest) {
-                        return processTwoEntriesAction((ReadWriteSwapRowReplicaRequest) request);
-                    } else if (request instanceof ReadWriteScanRetrieveBatchReplicaRequest) {
-                        return processScanRetrieveBatchAction((ReadWriteScanRetrieveBatchReplicaRequest) request);
-                    } else if (request instanceof ReadWriteScanCloseReplicaRequest) {
-                        processScanCloseAction((ReadWriteScanCloseReplicaRequest) request);
+        if (request instanceof TxStateReplicaRequest) {
+            TxStateReplicaRequest txStateReq = (TxStateReplicaRequest) request;
 
-                        return CompletableFuture.completedFuture(null);
-                    } else if (request instanceof TxFinishReplicaRequest) {
-                        return processTxFinishAction((TxFinishReplicaRequest) request);
-                    } else if (request instanceof TxCleanupReplicaRequest) {
-                        return processTxCleanupAction((TxCleanupReplicaRequest) request);
-                    } else {
-                        throw new UnsupportedReplicaRequestException(request.getClass());
-                    }
-                });
+            return raftClient.refreshAndGetLeaderWithTerm()
+                    .thenCompose(replicaAndTerm -> {
+                                NetworkAddress leaderAddress = replicaAndTerm.get1().address();
+
+                                if (leaderAddress.equals(txStateReq)) {
+                                    TxMeta txMeta = txStateStorage.get(txStateReq.txId());
+
+                                    return CompletableFuture.completedFuture(new IgniteBiTuple<>(txMeta, null));
+                                } else {
+                                    return CompletableFuture.completedFuture(new IgniteBiTuple<>(null, leaderAddress));
+                                }
+                            }
+                    );
+        } else {
+            return ensureReplicaIsPrimary(request)
+                    .thenCompose((ignore) -> {
+                        if (request instanceof ReadWriteSingleRowReplicaRequest) {
+                            return processSingleEntryAction((ReadWriteSingleRowReplicaRequest) request);
+                        } else if (request instanceof ReadWriteMultiRowReplicaRequest) {
+                            return processMultiEntryAction((ReadWriteMultiRowReplicaRequest) request);
+                        } else if (request instanceof ReadWriteSwapRowReplicaRequest) {
+                            return processTwoEntriesAction((ReadWriteSwapRowReplicaRequest) request);
+                        } else if (request instanceof ReadWriteScanRetrieveBatchReplicaRequest) {
+                            return processScanRetrieveBatchAction((ReadWriteScanRetrieveBatchReplicaRequest) request);
+                        } else if (request instanceof ReadWriteScanCloseReplicaRequest) {
+                            processScanCloseAction((ReadWriteScanCloseReplicaRequest) request);
+
+                            return CompletableFuture.completedFuture(null);
+                        } else if (request instanceof TxFinishReplicaRequest) {
+                            return processTxFinishAction((TxFinishReplicaRequest) request);
+                        } else if (request instanceof TxCleanupReplicaRequest) {
+                            return processTxCleanupAction((TxCleanupReplicaRequest) request);
+                        } else {
+                            throw new UnsupportedReplicaRequestException(request.getClass());
+                        }
+                    });
+        }
     }
 
     /**
@@ -636,10 +663,12 @@ public class PartitionReplicaListener implements ReplicaListener {
                 RowId rowId = rowIdByKey(indexId, searchKey);
 
                 return CompletableFuture.supplyAsync(() -> {
-                    ReadResult readResult = mvDataStorage.read(rowId, hybridClock.now());
+                    HybridTimestamp readTs = hybridClock.now();
+
+                    ReadResult readResult = mvDataStorage.read(rowId, readTs);
 
                     if (readResult.transactionId() == null) {
-                        return readResult.transactionId() != null ? readResult.binaryRow() : null;
+                        return readResult.binaryRow();
                     } else {
                         IgniteBiTuple<String, Set<ClusterNode>> assignment = placementDriver.getAssignments(
                                 new IgniteBiTuple<>(readResult.commitTableId(), readResult.commitPartitionId()));
@@ -648,14 +677,39 @@ public class PartitionReplicaListener implements ReplicaListener {
 
                         Set<ClusterNode> nodes = assignment.get2();
 
-                        boolean committed = true;
-                        //committed = replicaService.invoke(nodes.toArray()[0], new TxStateReq(readResult.transactionId(), replicationGroupId))
+                        Optional<ClusterNode> firstNode = nodes.stream().findFirst();
 
-                        if (committed) {
-                            return readResult.binaryRow();
-                        } else {
-                            return mvDataStorage.read(rowId, readResult.newestCommitTimestamp()).binaryRow();
+                        if (firstNode.isEmpty()) {
+                            throw new RuntimeException("Assignment is empty");
                         }
+
+                        return replicaService.invoke(firstNode.get(),
+                                FACTORY.txStateReplicaRequest()//new TxStateReplicaRequest(readResult.transactionId(), replicationGroupId, firstNode.get().address()));
+                                        .groupId(replicationGroupId)
+                                        .txId(readResult.transactionId())
+                                        .address(firstNode.get().address())
+                                        .build())
+                                .thenApply((res) -> {
+                                    IgniteBiTuple<TxMeta, NetworkAddress> stateAndLeader = (IgniteBiTuple) res;
+
+                                    TxMeta txMeta = stateAndLeader.get1();
+
+                                    if (txMeta != null) {
+                                        if (txMeta.txState() == TxState.COMMITED) {
+                                            if (txMeta.commitTimestamp().compareTo(readTs) < 0) {
+                                                return readResult.binaryRow();
+                                            } else {
+                                                return mvDataStorage.read(rowId, readResult.newestCommitTimestamp()).binaryRow();
+                                            }
+                                        } else if (txMeta.txState() == TxState.ABORTED) {
+                                            mvDataStorage.read(rowId, readResult.newestCommitTimestamp()).binaryRow();
+                                        } else {
+                                            return null;//retry txStateReplicaRequest invoke
+                                        }
+                                    } else {
+                                        return null;//invoke with leader address from response
+                                    }
+                                });
 
                     }
                 });

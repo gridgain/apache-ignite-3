@@ -161,7 +161,10 @@ public class DummyInternalTableImpl extends InternalTableImpl {
                 "testGrp",
                 tableId(),
                 primaryIndex,
-                new HybridClock()
+                new HybridClock(),
+                null,
+                null,
+                null
         );
 
         // TODO: https://issues.apache.org/jira/browse/IGNITE-17523
