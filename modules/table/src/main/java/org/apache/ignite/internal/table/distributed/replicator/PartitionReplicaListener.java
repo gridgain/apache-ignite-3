@@ -684,7 +684,7 @@ public class PartitionReplicaListener implements ReplicaListener {
                         }
 
                         return replicaService.invoke(firstNode.get(),
-                                FACTORY.txStateReplicaRequest()//new TxStateReplicaRequest(readResult.transactionId(), replicationGroupId, firstNode.get().address()));
+                                FACTORY.txStateReplicaRequest()
                                         .groupId(replicationGroupId)
                                         .txId(readResult.transactionId())
                                         .address(firstNode.get().address())
@@ -696,7 +696,7 @@ public class PartitionReplicaListener implements ReplicaListener {
 
                                     if (txMeta != null) {
                                         if (txMeta.txState() == TxState.COMMITED) {
-                                            if (txMeta.commitTimestamp().compareTo(readTs) < 0) {
+                                            if (txMeta.commitTimestamp().compareTo(readTs) <= 0) {
                                                 return readResult.binaryRow();
                                             } else {
                                                 return mvDataStorage.read(rowId, readResult.newestCommitTimestamp()).binaryRow();
