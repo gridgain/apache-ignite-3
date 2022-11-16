@@ -17,8 +17,11 @@
 
 package org.apache.ignite.internal.table.distributed.storage;
 
+import static java.util.concurrent.CompletableFuture.allOf;
 import static java.util.concurrent.CompletableFuture.completedFuture;
 import static java.util.concurrent.CompletableFuture.failedFuture;
+import static java.util.stream.Collectors.toList;
+import static java.util.stream.Collectors.toMap;
 import static org.apache.ignite.internal.util.ExceptionUtils.withCause;
 import static org.apache.ignite.lang.ErrorGroups.Replicator.REPLICA_UNAVAILABLE_ERR;
 import static org.apache.ignite.lang.ErrorGroups.Transactions.TX_INSUFFICIENT_READ_WRITE_OPERATION_ERR;
@@ -29,21 +32,27 @@ import java.util.ArrayList;
 import java.util.BitSet;
 import java.util.Collection;
 import java.util.Collections;
-import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
+import java.util.Map.Entry;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Flow.Publisher;
 import java.util.concurrent.Flow.Subscriber;
 import java.util.concurrent.Flow.Subscription;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.BiFunction;
 import java.util.function.Function;
-import java.util.stream.Collectors;
 import org.apache.ignite.internal.hlc.HybridClock;
 import org.apache.ignite.internal.hlc.HybridTimestamp;
+import org.apache.ignite.internal.logger.IgniteLogger;
+import org.apache.ignite.internal.logger.Loggers;
 import org.apache.ignite.internal.replicator.ReplicaService;
 import org.apache.ignite.internal.replicator.ReplicationGroupId;
 import org.apache.ignite.internal.replicator.exception.PrimaryReplicaMissException;
@@ -80,6 +89,8 @@ import org.jetbrains.annotations.TestOnly;
  * Storage of table rows.
  */
 public class InternalTableImpl implements InternalTable {
+    private static final IgniteLogger LOG = Loggers.forClass(InternalTableImpl.class);
+
     /** Cursor id generator. */
     private static final AtomicLong CURSOR_ID_GENERATOR = new AtomicLong();
 
@@ -87,7 +98,7 @@ public class InternalTableImpl implements InternalTable {
     private static final int ATTEMPTS_TO_ENLIST_PARTITION = 5;
 
     /** Partition map. */
-    protected final Int2ObjectMap<RaftGroupService> partitionMap;
+    protected final ConcurrentMap<Integer, CompletableFuture<RaftGroupService>> partitionMap;
 
     /** Partitions. */
     private final int partitions;
@@ -153,7 +164,8 @@ public class InternalTableImpl implements InternalTable {
     ) {
         this.tableName = tableName;
         this.tableId = tableId;
-        this.partitionMap = partMap;
+        this.partitionMap = partMap.entrySet().stream()
+                .collect(toMap(Entry::getKey, entry -> completedFuture(entry.getValue()), (a, b) -> b, ConcurrentHashMap::new));
         this.partitions = partitions;
         this.nodeIdResolver = nodeIdResolver;
         this.clusterNodeResolver = clusterNodeResolver;
@@ -507,15 +519,17 @@ public class InternalTableImpl implements InternalTable {
             @NotNull ClusterNode recipientNode
     ) {
         int partId = partId(keyRow);
-        ReplicationGroupId partGroupId = partitionMap.get(partId).groupId();
-
-        return replicaSvc.invoke(recipientNode, tableMessagesFactory.readOnlySingleRowReplicaRequest()
-                .groupId(partGroupId)
-                .binaryRow(keyRow)
-                .requestType(RequestType.RO_GET)
-                .readTimestamp(readTimestamp)
-                .build()
-        );
+        return groupFuture(partId)
+                .thenApply(RaftGroupService::groupId)
+                .thenCompose(partGroupId -> {
+                    return replicaSvc.invoke(recipientNode, tableMessagesFactory.readOnlySingleRowReplicaRequest()
+                            .groupId(partGroupId)
+                            .binaryRow(keyRow)
+                            .requestType(RequestType.RO_GET)
+                            .readTimestamp(readTimestamp)
+                            .build()
+                    );
+                });
     }
 
     /** {@inheritDoc} */
@@ -560,15 +574,17 @@ public class InternalTableImpl implements InternalTable {
         int batchNum = 0;
 
         for (Int2ObjectOpenHashMap.Entry<List<BinaryRow>> partToRows : keyRowsByPartition.int2ObjectEntrySet()) {
-            ReplicationGroupId partGroupId = partitionMap.get(partToRows.getIntKey()).groupId();
-
-            CompletableFuture<Object> fut = replicaSvc.invoke(recipientNode, tableMessagesFactory.readOnlyMultiRowReplicaRequest()
-                    .groupId(partGroupId)
-                    .binaryRows(partToRows.getValue())
-                    .requestType(RequestType.RO_GET_ALL)
-                    .readTimestamp(readTimestamp)
-                    .build()
-            );
+            CompletableFuture<Object> fut = groupFuture(partToRows.getIntKey())
+                    .thenApply(RaftGroupService::groupId)
+                    .thenCompose(partGroupId -> {
+                        return replicaSvc.invoke(recipientNode, tableMessagesFactory.readOnlyMultiRowReplicaRequest()
+                                .groupId(partGroupId)
+                                .binaryRows(partToRows.getValue())
+                                .requestType(RequestType.RO_GET_ALL)
+                                .readTimestamp(readTimestamp)
+                                .build()
+                        );
+                    });
 
             futures[batchNum++] = fut;
         }
@@ -870,24 +886,27 @@ public class InternalTableImpl implements InternalTable {
 
         return new PartitionScanPublisher(
                 (scanId, batchSize) -> {
-                    ReplicationGroupId partGroupId = partitionMap.get(partId).groupId();
+                    return groupFuture(partId)
+                            .thenApply(RaftGroupService::groupId)
+                            .thenCompose(partGroupId -> {
+                                ReadOnlyScanRetrieveBatchReplicaRequest request = tableMessagesFactory
+                                        .readOnlyScanRetrieveBatchReplicaRequest()
+                                        .groupId(partGroupId)
+                                        .readTimestamp(readTimestamp)
+                                        // TODO: IGNITE-17666 Close cursor tx finish.
+                                        .transactionId(txId)
+                                        .scanId(scanId)
+                                        .batchSize(batchSize)
+                                        .indexToUse(indexId)
+                                        .exactKey(exactKey)
+                                        .lowerBound(lowerBound)
+                                        .upperBound(upperBound)
+                                        .flags(flags)
+                                        .columnsToInclude(columnsToInclude)
+                                        .build();
 
-                    ReadOnlyScanRetrieveBatchReplicaRequest request = tableMessagesFactory.readOnlyScanRetrieveBatchReplicaRequest()
-                            .groupId(partGroupId)
-                            .readTimestamp(readTimestamp)
-                            // TODO: IGNITE-17666 Close cursor tx finish.
-                            .transactionId(txId)
-                            .scanId(scanId)
-                            .batchSize(batchSize)
-                            .indexToUse(indexId)
-                            .exactKey(exactKey)
-                            .lowerBound(lowerBound)
-                            .upperBound(upperBound)
-                            .flags(flags)
-                            .columnsToInclude(columnsToInclude)
-                            .build();
-
-                    return replicaSvc.invoke(recipientNode, request);
+                                return replicaSvc.invoke(recipientNode, request);
+                            });
                 },
                 // TODO: IGNITE-17666 Close cursor tx finish.
                 Function.identity());
@@ -993,34 +1012,47 @@ public class InternalTableImpl implements InternalTable {
     public List<String> assignments() {
         awaitLeaderInitialization();
 
-        return partitionMap.int2ObjectEntrySet().stream()
-                .sorted(Comparator.comparingInt(Int2ObjectOpenHashMap.Entry::getIntKey))
+        return partitionMap.entrySet().stream()
+                .sorted(Map.Entry.comparingByKey())
                 .map(Map.Entry::getValue)
+                .map(future -> {
+                    assert future.isDone() : "Future is not done, something is wrong";
+
+                    return future.join();
+                })
                 .map(RaftGroupService::leader)
                 .map(Peer::consistentId)
                 .map(nodeIdResolver)
-                .collect(Collectors.toList());
+                .collect(toList());
+    }
+
+    private CompletableFuture<RaftGroupService> groupFuture(int partId) {
+        return partitionMap.computeIfAbsent(partId, unused -> new CompletableFuture<>());
     }
 
     @Override
     public ClusterNode leaderAssignment(int partition) {
         awaitLeaderInitialization();
 
-        RaftGroupService raftGroupService = partitionMap.get(partition);
+        RaftGroupService raftGroupService = requiredReadyPartition(partition);
+
+        return clusterNodeResolver.apply(raftGroupService.leader().consistentId());
+    }
+
+    private RaftGroupService requiredReadyPartition(int partition) {
+        RaftGroupService raftGroupService = groupFuture(partition).getNow(null);
+
         if (raftGroupService == null) {
             throw new IgniteInternalException("No such partition " + partition + " in table " + tableName);
         }
 
-        return clusterNodeResolver.apply(raftGroupService.leader().consistentId());
+        return raftGroupService;
     }
 
     /** {@inheritDoc} */
     @Override
     public RaftGroupService partitionRaftGroupService(int partition) {
-        RaftGroupService raftGroupService = partitionMap.get(partition);
-        if (raftGroupService == null) {
-            throw new IgniteInternalException("No such partition " + partition + " in table " + tableName);
-        }
+        RaftGroupService raftGroupService = requiredReadyPartition(partition);
 
         if (raftGroupService.leader() == null) {
             raftGroupService.refreshLeader().join();
@@ -1038,10 +1070,14 @@ public class InternalTableImpl implements InternalTable {
     private void awaitLeaderInitialization() {
         List<CompletableFuture<Void>> futs = new ArrayList<>();
 
-        for (RaftGroupService raftSvc : partitionMap.values()) {
-            if (raftSvc.leader() == null) {
-                futs.add(raftSvc.refreshLeader());
-            }
+        for (CompletableFuture<RaftGroupService> serviceFuture : partitionMap.values()) {
+            futs.add(serviceFuture.thenCompose(raftSvc -> {
+                if (raftSvc.leader() == null) {
+                    return raftSvc.refreshLeader();
+                } else {
+                    return completedFuture(null);
+                }
+            }));
         }
 
         CompletableFuture.allOf(futs.toArray(CompletableFuture[]::new)).join();
@@ -1096,14 +1132,33 @@ public class InternalTableImpl implements InternalTable {
      * @param raftGrpSvc Raft group service.
      */
     public void updateInternalTableRaftGroupService(int p, RaftGroupService raftGrpSvc) {
-        RaftGroupService oldSrvc;
+        RaftGroupService oldSvc = null;
+        CompletableFuture<RaftGroupService> futureToComplete = null;
 
         synchronized (updatePartMapMux) {
-            oldSrvc = partitionMap.put(p, raftGrpSvc);
+            CompletableFuture<RaftGroupService> newFuture = completedFuture(raftGrpSvc);
+            CompletableFuture<RaftGroupService> future = partitionMap.computeIfAbsent(p, unused -> newFuture);
+
+            if (future != newFuture) {
+                // No replacement occurred.
+                if (future.isDone()) {
+                    // Old future is from previous generation, we need to replace it.
+                    oldSvc = future.join();
+
+                    partitionMap.put(p, newFuture);
+                } else {
+                    // The existing future is not complete, so we should complete it.
+                    futureToComplete = future;
+                }
+            }
         }
 
-        if (oldSrvc != null) {
-            oldSrvc.shutdown();
+        if (futureToComplete != null) {
+            futureToComplete.complete(raftGrpSvc);
+        }
+
+        if (oldSvc != null) {
+            oldSvc.shutdown();
         }
     }
 
@@ -1115,27 +1170,32 @@ public class InternalTableImpl implements InternalTable {
      * @return The enlist future (then will a leader become known).
      */
     protected CompletableFuture<IgniteBiTuple<ClusterNode, Long>> enlist(int partId, InternalTransaction tx) {
-        RaftGroupService svc = partitionMap.get(partId);
-        tx.assignCommitPartition(new TablePartitionId(tableId, partId));
+        return groupFuture(partId)
+                .thenCompose(svc -> {
+                    tx.assignCommitPartition(new TablePartitionId(tableId, partId));
 
-        // TODO: IGNITE-17256 Use a placement driver for getting a primary replica.
-        CompletableFuture<IgniteBiTuple<Peer, Long>> fut0 = svc.refreshAndGetLeaderWithTerm();
+                    // TODO: IGNITE-17256 Use a placement driver for getting a primary replica.
+                    CompletableFuture<IgniteBiTuple<Peer, Long>> fut0 = svc.refreshAndGetLeaderWithTerm();
 
-        // TODO asch IGNITE-15091 fixme need to map to the same leaseholder.
-        // TODO asch a leader race is possible when enlisting different keys from the same partition.
-        return fut0.handle((primaryPeerAndTerm, e) -> {
-            if (e != null) {
-                throw withCause(TransactionException::new, REPLICA_UNAVAILABLE_ERR, "Failed to get the primary replica.", e);
-            }
-            if (primaryPeerAndTerm.get1() == null) {
-                throw new TransactionException(REPLICA_UNAVAILABLE_ERR, "Failed to get the primary replica.");
-            }
+                    // TODO asch IGNITE-15091 fixme need to map to the same leaseholder.
+                    // TODO asch a leader race is possible when enlisting different keys from the same partition.
+                    return fut0.handle((primaryPeerAndTerm, e) -> {
+                        if (e != null) {
+                            throw withCause(TransactionException::new, REPLICA_UNAVAILABLE_ERR, "Failed to get the primary replica.", e);
+                        }
+                        if (primaryPeerAndTerm.get1() == null) {
+                            throw new TransactionException(REPLICA_UNAVAILABLE_ERR, "Failed to get the primary replica.");
+                        }
 
-            TablePartitionId partGroupId = new TablePartitionId(tableId, partId);
+                        TablePartitionId partGroupId = new TablePartitionId(tableId, partId);
 
-            return tx.enlist(partGroupId,
-                    new IgniteBiTuple<>(clusterNodeResolver.apply(primaryPeerAndTerm.get1().consistentId()), primaryPeerAndTerm.get2()));
-        });
+                        return tx.enlist(partGroupId,
+                                new IgniteBiTuple<>(
+                                        clusterNodeResolver.apply(primaryPeerAndTerm.get1().consistentId()),
+                                        primaryPeerAndTerm.get2()
+                                ));
+                    });
+                });
     }
 
     /**
@@ -1304,9 +1364,28 @@ public class InternalTableImpl implements InternalTable {
     /** {@inheritDoc} */
     @Override
     public void close() {
-        for (RaftGroupService srv : partitionMap.values()) {
-            srv.shutdown();
+        CompletableFuture[] futures = partitionMap.values().stream()
+                .map(future -> future.thenAccept(RaftGroupService::shutdown))
+                .toArray(CompletableFuture[]::new);
+
+        try {
+            allOf(futures).get(10, TimeUnit.SECONDS);
+        } catch (InterruptedException e) {
+            LOG.warn("Interrupted while waiting for raft groups stop, table ID {}, what remains: {}", tableId, remainingPartIds());
+        } catch (ExecutionException e) {
+            LOG.error("Errow while stopping raft groups for table ID {}, what remains: {}", tableId, remainingPartIds());
+
+            throw new RuntimeException(e);
+        } catch (TimeoutException e) {
+            LOG.warn("Some raft groups have not stopped in time for table ID {}: {}", tableId, remainingPartIds());
         }
+    }
+
+    private List<Integer> remainingPartIds() {
+        return partitionMap.entrySet().stream()
+                .filter(entry -> !entry.getValue().isDone())
+                .map(Map.Entry::getKey)
+                .collect(toList());
     }
 
     // TODO: IGNITE-17963 Use smarter logic for recipient node evaluation.
@@ -1317,18 +1396,19 @@ public class InternalTableImpl implements InternalTable {
      * @return Cluster node to evalute read-only request.
      */
     protected CompletableFuture<ClusterNode> evaluateReadOnlyRecipientNode(int partId) {
-        RaftGroupService svc = partitionMap.get(partId);
-
-        return svc.refreshAndGetLeaderWithTerm().handle((res, e) -> {
-            if (e != null) {
-                throw withCause(TransactionException::new, REPLICA_UNAVAILABLE_ERR, e);
-            } else {
-                if (res == null || res.getKey() == null) {
-                    throw withCause(TransactionException::new, REPLICA_UNAVAILABLE_ERR, e);
-                } else {
-                    return clusterNodeResolver.apply(res.get1().consistentId());
-                }
-            }
-        });
+        return groupFuture(partId)
+                .thenCompose(svc -> {
+                    return svc.refreshAndGetLeaderWithTerm().handle((res, e) -> {
+                        if (e != null) {
+                            throw withCause(TransactionException::new, REPLICA_UNAVAILABLE_ERR, e);
+                        } else {
+                            if (res == null || res.getKey() == null) {
+                                throw new TransactionException(REPLICA_UNAVAILABLE_ERR, "No info about leader");
+                            } else {
+                                return clusterNodeResolver.apply(res.get1().consistentId());
+                            }
+                        }
+                    });
+                });
     }
 }
