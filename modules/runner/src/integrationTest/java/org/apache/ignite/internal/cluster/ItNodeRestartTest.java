@@ -1,0 +1,371 @@
+/*
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements. See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the "License"); you may not use this file except in compliance with
+ * the License. You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.apache.ignite.internal.cluster;
+
+import static org.apache.ignite.internal.testframework.IgniteTestUtils.assertThrowsWithCause;
+import static org.apache.ignite.internal.testframework.matchers.CompletableFutureMatcher.willCompleteSuccessfully;
+import static org.hamcrest.MatcherAssert.assertThat;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import io.micronaut.configuration.picocli.MicronautFactory;
+import io.micronaut.context.ApplicationContext;
+import io.micronaut.context.env.Environment;
+import java.io.PrintWriter;
+import java.io.StringWriter;
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
+import java.util.function.Predicate;
+import java.util.regex.Pattern;
+import java.util.stream.Collectors;
+import org.apache.ignite.Ignite;
+import org.apache.ignite.IgnitionManager;
+import org.apache.ignite.internal.app.EnvironmentDefaultValueProvider;
+import org.apache.ignite.internal.app.IgniteImpl;
+import org.apache.ignite.internal.cli.commands.TopLevelCliCommand;
+import org.apache.ignite.internal.hlc.HybridTimestamp;
+import org.apache.ignite.internal.util.IgniteUtils;
+import org.apache.ignite.lang.IgniteException;
+import org.apache.ignite.tx.Transaction;
+import org.apache.ignite.tx.TransactionException;
+import org.hamcrest.Matchers;
+import org.hamcrest.text.IsEmptyString;
+import org.jetbrains.annotations.Nullable;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.MethodSource;
+import org.mockito.Mockito;
+import picocli.CommandLine;
+
+/**
+ * Test node start/stop in different scenarios and validate grid components behavior depending on availability/absence of quorums.
+ */
+// TODO: Fix expected messages in assertThrows
+// TODO: Create 2 distribution zones, which spans a single node and both data nodes, and a tables in these zones.
+@SuppressWarnings("ThrowableNotThrown")
+public class ItNodeRestartTest extends AbstractClusterStartStopTest {
+    @BeforeEach
+    public void before() throws Exception {
+        for (String name : nodesCfg.keySet()) {
+            IgniteUtils.deleteIfExists(WORK_DIR.resolve(name));
+        }
+
+        initGrid(nodeAliasToNameMapping.values());
+
+        stopAllNodes();
+    }
+
+
+    /** Runs after each test sequence. */
+    @AfterEach
+    public void afterEach() {
+        stopAllNodes();
+
+        for (String name : nodesCfg.keySet()) {
+            IgniteUtils.deleteIfExists(WORK_DIR.resolve(name));
+        }
+    }
+
+    /**
+     * Test factory for testing node startup order.
+     *
+     * @return JUnit tests.
+     */
+    static Object[] generateSequence() {
+        return new GridGenerator(
+                nodeAliasToNameMapping.keySet(),
+                (name, grid) -> (!"D2".equals(name) || grid.contains("D")),  // Data nodes are interchangeable.
+                new UniqueSetFilter<String>().and(grid -> grid.size() > 2)
+        ).generate().toArray(Object[]::new);
+    }
+
+    @ParameterizedTest(name = "Grid=" + ParameterizedTest.ARGUMENTS_PLACEHOLDER)
+    @MethodSource("generateSequence")
+    public void testNodeJoin(List<String> nodeNames) {
+        runTest(nodeNames, () -> checkNodeJoin(NEW_NODE));
+    }
+
+    @ParameterizedTest(name = "Node order=" + ParameterizedTest.ARGUMENTS_PLACEHOLDER)
+    @MethodSource("generateSequence")
+    public void testCreateTable(List<String> nodeNames) {
+        runTest(nodeNames, this::checkCreateTable);
+    }
+
+    @ParameterizedTest(name = "Node order=" + ParameterizedTest.ARGUMENTS_PLACEHOLDER)
+    @MethodSource("generateSequence")
+    public void testImplicitTransaction(List<String> nodeNames) {
+        runTest(nodeNames, this::checkImplicitTx);
+    }
+
+    @ParameterizedTest(name = "Node order=" + ParameterizedTest.ARGUMENTS_PLACEHOLDER)
+    @MethodSource("generateSequence")
+    public void testReadWriteTransaction(List<String> nodeNames) {
+        runTest(nodeNames, this::checkTxRW);
+    }
+
+    @ParameterizedTest(name = "Node order=" + ParameterizedTest.ARGUMENTS_PLACEHOLDER)
+    @MethodSource("generateSequence")
+    public void testReadOnlyTransaction(List<String> nodeNames) {
+        runTest(nodeNames, this::checkTxRO);
+    }
+
+    private void runTest(List<String> nodeNames, Runnable testBody) {
+        Set<String> realNames = nodeNames.stream().map(nodeAliasToNameMapping::get).collect(Collectors.toSet());
+
+        for (String name : nodeNames) {
+            try {
+                prestartGrid(realNames);
+
+                log.info("Stopping node: label=" + name + ", name=" + nodeAliasToNameMapping.get(name));
+
+                stopNode(nodeAliasToNameMapping.get(name));
+
+                testBody.run();
+
+                log.info("Starting node back: label=" + name + ", name=" + nodeAliasToNameMapping.get(name));
+
+                startNode(nodeAliasToNameMapping.get(name));
+
+                testBody.run();
+            } finally {
+                stopAllNodes();
+            }
+        }
+    }
+
+    private void prestartGrid(Set<String> nodeNames) {
+        Set<String> expectedNodes = Set.copyOf(nodeNames);
+
+        // Start CMG and MetaStorage first, to activate cluster.
+        List<CompletableFuture<Ignite>> futs = new ArrayList<>();
+        futs.add(startNode(nodeAliasToNameMapping.get("C")));
+        futs.add(startNode(nodeAliasToNameMapping.get("M")));
+
+        nodeNames.stream()
+                .filter(n -> !isNodeStarted(n))
+                .map(this::startNode)
+                .forEach(futs::add);
+
+        assertThat(CompletableFuture.allOf(futs.toArray(CompletableFuture[]::new)), willCompleteSuccessfully());
+
+        // Stop unwanted nodes.
+        futs.stream()
+                .map(f -> f.join().name())
+                .filter(n -> !expectedNodes.contains(n))
+                .forEach(this::stopNode);
+    }
+
+    private void checkNodeJoin(String nodeName) {
+        try {
+            CompletableFuture<Ignite> fut = startNode(nodeName);
+
+            if (!isNodeStarted(CMG_NODE)) {
+                assertThrowsWithCause(() -> fut.get(NODE_JOIN_WAIT_TIMEOUT, TimeUnit.MILLISECONDS), TimeoutException.class);
+
+                assertTrue(topologyContainsNode("physical", nodeName));
+
+                // CMG holds logical topology state.
+                assertThrowsWithCause(() -> topologyContainsNode("logical", nodeName), IgniteException.class);
+
+                return;
+            } else if (!isNodeStarted(METASTORAGE_NODE)) {
+                // Node future can't complete as some components requires Metastorage on start.
+                assertThrowsWithCause(() -> fut.get(NODE_JOIN_WAIT_TIMEOUT, TimeUnit.MILLISECONDS), TimeoutException.class);
+
+                assertTrue(topologyContainsNode("physical", nodeName));
+                //TODO: Is Metastore required to promote node to logical topology?
+                assertFalse(topologyContainsNode("logical", nodeName));
+
+                return;
+            }
+
+            assertThat(fut, willCompleteSuccessfully());
+
+            assertTrue(topologyContainsNode("physical", ((IgniteImpl) fut.join()).id()));
+            assertTrue(topologyContainsNode("logical", ((IgniteImpl) fut.join()).id()));
+        } finally {
+            IgnitionManager.stop(nodeName);
+        }
+    }
+
+    private void checkCreateTable() {
+        Ignite node = initializedNode();
+
+        if (node == null) {
+            return;
+        }
+
+        String createTableCommand = "CREATE TABLE tempTbl (id INT PRIMARY KEY, val INT) WITH partitions = 1";
+        String dropTableCommand = "DROP TABLE IF EXISTS tempTbl";
+
+        try {
+            sql(node, null, createTableCommand);
+        } finally {
+            sql(node, null, dropTableCommand);
+        }
+    }
+
+    private void checkTxRO() {
+        Ignite node = initializedNode();
+
+        if (node == null) {
+            return;
+        }
+
+        Transaction roTx = node.transactions().readOnly().begin();
+
+        try {
+            if (!isNodeStarted(DATA_NODE) && !isNodeStarted(DATA_NODE_2)) {
+                assertThrowsWithCause(() -> sql(node, roTx, "SELECT * FROM tbl1"), IgniteException.class);
+
+                return;
+            } else if (!isNodeStarted(DATA_NODE_2)) {
+                // Fake transaction with a timestamp from the past.
+                Transaction tx0 = Mockito.spy(roTx);
+                Mockito.when(tx0.readTimestamp()).thenReturn(new HybridTimestamp(1L, 0));
+                sql(node, roTx, "SELECT * FROM tbl1");
+
+                // Transaction with recent timestamp.
+                assertThrowsWithCause(() -> sql(node, roTx, "SELECT * FROM tbl1"), IgniteException.class);
+
+                return;
+            }
+
+            sql(node, roTx, "SELECT * FROM tbl1");
+        } finally {
+            roTx.rollback();
+        }
+    }
+
+    public void checkImplicitTx() {
+        Ignite node = initializedNode();
+
+        if (node == null) {
+            return;
+        }
+
+        // TODO: Bound table distribution zone to data nodes and uncomment.
+        // if (!clusterNodes.containsKey(DATA_NODE) || !clusterNodes.containsKey(DATA_NODE_2)) {
+        if (clusterNodes.size() <= 2 || !isNodeStarted(DATA_NODE)) {
+
+            try {
+                assertThrowsWithCause(
+                        () -> sql(node, null, "INSERT INTO tbl1 VALUES (2, -2)"),
+                        TransactionException.class,
+                        "Failed to get the primary replica");
+            } finally {
+                sql(node, null, "DELETE FROM tbl1 WHERE tbl1.id = 2");
+            }
+
+            return;
+        }
+
+        sql(node, null, "INSERT INTO tbl1 VALUES (2, 2)");
+
+        try {
+            assertThat(sql(node, null, "SELECT * FROM tbl1").size(), Matchers.equalTo(2));
+        } finally {
+            sql(node, null, "DELETE FROM tbl1 WHERE tbl1.id = 2");
+        }
+    }
+
+    private void checkTxRW() {
+        Ignite node = initializedNode();
+
+        if (node == null) {
+            return;
+        }
+
+        if (!isNodeStarted(DATA_NODE)) {
+            Transaction tx = node.transactions().begin();
+            try {
+                assertThrowsWithCause(
+                        () -> sql(node, tx, "INSERT INTO tbl1 VALUES (2, -2)"),
+                        TransactionException.class,
+                        "Failed to get the primary replica");
+            } finally {
+                tx.rollback();
+                sql(node, null, "DELETE FROM tbl1 WHERE tbl1.id = 2");
+            }
+
+            return;
+        }
+
+        Transaction tx = node.transactions().begin();
+        try {
+            sql(node, tx, "INSERT INTO tbl1 VALUES (2, 2)");
+
+            tx.commit();
+
+            assertThat(sql(node, null, "SELECT * FROM tbl1").size(), Matchers.equalTo(2));
+        } finally {
+            tx.rollback();
+            sql(node, null, "DELETE FROM tbl1 WHERE tbl1.id = 2");
+        }
+    }
+
+    private static boolean topologyContainsNode(String topologyType, String nodeId) {
+        StringWriter out = new StringWriter();
+        StringWriter err = new StringWriter();
+
+        new CommandLine(TopLevelCliCommand.class, new MicronautFactory(ApplicationContext.run(Environment.TEST)))
+                .setDefaultValueProvider(new EnvironmentDefaultValueProvider())
+                .setOut(new PrintWriter(out, true))
+                .setErr(new PrintWriter(err, true))
+                .execute("cluster", "topology", topologyType, "--cluster-endpoint-url", NODE_URL);
+
+        assertThat(err.toString(), IsEmptyString.emptyString());
+
+        return Pattern.compile("\\b" + nodeId + "\\b").matcher(out.toString()).find();
+    }
+
+    /** Find started cluster node or return {@code null} if not found. */
+    private @Nullable Ignite initializedNode() {
+        assert !clusterNodes.isEmpty();
+
+        CompletableFuture<Ignite> nodeFut = clusterNodes.values().iterator().next();
+
+        if (!isNodeStarted(METASTORAGE_NODE)) {
+            assertThrowsWithCause(() -> nodeFut.get(NODE_JOIN_WAIT_TIMEOUT, TimeUnit.MILLISECONDS), TimeoutException.class);
+
+            clusterNodes.forEach((k, v) -> assertNull(v.getNow(null), k));
+
+            return null;
+        }
+
+        return nodeFut.join();
+    }
+
+
+    /** Filters out non-unique sets. */
+    private static class UniqueSetFilter<T> implements Predicate<Set<T>> {
+        final Set<Set<T>> seenBefore = new HashSet<>();
+
+        @Override
+        public boolean test(Set<T> s) {
+            return seenBefore.add(new HashSet<>(s)); // Copy mutable collection.
+        }
+    }
+}
