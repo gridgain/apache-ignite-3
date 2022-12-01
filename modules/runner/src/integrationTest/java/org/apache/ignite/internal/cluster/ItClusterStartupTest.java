@@ -278,7 +278,7 @@ public class ItClusterStartupTest extends AbstractClusterStartStopTest {
 
                 tx.commit();
             } finally {
-//                tx.rollback();
+                // tx.rollback();
             }
 
             assertThat(sql(node, null, "SELECT * FROM tbl1").size(), Matchers.equalTo(2));
