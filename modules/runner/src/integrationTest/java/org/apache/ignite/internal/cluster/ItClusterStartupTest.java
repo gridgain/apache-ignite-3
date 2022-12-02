@@ -73,10 +73,10 @@ public class ItClusterStartupTest extends AbstractClusterStartStopTest {
     /**
      * Generate node start sequences.
      *
-     * @return JUnit tests.
+     * @return Test parameters.
      */
     static Object[] generateParameters() {
-        return new GridGenerator(
+        return new SequenceGenerator(
                 nodeAliasToNameMapping.keySet(),
                 (name, grid) -> (!grid.isEmpty() || "C".equals(name)) // CMG node always starts first.
                         && (!"D2".equals(name) || grid.contains("D")),  // Data nodes are interchangeable.
@@ -84,6 +84,7 @@ public class ItClusterStartupTest extends AbstractClusterStartStopTest {
         ).generate().toArray(Object[]::new);
     }
 
+    /** Checks new node joining to the grid. */
     @ParameterizedTest(name = "Node order=" + ParameterizedTest.ARGUMENTS_PLACEHOLDER)
     @MethodSource("generateParameters")
     public void testNodeJoin(List<String> nodeAliases) {
@@ -96,6 +97,7 @@ public class ItClusterStartupTest extends AbstractClusterStartStopTest {
         }
     }
 
+    /** Checks table creation. */
     @ParameterizedTest(name = "Node order=" + ParameterizedTest.ARGUMENTS_PLACEHOLDER)
     @MethodSource("generateParameters")
     public void testCreateTable(List<String> nodeAliases) {
@@ -108,6 +110,7 @@ public class ItClusterStartupTest extends AbstractClusterStartStopTest {
         }
     }
 
+    /** Checks implicit transaction. */
     @ParameterizedTest(name = "Node order=" + ParameterizedTest.ARGUMENTS_PLACEHOLDER)
     @MethodSource("generateParameters")
     public void testImplicitTransaction(List<String> nodeAliases) {
@@ -120,6 +123,7 @@ public class ItClusterStartupTest extends AbstractClusterStartStopTest {
         }
     }
 
+    /** Checks read-write transaction. */
     @ParameterizedTest(name = "Node order=" + ParameterizedTest.ARGUMENTS_PLACEHOLDER)
     @MethodSource("generateParameters")
     public void testReadWriteTransaction(List<String> nodeAliases) {
@@ -132,6 +136,7 @@ public class ItClusterStartupTest extends AbstractClusterStartStopTest {
         }
     }
 
+    /** Checks read-only transaction. */
     @ParameterizedTest(name = "Node order=" + ParameterizedTest.ARGUMENTS_PLACEHOLDER)
     @MethodSource("generateParameters")
     public void testReadOnlyTransaction(List<String> nodeAliases) {
@@ -227,7 +232,7 @@ public class ItClusterStartupTest extends AbstractClusterStartStopTest {
         }
     }
 
-    public void checkImplicitTx() {
+    private void checkImplicitTx() {
         Ignite node = initializedNode();
 
         if (node == null) {
@@ -278,6 +283,7 @@ public class ItClusterStartupTest extends AbstractClusterStartStopTest {
 
                 tx.commit();
             } finally {
+                // TODO: https://issues.apache.org/jira/browse/IGNITE-18324
                 // tx.rollback();
             }
 
@@ -297,6 +303,7 @@ public class ItClusterStartupTest extends AbstractClusterStartStopTest {
         if (!isNodeStarted(METASTORAGE_NODE)) {
             assertThrowsWithCause(() -> nodeFut.get(NODE_JOIN_WAIT_TIMEOUT, TimeUnit.MILLISECONDS), TimeoutException.class);
 
+            // Assumed, there is no available Ignite instance in grid, which is required for running some checks.
             clusterNodes.forEach((k, v) -> assertNull(v.getNow(null), k));
 
             return null;

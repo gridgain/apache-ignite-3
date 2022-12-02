@@ -33,7 +33,6 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -63,10 +62,13 @@ import org.jetbrains.annotations.Nullable;
 import org.junit.jupiter.api.extension.ExtendWith;
 import picocli.CommandLine;
 
-
+/**
+ * Base class for cluster start/stop scenarios.
+ */
 @ExtendWith(WorkDirectoryExtension.class)
 @WithSystemProperty(key = "org.jline.terminal.dumb", value = "true")
 abstract class AbstractClusterStartStopTest extends BaseIgniteAbstractTest {
+    /** Timeout to wait for node join. */
     protected static final int NODE_JOIN_WAIT_TIMEOUT = 2_000;
 
     /** Work directory. */
@@ -179,13 +181,21 @@ abstract class AbstractClusterStartStopTest extends BaseIgniteAbstractTest {
         return futures;
     }
 
+    /**
+     * Start nodes.
+     *
+     * @param names Nodes names.
+     * @return Nodes start futures.
+     */
     protected List<CompletableFuture<Ignite>> startNodes(Collection<String> names) {
         return names.stream()
                 .map(this::startNode)
                 .collect(Collectors.toList());
     }
 
-
+    /**
+     * Stops all nodes.
+     */
     protected void stopAllNodes() {
         List<String> names0 = List.copyOf(clusterNodes.keySet());
 
@@ -194,6 +204,12 @@ abstract class AbstractClusterStartStopTest extends BaseIgniteAbstractTest {
         }
     }
 
+    /**
+     * Starts node.
+     *
+     * @param nodeName Node name.
+     * @return Node start future.
+     */
     protected CompletableFuture<Ignite> startNode(String nodeName) {
         String nodeConfig = nodesCfg.get(nodeName);
 
@@ -204,6 +220,11 @@ abstract class AbstractClusterStartStopTest extends BaseIgniteAbstractTest {
         return fut;
     }
 
+    /**
+     * Stops node.
+     *
+     * @param nodeName Node name.
+     */
     protected void stopNode(String nodeName) {
         CompletableFuture<Ignite> rmv = clusterNodes.remove(nodeName);
 
@@ -212,10 +233,25 @@ abstract class AbstractClusterStartStopTest extends BaseIgniteAbstractTest {
         IgnitionManager.stop(nodeName);
     }
 
-    protected boolean isNodeStarted(String n) {
-        return clusterNodes.containsKey(n);
+    /**
+     * Check node was started.
+     *
+     * @param nodeName Node name.
+     * @return {@code true} if node was started, {@code false} otherwise.
+     */
+    protected boolean isNodeStarted(String nodeName) {
+        return clusterNodes.containsKey(nodeName);
     }
 
+    /**
+     * Starts sql query.
+     *
+     * @param node Node initiator.
+     * @param tx Transaction or {@code null}.
+     * @param sql Sql query.
+     * @param args Query arguments.
+     * @return Query result.
+     */
     protected static List<List<Object>> sql(Ignite node, @Nullable Transaction tx, String sql, Object... args) {
         var queryEngine = ((IgniteImpl) node).queryEngine();
 
@@ -234,14 +270,28 @@ abstract class AbstractClusterStartStopTest extends BaseIgniteAbstractTest {
         }
     }
 
+    /**
+     * Checks it node present in logical topology.
+     *
+     * @param nodeId Node id.
+     * @return {@code True} if node present in logical topology, {@code false} othewise.
+     */
     protected static boolean logicalTopologyContainsNode(String nodeId) {
         return nodeInTopology("logical", nodeId);
     }
 
+
+    /**
+     * Checks it node present in physical topology.
+     *
+     * @param nodeId Node id.
+     * @return {@code True} if node present in physical topology, {@code false} othewise.
+     */
     protected static boolean physicalTopologyContainsNode(String nodeId) {
         return nodeInTopology("physical", nodeId);
     }
 
+    /** Checks node present in topology (via REST endpoint). */
     private static boolean nodeInTopology(String topologyType, String nodeId) {
         StringWriter out = new StringWriter();
         StringWriter err = new StringWriter();
@@ -258,49 +308,73 @@ abstract class AbstractClusterStartStopTest extends BaseIgniteAbstractTest {
     }
 
     /**
-     * Grids configurations generator.
+     * Sequence generator. Brute force algo to generate all possible sequences from given items regarding the filters. Sequence doesn't
+     * allow duplicate items.
      */
-    protected static class GridGenerator {
-        private final LinkedHashSet<String> currentGrid = new LinkedHashSet<>();
-        private final List<List<String>> gridStartSequences = new ArrayList<>();
-        private final BiPredicate<String, Set<String>> nodeFilter;
-        private final Predicate<Set<String>> gridFilter;
-        private Collection<String> nodeNames;
+    static class SequenceGenerator {
+        /** Current sequence. */
+        private final LinkedHashSet<String> currentSequence = new LinkedHashSet<>();
 
-        protected GridGenerator(Set<String> nodeNames, BiPredicate<String, Set<String>> nodeFilter, Predicate<Set<String>> gridFilter) {
-            this.nodeNames = nodeNames;
-            this.nodeFilter = nodeFilter;
-            this.gridFilter = gridFilter;
+        /** Result sequences. */
+        private final List<List<String>> result = new ArrayList<>();
+
+        /** Available items. */
+        private final Collection<String> items;
+
+        /** Filter that accepts next item candidate and the current sequence. */
+        private final BiPredicate<String, Set<String>> itemFilter;
+
+        /** Sequence filter. */
+        private final Predicate<Set<String>> sequenceFilter;
+
+        /**
+         * Creates sequence generator.
+         *
+         * @param items Items.
+         * @param itemCandidateFilter Items candidate filter that accepts new item candidate and current sequence state.
+         * @param sequenceFilter Sequence filter.
+         */
+        SequenceGenerator(
+                Set<String> items,
+                BiPredicate<String, Set<String>> itemCandidateFilter,
+                Predicate<Set<String>> sequenceFilter
+        ) {
+            this.items = items;
+            this.itemFilter = itemCandidateFilter;
+            this.sequenceFilter = sequenceFilter;
         }
 
-        /** Generates tests execution sequence recursively. */
+        /**
+         * Start sequences generation.
+         *
+         * @return Generated sequences.
+         */
         List<List<String>> generate() {
-            generate0(nodeNames);
+            generate0(items);
 
-            return gridStartSequences;
+            return result;
         }
 
-        /** Generates tests execution sequence recursively. */
+        /** Generates sequence recursively. */
         private void generate0(Collection<String> availableNodes) {
-            if (gridFilter.test(currentGrid)) {
-                gridStartSequences.add(new ArrayList<>(currentGrid)); // Copy mutable collection.
+            if (sequenceFilter.test(currentSequence)) {
+                result.add(List.copyOf(currentSequence)); // Copy mutable collection.
             }
 
             for (String node : availableNodes) {
-                if (!nodeFilter.test(node, currentGrid)) {
+                if (!itemFilter.test(node, currentSequence)) {
                     continue; // Skip node from adding to the current grid.
                 }
 
-                currentGrid.add(node);
+                currentSequence.add(node);
 
-                HashSet<String> unusedNodes = new HashSet<>(availableNodes);
+                Set<String> unusedNodes = new LinkedHashSet<>(availableNodes);
                 unusedNodes.remove(node);
 
                 generate0(unusedNodes);
 
-                currentGrid.remove(node);
+                currentSequence.remove(node);
             }
         }
-
     }
 }

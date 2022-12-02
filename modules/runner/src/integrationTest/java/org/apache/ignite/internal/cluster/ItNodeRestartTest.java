@@ -21,7 +21,6 @@ import static org.apache.ignite.internal.testframework.IgniteTestUtils.assertThr
 import static org.apache.ignite.internal.testframework.matchers.CompletableFutureMatcher.willCompleteSuccessfully;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.micronaut.configuration.picocli.MicronautFactory;
@@ -63,25 +62,20 @@ import org.mockito.Mockito;
 import picocli.CommandLine;
 
 /**
- * Test node start/stop in different scenarios and validate grid components behavior depending on availability/absence of quorums.
+ * Test node start/stop in different scenarios and validate grid services behavior depending on availability/absence of quorums.
  */
-// TODO: Fix expected messages in assertThrows
-// TODO: Create 2 distribution zones, which spans a single node and both data nodes, and a tables in these zones.
 @SuppressWarnings("ThrowableNotThrown")
 public class ItNodeRestartTest extends AbstractClusterStartStopTest {
+    /** Initialize grid. */
     @BeforeEach
     public void before() throws Exception {
-        for (String name : nodesCfg.keySet()) {
-            IgniteUtils.deleteIfExists(WORK_DIR.resolve(name));
-        }
-
         initGrid(nodeAliasToNameMapping.values());
 
         stopAllNodes();
     }
 
 
-    /** Runs after each test sequence. */
+    /** Stop grid and clear persistence. */
     @AfterEach
     public void afterEach() {
         stopAllNodes();
@@ -92,43 +86,49 @@ public class ItNodeRestartTest extends AbstractClusterStartStopTest {
     }
 
     /**
-     * Test factory for testing node startup order.
+     * Generate grid configuration to check.
      *
-     * @return JUnit tests.
+     * @return Test parameters.
      */
     static Object[] generateSequence() {
-        return new GridGenerator(
+        return new SequenceGenerator(
                 nodeAliasToNameMapping.keySet(),
                 (name, grid) -> (!"D2".equals(name) || grid.contains("D")),  // Data nodes are interchangeable.
                 new UniqueSetFilter<String>().and(grid -> grid.size() > 2)
         ).generate().toArray(Object[]::new);
     }
 
+    /** Checks new node joining to the grid. */
     @ParameterizedTest(name = "Grid=" + ParameterizedTest.ARGUMENTS_PLACEHOLDER)
     @MethodSource("generateSequence")
     public void testNodeJoin(List<String> nodeNames) {
         runTest(nodeNames, () -> checkNodeJoin(NEW_NODE));
     }
 
-    @Disabled("Test hangs due to deadlock in FJP")
+    /** Checks table creation. */
+    @Disabled("https://issues.apache.org/jira/browse/IGNITE-18328")
     @ParameterizedTest(name = "Grid=" + ParameterizedTest.ARGUMENTS_PLACEHOLDER)
     @MethodSource("generateSequence")
     public void testCreateTable(List<String> nodeNames) {
         runTest(nodeNames, this::checkCreateTable);
     }
 
+    /** Checks implicit transaction. */
     @ParameterizedTest(name = "Grid=" + ParameterizedTest.ARGUMENTS_PLACEHOLDER)
     @MethodSource("generateSequence")
     public void testImplicitTransaction(List<String> nodeNames) {
         runTest(nodeNames, this::checkImplicitTx);
     }
 
+    /** Checks read-write transaction. */
     @ParameterizedTest(name = "Grid=" + ParameterizedTest.ARGUMENTS_PLACEHOLDER)
     @MethodSource("generateSequence")
     public void testReadWriteTransaction(List<String> nodeNames) {
         runTest(nodeNames, this::checkTxRW);
     }
 
+    /** Checks read-only transaction. */
+    @Disabled("https://issues.apache.org/jira/browse/IGNITE-18328")
     @ParameterizedTest(name = "Grid=" + ParameterizedTest.ARGUMENTS_PLACEHOLDER)
     @MethodSource("generateSequence")
     public void testReadOnlyTransaction(List<String> nodeNames) {
