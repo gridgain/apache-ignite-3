@@ -148,7 +148,7 @@ public class ItClusterStartupTest extends AbstractClusterStartStopTest {
         try {
             CompletableFuture<Ignite> fut = startNode(NEW_NODE);
 
-            if (!clusterNodes.containsKey(CMG_NODE)) {
+            if (!isNodeStarted(CMG_NODE)) {
                 assertThrowsWithCause(() -> fut.get(NODE_JOIN_WAIT_TIMEOUT, TimeUnit.MILLISECONDS), TimeoutException.class);
 
                 assertTrue(physicalTopologyContainsNode(NEW_NODE));
@@ -156,7 +156,7 @@ public class ItClusterStartupTest extends AbstractClusterStartStopTest {
                 assertThrowsWithCause(() -> logicalTopologyContainsNode(NEW_NODE), IgniteException.class);
 
                 return;
-            } else if (!clusterNodes.containsKey(METASTORAGE_NODE)) {
+            } else if (!isNodeStarted(METASTORAGE_NODE)) {
                 // Node future can't complete as some components requires Metastorage on start.
                 assertThrowsWithCause(() -> fut.get(NODE_JOIN_WAIT_TIMEOUT, TimeUnit.MILLISECONDS), TimeoutException.class);
 
@@ -202,14 +202,14 @@ public class ItClusterStartupTest extends AbstractClusterStartStopTest {
         Transaction roTx = node.transactions().readOnly().begin();
 
         try {
-            if (!clusterNodes.containsKey(DATA_NODE) && !clusterNodes.containsKey(DATA_NODE_2)) {
+            if (!isNodeStarted(DATA_NODE) && !isNodeStarted(DATA_NODE_2)) {
                 assertThrowsWithCause(() -> sql(node, roTx, "SELECT * FROM tbl1"), IgniteException.class);
 
                 return;
 
                 // TODO: Bound table distribution zone to data nodes and uncomment.
                 // else if (!clusterNodes.containsKey(DATA_NODE_2)) {
-            } else if (clusterNodes.containsKey(DATA_NODE_2) && clusterNodes.size() <= 2 /* no quorum */) {
+            } else if (isNodeStarted(DATA_NODE_2) && clusterNodes.size() <= 2 /* no quorum */) {
                 // Fake transaction with a timestamp from the past.
                 Transaction tx0 = Mockito.spy(roTx);
                 Mockito.when(tx0.readTimestamp()).thenReturn(new HybridTimestamp(1L, 0));
@@ -236,7 +236,7 @@ public class ItClusterStartupTest extends AbstractClusterStartStopTest {
 
         // TODO: Bound table distribution zone to data nodes and uncomment.
         // if (!clusterNodes.containsKey(DATA_NODE) || !clusterNodes.containsKey(DATA_NODE_2)) {
-        if (clusterNodes.size() <= 2 || !clusterNodes.containsKey(DATA_NODE)) {
+        if (clusterNodes.size() <= 2 || !isNodeStarted(DATA_NODE)) {
             assertThrowsWithCause(() -> sql(node, null, "INSERT INTO tbl1 VALUES (2, -2)"), Exception.class);
 
             return;
@@ -260,7 +260,7 @@ public class ItClusterStartupTest extends AbstractClusterStartStopTest {
 
         // TODO: Bound table distribution zone to data nodes and uncomment.
         // if (!clusterNodes.containsKey(DATA_NODE) || !clusterNodes.containsKey(DATA_NODE_2)) {
-        if (clusterNodes.size() <= 2 || !clusterNodes.containsKey(DATA_NODE)) {
+        if (clusterNodes.size() <= 2 || !isNodeStarted(DATA_NODE)) {
             Transaction tx = node.transactions().begin();
             try {
                 assertThrowsWithCause(() -> sql(node, tx, "INSERT INTO tbl1 VALUES (2, -2)"), Exception.class);
@@ -294,7 +294,7 @@ public class ItClusterStartupTest extends AbstractClusterStartStopTest {
 
         CompletableFuture<Ignite> nodeFut = clusterNodes.values().iterator().next();
 
-        if (!clusterNodes.containsKey(METASTORAGE_NODE)) {
+        if (!isNodeStarted(METASTORAGE_NODE)) {
             assertThrowsWithCause(() -> nodeFut.get(NODE_JOIN_WAIT_TIMEOUT, TimeUnit.MILLISECONDS), TimeoutException.class);
 
             clusterNodes.forEach((k, v) -> assertNull(v.getNow(null), k));
