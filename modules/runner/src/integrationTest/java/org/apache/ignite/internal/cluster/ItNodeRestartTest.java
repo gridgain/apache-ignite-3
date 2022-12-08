@@ -32,11 +32,13 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.function.BiFunction;
 import java.util.function.Predicate;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
@@ -48,9 +50,10 @@ import org.apache.ignite.internal.cli.commands.TopLevelCliCommand;
 import org.apache.ignite.internal.hlc.HybridTimestamp;
 import org.apache.ignite.internal.util.IgniteUtils;
 import org.apache.ignite.lang.IgniteException;
+import org.apache.ignite.table.RecordView;
+import org.apache.ignite.table.Tuple;
 import org.apache.ignite.tx.Transaction;
 import org.apache.ignite.tx.TransactionException;
-import org.hamcrest.Matchers;
 import org.hamcrest.text.IsEmptyString;
 import org.jetbrains.annotations.Nullable;
 import org.junit.jupiter.api.AfterEach;
@@ -117,22 +120,60 @@ public class ItNodeRestartTest extends AbstractClusterStartStopTest {
     @ParameterizedTest(name = "Grid=" + ParameterizedTest.ARGUMENTS_PLACEHOLDER)
     @MethodSource("generateSequence")
     public void testImplicitTransaction(List<String> nodeNames) {
-        runTest(nodeNames, this::checkImplicitTx);
+        int key = UNIQ_INT.get();
+
+        runTest(nodeNames, () -> checkImplicitTx((node, tx) -> {
+            RecordView<Tuple> tupleRecordView = node.tables().table("tbl1").recordView();
+
+            return tupleRecordView.insert(tx, Tuple.create(Map.of("id", key, "val", key)));
+        }));
     }
 
     /** Checks read-write transaction. */
     @ParameterizedTest(name = "Grid=" + ParameterizedTest.ARGUMENTS_PLACEHOLDER)
     @MethodSource("generateSequence")
     public void testReadWriteTransaction(List<String> nodeNames) {
-        runTest(nodeNames, this::checkTxRW);
+        int key = UNIQ_INT.get();
+
+        runTest(nodeNames, () -> checkTxRW((node, tx) -> {
+            RecordView<Tuple> tupleRecordView = node.tables().table("tbl1").recordView();
+
+            return tupleRecordView.insert(tx, Tuple.create(Map.of("id", key, "val", key)));
+        }));
+    }
+
+    /** Checks read-only transaction. */
+    @ParameterizedTest(name = "Grid=" + ParameterizedTest.ARGUMENTS_PLACEHOLDER)
+    @MethodSource("generateSequence")
+    public void testReadOnlyTransaction(List<String> nodeNames) {
+        runTest(nodeNames, () ->
+                checkTxRO((node, tx) -> node.tables().table("tbl1").keyValueView().get(tx, Tuple.create(Map.of("id", 1)))));
+    }
+
+    /** Checks implicit transaction. */
+    @ParameterizedTest(name = "Grid=" + ParameterizedTest.ARGUMENTS_PLACEHOLDER)
+    @MethodSource("generateSequence")
+    public void testSqlWithImplicitTransaction(List<String> nodeNames) {
+        int key = UNIQ_INT.get();
+
+        runTest(nodeNames, () -> checkImplicitTx((node, tx) -> String.format("INSERT INTO tbl1 VALUES (%d, %d)", key, key)));
+    }
+
+    /** Checks read-write transaction. */
+    @ParameterizedTest(name = "Grid=" + ParameterizedTest.ARGUMENTS_PLACEHOLDER)
+    @MethodSource("generateSequence")
+    public void testSqlWithReadWriteTransaction(List<String> nodeNames) {
+        int key = UNIQ_INT.get();
+
+        runTest(nodeNames, () -> checkTxRW((node, tx) -> String.format("INSERT INTO tbl1 VALUES (%d, %d)", key, key)));
     }
 
     /** Checks read-only transaction. */
     @Disabled("https://issues.apache.org/jira/browse/IGNITE-18328")
     @ParameterizedTest(name = "Grid=" + ParameterizedTest.ARGUMENTS_PLACEHOLDER)
     @MethodSource("generateSequence")
-    public void testReadOnlyTransaction(List<String> nodeNames) {
-        runTest(nodeNames, this::checkTxRO);
+    public void testSqlWithReadOnlyTransaction(List<String> nodeNames) {
+        runTest(nodeNames, () -> checkTxRO((node, tx) -> sql(node, tx, "SELECT * FROM tbl1")));
     }
 
     private void runTest(List<String> nodeNames, Runnable testBody) {
@@ -229,7 +270,7 @@ public class ItNodeRestartTest extends AbstractClusterStartStopTest {
         }
     }
 
-    private void checkTxRO() {
+    private void checkTxRO(BiFunction<Ignite, Transaction, Object> op) {
         Ignite node = initializedNode();
 
         if (node == null) {
@@ -240,28 +281,28 @@ public class ItNodeRestartTest extends AbstractClusterStartStopTest {
 
         try {
             if (!isNodeStarted(DATA_NODE) && !isNodeStarted(DATA_NODE_2)) {
-                assertThrowsWithCause(() -> sql(node, roTx, "SELECT * FROM tbl1"), IgniteException.class);
+                assertThrowsWithCause(() -> op.apply(node, roTx), IgniteException.class);
 
                 return;
             } else if (!isNodeStarted(DATA_NODE_2)) {
                 // Fake transaction with a timestamp from the past.
                 Transaction tx0 = Mockito.spy(roTx);
                 Mockito.when(tx0.readTimestamp()).thenReturn(new HybridTimestamp(1L, 0));
-                sql(node, roTx, "SELECT * FROM tbl1");
+                op.apply(node, tx0);
 
                 // Transaction with recent timestamp.
-                assertThrowsWithCause(() -> sql(node, roTx, "SELECT * FROM tbl1"), IgniteException.class);
+                assertThrowsWithCause(() -> op.apply(node, roTx), IgniteException.class);
 
                 return;
             }
 
-            sql(node, roTx, "SELECT * FROM tbl1");
+            op.apply(node, roTx);
         } finally {
             roTx.rollback();
         }
     }
 
-    public void checkImplicitTx() {
+    public void checkImplicitTx(BiFunction<Ignite, Transaction, Object> op) {
         Ignite node = initializedNode();
 
         if (node == null) {
@@ -271,21 +312,15 @@ public class ItNodeRestartTest extends AbstractClusterStartStopTest {
         // TODO: Bound table distribution zone to data nodes and uncomment.
         // if (!clusterNodes.containsKey(DATA_NODE) || !clusterNodes.containsKey(DATA_NODE_2)) {
         if (!isNodeStarted(DATA_NODE)) {
-            assertThrowsWithCause(() -> sql(node, null, "INSERT INTO tbl1 VALUES (2, -2)"), Exception.class);
+            assertThrowsWithCause(() -> op.apply(node, null), Exception.class);
 
             return;
         }
 
-        sql(node, null, "INSERT INTO tbl1 VALUES (2, 2)");
-
-        try {
-            assertThat(sql(node, null, "SELECT * FROM tbl1").size(), Matchers.equalTo(2));
-        } finally {
-            sql(node, null, "DELETE FROM tbl1 WHERE tbl1.id = 2");
-        }
+        op.apply(node, null);
     }
 
-    private void checkTxRW() {
+    private void checkTxRW(BiFunction<Ignite, Transaction, Object> op) {
         Ignite node = initializedNode();
 
         if (node == null) {
@@ -296,7 +331,7 @@ public class ItNodeRestartTest extends AbstractClusterStartStopTest {
             Transaction tx = node.transactions().begin();
             try {
                 assertThrowsWithCause(
-                        () -> sql(node, tx, "INSERT INTO tbl1 VALUES (2, -2)"),
+                        () -> op.apply(node, tx),
                         TransactionException.class,
                         "Failed to get the primary replica");
             } finally {
@@ -308,14 +343,11 @@ public class ItNodeRestartTest extends AbstractClusterStartStopTest {
 
         Transaction tx = node.transactions().begin();
         try {
-            sql(node, tx, "INSERT INTO tbl1 VALUES (2, 2)");
+            op.apply(node, tx);
 
             tx.commit();
-
-            assertThat(sql(node, null, "SELECT * FROM tbl1").size(), Matchers.equalTo(2));
         } finally {
             tx.rollback();
-            sql(node, null, "DELETE FROM tbl1 WHERE tbl1.id = 2");
         }
     }
 

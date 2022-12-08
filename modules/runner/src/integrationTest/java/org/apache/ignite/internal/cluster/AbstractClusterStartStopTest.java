@@ -38,8 +38,10 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ThreadLocalRandom;
 import java.util.function.BiPredicate;
 import java.util.function.Predicate;
+import java.util.function.Supplier;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import org.apache.ignite.Ignite;
@@ -68,6 +70,8 @@ import picocli.CommandLine;
 @ExtendWith(WorkDirectoryExtension.class)
 @WithSystemProperty(key = "org.jline.terminal.dumb", value = "true")
 abstract class AbstractClusterStartStopTest extends BaseIgniteAbstractTest {
+    protected static final Supplier<Integer> UNIQ_INT = () -> ThreadLocalRandom.current().nextInt();
+
     /** Timeout to wait for node join. */
     protected static final int NODE_JOIN_WAIT_TIMEOUT = 2_000;
 
