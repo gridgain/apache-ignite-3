@@ -2,6 +2,8 @@ package org.apache.ignite.internal.configuration;
 
 import static java.util.stream.Collectors.joining;
 import static java.util.stream.Collectors.toList;
+import static org.apache.ignite.internal.sql.engine.util.CursorUtils.getAllFromCursor;
+import static org.apache.ignite.internal.testframework.IgniteTestUtils.await;
 import static org.apache.ignite.internal.testframework.matchers.CompletableFutureMatcher.willCompleteSuccessfully;
 import static org.hamcrest.MatcherAssert.assertThat;
 
@@ -16,17 +18,24 @@ import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.IntStream;
 import org.apache.ignite.Ignite;
 import org.apache.ignite.IgnitionManager;
 import org.apache.ignite.internal.app.IgniteImpl;
+import org.apache.ignite.internal.sql.engine.QueryContext;
 import org.apache.ignite.internal.sql.engine.QueryProcessor;
+import org.apache.ignite.internal.sql.engine.QueryProperty;
+import org.apache.ignite.internal.sql.engine.property.PropertiesHolder;
+import org.apache.ignite.internal.sql.engine.session.SessionId;
 import org.apache.ignite.internal.util.IgniteUtils;
 import org.apache.ignite.table.KeyValueView;
 import org.apache.ignite.table.Table;
 import org.apache.ignite.table.Tuple;
+import org.apache.ignite.tx.Transaction;
+import org.jetbrains.annotations.Nullable;
 import org.openjdk.jmh.annotations.Benchmark;
 import org.openjdk.jmh.annotations.BenchmarkMode;
 import org.openjdk.jmh.annotations.Fork;
@@ -39,6 +48,10 @@ import org.openjdk.jmh.annotations.State;
 import org.openjdk.jmh.annotations.TearDown;
 import org.openjdk.jmh.annotations.Threads;
 import org.openjdk.jmh.annotations.Warmup;
+import org.openjdk.jmh.runner.Runner;
+import org.openjdk.jmh.runner.RunnerException;
+import org.openjdk.jmh.runner.options.Options;
+import org.openjdk.jmh.runner.options.OptionsBuilder;
 
 @State(Scope.Benchmark)
 @BenchmarkMode(Mode.SampleTime)
@@ -162,7 +175,37 @@ public class IgniteBenchmark {
             clusterNodes.add(future.join());
         }
 
-        ((IgniteImpl) clusterNodes.get(0)).queryEngine().queryAsync("PUBLIC", ""
+        var queryEngine = ((IgniteImpl) clusterNodes.get(0)).queryEngine();
+
+        SessionId sessionId = queryEngine.createSession(TimeUnit.SECONDS.toMillis(60), PropertiesHolder.fromMap(
+                Map.of(QueryProperty.DEFAULT_SCHEMA, "PUBLIC")
+        ));
+
+        var sql = "CREATE TABLE usertable (\n"
+                + "    ycsb_key int PRIMARY KEY,\n"
+                + "    field1   varchar(100),\n"
+                + "    field2   varchar(100),\n"
+                + "    field3   varchar(100),\n"
+                + "    field4   varchar(100),\n"
+                + "    field5   varchar(100),\n"
+                + "    field6   varchar(100),\n"
+                + "    field7   varchar(100),\n"
+                + "    field8   varchar(100),\n"
+                + "    field9   varchar(100),\n"
+                + "    field10  varchar(100)\n"
+                + ");";
+
+        try {
+            var context = QueryContext.of();
+
+            getAllFromCursor(
+                    await(queryEngine.querySingleAsync(sessionId, context, sql))
+            );
+        } finally {
+            queryEngine.closeSession(sessionId);
+        }
+
+/*        ((IgniteImpl) clusterNodes.get(0)).queryEngine().queryAsync("PUBLIC", ""
                 + "CREATE TABLE usertable (\n"
                 + "    ycsb_key int PRIMARY KEY,\n"
                 + "    field1   varchar(100),\n"
@@ -175,9 +218,9 @@ public class IgniteBenchmark {
                 + "    field8   varchar(100),\n"
                 + "    field9   varchar(100),\n"
                 + "    field10  varchar(100)\n"
-                + ");").get(0).join();
+                + ");").get(0).join();*/
 
-        kvView1 = clusterNodes.get(0).tables().table("PUBLIC.usertable").keyValueView();
+        kvView1 = clusterNodes.get(0).tables().table("usertable").keyValueView();
         q = ((IgniteImpl) clusterNodes.get(0)).queryEngine();
     }
 
@@ -204,16 +247,28 @@ public class IgniteBenchmark {
 
     @Benchmark
     @Warmup(iterations = 0)
-    @Measurement(iterations = 1, time = 120, timeUnit = TimeUnit.SECONDS)
+    @Measurement(iterations = 1, time = 60, timeUnit = TimeUnit.SECONDS)
     public void kvInsert(KVState state) {
         kvView1.put(null, Tuple.create().set("ycsb_key", state.id()), state.tuple);
     }
 
     @Benchmark
     @Warmup(iterations = 0)
-    @Measurement(iterations = 1, time = 120, timeUnit = TimeUnit.SECONDS)
+    @Measurement(iterations = 1, time = 60, timeUnit = TimeUnit.SECONDS)
     public void jdbcInsert(JDBCState state) throws SQLException {
         state.stmt.setInt(1, state.id());
         state.stmt.executeUpdate();
     }
+
+    public static void main(String[] args) throws RunnerException, InterruptedException {
+        Options opt = new OptionsBuilder()
+                .include(".*" + IgniteBenchmark.class.getSimpleName() + ".kvInsert*")
+                .forks(0)
+                .threads(1)
+                .mode(Mode.SampleTime)
+                .build();
+
+        new Runner(opt).run();
+    }
+
 }
