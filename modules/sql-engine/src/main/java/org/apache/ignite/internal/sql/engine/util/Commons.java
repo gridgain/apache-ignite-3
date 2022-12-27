@@ -52,9 +52,6 @@ import java.util.UUID;
 import java.util.function.Function;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
-import jdk.jfr.Event;
-import jdk.jfr.Label;
-import jdk.jfr.Name;
 import org.apache.calcite.DataContexts;
 import org.apache.calcite.config.CalciteSystemProperty;
 import org.apache.calcite.config.Lex;
@@ -870,10 +867,6 @@ public final class Commons {
         }
     }
 
-    @Name("SqlParse")
-    @Label("SqlParse")
-    static class SqlParseEvent extends Event { }
-
     /**
      * Parses a SQL statement.
      *
@@ -883,15 +876,9 @@ public final class Commons {
      * @throws org.apache.calcite.sql.parser.SqlParseException on parse error.
      */
     public static SqlNodeList parse(Reader reader, SqlParser.Config parserCfg) throws SqlParseException {
-        SqlParseEvent event = new SqlParseEvent();
-        event.begin();
-        try {
-            SqlParser parser = SqlParser.create(reader, parserCfg);
+        SqlParser parser = SqlParser.create(reader, parserCfg);
 
-            return parser.parseStmtList();
-        } finally {
-            event.commit();
-        }
+        return parser.parseStmtList();
     }
 
     public static RelOptCluster cluster() {

@@ -1538,6 +1538,7 @@ public class NodeImpl implements Node, RaftServerService {
 
     private void executeApplyingTasks(final List<LogEntryAndClosure> tasks) {
         this.writeLock.lock();
+//        System.out.println(tasks.size());
         try {
             final int size = tasks.size();
             if (this.state != State.STATE_LEADER) {

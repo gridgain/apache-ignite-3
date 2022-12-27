@@ -20,28 +20,15 @@ import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
-import jdk.jfr.Event;
-import jdk.jfr.Label;
-import jdk.jfr.Name;
 
 /**
  *
  */
 public class JDKMarshaller implements Marshaller {
-    @Name("MarshallDuration")
-    @Label("Marshall")
-    static class MarshallDuration extends Event { }
-
-    @Name("UnmarshallDuration")
-    @Label("Unmarshall")
-    static class Unmarshall extends Event { }
-
     /**
      * {@inheritDoc}
      */
     @Override public byte[] marshall(Object o) {
-        MarshallDuration event = new MarshallDuration();
-        event.begin();
         try {
             ByteArrayOutputStream baos = new ByteArrayOutputStream();
             ObjectOutputStream oos = new ObjectOutputStream(baos);
@@ -51,8 +38,6 @@ public class JDKMarshaller implements Marshaller {
         }
         catch (Exception e) {
             throw new Error(e);
-        } finally {
-            event.commit();
         }
     }
 
@@ -60,8 +45,6 @@ public class JDKMarshaller implements Marshaller {
      * {@inheritDoc}
      */
     @Override public <T> T unmarshall(byte[] raw) {
-        Unmarshall event = new Unmarshall();
-        event.begin();
         try {
             ByteArrayInputStream bais = new ByteArrayInputStream(raw);
             ObjectInputStream oos = new ObjectInputStream(bais);
@@ -69,8 +52,6 @@ public class JDKMarshaller implements Marshaller {
         }
         catch (Exception e) {
             throw new Error(e);
-        } finally {
-            event.commit();
         }
     }
 }

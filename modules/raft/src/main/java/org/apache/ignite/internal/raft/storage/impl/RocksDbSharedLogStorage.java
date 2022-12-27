@@ -30,9 +30,6 @@ import java.util.concurrent.Executor;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
-import jdk.jfr.Event;
-import jdk.jfr.Label;
-import jdk.jfr.Name;
 import org.apache.ignite.internal.logger.IgniteLogger;
 import org.apache.ignite.internal.logger.Loggers;
 import org.apache.ignite.raft.jraft.conf.Configuration;
@@ -396,90 +393,68 @@ public class RocksDbSharedLogStorage implements LogStorage, Describer {
     /** {@inheritDoc} */
     @Override
     public boolean appendEntry(LogEntry entry) {
-        var ev = new AppendEntryEvent();
-        ev.begin();
-        try {
-            if (entry.getType() == EnumOutter.EntryType.ENTRY_TYPE_CONFIGURATION) {
-                return executeBatch(batch -> addConfBatch(entry, batch));
-            } else {
-                this.useLock.lock();
-                try {
-                    if (stopped) {
-                        LOG.warn("Storage stopped.");
-                        return false;
-                    }
-
-                    WriteContext writeCtx = newWriteContext();
-                    long logIndex = entry.getId().getIndex();
-                    byte[] valueBytes = this.logEntryEncoder.encode(entry);
-                    byte[] newValueBytes = onDataAppend(logIndex, valueBytes, writeCtx);
-                    writeCtx.startJob();
-                    this.db.put(this.dataHandle, this.writeOptions, createKey(logIndex), newValueBytes);
-                    writeCtx.joinAll();
-                    if (newValueBytes != valueBytes) {
-                        doSync();
-                    }
-                    return true;
-                } catch (RocksDBException | IOException e) {
-                    LOG.error("Fail to append entry.", e);
+        if (entry.getType() == EnumOutter.EntryType.ENTRY_TYPE_CONFIGURATION) {
+            return executeBatch(batch -> addConfBatch(entry, batch));
+        } else {
+            this.useLock.lock();
+            try {
+                if (stopped) {
+                    LOG.warn("Storage stopped.");
                     return false;
-                } catch (InterruptedException e) {
-                    Thread.currentThread().interrupt();
-                    return false;
-                } finally {
-                    this.useLock.unlock();
                 }
+
+                WriteContext writeCtx = newWriteContext();
+                long logIndex = entry.getId().getIndex();
+                byte[] valueBytes = this.logEntryEncoder.encode(entry);
+                byte[] newValueBytes = onDataAppend(logIndex, valueBytes, writeCtx);
+                writeCtx.startJob();
+                this.db.put(this.dataHandle, this.writeOptions, createKey(logIndex), newValueBytes);
+                writeCtx.joinAll();
+                if (newValueBytes != valueBytes) {
+                    doSync();
+                }
+                return true;
+            } catch (RocksDBException | IOException e) {
+                LOG.error("Fail to append entry.", e);
+                return false;
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return false;
+            } finally {
+                this.useLock.unlock();
             }
-        } finally {
-            ev.commit();
         }
     }
-
-
-    @Name("AppendEntry")
-    @Label("AppendEntry")
-    static class AppendEntryEvent extends Event { }
-
-
-    @Name("AppendEntries")
-    @Label("AppendEntries")
-    static class AppendEntriesEvent extends Event { }
 
     /** {@inheritDoc} */
     @Override
     public int appendEntries(List<LogEntry> entries) {
-        var ev = new AppendEntriesEvent();
-        ev.begin();
-        try {
-            if (entries == null || entries.isEmpty()) {
-                return 0;
-            }
+        if (entries == null || entries.isEmpty()) {
+            return 0;
+        }
 
-            int entriesCount = entries.size();
+        int entriesCount = entries.size();
 
-            boolean ret = executeBatch(batch -> {
-                WriteContext writeCtx = newWriteContext();
+        boolean ret = executeBatch(batch -> {
+            WriteContext writeCtx = newWriteContext();
 
-                for (LogEntry entry : entries) {
-                    if (entry.getType() == EnumOutter.EntryType.ENTRY_TYPE_CONFIGURATION) {
-                        addConfBatch(entry, batch);
-                    } else {
-                        writeCtx.startJob();
-                        addDataBatch(entry, batch, writeCtx);
-                    }
+            for (LogEntry entry : entries) {
+                if (entry.getType() == EnumOutter.EntryType.ENTRY_TYPE_CONFIGURATION) {
+                    addConfBatch(entry, batch);
+                } else {
+                    writeCtx.startJob();
+                    addDataBatch(entry, batch, writeCtx);
                 }
-
-                writeCtx.joinAll();
-                doSync();
-            });
-
-            if (ret) {
-                return entriesCount;
-            } else {
-                return 0;
             }
-        } finally {
-            ev.commit();
+
+            writeCtx.joinAll();
+            doSync();
+        });
+
+        if (ret) {
+            return entriesCount;
+        } else {
+            return 0;
         }
     }
 
@@ -581,7 +556,9 @@ public class RocksDbSharedLogStorage implements LogStorage, Describer {
             }
 
             template.execute(batch);
+//            var begin = System.currentTimeMillis();
             this.db.write(this.writeOptions, batch);
+//            System.out.println((System.currentTimeMillis() - begin) +  "ms time" + " begin was " + begin);
         } catch (RocksDBException e) {
             LOG.error("Execute batch failed with rocksdb exception.", e);
             return false;

@@ -38,9 +38,6 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Function;
-import jdk.jfr.Event;
-import jdk.jfr.Label;
-import jdk.jfr.Name;
 import org.apache.calcite.tools.Frameworks;
 import org.apache.ignite.configuration.ConfigurationChangeException;
 import org.apache.ignite.internal.distributionzones.DistributionZoneManager;
@@ -371,10 +368,6 @@ public class ExecutionServiceImpl<RowT> implements ExecutionService, TopologyEve
         return mgr.localFragments();
     }
 
-    @Name("SubmitFragment")
-    @Label("SubmitFragment")
-    static class SubmitFragment extends Event { }
-
     /**
      * A convenient class that manages the initialization and termination of distributed queries.
      */
@@ -544,10 +537,7 @@ public class ExecutionServiceImpl<RowT> implements ExecutionService, TopologyEve
             );
         }
 
-
         private void submitFragment(String initiatorNode, String fragmentString, FragmentDescription desc) {
-            SubmitFragment event = new SubmitFragment();
-            event.begin();
             try {
                 QueryPlan qryPlan = prepareFragment(fragmentString);
 
@@ -571,8 +561,6 @@ public class ExecutionServiceImpl<RowT> implements ExecutionService, TopologyEve
 
                     close(true);
                 }
-            } finally {
-                event.commit();
             }
         }
 

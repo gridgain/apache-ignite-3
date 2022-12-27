@@ -36,7 +36,7 @@ import org.apache.ignite.raft.jraft.entity.PeerId;
 import org.apache.ignite.raft.jraft.entity.Task;
 import org.apache.ignite.raft.jraft.error.RaftError;
 import org.apache.ignite.raft.jraft.rpc.ActionRequest;
-import org.apache.ignite.raft.jraft.rpc.Message;
+import org.apache.ignite.raft.jraft.rpc.ActionRequestImpl;import org.apache.ignite.raft.jraft.rpc.Message;
 import org.apache.ignite.raft.jraft.rpc.RaftRpcFactory;
 import org.apache.ignite.raft.jraft.rpc.RpcContext;
 import org.apache.ignite.raft.jraft.rpc.RpcProcessor;
@@ -74,6 +74,7 @@ public class ActionRequestProcessor implements RpcProcessor<ActionRequest> {
         }
 
         if (request.command() instanceof WriteCommand) {
+//            System.out.println(request.command());
             applyWrite(node, request, rpcCtx);
         } else {
             applyRead(node, request, rpcCtx);
