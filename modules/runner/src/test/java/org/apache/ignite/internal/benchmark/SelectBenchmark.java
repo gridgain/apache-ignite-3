@@ -84,7 +84,7 @@ public class SelectBenchmark extends AbstractOneNodeBenchmark {
 
     public static void main(String[] args) throws RunnerException, InterruptedException {
         Options opt = new OptionsBuilder()
-                .include(".*" + SelectBenchmark.class.getSimpleName() + ".kvGet*")
+                .include(".*" + SelectBenchmark.class.getSimpleName() + ".jdbcGet*")
                 .forks(0)
                 .threads(1)
                 .mode(Mode.SampleTime)
@@ -111,7 +111,7 @@ public class SelectBenchmark extends AbstractOneNodeBenchmark {
 
     @State(Scope.Benchmark)
     public static class JDBCState {
-        public String queryStr = "select * from " + tableName + "where ycsb_key = ?";
+        public String queryStr = "select * from " + tableName + " where ycsb_key = ?";
 
         public Connection conn;
 
