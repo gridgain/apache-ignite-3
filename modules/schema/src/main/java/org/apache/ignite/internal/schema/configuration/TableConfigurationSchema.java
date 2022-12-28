@@ -45,7 +45,7 @@ public class TableConfigurationSchema {
     /** Table partitions. */
     @Range(min = 0, max = 65_000)
     @Value(hasDefault = true)
-    public int partitions = 25;
+    public int partitions = 1;
 
     /** Count of table partition replicas. */
     @Range(min = 1)
