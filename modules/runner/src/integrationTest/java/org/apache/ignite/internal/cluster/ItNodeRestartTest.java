@@ -59,6 +59,7 @@ import org.jetbrains.annotations.Nullable;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Disabled;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
 import org.mockito.Mockito;
@@ -129,6 +130,14 @@ public class ItNodeRestartTest extends AbstractClusterStartStopTest {
         }));
     }
 
+    @Test
+    public void testImplicitTransaction0() {
+        List<String> nodeNames = List.of("D", "C", "M");
+        int key = UNIQ_INT.get();
+
+        runTest0(nodeNames, () -> checkImplicitTx((node, tx) -> sql(node, null, String.format("INSERT INTO tbl1 VALUES (%d, %d)", key, key))));
+    }
+
     /** Checks read-write transaction. */
     @ParameterizedTest(name = "Grid=" + ParameterizedTest.ARGUMENTS_PLACEHOLDER)
     @MethodSource("generateSequence")
@@ -180,6 +189,31 @@ public class ItNodeRestartTest extends AbstractClusterStartStopTest {
         Set<String> realNames = nodeNames.stream().map(nodeAliasToNameMapping::get).collect(Collectors.toCollection(LinkedHashSet::new));
 
         for (String name : nodeNames) {
+            try {
+                prestartGrid(realNames);
+
+                log.info("Restarting node: label=" + name + ", name=" + nodeAliasToNameMapping.get(name));
+
+                stopNode(nodeAliasToNameMapping.get(name));
+
+                testBody.run();
+
+                startNode(nodeAliasToNameMapping.get(name));
+
+                testBody.run();
+            } finally {
+                stopAllNodes();
+            }
+        }
+    }
+
+    private void runTest0(List<String> nodeNames, Runnable testBody) {
+        Set<String> realNames = nodeNames.stream().map(nodeAliasToNameMapping::get).collect(Collectors.toCollection(LinkedHashSet::new));
+
+        for (String name : nodeNames) {
+            if (!name.equals("D"))
+                continue;
+
             try {
                 prestartGrid(realNames);
 
