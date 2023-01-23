@@ -73,6 +73,15 @@ public class TestBuilders {
         return new TestClusterService(List.of(nodeName)).spawnForNode(nodeName);
     }
 
+    /** Factory method to create a cluster service for multiple nodes. */
+    public static List<ClusterService> clusterService(List<String> nodes) {
+        TestClusterService clServ = new TestClusterService(nodes);
+
+        return nodes.stream().map(clServ::spawnForNode)
+                .peek(ClusterService::topologyService)
+                .peek(ClusterService::messagingService).collect(Collectors.toList());
+    }
+
     /**
      * A builder to create a test cluster object.
      *

@@ -26,6 +26,7 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.UUID;
 import java.util.function.Function;
+import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import org.apache.ignite.internal.sql.engine.AsyncCursor.BatchedResult;
 import org.apache.ignite.internal.sql.engine.exec.ExchangeService;
@@ -52,41 +53,62 @@ import org.junit.jupiter.params.provider.MethodSource;
  * Tests to verify Outbox to Inbox interoperation.
  */
 public class ExchangeExecutionTest extends AbstractExecutionTest {
-    private static final String NODE_NAME = "N1";
-    private static final ClusterNode LOCAL_NODE =
-            new ClusterNode(NODE_NAME, NODE_NAME, NetworkAddress.from("127.0.0.1:10001"));
+    private static final String ROOT_NODE_NAME = "N1";
+    private static final String SECOND_NODE_NAME = "N2";
+    private static final ClusterNode ROOT_NODE =
+            new ClusterNode(ROOT_NODE_NAME, ROOT_NODE_NAME, NetworkAddress.from("127.0.0.1:10001"));
+    private static final ClusterNode SECOND_NODE =
+            new ClusterNode(SECOND_NODE_NAME, SECOND_NODE_NAME, NetworkAddress.from("127.0.0.1:10002"));
+    private static final List<ClusterNode> NODES = List.of(ROOT_NODE, SECOND_NODE);
     private static final int SOURCE_FRAGMENT_ID = 0;
     private static final int TARGET_FRAGMENT_ID = 1;
 
-    @ParameterizedTest(name = "rowCount={0}, prefetch={1}, ordered={1}")
+    @ParameterizedTest(name = "rowCount={0}, prefetch={1}, ordered={2}")
     @MethodSource("testArgs")
     public void test(int rowCount, boolean prefetch, boolean ordered) {
         UUID queryId = UUID.randomUUID();
 
-        MailboxRegistry mailboxRegistry = new MailboxRegistryImpl();
-        ExchangeService exchangeService = createExchangeService(mailboxRegistry);
+        int nodesCnt = 2;
 
-        Outbox<?> outbox = createSourceFragment(
+        List<MailboxRegistry> mailBoxes = makeMailBoxes(nodesCnt);
+
+        List<ExchangeService> exchangeService = createExchangeService(mailBoxes, NODES);
+
+        List<Outbox<?>> outboxes = createSourceFragment(
                 queryId,
                 exchangeService,
-                mailboxRegistry,
+                NODES,
+                mailBoxes,
                 rowCount
         );
 
         if (prefetch) {
-            await(outbox.context().submit(outbox::prefetch, outbox::onError));
+            for (Outbox<?> outbox : outboxes) {
+                await(outbox.context().submit(outbox::prefetch, outbox::onError));
+            }
         }
 
         AsyncRootNode<Object[], Object[]> root = createRootFragment(
                 queryId,
                 ordered,
-                exchangeService,
-                mailboxRegistry
+                NODES,
+                exchangeService.get(0),
+                mailBoxes.get(0)
         );
 
         BatchedResult<Object[]> res = await(root.requestNextAsync(rowCount));
 
         assertEquals(rowCount, res.items().size());
+
+        if (ordered) {
+            checkOrdered(res.items());
+        }
+    }
+
+    private static void checkOrdered(List<Object[]> items) {
+        List<Integer> collInitial = items.stream().map(vals -> (int) vals[0]).collect(Collectors.toList());
+
+        assertEquals(items.stream().map(vals -> (int) vals[0]).sorted().collect(Collectors.toList()), collInitial);
     }
 
     private static Stream<Arguments> testArgs() {
@@ -125,6 +147,7 @@ public class ExchangeExecutionTest extends AbstractExecutionTest {
     private AsyncRootNode<Object[], Object[]> createRootFragment(
             UUID queryId,
             boolean ordered,
+            List<ClusterNode> nodes,
             ExchangeService exchangeService,
             MailboxRegistry mailboxRegistry
     ) {
@@ -132,13 +155,15 @@ public class ExchangeExecutionTest extends AbstractExecutionTest {
                 .queryId(queryId)
                 .executor(taskExecutor)
                 .fragment(new FragmentDescription(TARGET_FRAGMENT_ID, null, null, Long2ObjectMaps.emptyMap()))
-                .localNode(LOCAL_NODE)
+                .localNode(ROOT_NODE)
                 .build();
 
         Comparator<Object[]> comparator = ordered ? Comparator.comparingInt(o -> (Integer) o[0]) : null;
 
+        List<String> nodeNames = nodes.stream().map(ClusterNode::name).collect(Collectors.toList());
+
         var inbox = new Inbox<>(
-                targetCtx, exchangeService, mailboxRegistry, List.of(NODE_NAME), comparator, SOURCE_FRAGMENT_ID, SOURCE_FRAGMENT_ID
+                targetCtx, exchangeService, mailboxRegistry, nodeNames, comparator, SOURCE_FRAGMENT_ID, SOURCE_FRAGMENT_ID
         );
 
         mailboxRegistry.register(inbox);
@@ -152,51 +177,85 @@ public class ExchangeExecutionTest extends AbstractExecutionTest {
         return root;
     }
 
-    private Outbox<?> createSourceFragment(
+    private List<Outbox<?>> createSourceFragment(
             UUID queryId,
-            ExchangeService exchangeService,
-            MailboxRegistry mailboxRegistry,
+            List<ExchangeService> exchangeService,
+            List<ClusterNode> nodes,
+            List<MailboxRegistry> mailBoxes,
             int rowCount
     ) {
-        ExecutionContext<Object[]> sourceCtx = TestBuilders.executionContext()
-                .queryId(queryId)
-                .executor(taskExecutor)
-                .fragment(new FragmentDescription(SOURCE_FRAGMENT_ID, null, null, Long2ObjectMaps.emptyMap()))
-                .localNode(LOCAL_NODE)
-                .build();
+        assert nodes.size() == exchangeService.size();
 
-        var outbox = new Outbox<>(
-                sourceCtx, exchangeService, mailboxRegistry, SOURCE_FRAGMENT_ID, TARGET_FRAGMENT_ID, new AllNodes<>(List.of(NODE_NAME))
-        );
-        mailboxRegistry.register(outbox);
+        List<Outbox<?>> outBoxes = new ArrayList<>();
 
-        var source = new ScanNode<>(sourceCtx, DataProvider.fromRow(new Object[]{1, 1}, rowCount));
+        for (int i = 0; i < exchangeService.size(); ++i) {
+            ClusterNode node = nodes.get(i);
+            ExchangeService exchange = exchangeService.get(i);
+            MailboxRegistry mBox = mailBoxes.get(i);
 
-        outbox.register(source);
+            ExecutionContext<Object[]> sourceCtx = TestBuilders.executionContext()
+                    .queryId(queryId)
+                    .executor(taskExecutor)
+                    .fragment(new FragmentDescription(SOURCE_FRAGMENT_ID, null, null, Long2ObjectMaps.emptyMap()))
+                    .localNode(node)
+                    .build();
 
-        return outbox;
+            var outbox = new Outbox<>(
+                    sourceCtx, exchange, mBox, SOURCE_FRAGMENT_ID, TARGET_FRAGMENT_ID, new AllNodes<>(List.of(ROOT_NODE_NAME))
+            );
+
+            mBox.register(outbox);
+
+            var source = new ScanNode<>(sourceCtx, DataProvider.fromRow(new Object[]{i, i}, rowCount));
+
+            outbox.register(source);
+
+            outBoxes.add(outbox);
+        }
+
+        return outBoxes;
     }
 
-    private ExchangeService createExchangeService(MailboxRegistry mailboxRegistry) {
-        ClusterService clusterService = TestBuilders.clusterService(NODE_NAME);
+    private static List<MailboxRegistry> makeMailBoxes(int nodes) {
+        List<MailboxRegistry> mBoxes = new ArrayList<>(nodes);
 
-        MessageService messageService = new MessageServiceImpl(
-                clusterService.topologyService(),
-                clusterService.messagingService(),
-                taskExecutor,
-                new IgniteSpinBusyLock()
-        );
+        for (int i = 0; i < nodes; ++i) {
+            mBoxes.add(new MailboxRegistryImpl());
+        }
 
-        ExchangeService exchangeService = new ExchangeServiceImpl(
-                LOCAL_NODE,
-                taskExecutor,
-                mailboxRegistry,
-                messageService
-        );
+        return mBoxes;
+    }
 
-        messageService.start();
-        exchangeService.start();
+    private List<ExchangeService> createExchangeService(List<MailboxRegistry> mailBoxes, List<ClusterNode> nodes) {
+        List<ClusterService> clusterServices =
+                TestBuilders.clusterService(nodes.stream().map(ClusterNode::name).collect(Collectors.toList()));
+        List<ExchangeService> services = new ArrayList<>(mailBoxes.size());
 
-        return exchangeService;
+        assert mailBoxes.size() == clusterServices.size();
+
+        for (int i = 0; i < mailBoxes.size(); ++i) {
+            ClusterService clusterService = clusterServices.get(i);
+
+            MessageService messageService = new MessageServiceImpl(
+                    clusterService.topologyService(),
+                    clusterService.messagingService(),
+                    taskExecutor,
+                    new IgniteSpinBusyLock()
+            );
+
+            ExchangeService exchangeService = new ExchangeServiceImpl(
+                    ROOT_NODE,
+                    taskExecutor,
+                    mailBoxes.get(i),
+                    messageService
+            );
+
+            messageService.start();
+            exchangeService.start();
+
+            services.add(exchangeService);
+        }
+
+        return services;
     }
 }
