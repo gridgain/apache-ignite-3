@@ -23,6 +23,8 @@ import static java.util.concurrent.CompletableFuture.completedFuture;
 import static java.util.concurrent.CompletableFuture.failedFuture;
 import static java.util.stream.Collectors.toList;
 import static org.apache.ignite.internal.configuration.util.ConfigurationUtil.getByInternalId;
+import static org.apache.ignite.internal.distributionzones.DistributionZonesUtil.extractZoneId;
+import static org.apache.ignite.internal.distributionzones.DistributionZonesUtil.zoneDataNodesPrefix;
 import static org.apache.ignite.internal.schema.SchemaManager.INITIAL_SCHEMA_VERSION;
 import static org.apache.ignite.internal.util.IgniteUtils.inBusyLock;
 import static org.apache.ignite.internal.util.IgniteUtils.shutdownAndAwaitTermination;
@@ -69,6 +71,7 @@ import java.util.function.IntSupplier;
 import java.util.stream.Stream;
 import org.apache.ignite.configuration.ConfigurationChangeException;
 import org.apache.ignite.configuration.ConfigurationProperty;
+import org.apache.ignite.configuration.NamedConfigurationTree;
 import org.apache.ignite.configuration.notifications.ConfigurationNamedListListener;
 import org.apache.ignite.configuration.notifications.ConfigurationNotificationEvent;
 import org.apache.ignite.internal.affinity.AffinityUtils;
@@ -299,6 +302,9 @@ public class TableManager extends Producer<TableEvent, TableEventParameters> imp
 
     private static final TableMessagesFactory TABLE_MESSAGES_FACTORY = new TableMessagesFactory();
 
+    /** The watch listener which trigger a rebalance on updating data nodes of distribution zones. */
+    private volatile WatchListener zoneWatchListener;
+
     /**
      * Creates a new table manager.
      *
@@ -433,11 +439,52 @@ public class TableManager extends Producer<TableEvent, TableEventParameters> imp
                 new LinkedBlockingQueue<>(),
                 NamedThreadFactory.create(nodeName, "incoming-raft-snapshot", LOG)
         );
+
+        zoneWatchListener = new WatchListener() {
+            @Override
+            public void onUpdate(@NotNull WatchEvent evt) {
+                NamedConfigurationTree<TableConfiguration, TableView, TableChange> tables = tablesCfg.tables();
+
+                int zoneId = extractZoneId(evt.entryEvent().newEntry().key());
+
+                Set<String> nodesIds = ByteUtils.fromBytes(evt.entryEvent().newEntry().value());
+
+                List<ClusterNode> clusterNodes = nodesIds.stream()
+                        .map(id -> clusterService.topologyService().getByConsistentId(id))
+                        .collect(toList());
+
+                for (int i = 0; i < tables.value().size(); i++) {
+                    TableView tableView = tables.value().get(i);
+
+                    int tableZoneId = tableView.zoneId();
+
+                    if (zoneId == tableZoneId) {
+                        TableConfiguration tableCfg = tables.get(tableView.name());
+
+                        for (int part = 0; part < tableView.partitions(); part++) {
+                            UUID tableId = ((ExtendedTableConfiguration) tableCfg).id().value();
+
+                            TablePartitionId replicaGrpId = new TablePartitionId(tableId, part);
+
+                            updatePendingAssignmentsKeys(tableView.name(), replicaGrpId, clusterNodes, tableView.replicas(),
+                                    evt.entryEvent().newEntry().revision(), metaStorageMgr, part);
+                        }
+                    }
+                }
+            }
+
+            @Override
+            public void onError(@NotNull Throwable e) {
+                LOG.warn("Unable to process stable assignments event", e);
+            }
+        };
     }
 
     /** {@inheritDoc} */
     @Override
     public void start() {
+        metaStorageMgr.registerPrefixWatch(zoneDataNodesPrefix(), zoneWatchListener);
+
         tablesCfg.tables().any().replicas().listen(this::onUpdateReplicas);
 
         registerRebalanceListeners();
@@ -937,6 +984,8 @@ public class TableManager extends Producer<TableEvent, TableEventParameters> imp
         }
 
         busyLock.block();
+
+        metaStorageMgr.unregisterWatch(zoneWatchListener);
 
         Map<UUID, TableImpl> tables = tablesByIdVv.latest();
 
