@@ -67,11 +67,11 @@ public class ConfigurationTest extends AbstractClientTest {
         IgniteClient.Builder builder = IgniteClient.builder();
 
         IgniteClient client = builder
-                .addressFinder(() -> new String[]{addr})
+                .addressFinder(unused -> new String[]{addr})
                 .build();
 
         try (client) {
-            assertArrayEquals(new String[]{addr}, client.configuration().addressesFinder().getAddresses());
+            assertArrayEquals(new String[]{addr}, client.configuration().addressesFinder().getAddresses(null));
         }
     }
 
@@ -86,7 +86,7 @@ public class ConfigurationTest extends AbstractClientTest {
                 .connectTimeout(1234)
                 .reconnectThrottlingPeriod(123)
                 .reconnectThrottlingRetries(8)
-                .addressFinder(() -> new String[]{addr})
+                .addressFinder(unused -> new String[]{addr})
                 .build();
 
         // Builder can be reused, and it won't affect already created clients.
@@ -106,7 +106,7 @@ public class ConfigurationTest extends AbstractClientTest {
             assertEquals(123, client.configuration().reconnectThrottlingPeriod());
             assertEquals(8, client.configuration().reconnectThrottlingRetries());
             assertArrayEquals(new String[]{addr}, client.configuration().addresses());
-            assertArrayEquals(new String[]{addr}, client.configuration().addressesFinder().getAddresses());
+            assertArrayEquals(new String[]{addr}, client.configuration().addressesFinder().getAddresses(null));
         }
 
         try (client2) {
@@ -118,14 +118,14 @@ public class ConfigurationTest extends AbstractClientTest {
             assertEquals(1234, client2.configuration().reconnectThrottlingPeriod());
             assertEquals(88, client2.configuration().reconnectThrottlingRetries());
             assertArrayEquals(new String[]{addr}, client.configuration().addresses());
-            assertArrayEquals(new String[]{addr}, client.configuration().addressesFinder().getAddresses());
+            assertArrayEquals(new String[]{addr}, client.configuration().addressesFinder().getAddresses(null));
         }
     }
 
     @Test
     public void testClientBuilderFailsOnExceptionInAddressFinder() {
         IgniteClient.Builder builder = IgniteClient.builder()
-                .addressFinder(() -> {
+                .addressFinder(unused -> {
                     throw new IllegalArgumentException("bad finder");
                 });
 

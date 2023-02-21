@@ -71,7 +71,7 @@ public interface IgniteClient extends Ignite {
         private String[] addresses;
 
         /** Address finder. */
-        private IgniteClientAddressFinder addressFinder;
+        private AddressFinder addressFinder;
 
         /** Connect timeout. */
         private long connectTimeout = DFLT_CONNECT_TIMEOUT;
@@ -171,7 +171,7 @@ public interface IgniteClient extends Ignite {
          * @param addressFinder Address finder.
          * @return This instance.
          */
-        public Builder addressFinder(IgniteClientAddressFinder addressFinder) {
+        public Builder addressFinder(AddressFinder addressFinder) {
             this.addressFinder = addressFinder;
 
             return this;

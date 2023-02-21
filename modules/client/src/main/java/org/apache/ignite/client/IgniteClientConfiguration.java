@@ -53,7 +53,7 @@ public interface IgniteClientConfiguration {
      *
      * @return Address finder.
      */
-    IgniteClientAddressFinder addressesFinder();
+    AddressFinder addressesFinder();
 
     /**
      * Gets the addresses of Ignite server nodes within a cluster. An address can be an IP address or a hostname, with or without port. If

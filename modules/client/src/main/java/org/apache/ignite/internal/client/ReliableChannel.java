@@ -362,7 +362,7 @@ public final class ReliableChannel implements AutoCloseable {
         Map<InetSocketAddress, Integer> newAddrs = null;
 
         if (clientCfg.addressesFinder() != null) {
-            String[] hostAddrs = clientCfg.addressesFinder().getAddresses();
+            String[] hostAddrs = clientCfg.addressesFinder().getAddresses(null);
 
             if (hostAddrs.length == 0) {
                 //noinspection NonPrivateFieldAccessedInSynchronizedContext

@@ -18,7 +18,7 @@
 package org.apache.ignite.internal.client;
 
 import java.util.concurrent.Executor;
-import org.apache.ignite.client.IgniteClientAddressFinder;
+import org.apache.ignite.client.AddressFinder;
 import org.apache.ignite.client.IgniteClientConfiguration;
 import org.apache.ignite.client.RetryPolicy;
 import org.apache.ignite.client.SslConfiguration;
@@ -30,7 +30,7 @@ import org.jetbrains.annotations.Nullable;
  */
 public final class IgniteClientConfigurationImpl implements IgniteClientConfiguration {
     /** Address finder. */
-    private final IgniteClientAddressFinder addressFinder;
+    private final AddressFinder addressFinder;
 
     /** Addresses. */
     private final String[] addresses;
@@ -75,7 +75,7 @@ public final class IgniteClientConfigurationImpl implements IgniteClientConfigur
      * @param loggerFactory Logger factory which will be used to create a logger instance for this this particular client when needed.
      */
     public IgniteClientConfigurationImpl(
-            IgniteClientAddressFinder addressFinder,
+            AddressFinder addressFinder,
             String[] addresses,
             long connectTimeout,
             long reconnectThrottlingPeriod,
@@ -105,7 +105,7 @@ public final class IgniteClientConfigurationImpl implements IgniteClientConfigur
 
     /** {@inheritDoc} */
     @Override
-    public IgniteClientAddressFinder addressesFinder() {
+    public AddressFinder addressesFinder() {
         return addressFinder;
     }
 

@@ -22,12 +22,12 @@ package org.apache.ignite.client;
  * There are cases when the list is not static, for example in cloud environment. In such cases addresses of nodes and/or number of server
  * nodes can change. Implementation of this interface should handle these.
  */
-public interface IgniteClientAddressFinder {
+public interface AddressFinder {
     /**
      * Get addresses of Ignite server nodes within a cluster. An address can be IPv4 address or hostname, with or without port. If port is
      * not set then Ignite will generate multiple addresses for default port range.
      *
      * @return Addresses of Ignite server nodes within a cluster.
      */
-    public String[] getAddresses();
+    String[] getAddresses(AddressFinderContext ctx);
 }
