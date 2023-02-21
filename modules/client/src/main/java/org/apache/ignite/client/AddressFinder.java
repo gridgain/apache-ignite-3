@@ -17,6 +17,8 @@
 
 package org.apache.ignite.client;
 
+import java.util.concurrent.CompletableFuture;
+
 /**
  * This interface provides a list of addresses of Ignite server nodes within a cluster. Thin client uses the list to route user requests.
  * There are cases when the list is not static, for example in cloud environment. In such cases addresses of nodes and/or number of server
@@ -29,5 +31,5 @@ public interface AddressFinder {
      *
      * @return Addresses of Ignite server nodes within a cluster.
      */
-    String[] getAddresses(AddressFinderContext ctx);
+    CompletableFuture<String[]> getAddressesAsync(AddressFinderContext ctx);
 }
