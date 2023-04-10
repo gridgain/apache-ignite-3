@@ -20,6 +20,7 @@ package org.apache.ignite.internal.distributionzones.configuration;
 import static org.apache.ignite.internal.distributionzones.DistributionZoneManager.DEFAULT_PARTITION_COUNT;
 import static org.apache.ignite.internal.distributionzones.DistributionZoneManager.DEFAULT_REPLICA_COUNT;
 import static org.apache.ignite.internal.distributionzones.DistributionZoneManager.DEFAULT_ZONE_ID;
+import static org.apache.ignite.internal.distributionzones.DistributionZoneManager.IMMEDIATE_TIMER_VALUE;
 import static org.apache.ignite.internal.distributionzones.DistributionZoneManager.INFINITE_TIMER_VALUE;
 
 import org.apache.ignite.configuration.annotation.Config;
@@ -61,12 +62,12 @@ public class DistributionZoneConfigurationSchema {
     /** Timeout in seconds between node added topology event itself and data nodes switch. */
     @Range(min = 0)
     @Value(hasDefault = true)
-    public int dataNodesAutoAdjustScaleUp = 0;
+    public int dataNodesAutoAdjustScaleUp = IMMEDIATE_TIMER_VALUE;
 
     /** Timeout in seconds between node left topology event itself and data nodes switch. */
     @Range(min = 0)
     @Value(hasDefault = true)
-    public int dataNodesAutoAdjustScaleDown = INFINITE_TIMER_VALUE;
+    public int dataNodesAutoAdjustScaleDown = IMMEDIATE_TIMER_VALUE;
 
     /**
      * Filter to form nodes which must be included to data nodes of this zone.
@@ -75,5 +76,4 @@ public class DistributionZoneConfigurationSchema {
     @ValidFilter
     @Value(hasDefault = true)
     public String filter = "$..*";
-    public int dataNodesAutoAdjustScaleDown = 0;
 }

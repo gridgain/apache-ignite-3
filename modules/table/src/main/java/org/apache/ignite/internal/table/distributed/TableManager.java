@@ -90,7 +90,6 @@ import org.apache.ignite.internal.distributionzones.configuration.DistributionZo
 import org.apache.ignite.internal.distributionzones.configuration.DistributionZonesConfiguration;
 import org.apache.ignite.internal.causality.VersionedValue;
 import org.apache.ignite.internal.cluster.management.ClusterManagementGroupManager;
-import org.apache.ignite.internal.configuration.util.ConfigurationUtil;
 import org.apache.ignite.internal.distributionzones.DistributionZoneManager;
 import org.apache.ignite.internal.distributionzones.exception.DistributionZoneMismatchException;
 import org.apache.ignite.internal.distributionzones.exception.DistributionZoneNotFoundException;
@@ -1336,67 +1335,70 @@ public class TableManager extends Producer<TableEvent, TableEventParameters> imp
     private CompletableFuture<Table> createTableAsyncInternal(String name, String zoneName, Consumer<TableChange> tableInitChange) {
         CompletableFuture<Table> tblFut = new CompletableFuture<>();
 
-        tableAsyncInternal(name)
-                .thenAccept(tbl -> {
-                    if (tbl != null) {
-                        tblFut.completeExceptionally(new TableAlreadyExistsException(DEFAULT_SCHEMA_NAME, name));
-                    } else {
-                        cmgMgr.logicalTopology()
-                                .thenCompose(cmgTopology -> {
-                                    try {
-                                        int zoneId = distributionZoneManager.getZoneId(zoneName);
+        tableAsyncInternal(name).thenAccept(tbl -> {
+            if (tbl != null) {
+                tblFut.completeExceptionally(new TableAlreadyExistsException(DEFAULT_SCHEMA_NAME, name));
+            } else {
+                cmgMgr.logicalTopology()
+                        .thenCompose(cmgTopology -> {
+                                int zoneId = distributionZoneManager.getZoneId(zoneName);
 
-                                        distributionZoneManager.getDataNodes(zoneId, cmgTopology.version())
-                                                .thenCompose(ignored -> {
+                                distributionZoneManager.topologyVersionedDataNodes(zoneId, cmgTopology.version())
+                                        .thenCompose(dataNodes -> {
+                                            tablesCfg.change(tablesChange -> tablesChange.changeTables(tablesListChange -> {
+                                                if (tablesListChange.get(name) != null) {
+                                                    throw new TableAlreadyExistsException(DEFAULT_SCHEMA_NAME, name);
+                                                }
 
-                                                    tablesCfg.change(tablesChange -> tablesChange.changeTables(tablesListChange -> {
-                                                        if (tablesListChange.get(name) != null) {
-                                                            throw new TableAlreadyExistsException(DEFAULT_SCHEMA_NAME, name);
-                                                        }
+                                                tablesListChange.create(name, (tableChange) -> {
+                                                    tableChange.changeDataStorage(
+                                                            dataStorageMgr.defaultTableDataStorageConsumer(tablesChange.defaultDataStorage())
+                                                    );
 
-                                                        tablesListChange.create(name, (tableChange) -> {
-                                                            tableChange.changeDataStorage(
-                                                                    dataStorageMgr.defaultTableDataStorageConsumer(
-                                                                            tablesChange.defaultDataStorage())
-                                                            );
+                                                    tableInitChange.accept(tableChange);
 
-                                                            tableInitChange.accept(tableChange);
+                                                    var extConfCh = ((ExtendedTableChange) tableChange);
 
-                                                            var extConfCh = ((ExtendedTableChange) tableChange);
+                                                    int intTableId = tablesChange.globalIdCounter() + 1;
+                                                    tablesChange.changeGlobalIdCounter(intTableId);
 
-                                                            int intTableId = tablesChange.globalIdCounter() + 1;
-                                                            tablesChange.changeGlobalIdCounter(intTableId);
+                                                    extConfCh.changeTableId(intTableId);
 
-                                                            extConfCh.changeTableId(intTableId);
+                                                    extConfCh.changeSchemaId(INITIAL_SCHEMA_VERSION);
 
-                                                            extConfCh.changeSchemaId(INITIAL_SCHEMA_VERSION);
+                                                    tableCreateFuts.put(extConfCh.id(), tblFut);
 
-                                                            tableCreateFuts.put(extConfCh.id(), tblFut);
+                                                    DistributionZoneConfiguration distributionZoneConfiguration =
+                                                            getZoneById(distributionZonesConfiguration, tableChange.zoneId());
 
-                        DistributionZoneConfiguration distributionZoneConfiguration =
-                                getZoneById(distributionZonesConfiguration, tableChange.zoneId());
+                                                    // Affinity assignments calculation.
+                                                    extConfCh.changeAssignments(ByteUtils.toBytes(AffinityUtils.calculateAssignments(
+                                                            baselineMgr.nodes().stream().map(ClusterNode::name).collect(toList()),
+                                                            distributionZoneConfiguration.partitions().value(),
+                                                            distributionZoneConfiguration.replicas().value())));
+                                                });
+                                            })).exceptionally(t -> {
+                                                Throwable ex = getRootCause(t);
 
-                        // Affinity assignments calculation.
-                        extConfCh.changeAssignments(ByteUtils.toBytes(AffinityUtils.calculateAssignments(
-                                baselineMgr.nodes().stream().map(ClusterNode::name).collect(toList()),
-                                distributionZoneConfiguration.partitions().value(),
-                                distributionZoneConfiguration.replicas().value())));
-                    });
-                })).exceptionally(t -> {
-                    Throwable ex = getRootCause(t);
+                                                if (ex instanceof TableAlreadyExistsException) {
+                                                    tblFut.completeExceptionally(ex);
+                                                } else {
+                                                    LOG.debug("Unable to create table [name={}]", ex, name);
 
-                    if (ex instanceof TableAlreadyExistsException) {
-                        tblFut.completeExceptionally(ex);
-                    } else {
-                        LOG.debug("Unable to create table [name={}]", ex, name);
+                                                    tblFut.completeExceptionally(ex);
 
-                        tblFut.completeExceptionally(ex);
+                                                    tableCreateFuts.values().removeIf(fut -> fut == tblFut);
+                                                }
 
-                        tableCreateFuts.values().removeIf(fut -> fut == tblFut);
-                    }
+                                                return null;
+                                            });
 
-                    return null;
-                });
+                                            return null;
+                                        });
+
+                            return null;
+                            });
+
             }
         });
 
