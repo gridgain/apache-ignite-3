@@ -488,7 +488,9 @@ public class IgniteImpl implements Ignite {
                 volatileLogStorageFactoryCreator,
                 clock,
                 outgoingSnapshotsManager,
-                topologyAwareRaftGroupServiceFactory
+                topologyAwareRaftGroupServiceFactory,
+                cmgMgr,
+                distributionZoneManager
         );
 
         indexManager = new IndexManager(name, tablesConfiguration, schemaManager, distributedTblMgr, clusterSvc);

@@ -88,6 +88,12 @@ import org.apache.ignite.internal.causality.IncrementalVersionedValue;
 import org.apache.ignite.internal.distributionzones.configuration.DistributionZoneConfiguration;
 import org.apache.ignite.internal.distributionzones.configuration.DistributionZoneView;
 import org.apache.ignite.internal.distributionzones.configuration.DistributionZonesConfiguration;
+import org.apache.ignite.internal.causality.VersionedValue;
+import org.apache.ignite.internal.cluster.management.ClusterManagementGroupManager;
+import org.apache.ignite.internal.configuration.util.ConfigurationUtil;
+import org.apache.ignite.internal.distributionzones.DistributionZoneManager;
+import org.apache.ignite.internal.distributionzones.exception.DistributionZoneMismatchException;
+import org.apache.ignite.internal.distributionzones.exception.DistributionZoneNotFoundException;
 import org.apache.ignite.internal.hlc.HybridClock;
 import org.apache.ignite.internal.hlc.HybridTimestamp;
 import org.apache.ignite.internal.logger.IgniteLogger;
@@ -291,6 +297,10 @@ public class TableManager extends Producer<TableEvent, TableEventParameters> imp
 
     private final TopologyAwareRaftGroupServiceFactory raftGroupServiceFactory;
 
+    private final ClusterManagementGroupManager cmgMgr;
+
+    private final DistributionZoneManager distributionZoneManager;
+
     /** Partitions storage path. */
     private final Path storagePath;
 
@@ -357,7 +367,9 @@ public class TableManager extends Producer<TableEvent, TableEventParameters> imp
             LogStorageFactoryCreator volatileLogStorageFactoryCreator,
             HybridClock clock,
             OutgoingSnapshotsManager outgoingSnapshotsManager,
-            TopologyAwareRaftGroupServiceFactory raftGroupServiceFactory
+            TopologyAwareRaftGroupServiceFactory raftGroupServiceFactory,
+            ClusterManagementGroupManager cmgMgr,
+            DistributionZoneManager distributionZoneManager
     ) {
         this.tablesCfg = tablesCfg;
         this.distributionZonesConfiguration = distributionZonesConfiguration;
@@ -376,6 +388,8 @@ public class TableManager extends Producer<TableEvent, TableEventParameters> imp
         this.clock = clock;
         this.outgoingSnapshotsManager = outgoingSnapshotsManager;
         this.raftGroupServiceFactory = raftGroupServiceFactory;
+        this.cmgMgr = cmgMgr;
+        this.distributionZoneManager = distributionZoneManager;
 
         clusterNodeResolver = topologyService::getByConsistentId;
 
@@ -1209,7 +1223,7 @@ public class TableManager extends Producer<TableEvent, TableEventParameters> imp
     }
 
     /**
-     * Completes appropriate future to return result from API {@link TableManager#createTableAsync(String, Consumer)}.
+     * Completes appropriate future to return result from API {@link TableManager#createTableAsync(String, String, Consumer)}.
      *
      * @param table Table.
      */
@@ -1307,47 +1321,57 @@ public class TableManager extends Producer<TableEvent, TableEventParameters> imp
      *         </ul>
      * @see TableAlreadyExistsException
      */
-    public CompletableFuture<Table> createTableAsync(String name, Consumer<TableChange> tableInitChange) {
+    public CompletableFuture<Table> createTableAsync(String name, String zoneName, Consumer<TableChange> tableInitChange) {
         if (!busyLock.enterBusy()) {
             throw new IgniteException(new NodeStoppingException());
         }
         try {
-            return createTableAsyncInternal(name, tableInitChange);
+            return createTableAsyncInternal(name, zoneName, tableInitChange);
         } finally {
             busyLock.leaveBusy();
         }
     }
 
-    /** See {@link #createTableAsync(String, Consumer)} for details. */
-    private CompletableFuture<Table> createTableAsyncInternal(String name, Consumer<TableChange> tableInitChange) {
+    /** See {@link #createTableAsync(String, String, Consumer)} for details. */
+    private CompletableFuture<Table> createTableAsyncInternal(String name, String zoneName, Consumer<TableChange> tableInitChange) {
         CompletableFuture<Table> tblFut = new CompletableFuture<>();
 
-        tableAsyncInternal(name).thenAccept(tbl -> {
-            if (tbl != null) {
-                tblFut.completeExceptionally(new TableAlreadyExistsException(DEFAULT_SCHEMA_NAME, name));
-            } else {
-                tablesCfg.change(tablesChange -> tablesChange.changeTables(tablesListChange -> {
-                    if (tablesListChange.get(name) != null) {
-                        throw new TableAlreadyExistsException(DEFAULT_SCHEMA_NAME, name);
-                    }
+        tableAsyncInternal(name)
+                .thenAccept(tbl -> {
+                    if (tbl != null) {
+                        tblFut.completeExceptionally(new TableAlreadyExistsException(DEFAULT_SCHEMA_NAME, name));
+                    } else {
+                        cmgMgr.logicalTopology()
+                                .thenCompose(cmgTopology -> {
+                                    try {
+                                        int zoneId = distributionZoneManager.getZoneId(zoneName);
 
-                    tablesListChange.create(name, (tableChange) -> {
-                        tableChange.changeDataStorage(
-                                dataStorageMgr.defaultTableDataStorageConsumer(tablesChange.defaultDataStorage())
-                        );
+                                        distributionZoneManager.getDataNodes(zoneId, cmgTopology.version())
+                                                .thenCompose(ignored -> {
 
-                        tableInitChange.accept(tableChange);
+                                                    tablesCfg.change(tablesChange -> tablesChange.changeTables(tablesListChange -> {
+                                                        if (tablesListChange.get(name) != null) {
+                                                            throw new TableAlreadyExistsException(DEFAULT_SCHEMA_NAME, name);
+                                                        }
 
-                        var extConfCh = ((ExtendedTableChange) tableChange);
+                                                        tablesListChange.create(name, (tableChange) -> {
+                                                            tableChange.changeDataStorage(
+                                                                    dataStorageMgr.defaultTableDataStorageConsumer(
+                                                                            tablesChange.defaultDataStorage())
+                                                            );
 
-                        int intTableId = tablesChange.globalIdCounter() + 1;
-                        tablesChange.changeGlobalIdCounter(intTableId);
+                                                            tableInitChange.accept(tableChange);
 
-                        extConfCh.changeTableId(intTableId);
+                                                            var extConfCh = ((ExtendedTableChange) tableChange);
 
-                        extConfCh.changeSchemaId(INITIAL_SCHEMA_VERSION);
+                                                            int intTableId = tablesChange.globalIdCounter() + 1;
+                                                            tablesChange.changeGlobalIdCounter(intTableId);
 
-                        tableCreateFuts.put(extConfCh.id(), tblFut);
+                                                            extConfCh.changeTableId(intTableId);
+
+                                                            extConfCh.changeSchemaId(INITIAL_SCHEMA_VERSION);
+
+                                                            tableCreateFuts.put(extConfCh.id(), tblFut);
 
                         DistributionZoneConfiguration distributionZoneConfiguration =
                                 getZoneById(distributionZonesConfiguration, tableChange.zoneId());
