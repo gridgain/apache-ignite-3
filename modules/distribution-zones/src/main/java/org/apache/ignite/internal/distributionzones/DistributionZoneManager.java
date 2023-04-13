@@ -625,6 +625,7 @@ public class DistributionZoneManager implements IgniteComponent {
                 ZoneState zoneState = zonesState.get(zoneId);
 
                 if (zoneState != null) {
+                    System.out.println("scaleUpAwaiting waitFor " + lastScaleUpRevision);
                     return zoneState.scaleUpRevisionTracker().waitFor(lastScaleUpRevision);
                 } else {
                     return failedFuture(new DistributionZoneWasRemovedException(zoneId));
@@ -653,6 +654,7 @@ public class DistributionZoneManager implements IgniteComponent {
                 ZoneState zoneState = zonesState.get(zoneId);
 
                 if (zoneState != null) {
+                    System.out.println("scaleDownAwaiting waitFor " + lastScaleDownRevision);
                     return zoneState.scaleDownRevisionTracker().waitFor(lastScaleDownRevision);
                 } else {
                     return failedFuture(new DistributionZoneWasRemovedException(zoneId));
@@ -1204,10 +1206,14 @@ public class DistributionZoneManager implements IgniteComponent {
                     //Firstly update lastScaleUpRevision and lastScaleDownRevision then update topVerTracker to ensure thread-safety.
                     if (!addedNodes.isEmpty()) {
                         lastScaleUpRevision = revision;
+
+                        System.out.println("TopologyListener lastScaleUpRevision " + lastScaleUpRevision);
                     }
 
                     if (!removedNodes.isEmpty()) {
                         lastScaleDownRevision = revision;
+
+                        System.out.println("TopologyListener lastScaleDownRevision " + lastScaleDownRevision);
                     }
 
                     topVerTracker.update(topVer);
@@ -1226,6 +1232,8 @@ public class DistributionZoneManager implements IgniteComponent {
                     DistributionZoneView defaultZoneView = zonesConfiguration.value().defaultDistributionZone();
 
                     scheduleTimers(defaultZoneView, addedNodes, removedNodes, revision);
+
+                    System.out.println("MetastorageTopologyListener " + topVer + " " + revision + " " + addedNodes.isEmpty() + " " + removedNodes.isEmpty() + " " + logicalTopology);
 
                     return completedFuture(null);
                 } finally {
@@ -1299,13 +1307,19 @@ public class DistributionZoneManager implements IgniteComponent {
 
                     //Associates scale up meta storage revision and data nodes.
                     if (scaleUpRevision > 0) {
+                        System.out.println("scaleUpRevisionTracker " + zoneId + " " + scaleUpRevision);
+
                         zoneState.scaleUpRevisionTracker.update(scaleUpRevision);
                     }
 
                     //Associates scale down meta storage revision and data nodes.
                     if (scaleDownRevision > 0) {
+                        System.out.println("scaleDownRevision " + zoneId + " " + scaleDownRevision);
+
                         zoneState.scaleDownRevisionTracker.update(scaleDownRevision);
                     }
+
+                    System.out.println("MetastorageDataNodesListener " + scaleUpRevision + " " + scaleDownRevision + " " + newDataNodes + " " + zoneId);
                 } finally {
                     busyLock.leaveBusy();
                 }
@@ -1432,6 +1446,8 @@ public class DistributionZoneManager implements IgniteComponent {
             throw new IgniteInternalException(NODE_STOPPING_ERR, new NodeStoppingException());
         }
 
+        System.out.println("saveDataNodesToMetaStorageOnScaleUp");
+
         try {
             ZoneState zoneState = zonesState.get(zoneId);
 
@@ -1464,7 +1480,9 @@ public class DistributionZoneManager implements IgniteComponent {
 
                 List<String> deltaToAdd = zoneState.nodesToBeAddedToDataNodes(scaleUpTriggerRevision, revision);
 
-                Map<String, Integer> newDataNodes = new HashMap<>(dataNodesFromMetaStorage);
+                Map<String, Integer> newDataNodes = new ConcurrentHashMap<>(dataNodesFromMetaStorage);
+
+                System.out.println("Old newDataNodes from metastorage on scale up " + newDataNodes);
 
                 deltaToAdd.forEach(n -> newDataNodes.merge(n, 1, Integer::sum));
 
@@ -1484,8 +1502,10 @@ public class DistributionZoneManager implements IgniteComponent {
                         .thenApply(invokeResult -> inBusyLock(busyLock, () -> {
                             if (invokeResult) {
                                 zoneState.cleanUp(Math.min(scaleDownTriggerRevision, revision));
+
+                                System.out.println("write newDataNodes on scale up " + zoneId + " " + newDataNodes);
                             } else {
-                                LOG.debug("Updating data nodes for a zone has not succeeded [zoneId = {}]", zoneId);
+                                LOG.info("Updating data nodes for a zone has not succeeded [zoneId = {}] {}", zoneId, newDataNodes);
 
                                 return saveDataNodesToMetaStorageOnScaleUp(zoneId, revision);
                             }
@@ -1519,6 +1539,8 @@ public class DistributionZoneManager implements IgniteComponent {
             throw new IgniteInternalException(NODE_STOPPING_ERR, new NodeStoppingException());
         }
 
+        System.out.println("saveDataNodesToMetaStorageOnScaleDown");
+
         try {
             ZoneState zoneState = zonesState.get(zoneId);
 
@@ -1551,7 +1573,9 @@ public class DistributionZoneManager implements IgniteComponent {
 
                 List<String> deltaToRemove = zoneState.nodesToBeRemovedFromDataNodes(scaleDownTriggerRevision, revision);
 
-                Map<String, Integer> newDataNodes = new HashMap<>(dataNodesFromMetaStorage);
+                Map<String, Integer> newDataNodes = new ConcurrentHashMap<>(dataNodesFromMetaStorage);
+
+                System.out.println("Old newDataNodes from metastorage on scale down " + newDataNodes);
 
                 deltaToRemove.forEach(n -> newDataNodes.merge(n, -1, Integer::sum));
 
@@ -1571,10 +1595,12 @@ public class DistributionZoneManager implements IgniteComponent {
                         .thenApply(invokeResult -> inBusyLock(busyLock, () -> {
                             if (invokeResult) {
                                 zoneState.cleanUp(Math.min(scaleUpTriggerRevision, revision));
-                            } else {
-                                LOG.debug("Updating data nodes for a zone has not succeeded [zoneId = {}]", zoneId);
 
-                                return saveDataNodesToMetaStorageOnScaleUp(zoneId, revision);
+                                System.out.println("write newDataNodes on scale down " + zoneId + " " + newDataNodes);
+                            } else {
+                                LOG.info("Updating data nodes for a zone has not succeeded [zoneId = {}] {}", zoneId, newDataNodes);
+
+                                return saveDataNodesToMetaStorageOnScaleDown(zoneId, revision);
                             }
 
                             return completedFuture(null);
@@ -1734,6 +1760,7 @@ public class DistributionZoneManager implements IgniteComponent {
          * @param revision Revision of the event that triggered this addition.
          */
         void nodesToAddToDataNodes(Set<String> nodes, long revision) {
+            System.out.println("nodesToAddToDataNodes " + revision + " " + nodes);
             topologyAugmentationMap.put(revision, new Augmentation(nodes, true));
         }
 
@@ -1744,6 +1771,7 @@ public class DistributionZoneManager implements IgniteComponent {
          * @param revision Revision of the event that triggered this addition.
          */
         void nodesToRemoveFromDataNodes(Set<String> nodes, long revision) {
+            System.out.println("nodesToRemoveFromDataNodes " + revision + " " + nodes);
             topologyAugmentationMap.put(revision, new Augmentation(nodes, false));
         }
 
@@ -1784,6 +1812,7 @@ public class DistributionZoneManager implements IgniteComponent {
          *         the {@code addition} flag.
          */
         Optional<Long> highestRevision(boolean addition) {
+            System.out.println("highestRevision " + addition);
             return topologyAugmentationMap().entrySet()
                     .stream()
                     .filter(e -> e.getValue().addition == addition)
