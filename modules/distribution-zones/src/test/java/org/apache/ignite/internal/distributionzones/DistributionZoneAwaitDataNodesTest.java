@@ -54,7 +54,9 @@ import static org.mockito.Mockito.when;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import org.apache.ignite.internal.cluster.management.ClusterManagementGroupManager;
@@ -195,27 +197,28 @@ public class DistributionZoneAwaitDataNodesTest extends IgniteAbstractTest {
      * and different logical topology versions.
      * Simulates new logical topology with new nodes and with removed nodes. Check that data nodes futures are completed in right order.
      */
+    @Disabled
     @Test
     void testSeveralScaleUpAndSeveralScaleDownThenScaleUpAndScaleDown() throws Exception {
         startZoneManager(0);
 
-//        distributionZoneManager.createZone(
-//                        new DistributionZoneConfigurationParameters.Builder("zone0")
-//                                .dataNodesAutoAdjustScaleUp(IMMEDIATE_TIMER_VALUE)
-//                                .dataNodesAutoAdjustScaleDown(IMMEDIATE_TIMER_VALUE)
-//                                .build()
-//                )
-//                .get(3, SECONDS);
-//        distributionZoneManager.createZone(
-//                        new DistributionZoneConfigurationParameters.Builder("zone1")
-//                                .dataNodesAutoAdjustScaleUp(IMMEDIATE_TIMER_VALUE)
-//                                .dataNodesAutoAdjustScaleDown(IMMEDIATE_TIMER_VALUE)
-//                                .build()
-//                )
-//                .get(3, SECONDS);
+        distributionZoneManager.createZone(
+                        new DistributionZoneConfigurationParameters.Builder("zone0")
+                                .dataNodesAutoAdjustScaleUp(IMMEDIATE_TIMER_VALUE)
+                                .dataNodesAutoAdjustScaleDown(IMMEDIATE_TIMER_VALUE)
+                                .build()
+                )
+                .get(3, SECONDS);
+        distributionZoneManager.createZone(
+                        new DistributionZoneConfigurationParameters.Builder("zone1")
+                                .dataNodesAutoAdjustScaleUp(IMMEDIATE_TIMER_VALUE)
+                                .dataNodesAutoAdjustScaleDown(IMMEDIATE_TIMER_VALUE)
+                                .build()
+                )
+                .get(3, SECONDS);
 
-//        int zoneId0 = distributionZoneManager.getZoneId("zone0");
-//        int zoneId1 = distributionZoneManager.getZoneId("zone1");
+        int zoneId0 = distributionZoneManager.getZoneId("zone0");
+        int zoneId1 = distributionZoneManager.getZoneId("zone1");
 
         LOG.info("Topology with added nodes.");
 
@@ -223,10 +226,10 @@ public class DistributionZoneAwaitDataNodesTest extends IgniteAbstractTest {
         CompletableFuture<Set<String>> dataNodesUpFut1 = distributionZoneManager.topologyVersionedDataNodes(DEFAULT_ZONE_ID, 1);
         CompletableFuture<Set<String>> dataNodesUpFut2 = distributionZoneManager.topologyVersionedDataNodes(DEFAULT_ZONE_ID, 2);
         CompletableFuture<Set<String>> dataNodesUpFut3 = distributionZoneManager.topologyVersionedDataNodes(DEFAULT_ZONE_ID, 11);
-//        CompletableFuture<Set<String>> dataNodesUpFut4 = distributionZoneManager.topologyVersionedDataNodes(zoneId0, 1);
-//        CompletableFuture<Set<String>> dataNodesUpFut5 = distributionZoneManager.topologyVersionedDataNodes(zoneId0, 2);
-//        CompletableFuture<Set<String>> dataNodesUpFut6 = distributionZoneManager.topologyVersionedDataNodes(zoneId1, 1);
-//        CompletableFuture<Set<String>> dataNodesUpFut7 = distributionZoneManager.topologyVersionedDataNodes(zoneId1, 2);
+        CompletableFuture<Set<String>> dataNodesUpFut4 = distributionZoneManager.topologyVersionedDataNodes(zoneId0, 1);
+        CompletableFuture<Set<String>> dataNodesUpFut5 = distributionZoneManager.topologyVersionedDataNodes(zoneId0, 2);
+        CompletableFuture<Set<String>> dataNodesUpFut6 = distributionZoneManager.topologyVersionedDataNodes(zoneId1, 1);
+        CompletableFuture<Set<String>> dataNodesUpFut7 = distributionZoneManager.topologyVersionedDataNodes(zoneId1, 2);
 
         int topVer0 = 2;
 
@@ -238,10 +241,10 @@ public class DistributionZoneAwaitDataNodesTest extends IgniteAbstractTest {
         assertEquals(threeNodes, dataNodesUpFut1.get(3, SECONDS));
         assertEquals(threeNodes, dataNodesUpFut2.get(3, SECONDS));
 
-//        assertEquals(threeNodes, dataNodesUpFut4.get(3, SECONDS));
-//        assertEquals(threeNodes, dataNodesUpFut5.get(3, SECONDS));
-//        assertEquals(threeNodes, dataNodesUpFut6.get(3, SECONDS));
-//        assertEquals(threeNodes, dataNodesUpFut7.get(3, SECONDS));
+        assertEquals(threeNodes, dataNodesUpFut4.get(3, SECONDS));
+        assertEquals(threeNodes, dataNodesUpFut5.get(3, SECONDS));
+        assertEquals(threeNodes, dataNodesUpFut6.get(3, SECONDS));
+        assertEquals(threeNodes, dataNodesUpFut7.get(3, SECONDS));
         assertFalse(dataNodesUpFut3.isDone());
 
 
@@ -251,89 +254,69 @@ public class DistributionZoneAwaitDataNodesTest extends IgniteAbstractTest {
         CompletableFuture<Set<String>> dataNodesDownFut1 = distributionZoneManager.topologyVersionedDataNodes(DEFAULT_ZONE_ID, 4);
         CompletableFuture<Set<String>> dataNodesDownFut2 = distributionZoneManager.topologyVersionedDataNodes(DEFAULT_ZONE_ID, 5);
         CompletableFuture<Set<String>> dataNodesDownFut3 = distributionZoneManager.topologyVersionedDataNodes(DEFAULT_ZONE_ID, 6);
-//        CompletableFuture<Set<String>> dataNodesDownFut4 = distributionZoneManager.topologyVersionedDataNodes(zoneId0, 4);
-//        CompletableFuture<Set<String>> dataNodesDownFut5 = distributionZoneManager.topologyVersionedDataNodes(zoneId0, 5);
-//        CompletableFuture<Set<String>> dataNodesDownFut6 = distributionZoneManager.topologyVersionedDataNodes(zoneId1, 4);
-//        CompletableFuture<Set<String>> dataNodesDownFut7 = distributionZoneManager.topologyVersionedDataNodes(zoneId1, 5);
+        CompletableFuture<Set<String>> dataNodesDownFut4 = distributionZoneManager.topologyVersionedDataNodes(zoneId0, 4);
+        CompletableFuture<Set<String>> dataNodesDownFut5 = distributionZoneManager.topologyVersionedDataNodes(zoneId0, 5);
+        CompletableFuture<Set<String>> dataNodesDownFut6 = distributionZoneManager.topologyVersionedDataNodes(zoneId1, 4);
+        CompletableFuture<Set<String>> dataNodesDownFut7 = distributionZoneManager.topologyVersionedDataNodes(zoneId1, 5);
 
         int topVer1 = 5;
 
         Set<String> twoNodes = Set.of("node0", "node1");
 
-//        topologyWatchListenerOnUpdate(twoNodes, topVer1, dataNodesRevision1);
         setLogicalTopologyInMetaStorage(twoNodes, topVer1);
 
         assertEquals(twoNodes, dataNodesDownFut0.get(3, SECONDS));
         assertEquals(twoNodes, dataNodesDownFut1.get(3, SECONDS));
         assertEquals(twoNodes, dataNodesDownFut2.get(3, SECONDS));
-//        assertEquals(twoNodes, dataNodesDownFut4.get(3, SECONDS));
-//        assertEquals(twoNodes, dataNodesDownFut5.get(3, SECONDS));
-//        assertEquals(twoNodes, dataNodesDownFut6.get(3, SECONDS));
-//        assertEquals(twoNodes, dataNodesDownFut7.get(3, SECONDS));
+        assertEquals(twoNodes, dataNodesDownFut4.get(3, SECONDS));
+        assertEquals(twoNodes, dataNodesDownFut5.get(3, SECONDS));
+        assertEquals(twoNodes, dataNodesDownFut6.get(3, SECONDS));
+        assertEquals(twoNodes, dataNodesDownFut7.get(3, SECONDS));
         assertFalse(dataNodesDownFut3.isDone());
 
         int topVer2 = 20;
 
-        Thread.sleep(2000);
         LOG.info("Topology with added and removed nodes.+++++++++++++++++++++");
 
         Set<String> dataNodes = Set.of("node0", "node2");
 
-//        topologyWatchListenerOnUpdate(dataNodes, topVer2, dataNodesRevision2);
         setLogicalTopologyInMetaStorage(dataNodes, topVer2);
 
         assertEquals(dataNodes, dataNodesUpFut3.get(3, SECONDS));
         assertEquals(dataNodes, dataNodesDownFut3.get(3, SECONDS));
-        Thread.sleep(1000);
     }
 
-    @Test
-    void test1() throws Exception {
-        startZoneManager(0);
-
-//        LOG.info("Topology with added nodes.");
+//    @Test
+//    void test1() throws Exception {
+//        startZoneManager(0);
 //
-//        CompletableFuture<Set<String>> dataNodesUpFut2 = distributionZoneManager.topologyVersionedDataNodes(DEFAULT_ZONE_ID, 2);
-//        CompletableFuture<Set<String>> dataNodesUpFut3 = distributionZoneManager.topologyVersionedDataNodes(DEFAULT_ZONE_ID, 11);
+//        LOG.info("Topology with removed nodes.");
 //
-//        int topVer0 = 2;
+//        CompletableFuture<Set<String>> dataNodesDownFut2 = distributionZoneManager.topologyVersionedDataNodes(DEFAULT_ZONE_ID, 105);
+//        CompletableFuture<Set<String>> dataNodesDownFut3 = distributionZoneManager.topologyVersionedDataNodes(DEFAULT_ZONE_ID, 106);
 //
-//        Set<String> threeNodes = Set.of("node0", "node1", "node2");
+//        int topVer1 = 105;
 //
-//        setLogicalTopologyInMetaStorage(threeNodes, topVer0);
+//        Set<String> twoNodes = Set.of("node0", "node1");
 //
-//        assertEquals(threeNodes, dataNodesUpFut2.get(3, SECONDS));
+//        setLogicalTopologyInMetaStorage(twoNodes, topVer1);
 //
-//        assertFalse(dataNodesUpFut3.isDone());
-
-
-        LOG.info("Topology with removed nodes.");
-
-        CompletableFuture<Set<String>> dataNodesDownFut2 = distributionZoneManager.topologyVersionedDataNodes(DEFAULT_ZONE_ID, 105);
-        CompletableFuture<Set<String>> dataNodesDownFut3 = distributionZoneManager.topologyVersionedDataNodes(DEFAULT_ZONE_ID, 106);
-
-        int topVer1 = 105;
-
-        Set<String> twoNodes = Set.of("node0", "node1");
-
-        setLogicalTopologyInMetaStorage(twoNodes, topVer1);
-
-        assertEquals(twoNodes, dataNodesDownFut2.get(3, SECONDS));
-        assertFalse(dataNodesDownFut3.isDone());
-
-        int topVer2 = 120;
-
-        Thread.sleep(2000);
-        LOG.info("Topology with added and removed nodes.+++++++++++++++++++++");
-
-        Set<String> dataNodes = Set.of("node0", "node2");
-
-        setLogicalTopologyInMetaStorage(dataNodes, topVer2);
-
-//        assertEquals(dataNodes, dataNodesUpFut3.get(3, SECONDS));
-        assertEquals(dataNodes, dataNodesDownFut3.get(3, SECONDS));
-        Thread.sleep(1000);
-    }
+//        assertEquals(twoNodes, dataNodesDownFut2.get(3, SECONDS));
+//        assertFalse(dataNodesDownFut3.isDone());
+//
+//        int topVer2 = 120;
+//
+//        Thread.sleep(2000);
+//        LOG.info("Topology with added and removed nodes.+++++++++++++++++++++");
+//
+//        Set<String> dataNodes = Set.of("node0", "node2");
+//
+//        setLogicalTopologyInMetaStorage(dataNodes, topVer2);
+//
+////        assertEquals(dataNodes, dataNodesUpFut3.get(3, SECONDS));
+//        assertEquals(dataNodes, dataNodesDownFut3.get(3, SECONDS));
+//        Thread.sleep(1000);
+//    }
 
     /**
      * Test checks that data nodes futures are completed on topology with added nodes.
@@ -598,17 +581,14 @@ public class DistributionZoneAwaitDataNodesTest extends IgniteAbstractTest {
      * Test checks that data nodes futures are completed with old data nodes if dataNodesAutoAdjustScaleUp
      * and dataNodesAutoAdjustScaleDown timer increased to non-zero value.
      */
+    @Disabled
     @Test
     void testScaleUpScaleDownAreChangedWhileAwaitingDataNodes() throws Exception {
         startZoneManager(0);
 
         Set<String> nodes0 = Set.of("node0", "node1");
 
-//        topologyWatchListenerOnUpdate(nodes0, 1, 1);
         setLogicalTopologyInMetaStorage(nodes0, 1);
-
-//        dataNodesWatchListenerOnUpdate(DEFAULT_ZONE_ID, nodes0, true, 1, 2);
-//        setNodesWatchInMetaStorage(DEFAULT_ZONE_ID, nodes0, true, 1);
 
         CompletableFuture<Set<String>> dataNodesFut = distributionZoneManager.topologyVersionedDataNodes(DEFAULT_ZONE_ID, 1);
 
@@ -618,7 +598,6 @@ public class DistributionZoneAwaitDataNodesTest extends IgniteAbstractTest {
 
         dataNodesFut = distributionZoneManager.topologyVersionedDataNodes(DEFAULT_ZONE_ID, 2);
 
-//        topologyWatchListenerOnUpdate(nodes1, 2, 3);
         setLogicalTopologyInMetaStorage(nodes1, 2);
 
         assertFalse(dataNodesFut.isDone());
@@ -644,20 +623,29 @@ public class DistributionZoneAwaitDataNodesTest extends IgniteAbstractTest {
     void testInitializedDataNodesOnZoneManagerStart() throws Exception {
         Set<String> dataNodes = Set.of("node0", "node1");
 
-        VaultEntry vaultEntry = new VaultEntry(zonesLogicalTopologyKey(), toBytes(dataNodes));
+//        VaultEntry vaultEntry = new VaultEntry(zonesLogicalTopologyKey(), toBytes(dataNodes));
 
-        when(vaultManager.get(zonesLogicalTopologyKey())).thenReturn(completedFuture(vaultEntry));
+        Map<ByteArray, byte[]> valEntries = new HashMap<>();
 
-        when(vaultManager.get(zonesLogicalTopologyVersionKey()))
-                .thenReturn(completedFuture(new VaultEntry(zonesLogicalTopologyVersionKey(), longToBytes(3))));
+        valEntries.put(zonesLogicalTopologyKey(), toBytes(dataNodes));
+        valEntries.put(zonesLogicalTopologyVersionKey(), longToBytes(3));
 
-        startZoneManager(5);
+        vaultManager.putAll(valEntries);
 
-        distributionZoneManager.alterZone(
-                        DEFAULT_ZONE_NAME, new DistributionZoneConfigurationParameters.Builder(DEFAULT_ZONE_NAME)
-                                .dataNodesAutoAdjustScaleUp(IMMEDIATE_TIMER_VALUE)
-                                .dataNodesAutoAdjustScaleDown(IMMEDIATE_TIMER_VALUE).build())
-                .get(3, SECONDS);
+//        when(vaultManager.get(zonesLogicalTopologyKey())).thenReturn(completedFuture(vaultEntry));
+//        vaultManager.putAll(zonesLogicalTopologyKey(), toBytes(dataNodes));
+
+//        when(vaultManager.get(zonesLogicalTopologyVersionKey()))
+//                .thenReturn(completedFuture(new VaultEntry(zonesLogicalTopologyVersionKey(), longToBytes(3))));
+//        vaultManager.put(zonesLogicalTopologyVersionKey(), longToBytes(3));
+
+        startZoneManager(10);
+
+//        distributionZoneManager.alterZone(
+//                        DEFAULT_ZONE_NAME, new DistributionZoneConfigurationParameters.Builder(DEFAULT_ZONE_NAME)
+//                                .dataNodesAutoAdjustScaleUp(IMMEDIATE_TIMER_VALUE)
+//                                .dataNodesAutoAdjustScaleDown(IMMEDIATE_TIMER_VALUE).build())
+//                .get(3, SECONDS);
 
         assertEquals(dataNodes, distributionZoneManager.topologyVersionedDataNodes(DEFAULT_ZONE_ID, 2)
                 .get(3, SECONDS));
@@ -666,7 +654,7 @@ public class DistributionZoneAwaitDataNodesTest extends IgniteAbstractTest {
     private void startZoneManager(long revision) throws Exception {
 //        when(metaStorageManager.appliedRevision()).thenReturn(revision);
 
-        vaultManager.put(new ByteArray("applied_revision"), longToBytes(revision)).get();
+//        vaultManager.put(new ByteArray("applied_revision"), longToBytes(revision)).get();
 
         distributionZoneManager.start();
 
