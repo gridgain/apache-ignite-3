@@ -53,6 +53,7 @@ import static org.mockito.Mockito.when;
 
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
@@ -65,6 +66,8 @@ import org.apache.ignite.internal.cluster.management.raft.TestClusterStateStorag
 import org.apache.ignite.internal.cluster.management.topology.LogicalTopology;
 import org.apache.ignite.internal.cluster.management.topology.LogicalTopologyImpl;
 import org.apache.ignite.internal.cluster.management.topology.LogicalTopologyServiceImpl;
+import org.apache.ignite.internal.cluster.management.topology.api.LogicalNode;
+import org.apache.ignite.internal.cluster.management.topology.api.LogicalTopologySnapshot;
 import org.apache.ignite.internal.configuration.ConfigurationManager;
 import org.apache.ignite.internal.configuration.storage.TestConfigurationStorage;
 import org.apache.ignite.internal.configuration.testframework.ConfigurationExtension;
@@ -94,6 +97,8 @@ import org.apache.ignite.internal.vault.VaultManager;
 import org.apache.ignite.internal.vault.inmemory.InMemoryVaultService;
 import org.apache.ignite.lang.ByteArray;
 import org.apache.ignite.lang.NodeStoppingException;
+import org.apache.ignite.network.ClusterNode;
+import org.apache.ignite.network.NetworkAddress;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Disabled;
@@ -639,13 +644,14 @@ public class DistributionZoneAwaitDataNodesTest extends IgniteAbstractTest {
 //                .thenReturn(completedFuture(new VaultEntry(zonesLogicalTopologyVersionKey(), longToBytes(3))));
 //        vaultManager.put(zonesLogicalTopologyVersionKey(), longToBytes(3));
 
-        startZoneManager(10);
+        Collection<LogicalNode> nodes = new ArrayList<>();
 
-//        distributionZoneManager.alterZone(
-//                        DEFAULT_ZONE_NAME, new DistributionZoneConfigurationParameters.Builder(DEFAULT_ZONE_NAME)
-//                                .dataNodesAutoAdjustScaleUp(IMMEDIATE_TIMER_VALUE)
-//                                .dataNodesAutoAdjustScaleDown(IMMEDIATE_TIMER_VALUE).build())
-//                .get(3, SECONDS);
+        nodes.add(new LogicalNode(new ClusterNode("node0", "node0", new NetworkAddress("local", 1))));
+        nodes.add(new LogicalNode(new ClusterNode("node1", "node1", new NetworkAddress("local", 1))));
+
+        when(cmgManager.logicalTopology()).thenReturn(completedFuture(new LogicalTopologySnapshot(3, nodes)));
+
+        startZoneManager(10);
 
         assertEquals(dataNodes, distributionZoneManager.topologyVersionedDataNodes(DEFAULT_ZONE_ID, 2)
                 .get(3, SECONDS));
@@ -654,7 +660,7 @@ public class DistributionZoneAwaitDataNodesTest extends IgniteAbstractTest {
     private void startZoneManager(long revision) throws Exception {
 //        when(metaStorageManager.appliedRevision()).thenReturn(revision);
 
-//        vaultManager.put(new ByteArray("applied_revision"), longToBytes(revision)).get();
+        vaultManager.put(new ByteArray("applied_revision"), longToBytes(revision)).get();
 
         distributionZoneManager.start();
 

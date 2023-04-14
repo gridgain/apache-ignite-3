@@ -743,11 +743,15 @@ public class DistributionZoneManager implements IgniteComponent {
             // and this map will be initialized on a manager start or with onCreate configuration notification
             ZoneState zoneState = zonesState.get(zoneId);
 
+            System.out.println("onUpdateScaleUp_1");
+
             if (newScaleUp != INFINITE_TIMER_VALUE) {
                 Optional<Long> highestRevision = zoneState.highestRevision(true);
 
                 assert highestRevision.isEmpty() || ctx.storageRevision() >= highestRevision.get() : "Expected revision that "
                         + "is greater or equal to already seen meta storage events.";
+
+//                System.out.println("onUpdateScaleUp_2 " + ctx.storageRevision());
 
                 zoneState.rescheduleScaleUp(
                         newScaleUp,
@@ -787,11 +791,15 @@ public class DistributionZoneManager implements IgniteComponent {
             // and this map will be initialized on a manager start or with onCreate configuration notification
             ZoneState zoneState = zonesState.get(zoneId);
 
+            System.out.println("onUpdateScaleDown_1");
+
             if (newScaleDown != INFINITE_TIMER_VALUE) {
                 Optional<Long> highestRevision = zoneState.highestRevision(false);
 
                 assert highestRevision.isEmpty() || ctx.storageRevision() >= highestRevision.get() : "Expected revision that "
                         + "is greater or equal to already seen meta storage events.";
+
+//                System.out.println("onUpdateScaleDown_2 " + ctx.storageRevision());
 
                 zoneState.rescheduleScaleDown(
                         newScaleDown,
@@ -1218,6 +1226,8 @@ public class DistributionZoneManager implements IgniteComponent {
 
                     topVerTracker.update(topVer);
 
+                    System.out.println("MetastorageTopologyListener " + logicalTopology + " " + newLogicalTopology);
+
                     logicalTopology = newLogicalTopology;
 
                     NamedConfigurationTree<DistributionZoneConfiguration, DistributionZoneView, DistributionZoneChange> zones =
@@ -1393,6 +1403,12 @@ public class DistributionZoneManager implements IgniteComponent {
                         autoAdjustScaleUp,
                         () -> saveDataNodesOnScaleUp.apply(zoneId, revision)
                 );
+            }
+
+            try {
+                Thread.sleep(500);
+            } catch (InterruptedException e) {
+                throw new RuntimeException(e);
             }
 
             if (!removedNodes.isEmpty() && autoAdjustScaleDown != INFINITE_TIMER_VALUE) {
