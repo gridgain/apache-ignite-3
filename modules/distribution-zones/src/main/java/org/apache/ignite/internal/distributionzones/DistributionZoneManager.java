@@ -588,7 +588,10 @@ public class DistributionZoneManager implements IgniteComponent {
      * @return Future for chaining.
      */
     private CompletableFuture<Void> awaitTopologyVersion(long topVer) {
-        return inBusyLock(busyLock, () -> topVerTracker.waitFor(topVer));
+        return inBusyLock(busyLock, () -> {
+            System.out.println("topVerTracker.waitFor(topVer) " + topVer + " " + topVerTracker.current());
+            return topVerTracker.waitFor(topVer);
+        });
     }
 
     /**
@@ -631,6 +634,7 @@ public class DistributionZoneManager implements IgniteComponent {
                 ZoneState zoneState = zonesState.get(zoneId);
 
                 if (zoneState != null) {
+                    System.out.println("scaleUpAwaiting scaleUpRevisionTracker().waitFor " + lastScaleUpRevision);
                     return zoneState.scaleUpRevisionTracker().waitFor(lastScaleUpRevision);
                 } else {
                     return failedFuture(new DistributionZoneWasRemovedException(zoneId));
@@ -764,6 +768,7 @@ public class DistributionZoneManager implements IgniteComponent {
             //Only wait for a scale up revision if the auto adjust scale up has a zero value.
             //So if the value of the auto adjust scale up has become non-zero, then need to complete all futures.
             if (newScaleUp > 0) {
+                System.out.println("onUpdateScaleUp scaleUpRevisionTracker().update " + lastScaleUpRevision);
                 zoneState.scaleUpRevisionTracker().update(lastScaleUpRevision);
             }
 
@@ -847,6 +852,8 @@ public class DistributionZoneManager implements IgniteComponent {
 
             ZoneState zoneState = new ZoneState(executor);
 
+            System.out.println("onCreate zone " + zoneId + " " + ctx.storageRevision() + " " + logicalTopology);
+
             zonesState.putIfAbsent(zoneId, zoneState);
 
             saveDataNodesAndUpdateTriggerKeysInMetaStorage(zoneId, ctx.storageRevision(), logicalTopology);
@@ -864,8 +871,8 @@ public class DistributionZoneManager implements IgniteComponent {
 
             ZoneState zoneState = zonesState.remove(zoneId);
 
-            zoneState.scaleUpRevisionTracker.update(Long.MAX_VALUE);
-            zoneState.scaleDownRevisionTracker.update(Long.MAX_VALUE);
+            zoneState.scaleUpRevisionTracker().update(Long.MAX_VALUE);
+            zoneState.scaleDownRevisionTracker().update(Long.MAX_VALUE);
 
             return completedFuture(null);
         }
@@ -1120,6 +1127,8 @@ public class DistributionZoneManager implements IgniteComponent {
             VaultEntry topologyEntry = vaultMgr.get(zonesLogicalTopologyKey()).join();
 
             if (topologyEntry != null && topologyEntry.value() != null) {
+                assert appliedRevision != 0;
+
                 logicalTopology = fromBytes(topologyEntry.value());
 
                 // init keys and data nodes for default zone
@@ -1131,7 +1140,7 @@ public class DistributionZoneManager implements IgniteComponent {
 
                 zonesConfiguration.distributionZones().value().forEach(zone -> {
                     int zoneId = zone.zoneId();
-
+                    System.out.println("initDataNodesFromVaultManager1 " + zoneId + " " + appliedRevision + " " + logicalTopology);
                     saveDataNodesAndUpdateTriggerKeysInMetaStorage(
                             zoneId,
                             appliedRevision,
@@ -1140,12 +1149,13 @@ public class DistributionZoneManager implements IgniteComponent {
                 });
             }
 
-            zonesState.values().forEach(zoneState -> {
-                zoneState.scaleUpRevisionTracker().update(lastScaleUpRevision);
+            zonesState.entrySet().forEach(entry -> {
+                System.out.println("initDataNodesFromVaultManager2 " + entry.getKey() + " " + lastScaleUpRevision + " " + lastScaleDownRevision + " " + logicalTopology);
+                entry.getValue().scaleUpRevisionTracker().update(lastScaleUpRevision);
 
-                zoneState.scaleDownRevisionTracker().update(lastScaleDownRevision);
+                entry.getValue().scaleDownRevisionTracker().update(lastScaleDownRevision);
 
-                zoneState.nodes(logicalTopology);
+                entry.getValue().nodes(logicalTopology);
             });
 
             assert topologyEntry == null || topologyEntry.value() == null || logicalTopology.equals(fromBytes(topologyEntry.value()))
@@ -1209,10 +1219,12 @@ public class DistributionZoneManager implements IgniteComponent {
 
                     //Firstly update lastScaleUpRevision and lastScaleDownRevision then update topVerTracker to ensure thread-safety.
                     if (!addedNodes.isEmpty()) {
+                        System.out.println("MetastorageTopologyListener lastScaleUpRevision " + lastScaleUpRevision + " " + revision);
                         lastScaleUpRevision = revision;
                     }
 
                     if (!removedNodes.isEmpty()) {
+                        System.out.println("MetastorageTopologyListener lastScaleDownRevision " + lastScaleDownRevision + " " + revision);
                         lastScaleDownRevision = revision;
                     }
 
@@ -1303,14 +1315,17 @@ public class DistributionZoneManager implements IgniteComponent {
 
                     zoneState.nodes(newDataNodes);
 
+                    System.out.println("MetastorageDataNodesListener newDataNodes " + zoneId + " " + newDataNodes);
+
                     //Associates scale up meta storage revision and data nodes.
                     if (scaleUpRevision > 0) {
-                        zoneState.scaleUpRevisionTracker.update(scaleUpRevision);
+                        System.out.println("MetastorageDataNodesListener zoneState.scaleUpRevisionTracker().update(scaleUpRevision) " + scaleUpRevision);
+                        zoneState.scaleUpRevisionTracker().update(scaleUpRevision);
                     }
 
                     //Associates scale down meta storage revision and data nodes.
                     if (scaleDownRevision > 0) {
-                        zoneState.scaleDownRevisionTracker.update(scaleDownRevision);
+                        zoneState.scaleDownRevisionTracker().update(scaleDownRevision);
                     }
                 } finally {
                     busyLock.leaveBusy();

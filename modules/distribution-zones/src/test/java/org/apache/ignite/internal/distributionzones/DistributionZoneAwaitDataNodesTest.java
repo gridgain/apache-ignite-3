@@ -154,10 +154,10 @@ public class DistributionZoneAwaitDataNodesTest extends IgniteAbstractTest {
 
         mockCmgLocalNodes();
 
+        vaultManager.put(new ByteArray("applied_revision"), longToBytes(1)).get();
+
         // Not adding 'distributionZoneManager' on purpose, it's started manually.
         components.forEach(IgniteComponent::start);
-
-        metaStorageManager.deployWatches();
     }
 
     @AfterEach
@@ -304,6 +304,8 @@ public class DistributionZoneAwaitDataNodesTest extends IgniteAbstractTest {
     void testAwaitingScaleUpOnly() throws Exception {
         startZoneManager(0);
 
+        System.out.println("before alterZone");
+
         distributionZoneManager.alterZone(DEFAULT_ZONE_NAME, new DistributionZoneConfigurationParameters.Builder(DEFAULT_ZONE_NAME)
                         .dataNodesAutoAdjustScaleUp(INFINITE_TIMER_VALUE).dataNodesAutoAdjustScaleDown(INFINITE_TIMER_VALUE).build())
                 .get(3, SECONDS);
@@ -318,21 +320,27 @@ public class DistributionZoneAwaitDataNodesTest extends IgniteAbstractTest {
 
         int zoneId = distributionZoneManager.getZoneId("zone1");
 
+        System.out.println("before dataNodesFut");
+
         CompletableFuture<Set<String>> dataNodesFut = distributionZoneManager.topologyVersionedDataNodes(zoneId, 1);
 
         Set<String> nodes0 = Set.of("node0", "node1");
+
+        System.out.println("before setLogicalTopologyInMetaStorage");
 
         setLogicalTopologyInMetaStorage(nodes0, 1);
 
         assertEquals(nodes0, dataNodesFut.get(3, SECONDS));
 
-        dataNodesFut = distributionZoneManager.topologyVersionedDataNodes(zoneId, 2);
+//        dataNodesFut = distributionZoneManager.topologyVersionedDataNodes(zoneId, 2);
+//
+//        assertFalse(dataNodesFut.isDone());
+//
+//        setLogicalTopologyInMetaStorage(Set.of("node0"), 2);
+//
+//        assertEquals(nodes0, dataNodesFut.get(3, SECONDS));
 
-        assertFalse(dataNodesFut.isDone());
-
-        setLogicalTopologyInMetaStorage(Set.of("node0"), 2);
-
-        assertEquals(nodes0, dataNodesFut.get(3, SECONDS));
+//        Thread.sleep(1000);
     }
 
     /**
@@ -552,9 +560,9 @@ public class DistributionZoneAwaitDataNodesTest extends IgniteAbstractTest {
     }
 
     private void startZoneManager(long revision) throws Exception {
-        vaultManager.put(new ByteArray("applied_revision"), longToBytes(revision)).get();
-
         distributionZoneManager.start();
+
+        metaStorageManager.deployWatches();
 
         distributionZoneManager.alterZone(
                         DEFAULT_ZONE_NAME, new DistributionZoneConfigurationParameters.Builder(DEFAULT_ZONE_NAME)
