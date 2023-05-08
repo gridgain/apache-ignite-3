@@ -20,9 +20,11 @@ package org.apache.ignite.internal.sql.engine.sql.fun;
 import org.apache.calcite.sql.SqlFunction;
 import org.apache.calcite.sql.SqlFunctionCategory;
 import org.apache.calcite.sql.SqlKind;
+import org.apache.calcite.sql.SqlPostfixOperator;
 import org.apache.calcite.sql.fun.SqlLibraryOperators;
 import org.apache.calcite.sql.fun.SqlStdOperatorTable;
 import org.apache.calcite.sql.fun.SqlSubstringFunction;
+import org.apache.calcite.sql.type.InferTypes;
 import org.apache.calcite.sql.type.OperandTypes;
 import org.apache.calcite.sql.type.ReturnTypes;
 import org.apache.calcite.sql.type.SqlTypeName;
@@ -155,6 +157,24 @@ public class IgniteSqlOperatorTable extends ReflectiveSqlOperatorTable {
                 }
             };
 
+    public static final SqlPostfixOperator IS_NOT_NULL =
+            new SqlPostfixOperator(
+                    "IS NOT NULL",
+                    SqlKind.IS_NOT_NULL,
+                    28,
+                    ReturnTypes.BOOLEAN_NOT_NULL,
+                    InferTypes.FIRST_KNOWN,
+                    OperandTypes.ANY);
+
+    public static final SqlPostfixOperator IS_NULL =
+            new SqlPostfixOperator(
+                    "IS NULL",
+                    SqlKind.IS_NULL,
+                    28,
+                    ReturnTypes.BOOLEAN_NOT_NULL,
+                    InferTypes.FIRST_KNOWN,
+                    OperandTypes.ANY);
+
     /** Singleton instance. */
     public static final IgniteSqlOperatorTable INSTANCE = new IgniteSqlOperatorTable();
 
@@ -210,8 +230,8 @@ public class IgniteSqlOperatorTable extends ReflectiveSqlOperatorTable {
         register(SqlStdOperatorTable.SOME);
 
         // IS ... operator.
-        register(SqlStdOperatorTable.IS_NULL);
-        register(SqlStdOperatorTable.IS_NOT_NULL);
+        register(IS_NULL);
+        register(IS_NOT_NULL);
         register(SqlStdOperatorTable.IS_TRUE);
         register(SqlStdOperatorTable.IS_NOT_TRUE);
         register(SqlStdOperatorTable.IS_FALSE);

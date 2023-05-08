@@ -137,6 +137,21 @@ public class ItDynamicParameterTest extends ClusterPerClassIntegrationTest {
                         + "from TBL1", 1, null).isEmpty());
     }
 
+    @Test
+    public void testTrickyCaseX() {
+        assertQuery("SELECT CASE WHEN 1 = 1 THEN NULL ELSE 1 END IS NULL").returns(true).check();
+//        assertQuery("SELECT CASE WHEN 1 = 1 THEN NULL ELSE 1 END IS NOT DISTINCT FROM NULL").returns(true).check();
+//        assertQuery("SELECT CASE WHEN 1 = 1 THEN NULL ELSE 1 END IS NULL").returns(true).check();
+
+//        assertQuery("SELECT CASE WHEN 1 = 1 THEN ? ELSE 1 END").withParams((Object) null).returns((Object) null).check();
+
+        // works fine
+//        assertQuery("SELECT CASE WHEN 1 = 1 THEN ? ELSE 1 END").withParams((Object) null).returns((Object) null).check();
+
+        // not working
+//        assertQuery("SELECT CASE WHEN 1 = 1 THEN 'a' ELSE 1 END").returns("a").check();
+    }
+
     /** Need to test the same query with different type of parameters to cover case with check right plans cache work. **/
     @Test
     public void testWithDifferentParametersTypes() {

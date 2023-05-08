@@ -561,17 +561,13 @@ public class IgniteSqlValidator extends SqlValidatorImpl {
             SqlDynamicParam dynamicParam = (SqlDynamicParam) node;
             RelDataType type = inferDynamicParamType(dynamicParam);
 
-            boolean narrowType = inferredType.equals(unknownType) || SqlTypeUtil.canCastFrom(inferredType, type, true)
-                    && SqlTypeUtil.comparePrecision(inferredType.getPrecision(), type.getPrecision()) > 0;
-
-            if (narrowType) {
+            if (inferredType.equals(unknownType) || !SqlTypeUtil.equalSansNullability(type, inferredType)) {
                 setValidatedNodeType(node, type);
-
-                return;
+            } else {
+                setValidatedNodeType(node, inferredType);
             }
         }
-
-        if (node instanceof SqlCall) {
+        else if (node instanceof SqlCall) {
             SqlValidatorScope newScope = scopes.get(node);
 
             if (newScope != null) {
@@ -587,7 +583,7 @@ public class IgniteSqlValidator extends SqlValidatorImpl {
 
             Arrays.fill(operandTypes, unknownType);
 
-            if (operandTypeInference != null) {
+            if (operandTypeInference != null && !(node instanceof SqlCase)) {
                 operandTypeInference.inferOperandTypes(callBinding, inferredType, operandTypes);
             } else if (operandTypeChecker instanceof FamilyOperandTypeChecker) {
                 // Infer operand types from checker for dynamic parameters if it's possible.
@@ -614,18 +610,18 @@ public class IgniteSqlValidator extends SqlValidatorImpl {
                     continue;
                 }
 
-                // TODO
-                if (node instanceof SqlCase) {
-                    SqlCase sqlCase = ((SqlCase) node);
-
-                    if (sqlCase.getThenOperands() == operand) {
-                        inferUnknownTypes(operandTypes[i], scope, filterNullLiterals((SqlNodeList) operand));
-
-                        continue;
-                    } else if (sqlCase.getElseOperand() == operand && SqlUtil.isNullLiteral(operand, false)) {
-                        continue;
-                    }
-                }
+//                // TODO
+//                if (node instanceof SqlCase) {
+//                    SqlCase sqlCase = ((SqlCase) node);
+//
+//                    if (sqlCase.getThenOperands() == operand) {
+//                        inferUnknownTypes(operandTypes[i], scope, filterNullLiterals((SqlNodeList) operand));
+//
+//                        continue;
+//                    } else if (sqlCase.getElseOperand() == operand && SqlUtil.isNullLiteral(operand, false)) {
+//                        continue;
+//                    }
+//                }
 
                 inferUnknownTypes(operandTypes[i], scope, operand);
             }
