@@ -23,6 +23,7 @@ import java.math.BigDecimal;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.EnumSet;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -614,9 +615,16 @@ public class IgniteSqlValidator extends SqlValidatorImpl {
                 }
 
                 // TODO
-                if (node instanceof SqlCase && ((SqlCase) node).getThenOperands() == operand
-                        && SqlUtil.isNullLiteral(((SqlCase) node).getThenOperands().get(0), false)) {
-                    continue;
+                if (node instanceof SqlCase) {
+                    SqlCase sqlCase = ((SqlCase) node);
+
+                    if (sqlCase.getThenOperands() == operand) {
+                        inferUnknownTypes(operandTypes[i], scope, filterNullLiterals((SqlNodeList) operand));
+
+                        continue;
+                    } else if (sqlCase.getElseOperand() == operand && SqlUtil.isNullLiteral(operand, false)) {
+                        continue;
+                    }
                 }
 
                 inferUnknownTypes(operandTypes[i], scope, operand);
@@ -624,6 +632,19 @@ public class IgniteSqlValidator extends SqlValidatorImpl {
         } else {
             super.inferUnknownTypes(inferredType, scope, node);
         }
+    }
+
+    SqlNodeList filterNullLiterals(SqlNodeList nodeList) {
+        SqlNodeList listCpy = nodeList.clone(nodeList.getParserPosition());
+
+        boolean removed = listCpy.removeIf(node -> SqlUtil.isNullLiteral(node, false));
+
+        if (removed) {
+            System.out.println(">xxx> removed " + removed);
+        }
+
+
+        return removed ? listCpy : nodeList;
     }
 
     private RelDataType inferDynamicParamType(SqlDynamicParam dynamicParam) {

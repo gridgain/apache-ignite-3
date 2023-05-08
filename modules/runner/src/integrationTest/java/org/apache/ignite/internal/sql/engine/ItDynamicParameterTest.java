@@ -110,10 +110,31 @@ public class ItDynamicParameterTest extends ClusterPerClassIntegrationTest {
 
     @Test
     public void testTrickyCase() {
-        sql("CREATE TABLE TBL1(ID INT PRIMARY KEY, VAL VARCHAR)");
+        sql("CREATE TABLE TBL1(ID INT PRIMARY KEY, VAL VARCHAR, NUM INT)");
         assertTrue(sql(
-                "select case when (_T0.VAL is not distinct from ?) then 0 else (case when (_T0.VAL > ?) then 1 else -1 end) end "
+                "select case when (_T0.VAL is not distinct from ?) then 0 else (case when (_T0.VAL > ?) then 1 else NULL end) end IS NULL "
                         + "from PUBLIC.TBL1 as _T0", "abc", "abc").isEmpty());
+
+        assertTrue(sql(
+                "select case when (_T0.VAL is not distinct from ?) then 0 else (case when (_T0.VAL > ?) then NULL else 1 end) end is NULL "
+                        + "from PUBLIC.TBL1 as _T0", "abc", "abc").isEmpty());
+
+        assertTrue(sql(
+                "select case when (_T0.NUM is not distinct from 0) then ? else (case when (_T0.NUM > 1) then ? else NULL end) end IS NULL "
+                        + "from PUBLIC.TBL1 as _T0", 1, 1).isEmpty());
+
+        assertTrue(sql(
+                "select case when (_T0.NUM is not distinct from 0) then ? else (case when (_T0.NUM > 1) then NULL else ? end) end is NULL "
+                        + "from PUBLIC.TBL1 as _T0", 1, 1).isEmpty());
+
+        // varchar
+        assertTrue(sql(
+                "select case when (VAL is not distinct from 0) then ? else (case when (NUM > 1) then '1' else ? end) end is NULL "
+                        + "from TBL1", "abc", null).isEmpty());
+        // int
+        assertTrue(sql(
+                "select case when (NUM is not distinct from 0) then ? else (case when (NUM > 1) then 1 else ? end) end is NULL "
+                        + "from TBL1", 1, null).isEmpty());
     }
 
     /** Need to test the same query with different type of parameters to cover case with check right plans cache work. **/
