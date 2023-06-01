@@ -23,6 +23,7 @@ import java.util.EnumMap;
 import java.util.EnumSet;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.Function;
 import org.apache.ignite.internal.catalog.descriptors.TableColumnDescriptor;
 import org.apache.ignite.lang.IgniteStringFormatter;
 import org.apache.ignite.sql.ColumnType;
@@ -40,7 +41,7 @@ import org.apache.ignite.sql.SqlException;
  * </ul>
  * All other modifications are rejected.
  */
-public class AlterColumnType implements AlterColumnAction {
+public class AlterColumnType implements Function<TableColumnDescriptor, TableColumnDescriptor> {
     private static final EnumSet<ColumnType> varLenTypes = EnumSet.of(ColumnType.STRING, ColumnType.BYTE_ARRAY);
     private static final Map<ColumnType, Set<ColumnType>> supportedTransitions = new EnumMap<>(ColumnType.class);
 
@@ -65,7 +66,7 @@ public class AlterColumnType implements AlterColumnAction {
     }
 
     @Override
-    public TableColumnDescriptor apply(TableColumnDescriptor origin, boolean isPkColumn) {
+    public TableColumnDescriptor apply(TableColumnDescriptor origin) {
         boolean varLenType = varLenTypes.contains(type);
 
         if (origin.type() == type
@@ -77,10 +78,6 @@ public class AlterColumnType implements AlterColumnAction {
         ) {
             // No-op.
             return origin;
-        }
-
-        if (isPkColumn) {
-            throwException("Cannot change data type for primary key column '{}'.", origin.name(), origin.type(), type);
         }
 
         if (origin.type() != type) {

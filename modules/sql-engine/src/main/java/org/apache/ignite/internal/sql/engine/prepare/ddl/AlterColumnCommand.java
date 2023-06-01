@@ -22,10 +22,10 @@ import java.util.List;
 import java.util.function.Function;
 import org.apache.calcite.rel.type.RelDataType;
 import org.apache.ignite.internal.catalog.commands.DefaultValue;
-import org.apache.ignite.internal.catalog.commands.altercolumn.AlterColumnAction;
 import org.apache.ignite.internal.catalog.commands.altercolumn.AlterColumnDefault;
 import org.apache.ignite.internal.catalog.commands.altercolumn.AlterColumnNotNull;
 import org.apache.ignite.internal.catalog.commands.altercolumn.AlterColumnType;
+import org.apache.ignite.internal.catalog.descriptors.TableColumnDescriptor;
 import org.apache.ignite.internal.sql.engine.util.TypeUtils;
 import org.apache.ignite.sql.ColumnType;
 
@@ -33,7 +33,7 @@ import org.apache.ignite.sql.ColumnType;
  * ALTER TABLE ... ALTER COLUMN statement.
  */
 public class AlterColumnCommand extends AbstractTableDdlCommand {
-    private final List<AlterColumnAction> changes = new ArrayList<>(1);
+    private final List<Function<TableColumnDescriptor, TableColumnDescriptor>> changes = new ArrayList<>(1);
 
     private String columnName;
 
@@ -45,12 +45,18 @@ public class AlterColumnCommand extends AbstractTableDdlCommand {
         columnName = name;
     }
 
-    public List<AlterColumnAction> changes() {
+    public List<Function<TableColumnDescriptor, TableColumnDescriptor>> changes() {
         return changes;
     }
 
     void alterType(RelDataType type) {
-        changes.add(new AlterColumnType(TypeUtils.columnType(type), type.getPrecision(), type.getScale()));
+        changes.add(
+                new AlterColumnType(
+                        TypeUtils.columnType(type),
+                        type.getPrecision() == RelDataType.PRECISION_NOT_SPECIFIED ? null : type.getPrecision(),
+                        type.getScale() == RelDataType.SCALE_NOT_SPECIFIED ? null : type.getScale()
+                )
+        );
     }
 
     void alterNotNull(boolean notNull) {

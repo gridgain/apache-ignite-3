@@ -19,7 +19,9 @@ package org.apache.ignite.internal.catalog.commands.altercolumn;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.function.Function;
 import org.apache.ignite.internal.catalog.commands.AbstractTableCommandParams;
+import org.apache.ignite.internal.catalog.descriptors.TableColumnDescriptor;
 
 /**
  * ALTER TABLE ... ALTER COLUMN statement.
@@ -28,7 +30,7 @@ import org.apache.ignite.internal.catalog.commands.AbstractTableCommandParams;
 public class AlterColumnParams extends AbstractTableCommandParams {
     private String columnName;
 
-    private List<AlterColumnAction> changeActions = new ArrayList<>(1);
+    private List<Function<TableColumnDescriptor, TableColumnDescriptor>> changeActions = new ArrayList<>(1);
 
     /** Returns column name. */
     public String columnName() {
@@ -36,7 +38,7 @@ public class AlterColumnParams extends AbstractTableCommandParams {
     }
 
     /** Returns list of column change actions. */
-    public List<AlterColumnAction> changeActions() {
+    public List<Function<TableColumnDescriptor, TableColumnDescriptor>> changeActions() {
         return changeActions;
     }
 
@@ -53,7 +55,7 @@ public class AlterColumnParams extends AbstractTableCommandParams {
         }
 
         /** Sets list of column change actions. */
-        public Builder changeActions(List<AlterColumnAction> changes) {
+        public Builder changeActions(List<Function<TableColumnDescriptor, TableColumnDescriptor>> changes) {
             params.changeActions = new ArrayList<>(changes);
 
             return this;

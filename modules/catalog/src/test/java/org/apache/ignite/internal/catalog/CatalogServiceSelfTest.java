@@ -44,6 +44,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 import org.apache.ignite.internal.catalog.commands.AlterTableAddColumnParams;
 import org.apache.ignite.internal.catalog.commands.AlterTableDropColumnParams;
@@ -51,7 +52,6 @@ import org.apache.ignite.internal.catalog.commands.ColumnParams;
 import org.apache.ignite.internal.catalog.commands.CreateTableParams;
 import org.apache.ignite.internal.catalog.commands.DefaultValue;
 import org.apache.ignite.internal.catalog.commands.DropTableParams;
-import org.apache.ignite.internal.catalog.commands.altercolumn.AlterColumnAction;
 import org.apache.ignite.internal.catalog.commands.altercolumn.AlterColumnDefault;
 import org.apache.ignite.internal.catalog.commands.altercolumn.AlterColumnNotNull;
 import org.apache.ignite.internal.catalog.commands.altercolumn.AlterColumnParams;
@@ -839,7 +839,7 @@ public class CatalogServiceSelfTest {
         assertNotNull(service.schema(schemaVer));
         assertNull(service.schema(schemaVer + 1));
 
-        AlterColumnAction[] actions = {
+        Function<TableColumnDescriptor, TableColumnDescriptor>[] actions = new Function[]{
                 new AlterColumnDefault(t -> DefaultValue.constant(null)),
                 new AlterColumnNotNull(false),
                 new AlterColumnType(ColumnType.INT64, null, null)
@@ -1015,11 +1015,11 @@ public class CatalogServiceSelfTest {
         verifyNoMoreInteractions(eventListener);
     }
 
-    private CompletableFuture<Void> changeColumn(String tab, String col, AlterColumnAction... changes) {
+    private CompletableFuture<Void> changeColumn(String tab, String col, Function<TableColumnDescriptor, TableColumnDescriptor>... ops) {
         return service.alterColumn(AlterColumnParams.builder()
                 .tableName(tab)
                 .columnName(col)
-                .changeActions(List.of(changes))
+                .changeActions(List.of(ops))
                 .build());
     }
 

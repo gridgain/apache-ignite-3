@@ -19,6 +19,7 @@ package org.apache.ignite.internal.catalog.commands.altercolumn;
 
 import static org.apache.ignite.lang.ErrorGroups.Sql.UNSUPPORTED_DDL_OPERATION_ERR;
 
+import java.util.function.Function;
 import org.apache.ignite.internal.catalog.descriptors.TableColumnDescriptor;
 import org.apache.ignite.lang.IgniteStringFormatter;
 import org.apache.ignite.sql.SqlException;
@@ -26,7 +27,7 @@ import org.apache.ignite.sql.SqlException;
 /**
  * Changes {@code nullable} flag of the column descriptor according to the {@code ALTER COLUMN (SET | DROP) NOT NULL} action.
  */
-public class AlterColumnNotNull implements AlterColumnAction {
+public class AlterColumnNotNull implements Function<TableColumnDescriptor, TableColumnDescriptor> {
     private final boolean notNull;
 
     public AlterColumnNotNull(boolean notNull) {
@@ -34,7 +35,7 @@ public class AlterColumnNotNull implements AlterColumnAction {
     }
 
     @Override
-    public TableColumnDescriptor apply(TableColumnDescriptor origin, boolean isPkColumn) {
+    public TableColumnDescriptor apply(TableColumnDescriptor origin) {
         if (notNull == !origin.nullable()) {
             return origin;
         }
@@ -43,11 +44,6 @@ public class AlterColumnNotNull implements AlterColumnAction {
         if (notNull) {
             throw new SqlException(UNSUPPORTED_DDL_OPERATION_ERR,
                     IgniteStringFormatter.format("Cannot set NOT NULL for column '{}'.", origin.name()));
-        }
-
-        if (isPkColumn) {
-            throw new SqlException(UNSUPPORTED_DDL_OPERATION_ERR,
-                    IgniteStringFormatter.format("Cannot drop NOT NULL for the primary key column '{}'.", origin.name()));
         }
 
         return new TableColumnDescriptor(

@@ -25,7 +25,7 @@ import org.apache.ignite.sql.ColumnType;
 /**
  * Replaces default value of the column descriptor according to the {@code ALTER COLUMN (SET | DROP) DEFAULT} action.
  */
-public class AlterColumnDefault implements AlterColumnAction {
+public class AlterColumnDefault implements Function<TableColumnDescriptor, TableColumnDescriptor> {
     private final Function<ColumnType, DefaultValue> resolveDfltFunc;
 
     public AlterColumnDefault(Function<ColumnType, DefaultValue> resolveDfltFunc) {
@@ -33,7 +33,7 @@ public class AlterColumnDefault implements AlterColumnAction {
     }
 
     @Override
-    public TableColumnDescriptor apply(TableColumnDescriptor origin, boolean isPkColumn) {
+    public TableColumnDescriptor apply(TableColumnDescriptor origin) {
         DefaultValue dflt = resolveDfltFunc.apply(origin.type());
 
         if (dflt.equals(origin.defaultValue())) {

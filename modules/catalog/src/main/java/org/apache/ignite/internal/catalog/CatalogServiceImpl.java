@@ -19,6 +19,7 @@ package org.apache.ignite.internal.catalog;
 
 import static java.util.concurrent.CompletableFuture.completedFuture;
 import static java.util.concurrent.CompletableFuture.failedFuture;
+import static org.apache.ignite.lang.ErrorGroups.Sql.UNSUPPORTED_DDL_OPERATION_ERR;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -32,6 +33,7 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentSkipListMap;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 import org.apache.ignite.internal.catalog.commands.AlterTableAddColumnParams;
 import org.apache.ignite.internal.catalog.commands.AlterTableDropColumnParams;
@@ -39,8 +41,9 @@ import org.apache.ignite.internal.catalog.commands.CatalogUtils;
 import org.apache.ignite.internal.catalog.commands.ColumnParams;
 import org.apache.ignite.internal.catalog.commands.CreateTableParams;
 import org.apache.ignite.internal.catalog.commands.DropTableParams;
-import org.apache.ignite.internal.catalog.commands.altercolumn.AlterColumnAction;
+import org.apache.ignite.internal.catalog.commands.altercolumn.AlterColumnNotNull;
 import org.apache.ignite.internal.catalog.commands.altercolumn.AlterColumnParams;
+import org.apache.ignite.internal.catalog.commands.altercolumn.AlterColumnType;
 import org.apache.ignite.internal.catalog.descriptors.IndexDescriptor;
 import org.apache.ignite.internal.catalog.descriptors.SchemaDescriptor;
 import org.apache.ignite.internal.catalog.descriptors.TableColumnDescriptor;
@@ -73,6 +76,7 @@ import org.apache.ignite.lang.ColumnNotFoundException;
 import org.apache.ignite.lang.ErrorGroups.Common;
 import org.apache.ignite.lang.ErrorGroups.Sql;
 import org.apache.ignite.lang.IgniteInternalException;
+import org.apache.ignite.lang.IgniteStringFormatter;
 import org.apache.ignite.lang.TableAlreadyExistsException;
 import org.apache.ignite.lang.TableNotFoundException;
 import org.apache.ignite.sql.SqlException;
@@ -328,12 +332,26 @@ public class CatalogServiceImpl extends Producer<CatalogEvent, CatalogEventParam
             TableColumnDescriptor target = source.get();
             boolean isPkColumn = table.isPrimaryKeyColumn(target.name());
 
-            for (AlterColumnAction change : params.changeActions()) {
-                TableColumnDescriptor newDesc = change.apply(target, isPkColumn);
+            for (Function<TableColumnDescriptor, TableColumnDescriptor> change : params.changeActions()) {
+                TableColumnDescriptor newDesc = change.apply(target);
 
-                if (newDesc != target) {
-                    target = newDesc;
+                if (newDesc == target) {
+                    continue;
                 }
+
+                if (isPkColumn) {
+                    if (change instanceof AlterColumnType) {
+                        throw new SqlException(UNSUPPORTED_DDL_OPERATION_ERR,
+                                IgniteStringFormatter.format("Cannot change data type for primary key column '{}'.", source.get().name()));
+                    }
+
+                    if (change instanceof AlterColumnNotNull) {
+                        throw new SqlException(UNSUPPORTED_DDL_OPERATION_ERR,
+                                IgniteStringFormatter.format("Cannot drop NOT NULL for the primary key column '{}'.", source.get().name()));
+                    }
+                }
+
+                target = newDesc;
             }
 
             return target == source.get() ? Collections.emptyList() : List.of(new AlterColumnEntry(table.id(), target));
