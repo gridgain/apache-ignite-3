@@ -17,11 +17,8 @@
 
 package org.apache.ignite.internal.sql.engine.prepare;
 
-import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicReference;
 import org.apache.calcite.sql.SqlNode;
-import org.apache.calcite.sql.validate.SqlValidatorNamespace;
 
 /**
  * blah blah blah.
@@ -30,7 +27,7 @@ public class ParsedStatement {
     private final SqlNode sqlNpde;
     private final long id;
     /** TODO Volatile is enough. */
-    private final AtomicReference<IgniteSqlValidator> validateMarker;
+    private final AtomicBoolean validateMarker;
 
     /**
      * Constructor.
@@ -39,7 +36,7 @@ public class ParsedStatement {
      * @param id Unique statement id.
      * @param validateMarker Dirty boolean flag.
      */
-    public ParsedStatement(SqlNode sqlNpde, long id, AtomicReference<IgniteSqlValidator> validateMarker) {
+    public ParsedStatement(SqlNode sqlNpde, long id, AtomicBoolean validateMarker) {
         this.sqlNpde = sqlNpde;
         this.id = id;
         this.validateMarker = validateMarker;
@@ -53,7 +50,7 @@ public class ParsedStatement {
         return sqlNpde;
     }
 
-    AtomicReference<IgniteSqlValidator> validated() {
+    AtomicBoolean validated() {
         return validateMarker;
     }
 

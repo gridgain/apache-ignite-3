@@ -29,7 +29,6 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Collectors;
 import org.apache.calcite.schema.SchemaPlus;
 import org.apache.calcite.sql.SqlNode;
@@ -185,7 +184,7 @@ public class TestNode implements LifecycleAware {
 
         assertEquals(ctx.parameters().length, parseResult.dynamicParamsCount(), "Invalid number of dynamic parameters");
 
-        return await(prepareService.prepareAsync(new ParsedStatement(parseResult.statement(), -1, new AtomicReference<>()), ctx));
+        return await(prepareService.prepareAsync(new ParsedStatement(parseResult.statement(), -1, new AtomicBoolean()), ctx));
     }
 
     /**
@@ -198,7 +197,7 @@ public class TestNode implements LifecycleAware {
     public QueryPlan prepare(SqlNode queryAst) {
         assertThat(queryAst, not(instanceOf(SqlNodeList.class)));
 
-        return await(prepareService.prepareAsync(new ParsedStatement(queryAst, -1, new AtomicReference<>()), createContext()));
+        return await(prepareService.prepareAsync(new ParsedStatement(queryAst, -1, new AtomicBoolean()), createContext()));
     }
 
     private BaseQueryContext createContext() {

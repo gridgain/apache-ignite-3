@@ -68,7 +68,6 @@ import org.apache.calcite.sql.SqlOperatorTable;
 import org.apache.calcite.sql.parser.SqlParseException;
 import org.apache.calcite.sql.parser.SqlParser;
 import org.apache.calcite.sql.validate.SqlValidator;
-import org.apache.calcite.sql.validate.SqlValidatorNamespace;
 import org.apache.calcite.sql2rel.SqlRexConvertletTable;
 import org.apache.calcite.sql2rel.SqlToRelConverter;
 import org.apache.calcite.tools.FrameworkConfig;
@@ -123,7 +122,7 @@ public class IgnitePlanner implements Planner, RelOptTable.ViewExpander {
 
     private RelOptPlanner planner;
 
-    private IgniteSqlValidator validator;
+    private SqlValidator validator;
 
     private RelOptCluster cluster;
 
@@ -198,25 +197,19 @@ public class IgnitePlanner implements Planner, RelOptTable.ViewExpander {
      * @return Validated node.
      */
     public SqlNode validate(ParsedStatement stmt) {
-        IgniteSqlValidator validator = stmt.validated().get();
-        if (validator == null) {
+        if (!stmt.validated().get()) {
             synchronized (stmt.tree()) {
-                validator = stmt.validated().get();
-                if (validator == null) {
+                if (!stmt.validated().get()) {
                     validate(stmt.tree());
 
-                    boolean updated = stmt.validated().compareAndSet(null, validator());
+                    boolean updated = stmt.validated().compareAndSet(false, true);
 
                     assert updated : stmt;
                 }
-
-                return validatedSqlNode;
             }
+        } else {
+            validatedSqlNode = stmt.tree();
         }
-
-        this.validator = validator;
-
-        validatedSqlNode = stmt.tree();
 
         return validatedSqlNode;
     }
@@ -368,7 +361,7 @@ public class IgnitePlanner implements Planner, RelOptTable.ViewExpander {
     }
 
     /** Returns the validator. **/
-    public IgniteSqlValidator validator() {
+    public SqlValidator validator() {
         if (validator == null) {
             validator = new IgniteSqlValidator(operatorTbl, catalogReader, typeFactory, validatorCfg, ctx.parameters());
         }
