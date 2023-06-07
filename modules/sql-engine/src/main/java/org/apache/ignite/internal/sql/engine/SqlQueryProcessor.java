@@ -81,6 +81,7 @@ import org.apache.ignite.internal.sql.engine.prepare.PrepareService;
 import org.apache.ignite.internal.sql.engine.prepare.PrepareServiceImpl;
 import org.apache.ignite.internal.sql.engine.property.PropertiesHelper;
 import org.apache.ignite.internal.sql.engine.property.PropertiesHolder;
+import org.apache.ignite.internal.sql.engine.schema.SchemaUpdateListener;
 import org.apache.ignite.internal.sql.engine.schema.SqlSchemaManager;
 import org.apache.ignite.internal.sql.engine.schema.SqlSchemaManagerImpl;
 import org.apache.ignite.internal.sql.engine.session.Session;
@@ -113,7 +114,7 @@ import org.jetbrains.annotations.Nullable;
  *  SqlQueryProcessor.
  *  TODO Documentation https://issues.apache.org/jira/browse/IGNITE-15859
  */
-public class SqlQueryProcessor implements QueryProcessor {
+public class SqlQueryProcessor implements QueryProcessor, SchemaUpdateListener {
     private static final IgniteLogger LOG = Loggers.forClass(SqlQueryProcessor.class);
 
     /** Default planner timeout, in ms. */
@@ -259,6 +260,7 @@ public class SqlQueryProcessor implements QueryProcessor {
                 busyLock
         );
 
+        sqlSchemaManager.registerListener(this);
         sqlSchemaManager.registerListener(prepareSvc);
 
         this.prepareSvc = prepareSvc;
@@ -506,6 +508,11 @@ public class SqlQueryProcessor implements QueryProcessor {
         start.completeAsync(() -> null, taskExecutor);
 
         return stage;
+    }
+
+    @Override
+    public void onSchemaUpdated() {
+        parserCache.clear();
     }
 
     private abstract static class AbstractTableEventListener implements EventListener<TableEventParameters> {
