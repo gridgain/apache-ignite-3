@@ -56,6 +56,7 @@ import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Collectors;
 import org.apache.calcite.jdbc.CalciteSchema;
 import org.apache.calcite.schema.SchemaPlus;
@@ -537,7 +538,7 @@ public class ExecutionServiceImplTest {
 
         assertEquals(ctx.parameters().length, parseResult.dynamicParamsCount(), "Invalid number of dynamic parameters");
 
-        return await(prepareService.prepareAsync(new ParsedStatement(parseResult.statement(), -1, new AtomicBoolean()), ctx));
+        return await(prepareService.prepareAsync(new ParsedStatement(parseResult.statement(), -1, new AtomicReference<>()), ctx));
     }
 
     static class TestCluster {

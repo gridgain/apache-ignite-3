@@ -23,6 +23,7 @@ import java.math.BigDecimal;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.EnumSet;
+import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -102,6 +103,14 @@ public class IgniteSqlValidator extends SqlValidatorImpl {
 
     /** Dynamic parameters. */
     private final Object[] parameters;
+
+    public IdentityHashMap<SqlNode, SqlValidatorNamespace> getNamespeces() {
+        return namespaces;
+    }
+
+    public void setNamespeces(Map<SqlNode, SqlValidatorNamespace> map) {
+        this.namespaces.putAll(map);
+    }
 
     /**
      * Creates a validator.
