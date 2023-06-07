@@ -189,7 +189,31 @@ public class IgnitePlanner implements Planner, RelOptTable.ViewExpander {
         return parseResult.statement();
     }
 
-    /** {@inheritDoc} */
+
+    /**
+     * Validates a cached SQL statement.
+     *
+     * @param stmt Cached statement.
+     * @return Validated node.
+     */
+    public SqlNode validate(ParsedStatement stmt) {
+        if (!stmt.validated().get()) {
+            synchronized (stmt.tree()) {
+                if (!stmt.validated().get()) {
+                    validate(stmt.tree());
+
+                    boolean updated = stmt.validated().compareAndSet(false, true);
+
+                    assert updated : stmt;
+                }
+            }
+        } else {
+            validatedSqlNode = stmt.tree();
+        }
+
+        return validatedSqlNode;
+    }
+
     @Override
     public SqlNode validate(SqlNode sqlNode) {
         validatedSqlNode = validator().validate(sqlNode);
@@ -231,11 +255,11 @@ public class IgnitePlanner implements Planner, RelOptTable.ViewExpander {
     /**
      * Validates a SQL statement.
      *
-     * @param sqlNode Root node of the SQL parse tree.
+     * @param stmt Parser statement.
      * @return Validated node, its validated type and type's origins.
      */
-    public ValidationResult validateAndGetTypeMetadata(SqlNode sqlNode) {
-        SqlNode validatedNode = validator().validate(sqlNode);
+    public ValidationResult validateAndGetTypeMetadata(ParsedStatement stmt) {
+        SqlNode validatedNode = validate(stmt);
         RelDataType type = validator().getValidatedNodeType(validatedNode);
         List<List<String>> origins = validator().getFieldOrigins(validatedNode);
 

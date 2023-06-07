@@ -143,9 +143,11 @@ public class PrepareServiceImpl implements PrepareService, SchemaUpdateListener 
 
     /** {@inheritDoc} */
     @Override
-    public CompletableFuture<QueryPlan> prepareAsync(SqlNode sqlNode, BaseQueryContext ctx) {
+    public CompletableFuture<QueryPlan> prepareAsync(ParsedStatement stmt, BaseQueryContext ctx) {
         try {
-            assert single(sqlNode);
+            assert single(stmt.tree());
+
+            SqlNode sqlNode = stmt.tree();
 
             SqlQueryType queryType = Commons.getQueryType(sqlNode);
             assert queryType != null : "No query type for query: " + sqlNode;
@@ -156,16 +158,16 @@ public class PrepareServiceImpl implements PrepareService, SchemaUpdateListener 
 
             switch (queryType) {
                 case QUERY:
-                    return prepareQuery(sqlNode, planningContext);
+                    return prepareQuery(stmt, planningContext);
 
                 case DDL:
                     return prepareDdl(sqlNode, planningContext);
 
                 case DML:
-                    return prepareDml(sqlNode, planningContext);
+                    return prepareDml(stmt, planningContext);
 
                 case EXPLAIN:
-                    return prepareExplain(sqlNode, planningContext);
+                    return prepareExplain(stmt, planningContext);
 
                 default:
                     throw new IgniteInternalException(UNSUPPORTED_SQL_OPERATION_KIND_ERR, "Unsupported operation ["
@@ -189,13 +191,13 @@ public class PrepareServiceImpl implements PrepareService, SchemaUpdateListener 
         return CompletableFuture.completedFuture(new DdlPlan(ddlConverter.convert((SqlDdl) sqlNode, ctx)));
     }
 
-    private CompletableFuture<QueryPlan> prepareExplain(SqlNode explain, PlanningContext ctx) {
+    private CompletableFuture<QueryPlan> prepareExplain(ParsedStatement stmt, PlanningContext ctx) {
         return CompletableFuture.supplyAsync(() -> {
             IgnitePlanner planner = ctx.planner();
 
             // Validate
             // We extract query subtree inside the validator.
-            SqlNode explainNode = planner.validate(explain);
+            SqlNode explainNode = planner.validate(stmt);
             // Extract validated query.
             SqlNode validNode = ((SqlExplain) explainNode).getExplicandum();
 
@@ -212,20 +214,20 @@ public class PrepareServiceImpl implements PrepareService, SchemaUpdateListener 
         return !(sqlNode instanceof SqlNodeList);
     }
 
-    private CompletableFuture<QueryPlan> prepareQuery(SqlNode sqlNode, PlanningContext ctx) {
+    private CompletableFuture<QueryPlan> prepareQuery(ParsedStatement stmt, PlanningContext ctx) {
         boolean distributed = distributionPresent(ctx.config().getTraitDefs());
 
         Class[] paramTypes = ctx.parameters().length == 0
                 ? EMPTY_CLASS_ARRAY :
                 Arrays.stream(ctx.parameters()).map(p -> (p != null) ? p.getClass() : Void.class).toArray(Class[]::new);
 
-        var key = new CacheKey(ctx.schemaName(), sqlNode.toString(), distributed, paramTypes);
+        var key = new CacheKey(ctx.schemaName(), stmt.id(), distributed, paramTypes);
 
         CompletableFuture<QueryPlan> planFut = cache.computeIfAbsent(key, k -> CompletableFuture.supplyAsync(() -> {
             IgnitePlanner planner = ctx.planner();
 
             // Validate
-            ValidationResult validated = planner.validateAndGetTypeMetadata(sqlNode);
+            ValidationResult validated = planner.validateAndGetTypeMetadata(stmt);
 
             SqlNode validatedNode = validated.sqlNode();
 
@@ -242,14 +244,31 @@ public class PrepareServiceImpl implements PrepareService, SchemaUpdateListener 
         return planFut.thenApply(QueryPlan::copy);
     }
 
-    private CompletableFuture<QueryPlan> prepareDml(SqlNode sqlNode, PlanningContext ctx) {
-        var key = new CacheKey(ctx.schemaName(), sqlNode.toString());
+    private CompletableFuture<QueryPlan> prepareDml(ParsedStatement stmt, PlanningContext ctx) {
+        var key = new CacheKey(ctx.schemaName(), stmt.id());
+
+        //        CompletableFuture<MultiStepDmlPlan> planFut = CompletableFuture.supplyAsync(() -> {
+        //            IgnitePlanner planner = ctx.planner();
+        //
+        //            // Validate
+        //            SqlNode validatedNode = planner.validate(stmt);
+        //
+        //            // Convert to Relational operators graph
+        //            IgniteRel igniteRel = optimize(validatedNode, planner);
+        //
+        //            // Split query plan to query fragments.
+        //            List<Fragment> fragments = new Splitter().go(igniteRel);
+        //
+        //            QueryTemplate template = new QueryTemplate(fragments);
+        //
+        //            return new MultiStepDmlPlan(template);
+        //        }, planningPool);
 
         CompletableFuture<QueryPlan> planFut = cache.computeIfAbsent(key, k -> CompletableFuture.supplyAsync(() -> {
             IgnitePlanner planner = ctx.planner();
 
             // Validate
-            SqlNode validatedNode = planner.validate(sqlNode);
+            SqlNode validatedNode = planner.validate(stmt);
 
             // Convert to Relational operators graph
             IgniteRel igniteRel = optimize(validatedNode, planner);

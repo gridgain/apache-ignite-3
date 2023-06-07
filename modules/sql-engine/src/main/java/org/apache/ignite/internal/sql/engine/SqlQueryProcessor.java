@@ -27,14 +27,19 @@ import static org.apache.ignite.lang.ErrorGroups.Sql.UNSUPPORTED_DDL_OPERATION_E
 import static org.apache.ignite.lang.ErrorGroups.Sql.UNSUPPORTED_SQL_OPERATION_KIND_ERR;
 import static org.apache.ignite.lang.IgniteStringFormatter.format;
 
+import com.github.benmanes.caffeine.cache.Caffeine;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Consumer;
 import java.util.function.LongFunction;
 import java.util.function.Supplier;
@@ -68,6 +73,7 @@ import org.apache.ignite.internal.sql.engine.exec.QueryTaskExecutorImpl;
 import org.apache.ignite.internal.sql.engine.exec.QueryValidationException;
 import org.apache.ignite.internal.sql.engine.exec.ddl.DdlCommandHandlerWrapper;
 import org.apache.ignite.internal.sql.engine.message.MessageServiceImpl;
+import org.apache.ignite.internal.sql.engine.prepare.ParsedStatement;
 import org.apache.ignite.internal.sql.engine.prepare.PrepareService;
 import org.apache.ignite.internal.sql.engine.prepare.PrepareServiceImpl;
 import org.apache.ignite.internal.sql.engine.property.PropertiesHelper;
@@ -175,6 +181,13 @@ public class SqlQueryProcessor implements QueryProcessor {
 
     /** Distributed catalog manager. */
     private final CatalogManager catalogManager;
+
+    private final ConcurrentMap<StatementCacheKey, StatementCacheValue> parserCache = Caffeine.newBuilder()
+            .maximumSize(2048)
+            .<StatementCacheKey, StatementCacheValue>build()
+            .asMap();
+
+    private final AtomicLong parseStmtCntr = new AtomicLong();
 
     /** Constructor. */
     public SqlQueryProcessor(
@@ -415,15 +428,25 @@ public class SqlQueryProcessor implements QueryProcessor {
 
         CompletableFuture<AsyncSqlCursor<List<Object>>> stage = start
                 .thenApply(v -> {
-                    StatementParseResult parseResult = IgniteSqlParser.parse(sql, StatementParseResult.MODE);
-                    SqlNode sqlNode = parseResult.statement();
+                    StatementCacheKey cacheKey = new StatementCacheKey(schemaName, sql);
 
-                    validateParsedStatement(context, outerTx, parseResult, sqlNode, params);
+                    StatementCacheValue parseResultPair = parserCache.computeIfAbsent(cacheKey, key -> {
+                        long cnt = parseStmtCntr.incrementAndGet();
 
-                    return sqlNode;
+                        StatementParseResult parseResult = IgniteSqlParser.parse(sql, StatementParseResult.MODE);
+
+                        return new StatementCacheValue(cnt, parseResult);
+                    });
+
+                    SqlNode sqlNode = parseResultPair.parseResult.statement();
+
+                    validateParsedStatement(context, outerTx, parseResultPair.parseResult, sqlNode, params);
+
+                    return new ParsedStatement(parseResultPair.parseResult.statement(), parseResultPair.statementId,
+                            parseResultPair.validated);
                 })
-                .thenCompose(sqlNode -> {
-                    boolean rwOp = dataModificationOp(sqlNode);
+                .thenCompose(stmt -> {
+                    boolean rwOp = dataModificationOp(stmt.tree());
 
                     BaseQueryContext ctx = BaseQueryContext.builder()
                             .frameworkConfig(
@@ -437,7 +460,7 @@ public class SqlQueryProcessor implements QueryProcessor {
                             .plannerTimeout(PLANNER_TIMEOUT)
                             .build();
 
-                    return prepareSvc.prepareAsync(sqlNode, ctx)
+                    return prepareSvc.prepareAsync(stmt, ctx)
                             .thenApply(plan -> {
                                 boolean implicitTxRequired = outerTx == null;
 
@@ -637,6 +660,44 @@ public class SqlQueryProcessor implements QueryProcessor {
 
                 throw new SqlException(QUERY_INVALID_ERR, message);
             }
+        }
+    }
+
+    private static class StatementCacheKey {
+        private final String schemaName;
+        private final String sql;
+
+        private StatementCacheKey(String schemaName, String sql) {
+            this.schemaName = schemaName;
+            this.sql = sql;
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            if (this == o) {
+                return true;
+            }
+            if (o == null || getClass() != o.getClass()) {
+                return false;
+            }
+            StatementCacheKey that = (StatementCacheKey) o;
+            return Objects.equals(schemaName, that.schemaName) && Objects.equals(sql, that.sql);
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hash(schemaName, sql);
+        }
+    }
+
+    private static class StatementCacheValue {
+        private final AtomicBoolean validated = new AtomicBoolean();
+        private final StatementParseResult parseResult;
+        private final long statementId;
+
+        private StatementCacheValue(long statementId, StatementParseResult parseResult) {
+            this.statementId = statementId;
+            this.parseResult = parseResult;
         }
     }
 }

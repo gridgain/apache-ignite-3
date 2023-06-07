@@ -30,24 +30,24 @@ public class CacheKey {
 
     private final String schemaName;
 
-    private final String query;
-
     private final Object contextKey;
 
     private final Class[] paramTypes;
+
+    private final long stmtId;
 
     /**
      * Constructor.
      *
      * @param schemaName Schema name.
-     * @param query      Query string.
+     * @param stmtId     Unique statement id.
      * @param contextKey Optional context key to differ queries with and without/different flags, having an impact on result plan (like
      *                   LOCAL flag)
      * @param paramTypes Types of all dynamic parameters, no any type can be {@code null}.
      */
-    public CacheKey(String schemaName, String query, Object contextKey, Class[] paramTypes) {
+    CacheKey(String schemaName, long stmtId, Object contextKey, Class[] paramTypes) {
         this.schemaName = schemaName;
-        this.query = query;
+        this.stmtId = stmtId;
         this.contextKey = contextKey;
         this.paramTypes = paramTypes;
     }
@@ -56,10 +56,10 @@ public class CacheKey {
      * Constructor.
      *
      * @param schemaName Schema name.
-     * @param query      Query string.
+     * @param stmtId      Unique statement id.
      */
-    public CacheKey(String schemaName, String query) {
-        this(schemaName, query, null, EMPTY_CLASS_ARRAY);
+    CacheKey(String schemaName, long stmtId) {
+        this(schemaName, stmtId, null, EMPTY_CLASS_ARRAY);
     }
 
     /** {@inheritDoc} */
@@ -77,7 +77,7 @@ public class CacheKey {
         if (!schemaName.equals(cacheKey.schemaName)) {
             return false;
         }
-        if (!query.equals(cacheKey.query)) {
+        if (stmtId != cacheKey.stmtId) {
             return false;
         }
         if (!Objects.equals(contextKey, cacheKey.contextKey)) {
@@ -90,7 +90,7 @@ public class CacheKey {
     @Override
     public int hashCode() {
         int result = schemaName.hashCode();
-        result = 31 * result + query.hashCode();
+        result = 31 * result + Long.hashCode(stmtId);
         result = 31 * result + (contextKey != null ? contextKey.hashCode() : 0);
         result = 31 * result + Arrays.deepHashCode(paramTypes);
         return result;
