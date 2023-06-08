@@ -17,11 +17,8 @@
 
 package org.apache.ignite.internal.sql.engine.prepare;
 
-import java.util.Map;
-import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 import org.apache.calcite.sql.SqlNode;
-import org.apache.calcite.sql.validate.SqlValidatorNamespace;
 
 /**
  * blah blah blah.
