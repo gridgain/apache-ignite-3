@@ -433,7 +433,7 @@ public class SqlQueryProcessor implements QueryProcessor, SchemaUpdateListener {
 
         CompletableFuture<AsyncSqlCursor<List<Object>>> stage = start
                 .thenApply(v -> {
-                    StatementCacheKey cacheKey = new StatementCacheKey(schemaName, sql);
+                    StatementCacheKey cacheKey = new StatementCacheKey(schemaName, sql, params);
 
                     StatementCacheValue parseResultPair = parserCache.computeIfAbsent(cacheKey, key -> {
                         long cnt = parseStmtCntr.incrementAndGet();
@@ -676,10 +676,19 @@ public class SqlQueryProcessor implements QueryProcessor, SchemaUpdateListener {
     private static class StatementCacheKey {
         private final String schemaName;
         private final String sql;
+        private final List<Class<?>> paramClasses = new ArrayList<>();
 
-        private StatementCacheKey(String schemaName, String sql) {
+        private StatementCacheKey(String schemaName, String sql, Object... params) {
             this.schemaName = schemaName;
             this.sql = sql;
+
+            if (params == null) {
+                return;
+            }
+
+            for (Object param : params) {
+                paramClasses.add(param == null ? null : param.getClass());
+            }
         }
 
         @Override
@@ -687,17 +696,23 @@ public class SqlQueryProcessor implements QueryProcessor, SchemaUpdateListener {
             if (this == o) {
                 return true;
             }
+
             if (o == null || getClass() != o.getClass()) {
                 return false;
             }
+
             StatementCacheKey that = (StatementCacheKey) o;
-            return Objects.equals(schemaName, that.schemaName) && Objects.equals(sql, that.sql);
+
+            return Objects.equals(schemaName, that.schemaName)
+                    && Objects.equals(paramClasses, that.paramClasses)
+                    && Objects.equals(sql, that.sql);
         }
 
         @Override
         public int hashCode() {
-            return Objects.hash(schemaName, sql);
+            return Objects.hash(schemaName, sql, paramClasses);
         }
+
     }
 
     private static class StatementCacheValue {
