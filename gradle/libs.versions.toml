@@ -75,6 +75,8 @@ openapi = "4.8.6"
 autoService = "1.0.1"
 awaitility = "4.2.0"
 progressBar = "0.9.4"
+log4j = "2.11.0"
+ycsb = "0.17.0"
 
 #Tools
 pmdTool = "6.55.0"
@@ -239,3 +241,8 @@ auto-service-annotations = { module = "com.google.auto.service:auto-service-anno
 awaitility = { module = "org.awaitility:awaitility", version.ref = "awaitility" }
 
 progressBar = { module = "me.tongfei:progressbar", version.ref = "progressBar" }
+
+log4j-api = { module = "org.apache.logging.log4j:log4j-api", version.ref = "log4j" }
+log4j-core = { module = "org.apache.logging.log4j:log4j-core", version.ref = "log4j" }
+
+ycsb-core = { module = "site.ycsb:core", version.ref = "ycsb" }
