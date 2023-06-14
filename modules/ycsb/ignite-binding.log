@@ -1,2 +1,0 @@
-[2023-06-14 16:28:48,144][INFO ][Thread-3] Starting Ignite node defaultNode in D:\work\ignite-3\modules\ignite3-ycsb-work\1686749328121 with config D:\work\ignite-3\modules\ignite3-ycsb-work\1686749328121\ignite-config-nofsync.json
-[2023-06-14 16:29:22,052][INFO ][Thread-3] Create table request: CREATE TABLE IF NOT EXISTS usertable (yscb_key VARCHAR PRIMARY KEY, field0 VARCHAR, field1 VARCHAR, field2 VARCHAR, field3 VARCHAR, field4 VARCHAR, field5 VARCHAR, field6 VARCHAR, field7 VARCHAR, field8 VARCHAR, field9 VARCHAR);
