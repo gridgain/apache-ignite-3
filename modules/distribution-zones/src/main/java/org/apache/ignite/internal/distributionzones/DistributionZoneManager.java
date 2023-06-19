@@ -230,6 +230,8 @@ public class DistributionZoneManager implements IgniteComponent {
      * Local mapping of {@code nodeId} -> node's attributes, where {@code nodeId} is a node id, that changes between restarts.
      * This map is updated every time we receive a topology event in a {@code topologyWatchListener}.
      * TODO: https://issues.apache.org/jira/browse/IGNITE-19491 properly clean up this map
+     *
+     * @see <a href="https://github.com/apache/ignite-3/blob/main/modules/distribution-zones/tech-notes/filters.md">Filter documentation</a>
      */
     private final Map<String, Map<String, String>> nodesAttributes;
 
@@ -646,6 +648,21 @@ public class DistributionZoneManager implements IgniteComponent {
                 throw new DistributionZoneWasRemovedException(zoneId);
             }
         });
+    }
+
+    /**
+     * Asynchronously gets data nodes of the zone using causality token.
+     *
+     * <p>The returned future can be completed with {@link DistributionZoneNotFoundException} if the zone with the provided {@code zoneId}
+     * does not exist.
+     *
+     * @param causalityToken Causality token.
+     * @param zoneId Zone id.
+     * @return The future which will be completed with data nodes for the zoneId or with exception.
+     */
+    // TODO: Will be implemented in IGNITE-19506.
+    public CompletableFuture<Set<String>> dataNodes(long causalityToken, int zoneId) {
+        return null;
     }
 
     /**
