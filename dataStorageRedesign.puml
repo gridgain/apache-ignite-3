@@ -1,0 +1,339 @@
+@startuml
+'https://plantuml.com/class-diagram
+
+class DistributionZoneManager {
+  List<DistributionZone> zones
+}
+
+class DistributionZone {
+  MvZoneStorage zoneStorage
+}
+
+interface MvPartitionStorage {
+  MvPartitionStorage createMvPartition()
+  MvPartitionStorage getMvPartition(int partitionId)
+  boolean isVolatile()
+  void destroy()
+  clearPartition(int partitionId)
+}
+
+class TableManager {
+  IncrementalVersionedValue<Map<Integer, TableImpl>> tableByIdVv
+}
+
+class TableImpl {
+  InternalTable tbl
+}
+
+class InternalTableImpl {
+  MvZoneStorage zoneStorage
+  TxStateTableStorage txStateStorage
+}
+
+interface MvZoneStorage {
+  MvPartitionStorage createMvPartition()
+  MvPartitionStorage getMvPartition(int partitionId)
+  boolean isVolatile();
+  void destroy()
+  clearPartition(int partitionId)
+}
+
+class PersistentPageMemoryZoneStorage {}
+class RocksDbZoneStorage {
+  RocksDB db
+}
+class VolatilePageMemoryZoneStorage {}
+
+class RocksDB {
+
+}
+
+interface TxStateTableStorage {
+  AtomicReferenceArray<TxStateRocksDbStorage> storages
+  TxStateStorage getOrCreateTxStateStorage(int partitionId)
+  TxStateStorage getTxStateStorage(int partitionId)
+  void destroyTxStateStorage(int partitionId)
+  void destroy()
+}
+
+interface TxStateStorage {
+  TxMeta get(UUID txId)
+  void put(UUID txId, TxMeta txMeta)
+  boolean compareAndSet(UUID txId, @Nullable TxState txStateExpected, TxMeta txMeta, long commandIndex, long commandTerm)
+  void remove(UUID txId)
+  Cursor<IgniteBiTuple<UUID, TxMeta>> scan()
+  CompletableFuture<Void> flush()
+  long lastAppliedIndex()
+  long lastAppliedTerm()
+  void lastApplied(long lastAppliedIndex, long lastAppliedTerm)
+  long persistedIndex()
+  void close()
+  void _destroy()
+}
+
+class TxStateRocksDbStorage {
+}
+
+class TxMeta {
+  TxState txState
+  List<TablePartitionId> enlistedPartitions
+  HybridTimestamp commitTimestamp
+}
+
+enum TxState {
+  ABORTED
+  COMMITED
+}
+
+interface MvPartitionStorage {
+  <V> V runConsistently(WriteClosure<V> closure)
+  void flush()
+  long lastAppliedIndex()
+  long lastAppliedTerm()
+  void lastApplied(long lastAppliedIndex, long lastAppliedTerm)
+  long persistedIndex()
+  byte[] committedGroupConfiguration()
+  void committedGroupConfiguration(byte[] config)
+  ReadResult read(int tableId, RowId rowId, HybridTimestamp timestamp)
+  BinaryRow addWrite(int tableId, RowId rowId, @Nullable BinaryRow row, UUID txId, int commitTableId, int commitPartitionId)
+  BinaryRow abortWrite(int tableId, RowId rowId)
+  void commitWrite(int tableId, RowId rowId, HybridTimestamp timestamp)
+  void addWriteCommitted(int tableId, RowId rowId, @Nullable BinaryRow row, HybridTimestamp commitTimestamp)
+  Cursor<ReadResult> scanVersions(int tableId, RowId rowId)
+  PartitionTimestampCursor scan(HybridTimestamp timestamp)
+  RowId closestRowId(int tableId, RowId lowerBound)
+  GcEntry peek(HybridTimestamp lowWatermark)
+  BinaryRow vacuum(GcEntry entry)
+}
+
+class PersistentPageMemoryMvPartitionStorage {}
+class VolatilePageMemoryMvPartitionStorage {}
+class RocksDbMvPartitionStorage {
+  RocksDbZoneStorage zoneStorage
+}
+
+interface ReplicaListener {
+    CompletableFuture<?> invoke(ReplicaRequest request)
+    void onBecomePrimary(ClusterNode clusterNode)
+    void onShutdown()
+}
+
+class PartitionReplicaListener {
+  MvPartitionStorage mvDataStorage
+  Map<Integer, TxStateStorage> txStateStorages
+  MvZoneStorage zoneStorage
+}
+note right of PartitionReplicaListener::txStateStorages
+  One listener handles many tables now
+end note
+
+class ReplicaManager {
+  ConcurrentHashMap<ReplicationGroupId, CompletableFuture<Replica>> replicas
+}
+
+class Replica {
+  ReplicaListener listener
+}
+
+interface RaftGroupListener {
+    void onRead(Iterator<CommandClosure<ReadCommand>> iterator)
+    void onWrite(Iterator<CommandClosure<WriteCommand>> iterator)
+    void onConfigurationCommitted(CommittedConfiguration config)
+    void onSnapshotSave(Path path, Consumer<Throwable> doneClo)
+    boolean onSnapshotLoad(Path path)
+    void onShutdown()
+    void onBeforeApply(Command command)
+}
+
+class CmgRaftGroupListener {}
+class MetaStorageListener {}
+class PartitionListener {
+  StorageUpdateHandler storageUpdateHandle
+  Map<Integer, TxStateStorage> txStateStorages
+}
+note right of PartitionListener::txStateStorages
+  One listener handles many tables now
+end note
+
+class StorageUpdateHandler {
+  PartitionDataStorage _storage
+  IndexUpdateHandler indexUpdateHandler
+}
+
+class RaftGroupService {
+  NodeOptions nodeOptions
+}
+
+class NodeOptions {
+  StateMachine fsm
+  JraftGroupEventsListener raftGrpEvtsLsnr
+}
+
+interface RaftServer {}
+
+class JraftServerImpl {
+  ConcurrentMap<RaftNodeId, RaftGroupService> nodes
+  NodeOptions opts
+}
+
+class Loza {
+  RaftServer raftServer
+  NodeOptions opts
+}
+
+interface PartitionDataStorage {
+  <V> V runConsistently(WriteClosure<V> closure)
+  void acquirePartitionSnapshotsReadLock()
+  void releasePartitionSnapshotsReadLock()
+  CompletableFuture<Void> flush()
+  long lastAppliedIndex()
+  long lastAppliedTerm()
+  void lastApplied(long lastAppliedIndex, long lastAppliedTerm)
+  void committedGroupConfiguration(RaftGroupConfiguration config)
+  BinaryRow addWrite(int tableId, RowId rowId, @Nullable BinaryRow row, UUID txId, int commitTableId, int commitPartitionId)
+  BinaryRow abortWrite(int tableId, RowId rowId)
+  void commitWrite(int tableId, RowId rowId, HybridTimestamp timestamp)
+  Cursor<ReadResult> scanVersions(int tableId, RowId rowId)
+  void close()
+  PartitionTimestampCursor scan(HybridTimestamp timestamp)
+  GcEntry peek(HybridTimestamp lowWatermark)
+  BinaryRow vacuum(GcEntry entry)
+}
+
+class SnapshotAwarePartitionDataStorage {
+  MvPartitionStorage partitionStorage
+  PartitionsSnapshots partitionsSnapshots
+}
+note right of SnapshotAwarePartitionDataStorage
+  Со снапшотами пока вообще ничего не понятно, надо разбираться дальше
+end note
+
+
+interface PartitionsSnapshots {
+  PartitionSnapshots partitionSnapshots(PartitionKey partitionKey)
+  void removeSnapshots(PartitionKey partitionKey)
+  void finishOutgoingSnapshot(UUID snapshotId)
+}
+
+class OutgoingSnapshotsManager {
+  Map<UUID, OutgoingSnapshot> snapshots
+  Map<PartitionKey, PartitionSnapshotsImpl> snapshotsByPartition
+}
+
+class OutgoingSnapshot {
+  PartitionAccess _partition
+  UUID id() {
+  PartitionKey partitionKey() {
+  void freezeScopeUnderMvLock() {
+  SnapshotMeta meta() {
+  SnapshotMetaResponse handleSnapshotMetaRequest(SnapshotMetaRequest request) {
+  SnapshotMvDataResponse handleSnapshotMvDataRequest(SnapshotMvDataRequest request) {
+  SnapshotTxDataResponse handleSnapshotTxDataRequest(SnapshotTxDataRequest request) {
+  void acquireMvLock() {
+  void releaseMvLock() {
+  boolean addRowIdToSkip(RowId rowId) {
+  boolean alreadyPassed(RowId rowId) {
+  void enqueueForSending(RowId rowId) {
+  void close() {
+}
+
+interface PartitionAccess {
+  PartitionKey partitionKey()
+  Cursor<IgniteBiTuple<UUID, TxMeta>> getAllTxMeta()
+  void addTxMeta(UUID txId, TxMeta txMeta)
+  RowId closestRowId(RowId lowerBound)
+  List<ReadResult> getAllRowVersions(RowId rowId) throws StorageException
+  RaftGroupConfiguration committedGroupConfiguration()
+  void addWrite(RowId rowId, @Nullable BinaryRow row, UUID txId, int commitTableId, int commitPartitionId)
+  void addWriteCommitted(RowId rowId, @Nullable BinaryRow row, HybridTimestamp commitTimestamp)
+  long minLastAppliedIndex()
+  long minLastAppliedTerm()
+  long maxLastAppliedIndex()
+  long maxLastAppliedTerm()
+}
+
+class PartitionAccessImpl {
+  PartitionKey partitionKey
+  MvTableStorage mvTableStorage
+  TxStateTableStorage txStateTableStorage
+}
+
+class PartitionKey {
+  int tableId
+  int partitionId
+}
+
+
+DistributionZoneManager *-- DistributionZone
+DistributionZone *-- MvZoneStorage
+MvZoneStorage *-- MvPartitionStorage
+
+TableManager *-- TableImpl : tableByIdVv
+TableImpl *-- InternalTableImpl : tbl
+
+InternalTableImpl ..> MvZoneStorage : tableStorage
+InternalTableImpl *-- TxStateTableStorage : txStateStorage
+
+MvZoneStorage *-- MvPartitionStorage
+
+VolatilePageMemoryZoneStorage ..|> MvZoneStorage
+RocksDbZoneStorage ..|> MvZoneStorage
+PersistentPageMemoryZoneStorage ..|> MvZoneStorage
+
+PartitionReplicaListener ..> MvPartitionStorage
+PartitionReplicaListener ..> TxStateStorage
+PartitionReplicaListener ..> MvZoneStorage
+
+TxStateTableStorage *-- TxStateStorage : connected implementations actually
+TxStateRocksDbStorage ..|> TxStateStorage
+
+ReplicaManager *-- Replica
+
+Replica *-- ReplicaListener
+PartitionReplicaListener ..|> ReplicaListener
+
+CmgRaftGroupListener ..|> RaftGroupListener
+MetaStorageListener ..|> RaftGroupListener
+PartitionListener ..|> RaftGroupListener
+
+RaftGroupService  *-- NodeOptions
+NodeOptions  *-- RaftGroupListener : through delegate fsm
+
+JraftServerImpl ..|> RaftServer
+JraftServerImpl *-- RaftGroupService : nodes
+
+Loza *-- RaftServer
+
+SnapshotAwarePartitionDataStorage ..|> PartitionDataStorage
+
+PartitionListener *-- PartitionDataStorage
+
+' need to understand the real lifecycle of StorageUpdateHandler
+PartitionListener ..> StorageUpdateHandler
+PartitionListener ..> TxStateStorage
+
+StorageUpdateHandler ..> PartitionDataStorage
+
+RocksDbMvPartitionStorage ..|> MvPartitionStorage
+PersistentPageMemoryMvPartitionStorage ..|> MvPartitionStorage
+VolatilePageMemoryMvPartitionStorage ..|> MvPartitionStorage
+
+SnapshotAwarePartitionDataStorage ..> MvPartitionStorage
+SnapshotAwarePartitionDataStorage ..> PartitionsSnapshots
+
+OutgoingSnapshotsManager ..|> PartitionsSnapshots
+OutgoingSnapshotsManager *-- OutgoingSnapshot
+OutgoingSnapshot ..> PartitionAccess
+
+PartitionAccessImpl ..|> PartitionAccess
+
+PartitionAccessImpl *-- PartitionKey
+PartitionAccessImpl ..> MvTableStorage
+PartitionAccessImpl ..> TxStateTableStorage
+
+TxStateStorage ..> TxMeta
+TxMeta *-- TxState
+
+RocksDbZoneStorage *-- RocksDB
+
+@enduml
