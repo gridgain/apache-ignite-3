@@ -199,13 +199,20 @@ public abstract class IgniteAbstractClient extends DB {
       for (int i = 0; i < fieldCount; i++) {
         fieldnames.add(fieldPrefix + i + " VARCHAR");       //VARBINARY(6)
       }
-      String request = "CREATE TABLE IF NOT EXISTS " + cacheName + " ("
-          + PRIMARY_COLUMN_NAME + " VARCHAR PRIMARY KEY, "
-          + String.join(", ", fieldnames)
-          + ");";
-      LOG.info("Create table request: {}", request);
 
       try (Session ses = node0.sql().createSession()) {
+        ses.execute(null, "CREATE ZONE \"TEST_ZONE\" WITH "
+                + "\"REPLICAS\" = 1, "
+                + "\"PARTITIONS\" = 1, "
+                + "\"DATA_NODES_AUTO_ADJUST_SCALE_UP\" = 0, "
+                + "\"DATA_NODES_AUTO_ADJUST_SCALE_DOWN\" = 0");
+
+        String request = "CREATE TABLE IF NOT EXISTS " + cacheName + " ("
+                + PRIMARY_COLUMN_NAME + " VARCHAR PRIMARY KEY, "
+                + String.join(", ", fieldnames)
+                + ") WITH PRIMARY_ZONE='TEST_ZONE';";
+        LOG.info("Create table request: {}", request);
+
         ses.execute(null, request);
       }
     } catch (Exception e) {

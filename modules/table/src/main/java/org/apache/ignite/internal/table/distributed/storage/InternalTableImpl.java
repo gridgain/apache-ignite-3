@@ -503,11 +503,12 @@ public class InternalTableImpl implements InternalTable {
                 tx0.enlistResultFuture(fut);
 
                 if (implicit) {
-                    return tx0.commitAsync()
-                            .exceptionally(ex -> {
-                                throw wrapReplicationException(ex);
-                            })
-                            .thenApply(ignored -> r);
+                    return completedFuture(r); // ASCH
+//                    return tx0.commitAsync()
+//                            .exceptionally(ex -> {
+//                                throw wrapReplicationException(ex);
+//                            })
+//                            .thenApply(ignored -> r);
                 } else {
                     return completedFuture(r);
                 }

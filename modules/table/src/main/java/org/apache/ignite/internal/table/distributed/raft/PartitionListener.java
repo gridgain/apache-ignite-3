@@ -152,69 +152,71 @@ public class PartitionListener implements RaftGroupListener {
             long commandIndex = clo.index();
             long commandTerm = clo.term();
 
-            // We choose the minimum applied index, since we choose it (the minimum one) on local recovery so as not to lose the data for
-            // one of the storages.
-            long storagesAppliedIndex = Math.min(storage.lastAppliedIndex(), txStateStorage.lastAppliedIndex());
+            clo.result(null);
 
-            assert commandIndex > storagesAppliedIndex :
-                    "Write command must have an index greater than that of storages [commandIndex=" + commandIndex
-                            + ", mvAppliedIndex=" + storage.lastAppliedIndex()
-                            + ", txStateAppliedIndex=" + txStateStorage.lastAppliedIndex() + "]";
-
-            // NB: Make sure that ANY command we accept here updates lastAppliedIndex+term info in one of the underlying
-            // storages!
-            // Otherwise, a gap between lastAppliedIndex from the point of view of JRaft and our storage might appear.
-            // If a leader has such a gap, and does doSnapshot(), it will subsequently truncate its log too aggressively
-            // in comparison with 'snapshot' state stored in our storages; and if we install a snapshot from our storages
-            // to a follower at this point, for a subsequent AppendEntries the leader will not be able to get prevLogTerm
-            // (because it's already truncated in the leader's log), so it will have to install a snapshot again, and then
-            // repeat same thing over and over again.
-
-            storage.acquirePartitionSnapshotsReadLock();
-
-            try {
-                if (command instanceof UpdateCommand) {
-                    handleUpdateCommand((UpdateCommand) command, commandIndex, commandTerm);
-                } else if (command instanceof UpdateAllCommand) {
-                    handleUpdateAllCommand((UpdateAllCommand) command, commandIndex, commandTerm);
-                } else if (command instanceof FinishTxCommand) {
-                    handleFinishTxCommand((FinishTxCommand) command, commandIndex, commandTerm);
-                } else if (command instanceof TxCleanupCommand) {
-                    handleTxCleanupCommand((TxCleanupCommand) command, commandIndex, commandTerm);
-                } else if (command instanceof SafeTimeSyncCommand) {
-                    handleSafeTimeSyncCommand((SafeTimeSyncCommand) command, commandIndex, commandTerm);
-                } else if (command instanceof BuildIndexCommand) {
-                    handleBuildIndexCommand((BuildIndexCommand) command, commandIndex, commandTerm);
-                } else {
-                    assert false : "Command was not found [cmd=" + command + ']';
-                }
-
-                clo.result(null);
-            } catch (IgniteInternalException e) {
-                clo.result(e);
-            } catch (CompletionException e) {
-                clo.result(e.getCause());
-            } catch (Throwable t) {
-                LOG.error(
-                        "Unknown error while processing command [commandIndex={}, commandTerm={}, command={}]",
-                        t,
-                        clo.index(), clo.index(), command
-                );
-
-                throw t;
-            } finally {
-                storage.releasePartitionSnapshotsReadLock();
-            }
-
-            if (command instanceof SafeTimePropagatingCommand) {
-                SafeTimePropagatingCommand safeTimePropagatingCommand = (SafeTimePropagatingCommand) command;
-
-                assert safeTimePropagatingCommand.safeTime() != null;
-
-                updateTrackerIgnoringTrackerClosedException(safeTime, safeTimePropagatingCommand.safeTime());
-            }
-
-            updateTrackerIgnoringTrackerClosedException(storageIndexTracker, commandIndex);
+//            // We choose the minimum applied index, since we choose it (the minimum one) on local recovery so as not to lose the data for
+//            // one of the storages.
+//            long storagesAppliedIndex = Math.min(storage.lastAppliedIndex(), txStateStorage.lastAppliedIndex());
+//
+//            assert commandIndex > storagesAppliedIndex :
+//                    "Write command must have an index greater than that of storages [commandIndex=" + commandIndex
+//                            + ", mvAppliedIndex=" + storage.lastAppliedIndex()
+//                            + ", txStateAppliedIndex=" + txStateStorage.lastAppliedIndex() + "]";
+//
+//            // NB: Make sure that ANY command we accept here updates lastAppliedIndex+term info in one of the underlying
+//            // storages!
+//            // Otherwise, a gap between lastAppliedIndex from the point of view of JRaft and our storage might appear.
+//            // If a leader has such a gap, and does doSnapshot(), it will subsequently truncate its log too aggressively
+//            // in comparison with 'snapshot' state stored in our storages; and if we install a snapshot from our storages
+//            // to a follower at this point, for a subsequent AppendEntries the leader will not be able to get prevLogTerm
+//            // (because it's already truncated in the leader's log), so it will have to install a snapshot again, and then
+//            // repeat same thing over and over again.
+//
+//            storage.acquirePartitionSnapshotsReadLock();
+//
+//            try {
+//                if (command instanceof UpdateCommand) {
+//                    handleUpdateCommand((UpdateCommand) command, commandIndex, commandTerm);
+//                } else if (command instanceof UpdateAllCommand) {
+//                    handleUpdateAllCommand((UpdateAllCommand) command, commandIndex, commandTerm);
+//                } else if (command instanceof FinishTxCommand) {
+//                    handleFinishTxCommand((FinishTxCommand) command, commandIndex, commandTerm);
+//                } else if (command instanceof TxCleanupCommand) {
+//                    handleTxCleanupCommand((TxCleanupCommand) command, commandIndex, commandTerm);
+//                } else if (command instanceof SafeTimeSyncCommand) {
+//                    handleSafeTimeSyncCommand((SafeTimeSyncCommand) command, commandIndex, commandTerm);
+//                } else if (command instanceof BuildIndexCommand) {
+//                    handleBuildIndexCommand((BuildIndexCommand) command, commandIndex, commandTerm);
+//                } else {
+//                    assert false : "Command was not found [cmd=" + command + ']';
+//                }
+//
+//                clo.result(null);
+//            } catch (IgniteInternalException e) {
+//                clo.result(e);
+//            } catch (CompletionException e) {
+//                clo.result(e.getCause());
+//            } catch (Throwable t) {
+//                LOG.error(
+//                        "Unknown error while processing command [commandIndex={}, commandTerm={}, command={}]",
+//                        t,
+//                        clo.index(), clo.index(), command
+//                );
+//
+//                throw t;
+//            } finally {
+//                storage.releasePartitionSnapshotsReadLock();
+//            }
+//
+//            if (command instanceof SafeTimePropagatingCommand) {
+//                SafeTimePropagatingCommand safeTimePropagatingCommand = (SafeTimePropagatingCommand) command;
+//
+//                assert safeTimePropagatingCommand.safeTime() != null;
+//
+//                updateTrackerIgnoringTrackerClosedException(safeTime, safeTimePropagatingCommand.safeTime());
+//            }
+//
+//            updateTrackerIgnoringTrackerClosedException(storageIndexTracker, commandIndex);
         });
     }
 

@@ -1737,13 +1737,13 @@ public class PartitionReplicaListener implements ReplicaListener {
      * @return Raft future, see {@link #applyCmdWithExceptionHandling(Command)}.
      */
     private CompletableFuture<Object> applyUpdateCommand(UpdateCommand cmd) {
-        storageUpdateHandler.handleUpdate(
-                cmd.txId(),
-                cmd.rowUuid(),
-                cmd.tablePartitionId().asTablePartitionId(),
-                cmd.rowBuffer(),
-                null
-        );
+//        storageUpdateHandler.handleUpdate( // asch
+//                cmd.txId(),
+//                cmd.rowUuid(),
+//                cmd.tablePartitionId().asTablePartitionId(),
+//                cmd.rowBuffer(),
+//                null
+//        );
 
         return applyCmdWithExceptionHandling(cmd);
     }
@@ -1828,7 +1828,7 @@ public class PartitionReplicaListener implements ReplicaListener {
                 });
             }
             case RW_INSERT: {
-                return resolveRowByPk(searchRow, txId, (rowId, row) -> {
+                return resolveRowByPk(searchRow, txId, (rowId, row) -> { // TODO asch incorrect
                     if (rowId != null) {
                         return completedFuture(false);
                     }
@@ -1955,8 +1955,11 @@ public class PartitionReplicaListener implements ReplicaListener {
      * @return Future completes with tuple {@link RowId} and collection of {@link Lock}.
      */
     private CompletableFuture<IgniteBiTuple<RowId, Collection<Lock>>> takeLocksForInsert(BinaryRow binaryRow, RowId rowId, UUID txId) {
-        return lockManager.acquire(txId, new LockKey(tableId()), LockMode.IX) // IX lock on table
-                .thenCompose(ignored -> takePutLockOnIndexes(binaryRow, rowId, txId))
+//        return lockManager.acquire(txId, new LockKey(tableId()), LockMode.IX) // IX lock on table ASCH
+//                .thenCompose(ignored -> takePutLockOnIndexes(binaryRow, rowId, txId))
+//                .thenApply(shortTermLocks -> new IgniteBiTuple<>(rowId, shortTermLocks));
+
+        return takePutLockOnIndexes(binaryRow, rowId, txId)
                 .thenApply(shortTermLocks -> new IgniteBiTuple<>(rowId, shortTermLocks));
     }
 

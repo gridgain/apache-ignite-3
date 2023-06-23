@@ -61,7 +61,7 @@ import org.jetbrains.annotations.Nullable;
  * the queue).
  */
 public class HeapLockManager implements LockManager {
-    private ConcurrentHashMap<LockKey, LockState> locks = new ConcurrentHashMap<>();
+    private ConcurrentHashMap<LockKey, LockState> locks = new ConcurrentHashMap<>(100_000);
 
     private final DeadlockPreventionPolicy deadlockPreventionPolicy;
 
@@ -89,19 +89,20 @@ public class HeapLockManager implements LockManager {
 
     @Override
     public CompletableFuture<Lock> acquire(UUID txId, LockKey lockKey, LockMode lockMode) {
-        while (true) {
-            LockState state = lockState(lockKey);
-
-            IgniteBiTuple<CompletableFuture<Void>, LockMode> futureTuple = state.tryAcquire(txId, lockMode);
-
-            if (futureTuple.get1() == null) {
-                continue; // Obsolete state.
-            }
-
-            LockMode newLockMode = futureTuple.get2();
-
-            return futureTuple.get1().thenApply(res -> new Lock(lockKey, newLockMode, txId));
-        }
+        return CompletableFuture.completedFuture(new Lock(lockKey, lockMode, txId)); // ASCH
+//        while (true) {
+//            LockState state = lockState(lockKey);
+//
+//            IgniteBiTuple<CompletableFuture<Void>, LockMode> futureTuple = state.tryAcquire(txId, lockMode);
+//
+//            if (futureTuple.get1() == null) {
+//                continue; // Obsolete state.
+//            }
+//
+//            LockMode newLockMode = futureTuple.get2();
+//
+//            return futureTuple.get1().thenApply(res -> new Lock(lockKey, newLockMode, txId));
+//        }
     }
 
     @Override

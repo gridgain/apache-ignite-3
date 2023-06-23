@@ -93,26 +93,26 @@ public class IndexBuilder implements ManuallyCloseable {
             MvPartitionStorage partitionStorage,
             RaftGroupService raftClient
     ) {
-        inBusyLock(() -> {
-            if (indexStorage.getNextRowIdToBuild() == null) {
-                return;
-            }
-
-            IndexBuildTaskId taskId = new IndexBuildTaskId(tableId, partitionId, indexId);
-
-            IndexBuildTask newTask = new IndexBuildTask(taskId, indexStorage, partitionStorage, raftClient, executor, busyLock, BATCH_SIZE);
-
-            IndexBuildTask previousTask = indexBuildTaskById.putIfAbsent(taskId, newTask);
-
-            if (previousTask != null) {
-                // Index building is already in progress.
-                return;
-            }
-
-            newTask.start();
-
-            newTask.getTaskFuture().whenComplete((unused, throwable) -> indexBuildTaskById.remove(taskId));
-        });
+//        inBusyLock(() -> {
+//            if (indexStorage.getNextRowIdToBuild() == null) {
+//                return;
+//            }
+//
+//            IndexBuildTaskId taskId = new IndexBuildTaskId(tableId, partitionId, indexId);
+//
+//            IndexBuildTask newTask = new IndexBuildTask(taskId, indexStorage, partitionStorage, raftClient, executor, busyLock, BATCH_SIZE);
+//
+//            IndexBuildTask previousTask = indexBuildTaskById.putIfAbsent(taskId, newTask);
+//
+//            if (previousTask != null) {
+//                // Index building is already in progress.
+//                return;
+//            }
+//
+//            newTask.start();
+//
+//            newTask.getTaskFuture().whenComplete((unused, throwable) -> indexBuildTaskById.remove(taskId));
+//        });
     }
 
     /**

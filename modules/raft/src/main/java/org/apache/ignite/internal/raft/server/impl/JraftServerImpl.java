@@ -50,6 +50,8 @@ import org.apache.ignite.internal.raft.service.RaftGroupListener;
 import org.apache.ignite.internal.raft.storage.LogStorageFactory;
 import org.apache.ignite.internal.raft.storage.impl.DefaultLogStorageFactory;
 import org.apache.ignite.internal.raft.storage.impl.IgniteJraftServiceFactory;
+import org.apache.ignite.internal.raft.storage.impl.LocalLogStorageFactory;
+import org.apache.ignite.internal.raft.storage.impl.VolatileLogStorageFactory;
 import org.apache.ignite.internal.raft.util.ThreadLocalOptimizedMarshaller;
 import org.apache.ignite.internal.replicator.ReplicationGroupId;
 import org.apache.ignite.internal.thread.NamedThreadFactory;
@@ -417,8 +419,10 @@ public class JraftServerImpl implements RaftServer {
 
             nodeOptions.setRaftGrpEvtsLsnr(new RaftGroupEventsListenerAdapter(nodeId.groupId(), serviceEventInterceptor, evLsnr));
 
-            LogStorageFactory logStorageFactory = groupOptions.getLogStorageFactory() == null
-                    ? this.logStorageFactory : groupOptions.getLogStorageFactory();
+//            LogStorageFactory logStorageFactory = groupOptions.getLogStorageFactory() == null
+//                    ? this.logStorageFactory : groupOptions.getLogStorageFactory();
+
+            LogStorageFactory logStorageFactory = new LocalLogStorageFactory();
 
             IgniteJraftServiceFactory serviceFactory = new IgniteJraftServiceFactory(logStorageFactory);
 

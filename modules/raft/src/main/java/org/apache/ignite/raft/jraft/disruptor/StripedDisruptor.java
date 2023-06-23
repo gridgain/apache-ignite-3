@@ -136,12 +136,17 @@ public class StripedDisruptor<T extends NodeIdAware> {
      * @return Disruptor queue appropriate to the group.
      */
     public RingBuffer<T> subscribe(NodeId nodeId, EventHandler<T> handler, BiConsumer<T, Throwable> exceptionHandler) {
-        eventHandlers.get(getStripe(nodeId)).subscribe(nodeId, handler);
+        int stripe = getStripe(nodeId);
+
+        LOG.info("Mapped handler to stripe {} -> {}",  nodeId, format("{}_stripe_{}-", name, stripe));
+
+        // TODO ensure even distribution ASCH
+        eventHandlers.get(stripe).subscribe(nodeId, handler);
 
         if (exceptionHandler != null)
-            exceptionHandlers.get(getStripe(nodeId)).subscribe(nodeId, exceptionHandler);
+            exceptionHandlers.get(stripe).subscribe(nodeId, exceptionHandler);
 
-        return queues[getStripe(nodeId)];
+        return queues[stripe];
     }
 
     /**
@@ -211,10 +216,13 @@ public class StripedDisruptor<T extends NodeIdAware> {
         @Override public void onEvent(T event, long sequence, boolean endOfBatch) throws Exception {
             EventHandler<T> handler = subscribers.get(event.nodeId());
 
+            assert subscribers.size() == 1;
+
             assert handler != null : format("Group of the event is unsupported [nodeId={}, event={}]", event.nodeId(), event);
 
             //TODO: IGNITE-15568 endOfBatch should be set to true to prevent caching tasks until IGNITE-15568 has fixed.
-            handler.onEvent(event, sequence, subscribers.size() > 1 ? true : endOfBatch);
+            //handler.onEvent(event, sequence, subscribers.size() > 1 || endOfBatch);
+            handler.onEvent(event, sequence, endOfBatch);
         }
     }
 

@@ -35,7 +35,7 @@ public abstract class StateMachineAdapter implements StateMachine {
     protected volatile long leaderTerm = -1;
 
     /** The logger */
-    private static final IgniteLogger LOG = Loggers.forClass(StateMachineAdapter.class);
+    protected static final IgniteLogger LOG = Loggers.forClass(StateMachineAdapter.class);
 
     @Override
     public void onShutdown() {

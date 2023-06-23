@@ -218,6 +218,7 @@ public class TxManagerImpl implements TxManager {
         }
 
         return allOf(cleanupFutures);
+        // return CompletableFuture.completedFuture(null); // ASCH
     }
 
     @Override
