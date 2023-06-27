@@ -48,7 +48,7 @@ public final class MarshallerUtil {
                 // Return zero for pojo as they are not serialized yet.
                 return (val instanceof byte[]) ? ((byte[]) val).length : 0;
             case STRING:
-                return utf8EncodedLength((CharSequence) val);
+                return utf8EncodedLength((CharSequence) val); // TODO ASCH can be optimized ?
 
             case NUMBER:
                 return sizeInBytes((BigInteger) val);
