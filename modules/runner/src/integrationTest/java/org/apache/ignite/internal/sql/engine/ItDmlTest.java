@@ -441,8 +441,8 @@ public class ItDmlTest extends ClusterPerClassIntegrationTest {
     public void testInsertDefaultValue() {
         var args = List.of(
                 // TODO: IGNITE-17298
-                // new DefaultValueArg("BOOLEAN", "TRUE", Boolean.TRUE),
-                // new DefaultValueArg("BOOLEAN NOT NULL", "TRUE", Boolean.TRUE),
+                 new DefaultValueArg("BOOLEAN", "TRUE", Boolean.TRUE),
+                 new DefaultValueArg("BOOLEAN NOT NULL", "TRUE", Boolean.TRUE),
 
                 new DefaultValueArg("BIGINT", "10", 10L),
                 new DefaultValueArg("INTEGER", "10", 10),
@@ -485,7 +485,7 @@ public class ItDmlTest extends ClusterPerClassIntegrationTest {
         checkWrongDefault("TIME", "TIMESTAMP '2021-01-01 01:01:01'");
 
         // TODO: IGNITE-17298
-        // checkWrongDefault("BOOLEAN", "1");
+         checkWrongDefault("BOOLEAN", "1");
 
         // TODO: IGNITE-17373
         // checkWrongDefault("INTERVAL DAYS", "INTERVAL '10' MONTHS");

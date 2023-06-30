@@ -117,7 +117,9 @@ public enum NativeTypeSpec {
     /**
      * Point on the time-line. Number of ticks since {@code 1970-01-01T00:00:00Z}. Tick unit depends on precision.
      */
-    TIMESTAMP("timestamp", true);
+    TIMESTAMP("timestamp", true),
+
+    BOOLEAN("boolean", true);
 
     /** Cached array with all enum values. */
     private static final NativeTypeSpec[] VALUES = values();
@@ -207,6 +209,8 @@ public enum NativeTypeSpec {
             return NUMBER;
         } else if (cls == BigDecimal.class) {
             return DECIMAL;
+        } else if (cls == Boolean.class || cls == boolean.class) {
+            return BOOLEAN;
         }
 
         return null;
@@ -255,6 +259,8 @@ public enum NativeTypeSpec {
                 return BigInteger.class;
             case DECIMAL:
                 return BigDecimal.class;
+            case BOOLEAN:
+                return nullable ? Boolean.class : boolean.class;
             default:
                 throw new IllegalStateException("Unknown typeSpec " + spec);
         }
@@ -330,6 +336,9 @@ public enum NativeTypeSpec {
 
             case TIMESTAMP:
                 return ColumnType.TIMESTAMP;
+
+            case BOOLEAN:
+                return ColumnType.BOOLEAN;
 
             default:
                 return null;

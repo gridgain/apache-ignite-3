@@ -283,9 +283,9 @@ public class TypeUtils {
         } else {
             // TODO: https://issues.apache.org/jira/browse/IGNITE-17298 SQL: Support BOOLEAN datatype.
             //   Fix this after BOOLEAN type supported is implemented.
-            if (storageType == Boolean.class || storageType == boolean.class) {
-                return val;
-            }
+//            if (storageType == Boolean.class || storageType == boolean.class) {
+//                return val;
+//            }
             var nativeTypeSpec = NativeTypeSpec.fromClass((Class<?>) storageType);
             assert nativeTypeSpec != null : "No native type spec for type: " + storageType;
 
@@ -319,9 +319,9 @@ public class TypeUtils {
         } else {
             // TODO: https://issues.apache.org/jira/browse/IGNITE-17298 SQL: Support BOOLEAN datatype.
             //   Fix this after BOOLEAN type supported is implemented.
-            if (storageType == Boolean.class) {
-                return val;
-            }
+//            if (storageType == Boolean.class) {
+//                return val;
+//            }
             var nativeTypeSpec = NativeTypeSpec.fromClass((Class<?>) storageType);
             assert nativeTypeSpec != null : "No native type spec for type: " + storageType;
 
@@ -418,6 +418,8 @@ public class TypeUtils {
      */
     public static RelDataType native2relationalType(RelDataTypeFactory factory, NativeType nativeType) {
         switch (nativeType.spec()) {
+            case BOOLEAN:
+                return factory.createSqlType(SqlTypeName.BOOLEAN);
             case INT8:
                 return factory.createSqlType(SqlTypeName.TINYINT);
             case INT16:

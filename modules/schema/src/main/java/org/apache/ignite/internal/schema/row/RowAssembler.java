@@ -195,6 +195,11 @@ public class RowAssembler {
 
                 break;
             }
+            case BOOLEAN: {
+                rowAsm.appendBoolean((boolean) val);
+
+                break;
+            }
             default:
                 throw new InvalidTypeException("Unexpected value: " + type);
         }
@@ -292,6 +297,16 @@ public class RowAssembler {
         checkType(NativeTypes.INT8);
 
         builder.appendByte(val);
+
+        shiftColumn();
+
+        return this;
+    }
+
+    public RowAssembler appendBoolean(boolean val) throws SchemaMismatchException {
+        checkType(NativeTypes.BOOLEAN);
+
+        builder.appendByte((byte) (val ? 1 : 0));
 
         shiftColumn();
 

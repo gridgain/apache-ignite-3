@@ -100,6 +100,16 @@ public class BinaryTupleReader extends BinaryTupleParser implements BinaryTupleP
         return begin == 0 ? null : byteValue(begin, end);
     }
 
+    public Boolean booleanValueBoxed(int index) {
+        seek(index);
+
+        if (begin == 0) {
+            return null;
+        }
+
+        return byteValue(begin, end) == 1 ? Boolean.TRUE : Boolean.FALSE;
+    }
+
     /**
      * Reads value of specified element.
      *

@@ -211,7 +211,8 @@ public class IgniteTypeFactory extends JavaTypeFactoryImpl {
         switch (relType.getSqlTypeName()) {
             case BOOLEAN:
                 //TODO: https://issues.apache.org/jira/browse/IGNITE-17298
-                throw new IllegalArgumentException("Type is not supported yet: " + relType);
+//                throw new IllegalArgumentException("Type is not supported yet: " + relType);
+                return NativeTypes.BOOLEAN;
             case TINYINT:
                 return NativeTypes.INT8;
             case SMALLINT:

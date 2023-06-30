@@ -38,6 +38,7 @@ import org.apache.ignite.internal.sql.util.SqlTestUtils;
 import org.apache.ignite.internal.testframework.IgniteTestUtils;
 import org.apache.ignite.sql.ColumnType;
 import org.apache.ignite.sql.SqlException;
+import org.apache.ignite.table.KeyValueView;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -152,6 +153,26 @@ public class ItDynamicParameterTest extends ClusterPerClassIntegrationTest {
         assertQuery("SELECT UPPER(TYPEOF(?))").withParams(1d).returns("DOUBLE").check();
 
         assertQuery("SELECT ?::INTEGER = '8'").withParams(8).returns(true).check();
+    }
+
+//    static class
+
+    @Test
+    public void testX() {
+//        sql("CREATE TABLE TEST(ID INT PRIMARY KEY, VAL BOOLEAN, VAL2 TINYINT)");
+//        sql("INSERT INTO TEST VALUES(1, true, 0)");
+        sql("CREATE TABLE TEST(ID INT PRIMARY KEY, VAL BOOLEAN)");
+        sql("INSERT INTO TEST VALUES(1, true)");
+        assertQuery("SELECT VAL FROM TEST WHERE ID=1").returns(true).check();
+//        assertQuery("SELECT VAL2 FROM TEST WHERE ID=1").returns((byte) 0).check();
+
+        KeyValueView<Integer, Boolean> kvView = CLUSTER_NODES.get(0).tables().table("TEST")
+                .keyValueView(Integer.class, Boolean.class);
+
+        boolean val = kvView.get(null, 1);
+
+        assertTrue(val);
+//        assertQuery("SELECT true::BOOLEAN").returns(true).check();
     }
 
     /**

@@ -239,6 +239,24 @@ abstract class ColumnBinding {
         return create(col, type, identityHandle, identityHandle, converter);
     }
 
+    private static final TypeConverter boolConv = new TypeConverter() {
+        @Override
+        public Object toColumnType(Object obj) throws Exception {
+            if (obj == null)
+                return null;
+
+            return (byte) (((boolean) obj) ? 1 : 0);
+        }
+
+        @Override
+        public Object toObjectType(Object data) throws Exception {
+            if (data == null)
+                return null;
+
+            return ((byte) data) == 1;
+        }
+    };
+
     /**
      * Binds a column with an object`s field of given type.
      *
@@ -259,6 +277,8 @@ abstract class ColumnBinding {
         final int colIdx = col.schemaIndex();
 
         switch (MarshallerUtil.mode(type)) {
+            case P_BOOLEAN:
+                return create(colIdx, getterHandle, setterHandle, P_BYTE_READER, BYTE_WRITER, boolConv);
             case P_BYTE:
                 return create(colIdx, getterHandle, setterHandle, P_BYTE_READER, BYTE_WRITER, converter);
             case P_SHORT:
@@ -271,6 +291,8 @@ abstract class ColumnBinding {
                 return create(colIdx, getterHandle, setterHandle, P_FLOAT_READER, FLOAT_WRITER, converter);
             case P_DOUBLE:
                 return create(colIdx, getterHandle, setterHandle, P_DOUBLE_READER, DOUBLE_WRITER, converter);
+            case BOOLEAN:
+                return create(colIdx, getterHandle, setterHandle, BYTE_READER, BYTE_WRITER, boolConv);
             case BYTE:
                 return create(colIdx, getterHandle, setterHandle, BYTE_READER, BYTE_WRITER, converter);
             case SHORT:
