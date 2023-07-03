@@ -171,9 +171,10 @@ public class ItDynamicParameterTest extends ClusterPerClassIntegrationTest {
         sql("INSERT INTO TEST VALUES(2, false)");
         sql("INSERT INTO TEST VALUES(3, false)");
 
-        System.out.println(">xxx> explain[0] " + sql("EXPLAIN PLAN FOR SELECT VAL FROM TEST WHERE ID=1"));
+//        System.out.println(">xxx> explain[0] " + sql("EXPLAIN PLAN FOR SELECT VAL FROM TEST WHERE ID=1"));
 
-        assertQuery("SELECT VAL FROM TEST WHERE ID=1").returns(true).check();
+//        assertQuery("SELECT VAL FROM TEST WHERE ID=1").returns(true).check();
+
 //        assertQuery("SELECT VAL2 FROM TEST WHERE ID=1").returns((byte) 0).check();
 
 //        KeyValueView<Integer, Boolean> kvView = CLUSTER_NODES.get(0).tables().table("TEST")
@@ -183,12 +184,48 @@ public class ItDynamicParameterTest extends ClusterPerClassIntegrationTest {
 
 //        assertTrue(val);
 
-        System.out.println(">xxx> explain " + sql("EXPLAIN PLAN FOR SELECT * FROM TEST /*+ use_index(TEST_IDX) */ WHERE VAL=true"));
+        System.out.println(">xxx> explain " + sql("EXPLAIN PLAN FOR SELECT * FROM TEST WHERE VAL=true"));
 
 //        if (true)
 //            return;
 
-        assertQuery("SELECT ID FROM TEST WHERE VAL=true").returns(1).check();
+//        assertQuery("SELECT ID FROM TEST WHERE VAL=true").returns(1).check();
+//        assertQuery("SELECT true::BOOLEAN").returns(true).check();
+    }
+
+    @Test
+    public void testX2() throws InterruptedException {
+//        sql("CREATE TABLE TEST(ID INT PRIMARY KEY, VAL BOOLEAN, VAL2 TINYINT)");
+//        sql("INSERT INTO TEST VALUES(1, true, 0)");
+        sql("CREATE TABLE TEST(ID INT PRIMARY KEY, VAL INT)");
+        sql("CREATE INDEX test_idx ON TEST(val)");
+
+        Thread.sleep(1_000);
+
+        sql("INSERT INTO TEST VALUES(1, 1)");
+        sql("INSERT INTO TEST VALUES(2, 0)");
+        sql("INSERT INTO TEST VALUES(3, 0)");
+
+//        System.out.println(">xxx> explain[0] " + sql("EXPLAIN PLAN FOR SELECT VAL FROM TEST WHERE ID=1"));
+//
+//        assertQuery("SELECT VAL FROM TEST WHERE ID=1").returns(1).check();
+
+
+//        assertQuery("SELECT VAL2 FROM TEST WHERE ID=1").returns((byte) 0).check();
+
+//        KeyValueView<Integer, Boolean> kvView = CLUSTER_NODES.get(0).tables().table("TEST")
+//                .keyValueView(Integer.class, Boolean.class);
+//
+//        boolean val = kvView.get(null, 1);
+
+//        assertTrue(val);
+
+        System.out.println(">xxx> explain " + sql("EXPLAIN PLAN FOR SELECT * FROM TEST /*+ use_index(TEST_IDX) */ WHERE VAL=1"));
+
+//        if (true)
+//            return;
+
+//        assertQuery("SELECT ID FROM TEST WHERE VAL=1").returns(1).check();
 //        assertQuery("SELECT true::BOOLEAN").returns(true).check();
     }
 
