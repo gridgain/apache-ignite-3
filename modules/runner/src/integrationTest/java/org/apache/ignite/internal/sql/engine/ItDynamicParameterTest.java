@@ -24,6 +24,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.params.provider.Arguments.arguments;
 
+import java.math.BigDecimal;
 import java.sql.Date;
 import java.time.LocalDate;
 import java.util.List;
@@ -158,21 +159,63 @@ public class ItDynamicParameterTest extends ClusterPerClassIntegrationTest {
 //    static class
 
     @Test
-    public void testX() {
+    public void testX() throws InterruptedException {
 //        sql("CREATE TABLE TEST(ID INT PRIMARY KEY, VAL BOOLEAN, VAL2 TINYINT)");
 //        sql("INSERT INTO TEST VALUES(1, true, 0)");
         sql("CREATE TABLE TEST(ID INT PRIMARY KEY, VAL BOOLEAN)");
+        sql("CREATE INDEX test_idx ON TEST(val)");
+
+        Thread.sleep(1_000);
+
         sql("INSERT INTO TEST VALUES(1, true)");
+        sql("INSERT INTO TEST VALUES(2, false)");
+        sql("INSERT INTO TEST VALUES(3, false)");
+
+        System.out.println(">xxx> explain[0] " + sql("EXPLAIN PLAN FOR SELECT VAL FROM TEST WHERE ID=1"));
+
         assertQuery("SELECT VAL FROM TEST WHERE ID=1").returns(true).check();
 //        assertQuery("SELECT VAL2 FROM TEST WHERE ID=1").returns((byte) 0).check();
 
-        KeyValueView<Integer, Boolean> kvView = CLUSTER_NODES.get(0).tables().table("TEST")
-                .keyValueView(Integer.class, Boolean.class);
+//        KeyValueView<Integer, Boolean> kvView = CLUSTER_NODES.get(0).tables().table("TEST")
+//                .keyValueView(Integer.class, Boolean.class);
+//
+//        boolean val = kvView.get(null, 1);
 
-        boolean val = kvView.get(null, 1);
+//        assertTrue(val);
 
-        assertTrue(val);
+        System.out.println(">xxx> explain " + sql("EXPLAIN PLAN FOR SELECT * FROM TEST /*+ use_index(TEST_IDX) */ WHERE VAL=true"));
+
+//        if (true)
+//            return;
+
+        assertQuery("SELECT ID FROM TEST WHERE VAL=true").returns(1).check();
 //        assertQuery("SELECT true::BOOLEAN").returns(true).check();
+    }
+
+    private static final Object[] NULL_RESULT = new Object[] { null };
+
+    @Test
+    public void testCastToBoolean() {
+        assertQuery("SELECT CAST(CAST(null AS DOUBLE) AS BOOLEAN)").returns(NULL_RESULT).check();
+        assertQuery("SELECT CAST(CAST('1' AS DOUBLE) AS BOOLEAN)").returns(true).check();
+        assertQuery("SELECT CAST(1.0 AS BOOLEAN)").returns(true).check();
+        assertQuery("SELECT CAST(0.1 AS BOOLEAN)").returns(true).check();
+        assertQuery("SELECT CAST(1 AS BOOLEAN)").returns(true).check();
+        assertQuery("SELECT CAST(CAST('0' AS DOUBLE) AS BOOLEAN)").returns(false).check();
+        assertQuery("SELECT CAST(0.0 AS BOOLEAN)").returns(false).check();
+        assertQuery("SELECT CAST(0 AS BOOLEAN)").returns(false).check();
+        assertQuery("SELECT CAST(CAST(? AS INT) AS BOOLEAN)").withParams(0).returns(false).check();
+        assertQuery("SELECT CAST(CAST(? AS INT) AS BOOLEAN)").withParams(1).returns(true).check();
+        assertQuery("SELECT CAST(CAST(? AS INT) AS BOOLEAN)").withParams(NULL_RESULT).returns(NULL_RESULT).check();
+        assertQuery("SELECT CAST(CAST(? AS DOUBLE) AS BOOLEAN)").withParams(0.0d).returns(false).check();
+        assertQuery("SELECT CAST(CAST(? AS DOUBLE) AS BOOLEAN)").withParams(1.0d).returns(true).check();
+        assertQuery("SELECT CAST(CAST(? AS DOUBLE) AS BOOLEAN)").withParams(NULL_RESULT).returns(NULL_RESULT).check();
+        assertQuery("SELECT CAST(CAST(? AS DECIMAL(2, 1)) AS BOOLEAN)")
+                .withParams(BigDecimal.valueOf(0, 1)).returns(false).check();
+        assertQuery("SELECT CAST(CAST(? AS DECIMAL(2, 1)) AS BOOLEAN)")
+                .withParams(BigDecimal.valueOf(10, 1)).returns(true).check();
+        assertQuery("SELECT CAST(CAST(? AS DECIMAL(2, 1)) AS BOOLEAN)")
+                .withParams(NULL_RESULT).returns(NULL_RESULT).check();
     }
 
     /**

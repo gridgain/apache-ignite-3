@@ -920,6 +920,8 @@ public class DdlSqlToCommandConverter {
                     return literal.getValueAs(Short.class);
                 case INT8:
                     return literal.getValueAs(Byte.class);
+                case BOOLEAN:
+                    return literal.getValueAs(Boolean.class);
                 case DECIMAL:
                     return literal.getValueAs(BigDecimal.class);
                 case DOUBLE:

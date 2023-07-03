@@ -81,6 +81,46 @@ public final class DataTypeTestSpecs {
         }
     };
 
+    public static final DataTypeTestSpec<Boolean> BOOLEAN = new DataTypeTestSpec<>(
+            ColumnType.BOOLEAN, ColumnType.BOOLEAN.name(), Boolean.class) {
+
+        @Override
+        public boolean hasLiterals() {
+            return false;
+        }
+
+        @Override
+        public String toLiteral(Boolean value) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public String toValueExpr(Boolean value) {
+            return format("'{}'::BOOLEAN", value);
+        }
+
+        @Override
+        public String toStringValue(Boolean value) {
+            return value.toString();
+        }
+
+        @Override
+        public Boolean wrapIfNecessary(Object storageValue) {
+            return (Boolean) storageValue;
+        }
+
+        @Override
+        public TestDataSamples<Boolean> createSamples(IgniteTypeFactory typeFactory) {
+            List<Boolean> values = List.of(true, false, true);
+            TestDataSamples.Builder<Boolean> samples = TestDataSamples.builder();
+
+            samples.add(values, SqlTypeName.VARCHAR, String::valueOf);
+            samples.add(values, SqlTypeName.CHAR, String::valueOf);
+
+            return samples.build();
+        }
+    };
+
     /**
      * Test type spec for {@link SqlTypeName#VARBINARY} data type.
      */

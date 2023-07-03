@@ -139,6 +139,7 @@ public abstract class AbstractIndexScan extends ProjectableFilterableTableScan {
             if (notExact) {
                 // now bounds index scan is only available for sorted index, check:
                 // PartitionReplicaListener#processReadOnlyScanRetrieveBatchAction
+                assert false;
                 return planner.getCostFactory().makeInfiniteCost();
             }
         }
@@ -166,8 +167,16 @@ public abstract class AbstractIndexScan extends ProjectableFilterableTableScan {
             cost += rows * (IgniteCost.ROW_COMPARISON_COST + IgniteCost.ROW_PASS_THROUGH_COST);
         }
 
+        // TODO
+        //        if ("TEST_IDX".equals(idxName))
+        //            cost = 1000;
+
         // additional tiny cost for preventing equality with table scan.
-        return planner.getCostFactory().makeCost(rows, cost, 0).plus(planner.getCostFactory().makeTinyCost());
+        RelOptCost cost0 = planner.getCostFactory().makeCost(rows, cost, 0).plus(planner.getCostFactory().makeTinyCost());
+
+        System.out.println(">xx> compute self cost " + idxName + ", cost=" + cost0);
+
+        return cost0;
     }
 
     /**

@@ -101,6 +101,7 @@ public class IndexScanNode<RowT> extends StorageScanNode<RowT> {
     /** {@inheritDoc} */
     @Override
     protected Publisher<RowT> scan() {
+        System.out.println(">xxx> scan " + schemaIndex.name());
         if (rangeConditions != null) {
             return SubscriptionUtils.concat(
                     new TransformingIterator<>(rangeConditions.iterator(), cond -> indexPublisher(partsWithTerms, cond)));
