@@ -239,9 +239,10 @@ abstract class ColumnBinding {
         return create(col, type, identityHandle, identityHandle, converter);
     }
 
+    // TODO IGNITE-17298 Just for testing.
     private static final TypeConverter boolConv = new TypeConverter() {
         @Override
-        public Object toColumnType(Object obj) throws Exception {
+        public Object toColumnType(Object obj) {
             if (obj == null)
                 return null;
 
@@ -249,7 +250,7 @@ abstract class ColumnBinding {
         }
 
         @Override
-        public Object toObjectType(Object data) throws Exception {
+        public Object toObjectType(Object data) {
             if (data == null)
                 return null;
 
