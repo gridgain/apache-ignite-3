@@ -24,7 +24,6 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.params.provider.Arguments.arguments;
 
-import java.math.BigDecimal;
 import java.sql.Date;
 import java.time.LocalDate;
 import java.util.List;
@@ -39,7 +38,6 @@ import org.apache.ignite.internal.sql.util.SqlTestUtils;
 import org.apache.ignite.internal.testframework.IgniteTestUtils;
 import org.apache.ignite.sql.ColumnType;
 import org.apache.ignite.sql.SqlException;
-import org.apache.ignite.table.KeyValueView;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -227,32 +225,6 @@ public class ItDynamicParameterTest extends ClusterPerClassIntegrationTest {
 
 //        assertQuery("SELECT ID FROM TEST WHERE VAL=1").returns(1).check();
 //        assertQuery("SELECT true::BOOLEAN").returns(true).check();
-    }
-
-    private static final Object[] NULL_RESULT = new Object[] { null };
-
-    @Test
-    public void testCastToBoolean() {
-        assertQuery("SELECT CAST(CAST(null AS DOUBLE) AS BOOLEAN)").returns(NULL_RESULT).check();
-        assertQuery("SELECT CAST(CAST('1' AS DOUBLE) AS BOOLEAN)").returns(true).check();
-        assertQuery("SELECT CAST(1.0 AS BOOLEAN)").returns(true).check();
-        assertQuery("SELECT CAST(0.1 AS BOOLEAN)").returns(true).check();
-        assertQuery("SELECT CAST(1 AS BOOLEAN)").returns(true).check();
-        assertQuery("SELECT CAST(CAST('0' AS DOUBLE) AS BOOLEAN)").returns(false).check();
-        assertQuery("SELECT CAST(0.0 AS BOOLEAN)").returns(false).check();
-        assertQuery("SELECT CAST(0 AS BOOLEAN)").returns(false).check();
-        assertQuery("SELECT CAST(CAST(? AS INT) AS BOOLEAN)").withParams(0).returns(false).check();
-        assertQuery("SELECT CAST(CAST(? AS INT) AS BOOLEAN)").withParams(1).returns(true).check();
-        assertQuery("SELECT CAST(CAST(? AS INT) AS BOOLEAN)").withParams(NULL_RESULT).returns(NULL_RESULT).check();
-        assertQuery("SELECT CAST(CAST(? AS DOUBLE) AS BOOLEAN)").withParams(0.0d).returns(false).check();
-        assertQuery("SELECT CAST(CAST(? AS DOUBLE) AS BOOLEAN)").withParams(1.0d).returns(true).check();
-        assertQuery("SELECT CAST(CAST(? AS DOUBLE) AS BOOLEAN)").withParams(NULL_RESULT).returns(NULL_RESULT).check();
-        assertQuery("SELECT CAST(CAST(? AS DECIMAL(2, 1)) AS BOOLEAN)")
-                .withParams(BigDecimal.valueOf(0, 1)).returns(false).check();
-        assertQuery("SELECT CAST(CAST(? AS DECIMAL(2, 1)) AS BOOLEAN)")
-                .withParams(BigDecimal.valueOf(10, 1)).returns(true).check();
-        assertQuery("SELECT CAST(CAST(? AS DECIMAL(2, 1)) AS BOOLEAN)")
-                .withParams(NULL_RESULT).returns(NULL_RESULT).check();
     }
 
     /**
