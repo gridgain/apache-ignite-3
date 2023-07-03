@@ -34,7 +34,6 @@ import org.apache.calcite.runtime.SqlFunctions;
 import org.apache.calcite.sql.type.SqlTypeName;
 import org.apache.calcite.util.BuiltInMethod;
 import org.apache.calcite.util.Util;
-import org.checkerframework.checker.nullness.qual.Nullable;
 
 /**
  * ConverterUtils.
@@ -240,10 +239,9 @@ public class ConverterUtils {
         Primitive toPrimitive = Primitive.of(toType);
 
         if (toPrimitive == Primitive.BOOLEAN) {
-            Primitive fromPrimitive = Primitive.of(fromType);
-
-            if (fromPrimitive != null)
+            if (Primitive.of(fromType) != null) {
                 return Expressions.notEqual(operand, Expressions.constant(0));
+            }
 
             boolean fromNumber = fromType instanceof Class
                     && Number.class.isAssignableFrom((Class) fromType);

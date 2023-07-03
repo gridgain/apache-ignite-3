@@ -679,11 +679,11 @@ public class RexUtils {
     }
 
     private static RexNode expandBooleanFieldComparison(RexNode rexNode, RexBuilder builder) {
-        if (rexNode instanceof RexSlot)
+        if (rexNode instanceof RexSlot) {
             return builder.makeCall(SqlStdOperatorTable.EQUALS, rexNode, builder.makeLiteral(true));
-        else if (rexNode instanceof RexCall && rexNode.getKind() == NOT &&
-                ((RexCall)rexNode).getOperands().get(0) instanceof RexSlot) {
-            return builder.makeCall(SqlStdOperatorTable.EQUALS, ((RexCall)rexNode).getOperands().get(0),
+        } else if (rexNode instanceof RexCall && rexNode.getKind() == NOT
+                && ((RexCall) rexNode).getOperands().get(0) instanceof RexSlot) {
+            return builder.makeCall(SqlStdOperatorTable.EQUALS, ((RexCall) rexNode).getOperands().get(0),
                     builder.makeLiteral(false));
         }
 

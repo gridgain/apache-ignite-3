@@ -968,7 +968,6 @@ public class ItSecondaryIndexTest extends ClusterPerClassIntegrationTest {
         }
     }
 
-    /** */
     @Test
     public void testScanBooleanField() {
         sql("CREATE TABLE t(i INTEGER PRIMARY KEY, b BOOLEAN)");

@@ -84,6 +84,34 @@ public class BinaryTupleReader extends BinaryTupleParser implements BinaryTupleP
      * @param index Element index.
      * @return Element value.
      */
+    public boolean booleanValue(int index) {
+        seek(index);
+
+        return byteValue(begin, end) == 1;
+    }
+
+    /**
+     * Reads value of specified element.
+     *
+     * @param index Element index.
+     * @return Element value.
+     */
+    public Boolean booleanValueBoxed(int index) {
+        seek(index);
+
+        if (begin == 0) {
+            return null;
+        }
+
+        return byteValue(begin, end) == 1 ? Boolean.TRUE : Boolean.FALSE;
+    }
+
+    /**
+     * Reads value of specified element.
+     *
+     * @param index Element index.
+     * @return Element value.
+     */
     public byte byteValue(int index) {
         seek(index);
         return byteValue(begin, end);
@@ -98,16 +126,6 @@ public class BinaryTupleReader extends BinaryTupleParser implements BinaryTupleP
     public Byte byteValueBoxed(int index) {
         seek(index);
         return begin == 0 ? null : byteValue(begin, end);
-    }
-
-    public Boolean booleanValueBoxed(int index) {
-        seek(index);
-
-        if (begin == 0) {
-            return null;
-        }
-
-        return byteValue(begin, end) == 1 ? Boolean.TRUE : Boolean.FALSE;
     }
 
     /**

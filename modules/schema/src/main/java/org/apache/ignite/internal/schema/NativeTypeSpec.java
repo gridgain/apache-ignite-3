@@ -165,7 +165,9 @@ public enum NativeTypeSpec {
         assert cls != null;
 
         // Primitives.
-        if (cls == byte.class) {
+        if (cls == boolean.class) {
+            return BOOLEAN;
+        } else if (cls == byte.class) {
             return INT8;
         } else if (cls == short.class) {
             return INT16;
@@ -177,7 +179,9 @@ public enum NativeTypeSpec {
             return FLOAT;
         } else if (cls == double.class) {
             return DOUBLE;
-        } else if (cls == Byte.class) { // Boxed primitives.
+        } else if (cls == Boolean.class) { // Boxed primitives.
+            return BOOLEAN;
+        } else if (cls == Byte.class) {
             return INT8;
         } else if (cls == Short.class) {
             return INT16;
@@ -209,8 +213,6 @@ public enum NativeTypeSpec {
             return NUMBER;
         } else if (cls == BigDecimal.class) {
             return DECIMAL;
-        } else if (cls == Boolean.class || cls == boolean.class) {
-            return BOOLEAN;
         }
 
         return null;

@@ -443,8 +443,8 @@ public class ItDmlTest extends ClusterPerClassIntegrationTest {
     @Test
     public void testInsertDefaultValue() {
         var args = List.of(
-                 new DefaultValueArg("BOOLEAN", "TRUE", Boolean.TRUE),
-                 new DefaultValueArg("BOOLEAN NOT NULL", "TRUE", Boolean.TRUE),
+                new DefaultValueArg("BOOLEAN", "TRUE", Boolean.TRUE),
+                new DefaultValueArg("BOOLEAN NOT NULL", "TRUE", Boolean.TRUE),
 
                 new DefaultValueArg("BIGINT", "10", 10L),
                 new DefaultValueArg("INTEGER", "10", 10),
@@ -614,11 +614,13 @@ public class ItDmlTest extends ClusterPerClassIntegrationTest {
                 .check();
     }
 
-    // TODO
+    /**
+     * TODO to remove.
+     *
+     * @throws InterruptedException If failed.
+     */
     @Test
     public void testBoolean() throws InterruptedException {
-//        sql("CREATE TABLE TEST(ID INT PRIMARY KEY, VAL BOOLEAN, VAL2 TINYINT)");
-//        sql("INSERT INTO TEST VALUES(1, true, 0)");
         sql("CREATE TABLE TEST(ID INT PRIMARY KEY, VAL BOOLEAN)");
         sql("CREATE INDEX test_idx ON TEST(val)");
 
@@ -627,12 +629,6 @@ public class ItDmlTest extends ClusterPerClassIntegrationTest {
         sql("INSERT INTO TEST VALUES(1, true)");
         sql("INSERT INTO TEST VALUES(2, false)");
         sql("INSERT INTO TEST VALUES(3, false)");
-
-//        System.out.println(">xxx> explain[0] " + sql("EXPLAIN PLAN FOR SELECT VAL FROM TEST WHERE ID=1"));
-
-//        assertQuery("SELECT VAL FROM TEST WHERE ID=1").returns(true).check();
-
-//        assertQuery("SELECT VAL2 FROM TEST WHERE ID=1").returns((byte) 0).check();
 
         KeyValueView<Integer, Boolean> kvView = CLUSTER_NODES.get(0).tables().table("TEST")
                 .keyValueView(Integer.class, Boolean.class);
@@ -645,11 +641,6 @@ public class ItDmlTest extends ClusterPerClassIntegrationTest {
 
         kvView.put(null, 4, true);
 
-//        System.out.println(">xxx> explain " + sql("EXPLAIN PLAN FOR SELECT * FROM TEST WHERE VAL=true"));
-
-//        if (true)
-//            return;
-
-        assertQuery("SELECT ID FROM TEST WHERE ID=4").returns(true).check();
+        assertQuery("SELECT VAL FROM TEST WHERE ID=4").returns(true).check();
     }
 }
