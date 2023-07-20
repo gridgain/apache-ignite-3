@@ -11,10 +11,12 @@ But for the collocation purpose we must change this approach to the following on
 
 # Redesign replication layer
 At the moment each table partition has it's own `RaftGroupService` with appropriate state machine, which aware about the table partition storages.
-![](images/diag1.svg)
-Instead of that we need to have a point to extend the partition listener with the some table partition listeners, which ingest the input data to appropriate table storages and snapshot logic (TODO: check if current snapshot logic will be working as is in this design)
-![](images/diag2.svg)
 
+![](images/diag1.svg)
+
+Instead of that we need to have a point to extend the partition listener with the some table partition listeners, which ingest the input data to appropriate table storages and snapshot logic (TODO: check if current snapshot logic will be working as is in this design)
+
+![](images/diag2.svg)
 
 # Component recovery and communication
 At present the replication peer lifecycle is highly coupled with the table partition lifecycle. So, on the table create/drop on the current node we can just start/stop the replication servers simultaneously. But now we are coupling the partition lifecycle with the zones, but the replication state machines are still bound to the table partitions. So, we need to update the component structure and lifecycle, because zones and tables are controlled by the different ignite components (`DistributionZoneManager` and `TableManager`).
