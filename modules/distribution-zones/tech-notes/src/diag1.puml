@@ -1,0 +1,27 @@
+@startuml
+'https://plantuml.com/class-diagram
+
+class RaftGroupService
+class PartitionListener {
+  PartitionDataStorage partitionDataStorage
+  TxStateStorage txStateStorage
+
+  StorageUpdateHandler storageUpdateHandler
+  PendingComparableValuesTracker<HybridTimestamp, Void> safeTime
+  PendingComparableValuesTracker<Long, Void> storageIndexTracker
+}
+class SnapshotAwarePartitionDataStorage {
+  MvPartitionStorage partitionStorage
+  PartitionsSnapshots partitionsSnapshots
+}
+interface MvPartitionStorage
+interface PartitionsSnapshots
+interface TxStateStorage
+
+RaftGroupService o-- PartitionListener
+PartitionListener o-- SnapshotAwarePartitionDataStorage
+PartitionListener o-- "one" TxStateStorage
+
+SnapshotAwarePartitionDataStorage o-- "one" MvPartitionStorage
+SnapshotAwarePartitionDataStorage o-- PartitionsSnapshots
+@enduml

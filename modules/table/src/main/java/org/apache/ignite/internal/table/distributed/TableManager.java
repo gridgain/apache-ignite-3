@@ -123,6 +123,7 @@ import org.apache.ignite.internal.raft.server.RaftGroupOptions;
 import org.apache.ignite.internal.raft.service.RaftGroupListener;
 import org.apache.ignite.internal.raft.service.RaftGroupService;
 import org.apache.ignite.internal.raft.storage.impl.LogStorageFactoryCreator;
+import org.apache.ignite.internal.replication.ReplicationLayerManager;
 import org.apache.ignite.internal.replicator.ReplicaManager;
 import org.apache.ignite.internal.replicator.ReplicaService;
 import org.apache.ignite.internal.replicator.TablePartitionId;
@@ -239,9 +240,6 @@ public class TableManager extends Producer<TableEvent, TableEventParameters> imp
     private final GcConfiguration gcConfig;
 
     private final ClusterService clusterService;
-
-    /** Raft manager. */
-    private final RaftManager raftMgr;
 
     /** Replica manager. */
     private final ReplicaManager replicaMgr;
@@ -375,6 +373,8 @@ public class TableManager extends Producer<TableEvent, TableEventParameters> imp
 
     private final ConfiguredTablesCache configuredTablesCache;
 
+    private final ReplicationLayerManager replicationLayerManager = null;
+
     /**
      * Creates a new table manager.
      *
@@ -426,7 +426,6 @@ public class TableManager extends Producer<TableEvent, TableEventParameters> imp
         this.zonesConfig = zonesConfig;
         this.gcConfig = gcConfig;
         this.clusterService = clusterService;
-        this.raftMgr = raftMgr;
         this.baselineMgr = baselineMgr;
         this.replicaMgr = replicaMgr;
         this.lockMgr = lockMgr;
@@ -823,33 +822,18 @@ public class TableManager extends Producer<TableEvent, TableEventParameters> imp
 
                         var raftNodeId = new RaftNodeId(replicaGrpId, serverPeer);
 
-                        try {
-                            // TODO: use RaftManager interface, see https://issues.apache.org/jira/browse/IGNITE-18273
-                            ((Loza) raftMgr).startRaftGroupNode(
-                                    raftNodeId,
-                                    newConfiguration,
-                                    new PartitionListener(
-                                            partitionDataStorage,
-                                            partitionUpdateHandlers.storageUpdateHandler,
-                                            txStatePartitionStorage,
-                                            safeTimeTracker,
-                                            storageIndexTracker
-                                    ),
-                                    new RebalanceRaftGroupEventsListener(
-                                            metaStorageMgr,
-                                            replicaGrpId,
-                                            busyLock,
-                                            createPartitionMover(internalTbl, partId),
-                                            this::calculateAssignments,
-                                            rebalanceScheduler
-                                    ),
-                                    groupOptions
-                            );
+                        // TODO: use RaftManager interface, see https://issues.apache.org/jira/browse/IGNITE-18273
+                        replicationLayerManager.registerStateMachineExtension(tableId,
+                                new PartitionListener(
+                                        partitionDataStorage,
+                                        partitionUpdateHandlers.storageUpdateHandler,
+                                        txStatePartitionStorage,
+                                        safeTimeTracker,
+                                        storageIndexTracker
+                                )
+                        );
 
-                            return true;
-                        } catch (NodeStoppingException ex) {
-                            throw new CompletionException(ex);
-                        }
+                        return true;
                     }), ioExecutor);
                 } else {
                     startGroupFut = completedFuture(false);
@@ -1142,7 +1126,7 @@ public class TableManager extends Producer<TableEvent, TableEventParameters> imp
 
                 stopping.add(() -> {
                     try {
-                        raftMgr.stopRaftNodes(replicationGroupId);
+                        replicationLayerManager.unregisterStateMachineExtension(table.tableId());
                     } catch (Throwable t) {
                         handleExceptionOnCleanUpTablesResources(t, throwable, nodeStoppingEx);
                     }
@@ -1381,7 +1365,7 @@ public class TableManager extends Producer<TableEvent, TableEventParameters> imp
             for (int p = 0; p < partitions; p++) {
                 TablePartitionId replicationGroupId = new TablePartitionId(tableId, p);
 
-                raftMgr.stopRaftNodes(replicationGroupId);
+                replicationLayerManager.unregisterStateMachineExtension(tableId);
 
                 removeStorageFromGcFutures[p] = replicaMgr
                         .stopReplica(replicationGroupId)
@@ -2365,13 +2349,14 @@ public class TableManager extends Producer<TableEvent, TableEventParameters> imp
         var raftNodeId = new RaftNodeId(replicaGrpId, serverPeer);
 
         // TODO: use RaftManager interface, see https://issues.apache.org/jira/browse/IGNITE-18273
-        ((Loza) raftMgr).startRaftGroupNode(
-                raftNodeId,
-                stableConfiguration,
-                raftGrpLsnr,
-                raftGrpEvtsLsnr,
-                groupOptions
-        );
+        // KKK rebalance case will be processed by distribution zone based rebalance
+//        ((Loza) raftMgr).startRaftGroupNode(
+//                raftNodeId,
+//                stableConfiguration,
+//                raftGrpLsnr,
+//                raftGrpEvtsLsnr,
+//                groupOptions
+//        );
     }
 
     /**
@@ -2593,11 +2578,12 @@ public class TableManager extends Producer<TableEvent, TableEventParameters> imp
     }
 
     private CompletableFuture<Void> stopAndDestroyPartition(TablePartitionId tablePartitionId, long revision) {
-        try {
-            raftMgr.stopRaftNodes(tablePartitionId);
-        } catch (NodeStoppingException e) {
-            // No-op
-        }
+//        try {
+            // KKK rebalance keys will be processed by DZ based logic
+//            raftMgr.stopRaftNodes(tablePartitionId);
+//        } catch (NodeStoppingException e) {
+//            // No-op
+//        }
 
         CompletableFuture<Boolean> stopReplicaFut;
         try {

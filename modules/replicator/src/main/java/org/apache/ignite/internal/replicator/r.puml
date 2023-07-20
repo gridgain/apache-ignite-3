@@ -1,0 +1,25 @@
+@startuml
+'https://plantuml.com/sequence-diagram
+skinparam maxMessageSize 400
+
+header General Flow
+Metastorage -> "TableManager (pending listener)" : Notification about pending assignments updates
+
+"TableManager (pending listener)" -> PrimaryReplica : Send a RebalanceRequest(leaderTerm) message if the current TableManager collocated with a leader of partition replication group in the current leaderTerm
+
+PrimaryReplica -> "Raft Group leader" : Call changePeers(leaderTerm)
+
+@enduml
+
+@startuml
+'https://plantuml.com/sequence-diagram
+skinparam maxMessageSize 400
+
+header General Flow
+Metastorage -> "TableManager (pending listener)" : Notification about pending assignments updates
+
+"TableManager (pending listener)" -> PrimaryReplica : Send a RebalanceRequest(leaderTerm) message if the current TableManager collocated with a leader of partition replication group in the current leaderTerm
+
+PrimaryReplica -> "Raft Group leader" : Call changePeers(leaderTerm)
+
+@enduml

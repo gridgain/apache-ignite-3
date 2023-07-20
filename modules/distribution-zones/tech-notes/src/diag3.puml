@@ -1,0 +1,41 @@
+@startuml
+'https://plantuml.com/sequence-diagram
+skinparam maxMessageSize 300
+
+autonumber
+'Recovery case
+
+participant CatalogManager as C
+participant ReplicaServerManager as RS
+participant DistributionZoneManager as D
+participant TableManager as T
+participant Loza as L
+participant ReplicaManager as R
+
+'CatalogMgr --> CatalogMgr : Start
+
+L --> L : Start and finish start
+D --> D : Begin start
+C <- D : Receive zones to create
+D --> D : Update zone states
+D -> RS : Add replication servers to queue for start
+D -> D : Finish start
+R -> R : Begin and finish start
+'DZM -> ReplicationLayerMgr : Request the replication endpoint start and await for result
+'DZM -> ReplicationLayerMgr : Send event about the replication endpoint start and await for result
+' KKK we still have the order guarantees on restart for metastore event, is it right?
+' KKK SO, here replication layer will start processing of messages and can receive the message for the state machine, which is not registered yet. At this poing we need to await for the "create table" update as we do it for any other schema updates?
+T -> T : Begin start
+C <- T : Receive tables to create
+T -> T : Create table storages and etc
+T -> RS : Add table partition listeners to appropriate replication servers
+T -> L : Request the replication clients
+T -> R : Start the Replica with appropriate replication client from the previous step
+T -> T : Finish start
+C -> C : Start and finish start
+RS --> RS : Begin start
+RS --> RS : Start the all needed replication servers
+RS --> RS : Finish start
+
+
+@enduml
