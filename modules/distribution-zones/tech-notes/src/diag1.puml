@@ -1,6 +1,7 @@
 @startuml
 'https://plantuml.com/class-diagram
 
+class NodeOptions
 class RaftGroupService
 class PartitionListener {
   PartitionDataStorage partitionDataStorage
@@ -18,9 +19,10 @@ interface MvPartitionStorage
 interface PartitionsSnapshots
 interface TxStateStorage
 
-RaftGroupService o-- PartitionListener
+RaftGroupService o-- NodeOptions
+NodeOptions o-- PartitionListener
 PartitionListener o-- SnapshotAwarePartitionDataStorage
-PartitionListener o-- "one" TxStateStorage
+PartitionListener o-- TxStateStorage
 
 SnapshotAwarePartitionDataStorage o-- "one" MvPartitionStorage
 SnapshotAwarePartitionDataStorage o-- PartitionsSnapshots

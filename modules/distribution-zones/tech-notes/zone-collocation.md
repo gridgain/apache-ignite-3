@@ -1,13 +1,13 @@
 # Motivation
-At the moment Ignite-3 has the partition data layout built around the table partitions. It means, that every table has it's own node assignments for every partition. This architecture has some benefits, but at the same time it doesn't take in mind the data collocation opportunity. So, to enable the collocation for two tables we need to discover the separate mechanisms on top of the zones and tables. After some discussions inside the architect team we decide to go the other way and rebuild the data layout around the zone based partitions. In that case all tables, which share the same zone will be collocated by design.
+At the moment Ignite-3 has the partition data layout built around the table partitions. It means, that every table has its own node assignments for every partition. This architecture has some benefits, but at the same time it doesn't take in mind the data collocation opportunity. So, to enable the collocation for two tables we need to discover the separate mechanisms on top of the zones and tables. After some discussions inside the architect team we decide to go the other way and rebuild the data layout around the zone based partitions. In that case all tables, which share the same zone will be collocated by design.
 
 # Design overview
 For the present table partition is the heart of our replication mechanism. Each table partition forms the RAFT group with the the number of replicas (peers) according to its configuration. Also, the whole distributed rebalance mechanism based on the rebalance of table partitions as a result.
 But for the collocation purpose we must change this approach to the following one:
-- The configuration numbers for partitions and replicas must be migrated from the table configuration to the zone one. (already done in the main branch)
+- The configuration numbers for partitions and replicas must be migrated from the table configuration to the zone one (already done in the main branch).
 - Replication layer (RAFT for now) must be build around the zone partitions instead of the table partitions.
-- Component recovery and further communication must be changed in appropriate way to support the 
-<TODO picture here with the old and new data layouts>
+- Component recovery and further communication must be changed in appropriate way to rebuild the data layer around the zone-based partitions.
+<KKK TODO picture here with the old and new data layouts>
 
 # Redesign replication layer
 At the moment each table partition has it's own `RaftGroupService` with appropriate state machine, which aware about the table partition storages.
@@ -30,7 +30,7 @@ So, on the previous step we prepared the extension point to update the replicati
 5. `TableManager` started
 6. `TableManager` got the list of tables from `CatalogManager`
 7. `TableManager` for each local zone partition:
-    - create the needed storages
+    - create the needed storages, if table zone have the first one of this type (KKK shouldn't we create the all available storages on the DZM start?)
     - create the `TablePartitionListener` and add it to the appropriate zone partition state machine
     - get the partition client for the table partitions `Replica` and start needed local `Replica` instances (DISCUSSION POINT 2)
 8. `TableManager` start finished
@@ -79,5 +79,4 @@ interface ReplicationServerManager implements IgniteComponent {
 
 # In-memory case
 TODO
-In-memory case is a real issue, because now we just remove the peer from the raft topology and add it again to ingest the data to local partition. But after the migration to zone based partitions, we can't support this approach anymore if we want to allow the usual and in-memory tables in one zone at the same time.
 
