@@ -20,6 +20,7 @@ package org.apache.ignite.internal.table.distributed;
 import static java.util.Collections.emptyMap;
 import static java.util.Collections.unmodifiableMap;
 import static java.util.concurrent.CompletableFuture.allOf;
+import static java.util.concurrent.CompletableFuture.anyOf;
 import static java.util.concurrent.CompletableFuture.completedFuture;
 import static java.util.concurrent.CompletableFuture.failedFuture;
 import static java.util.concurrent.CompletableFuture.runAsync;
@@ -362,6 +363,9 @@ public class TableManager extends Producer<TableEvent, TableEventParameters> imp
 
     /** Versioned value used only at manager startup to correctly fire table creation events. */
     private final IncrementalVersionedValue<Void> startVv;
+
+    /** Completes at the {@link #stop()} with an {@link NodeStoppingException} to avoid dependencies on stopping other components. */
+    private final CompletableFuture<Void> stopManagerFuture = new CompletableFuture<>();
 
     /**
      * Creates a new table manager.
@@ -1017,6 +1021,8 @@ public class TableManager extends Producer<TableEvent, TableEventParameters> imp
             return;
         }
 
+        stopManagerFuture.completeExceptionally(new NodeStoppingException());
+
         busyLock.block();
 
         metaStorageMgr.unregisterWatch(pendingAssignmentsRebalanceListener);
@@ -1548,7 +1554,11 @@ public class TableManager extends Producer<TableEvent, TableEventParameters> imp
      * @see #assignmentsUpdatedVv
      */
     private CompletableFuture<Map<Integer, TableImpl>> tablesById(long causalityToken) {
-        return assignmentsUpdatedVv.get(causalityToken).thenCompose(v -> tablesByIdVv.get(causalityToken));
+        CompletableFuture<Void> assignmentsUpdatedFuture = assignmentsUpdatedVv.get(causalityToken);
+        CompletableFuture<Map<Integer, TableImpl>> tablesByIdFuture = tablesByIdVv.get(causalityToken);
+
+        // Bringing the future out to avoid errors when trying to get an outdated version.
+        return assignmentsUpdatedFuture.thenCompose(v -> tablesByIdFuture);
     }
 
     /**
@@ -1614,15 +1624,25 @@ public class TableManager extends Producer<TableEvent, TableEventParameters> imp
         }
     }
 
+    private final Set<CompletableFuture<?>> set = ConcurrentHashMap.newKeySet();
+
     @Override
     // TODO: IGNITE-19499 экспериментальный код
     public CompletableFuture<TableImpl> tableAsync(int tableId) {
         return inBusyLockAsync(busyLock, () -> {
             HybridTimestamp now = clock.now();
 
-            return schemaSyncService
-                    .waitForMetadataCompleteness(now)
-                    .thenComposeAsync(unused -> inBusyLockAsync(busyLock, () -> tableAsyncInternalBusy(tableId)), ioExecutor);
+            String name = Thread.currentThread().getName();
+
+            CompletableFuture<Object> future = anyOf(schemaSyncService.waitForMetadataCompleteness(now), stopManagerFuture);
+
+            future.whenComplete((o, throwable) -> LOG.error("asshole err {}", throwable, name));
+
+            set.add(future);
+
+            return future
+                    .thenAccept(o -> set.remove(future))
+                    .thenComposeAsync(unused -> inBusyLockAsync(busyLock, () -> tableAsyncInternalBusy(tableId, name)), ioExecutor);
         });
     }
 
@@ -1678,8 +1698,7 @@ public class TableManager extends Producer<TableEvent, TableEventParameters> imp
         return inBusyLockAsync(busyLock, () -> {
             HybridTimestamp now = clock.now();
 
-            return schemaSyncService
-                    .waitForMetadataCompleteness(now)
+            return anyOf(schemaSyncService.waitForMetadataCompleteness(now), stopManagerFuture)
                     .thenApplyAsync(unused -> inBusyLock(busyLock, () -> catalogService.table(name, now.longValue())), ioExecutor)
                     .thenCompose(tableDescriptor -> inBusyLockAsync(busyLock, () -> {
                         if (tableDescriptor == null) {
@@ -1691,8 +1710,16 @@ public class TableManager extends Producer<TableEvent, TableEventParameters> imp
         });
     }
 
-    // TODO: IGNITE-19499 экспериментальный код
     private CompletableFuture<TableImpl> tableAsyncInternalBusy(int tableId) {
+        return tableAsyncInternalBusy(tableId, null);
+    }
+
+    // TODO: IGNITE-19499 экспериментальный код
+    private CompletableFuture<TableImpl> tableAsyncInternalBusy(int tableId, @Nullable String s) {
+        if (s != null) {
+            LOG.error("asshole err_1 {}", s);
+        }
+
         TableImpl tableImpl = latestTablesById().get(tableId);
 
         if (tableImpl != null) {
@@ -1733,7 +1760,9 @@ public class TableManager extends Producer<TableEvent, TableEventParameters> imp
             return completedFuture(tableImpl);
         }
 
-        return getLatestTableFuture.whenComplete((unused, throwable) -> assignmentsUpdatedVv.removeWhenComplete(tablesListener));
+        return anyOf(getLatestTableFuture, stopManagerFuture)
+                .thenCompose(unused -> getLatestTableFuture)
+                .whenComplete((unused, throwable) -> assignmentsUpdatedVv.removeWhenComplete(tablesListener));
     }
 
     /**

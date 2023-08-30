@@ -43,7 +43,10 @@ import org.apache.ignite.internal.table.IgniteTablesInternal;
 import org.apache.ignite.internal.table.TableImpl;
 import org.apache.ignite.internal.test.WatchListenerInhibitor;
 import org.apache.ignite.internal.testframework.IgniteAbstractTest;
+import org.apache.ignite.internal.testframework.IgniteTestUtils;
 import org.apache.ignite.internal.testframework.TestIgnitionManager;
+import org.apache.ignite.internal.testframework.matchers.CompletableFutureExceptionMatcher;
+import org.apache.ignite.internal.testframework.matchers.CompletableFutureMatcher;
 import org.apache.ignite.internal.util.IgniteUtils;
 import org.apache.ignite.lang.ColumnAlreadyExistsException;
 import org.apache.ignite.lang.NodeStoppingException;
@@ -118,8 +121,10 @@ public class ItTablesApiTest extends IgniteAbstractTest {
     /**
      * After each.
      */
-    @AfterEach
-    void afterEach(TestInfo testInfo) throws Exception {
+    @Override
+    public void tearDown(TestInfo testInfo) throws Exception {
+        super.tearDown(testInfo);
+
         List<AutoCloseable> closeables = IntStream.range(0, nodesBootstrapCfg.size())
                 .mapToObj(i -> testNodeName(testInfo, i))
                 .map(name -> (AutoCloseable) () -> IgnitionManager.stop(name))
@@ -324,15 +329,15 @@ public class ItTablesApiTest extends IgniteAbstractTest {
 
         int tblId = ((TableImpl) table).tableId();
 
-        CompletableFuture<Table> tableByNameFut = supplyAsync(() -> ignite1.tables().table(TABLE_NAME));
+        CompletableFuture<Table> tableByNameFut = IgniteTestUtils.runAsync(() -> ignite1.tables().table(TABLE_NAME), "fuck");
 
-        CompletableFuture<Table> tableByIdFut = supplyAsync(() -> {
+        CompletableFuture<Table> tableByIdFut = IgniteTestUtils.runAsync(() -> {
             try {
                 return ((IgniteTablesInternal) ignite1.tables()).table(tblId);
             } catch (NodeStoppingException e) {
                 throw new AssertionError(e.getMessage());
             }
-        });
+        }, "asshole");
 
         // Because the event inhibitor was started, last metastorage updates do not reach to one node.
         // Therefore the table still doesn't exists locally, but API prevents getting null and waits events.
@@ -344,8 +349,8 @@ public class ItTablesApiTest extends IgniteAbstractTest {
             }
         }
 
-        assertFalse(tableByNameFut.isDone());
-        assertFalse(tableByIdFut.isDone());
+        assertThat(tableByIdFut, CompletableFutureExceptionMatcher.willTimeoutFast());
+        assertThat(tableByNameFut, CompletableFutureExceptionMatcher.willTimeoutFast());
 
         ignite1Inhibitor.stopInhibit();
 
