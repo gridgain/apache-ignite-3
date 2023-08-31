@@ -2,7 +2,7 @@
 This document is just a sync point in the questions of table-node-zone-storage relations. We need to prepare the usable and simple enough approach for the storage configurations from the user point of view in the scope of zone-based collocation.
 
 # Problem statement
-At the moment, each table has it's own storage type and the zones know nothing about the storage configuration. Also, every node supports all types of storages, which it has in the classpath (actually now all nodes support all storages in the default build).
+At the moment, each table has it's own storage configuration, the same time zones know nothing about the storage configuration. Also, every node supports all types of storages, which it has in the classpath (actually now all nodes support all storages in the default build).
 
 But we want to introduce 2 changes, which will affect this simple picture:
 - Each node will have its own local storage configuration. So, any node will support any random list of storages, potentially.
@@ -46,19 +46,56 @@ To resolve this issue we can:
 TODO: Alexey, please fill the gap - how this check must be implemented for all invariants from examples (1,2)
 
 # Approach 2. Zone filter for the storage types
-Due to the fact, that nodes will have the local configuration for supported storage types, we can lift this fact as a node attribute to the node attributes list.
+Due to the fact, that nodes will have the local configuration for supported storage types, we can lift this fact as a node attribute to the node attributes list. But the storage types - is not the whole story. Also, we need to have an ability to set the detailed storage configuration to check if table really can operate on this node.
+
+Let's extend our examples with detailed configurations for node storages:
+```
+A:
+rocksDb:
+  flushDelayMillis: 1000
+  regions:
+    lruRegion:
+      cache: lru
+      size: 256
+    clockRegion:
+      cache: clock
+      size: 512
+      
+aipersist:
+  checkpoint:
+    checkpointDelayMillis: 100
+  regions:
+    segmentedRegion:
+      replacementMode: SEGMENTED_LRU
+    clockRegion:
+      replacementMode: CLOCK
+      
+B:
+aipersist:
+```
 
 After that, we can use this attribute as a required part of zone filter, like:
 ```sql
-create zone z1 with replica=1, partitions=1, storage_types = 'aipersist,rocksdb'
+create zone z1 with replica=1, partitions=1, store = '{rocksDb: {regions.lruRegion.size: 256}}, aipersist: regions. segmentedRegion.replacementMode: SEGMENTED_LRU}}}}'
 ```
-By this query user obviously define the zone, which support the storage types `aipersist` and `rocksdb`. Therefore each node in this zone support **both** storage types.
 
-So, if the user will create the table with storage `storage1` he/she just need to check if the target zone has this storage in the `storage_types` attribute. Also, user can be sure, that the node with appropriate list of storages will be included in the target zone.
+By this query user obviously define the zone, which support the storage types `aipersist` and `rocksdb` with the defined params. Therefore each node in this zone support **both** storage types.
 
-However, the disadvantage of this approach - we introduce additional filter by the storage attribute as a first citizen. It looks awkward, because we already have another standard `data_nodes_filter`.
+So, if the user will create the table with storage `aipersist` with particular options, he/she just need to check if the target zone has this storage configuration in the `store` attribute.
 
-What about examples after the additional `storage_types = 'aipersist,rocksdb'` in the zone creation query:
-1. Obviously user needs to setup another nodes, to support these types of tables. But what about the table creation - tables will be created and await for the needed nodes in the zone.
-2. In this example only node `A(aipersist, rocksdb)` will be included to the zone and all tables will be created successfully.
+However, the disadvantage of this approach - we introduce additional filter by the store attribute as a first citizen. It looks awkward, because we already have another standard `data_nodes_filter` filters for nodes.
 
+Let's extend our examples and make some more to show this approach in practice
+```
+create zone z1 with replica=1, partitions=1, store = '{rocksDb: {regions.lruRegion.size: 256}}, aipersist: regions. segmentedRegion.replacementMode: SEGMENTED_LRU}}}}' // only node A is suitable for this zone, because node B has no aipersist at all
+
+create table t with primary_storage='rocksdb' using zone=z1; // table successfully created
+create table t with primary_storage='aipersist' using zone=z1; // table successfully created
+create table t with primary_storage='{rocksdb.flushDelayMillies: 1000}' using zone=z1; // table successfully created
+
+create table t with primary_storage='{rocksdb.flushDelayMillies: 2000}' using zone=z1; // table creation failed
+create table t with primary_storage='{rocksdb.regions: {lfuRegion: {}}}' using zone=z1; // table creation failed
+```
+So, the general rules for table storage attributes and the zone store filter at the same time:
+- if any params is omitted - any value of params is ok
+- named lists is a weakness point, because if we want to check that entity with this name just exists we should create the syntax for it, like  `{rocksdb.regions: {lfuRegion: {}}}`
