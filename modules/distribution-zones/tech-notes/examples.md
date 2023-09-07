@@ -38,7 +38,7 @@ create table t tablespace rocks_lru using zone=z1;
 
 Implementation notes:
 - We will need to clarify which params for different storages can be used for tablespace create (region for aipersist, instance for rocksdb and etc.).
-- Node storage configurations will not lifted as usual node attributes, but can be lifted as a special internal attributes, suitable only for tablespaces.
+- Node storage configurations will not be lifted as usual node attributes, but can be lifted as a special internal attributes, suitable only for tablespaces.
 
 # 2. Storage profiles and separate  storages filter for zone
 Prerequisites:
@@ -51,7 +51,7 @@ create table t with storage_profile='rocksDb.lru' using zone=z1;
 
 Implementation notes:
 - We need to clarify the trivial language for zone description from the point of view supported storage profiles. Here I just use simple json.
-- Node storage configurations will not be lifted as usual node attributes.
+- Node storage configurations will not be lifted as usual node attributes, but can be lifted as a special internal attributes, suitable only for `storage_profiles` filters.
 
 # 3. Storage profiles and rework of zone filter 'data_nodes_filter'
 Prerequisites:
@@ -65,5 +65,5 @@ create table t with storage_profile='rocksDb.lru' using zone=z1;
 
 Implementation notes:
 - We need to clarify the another language for general zone filters. The current one 'svistnut' from one another kindred database.
-- Node storage configurations will not be lifted as usual node attributes.
+- Node storage configurations will *be* lifted as usual node attributes. Maybe with any kind of prefix to avoid the name clashing.
 
