@@ -27,6 +27,8 @@ import io.netty.util.ResourceLeakDetector;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayDeque;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
@@ -35,6 +37,7 @@ import java.util.stream.Collectors;
 import org.apache.ignite.Ignite;
 import org.apache.ignite.IgnitionManager;
 import org.apache.ignite.InitParameters;
+import org.apache.ignite.client.IgniteClient;
 import org.apache.ignite.compute.ComputeJob;
 import org.apache.ignite.compute.JobExecutionContext;
 import org.apache.ignite.internal.app.IgniteImpl;
@@ -201,6 +204,18 @@ public class PlatformTestNodeRunner {
 
         long runTimeMinutes = getRunTimeMinutes();
         System.out.println("Nodes will be active for " + runTimeMinutes + " minutes.");
+
+        // Reproduce DeleteAll hang
+        System.out.println(" >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> REPRODUCE DELETE ALL HANG <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<");
+        IgniteClient client = IgniteClient.builder().addresses("localhost:10942").build();
+        Table tbl = client.tables().table(TABLE_NAME);
+        var tuples = new ArrayList<Tuple>();
+        for (int i = 0; i < 100; i++) {
+            tuples.add(Tuple.create().set("key", (long)i));
+        }
+
+        tbl.recordView().deleteAll(null, tuples);
+        ///
 
         Thread.sleep(runTimeMinutes * 60_000);
         System.out.println("Exiting after " + runTimeMinutes + " minutes.");

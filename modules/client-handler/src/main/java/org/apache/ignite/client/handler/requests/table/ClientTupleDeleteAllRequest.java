@@ -48,9 +48,13 @@ public class ClientTupleDeleteAllRequest {
             IgniteTables tables,
             ClientResourceRegistry resources
     ) {
+        System.out.println("ClientTupleDeleteAllRequest.process");
+
         return readTableAsync(in, tables).thenCompose(table -> {
             var tx = readTx(in, out, resources);
             var tuples = readTuples(in, table, true);
+
+            System.out.println("ClientTupleDeleteAllRequest.process: tuples = " + tuples.size() + ", table = " + table.name());
 
             return table.recordView().deleteAllAsync(tx, tuples).thenAccept(skippedTuples ->
                     writeTuples(out, skippedTuples, TuplePart.KEY, table.schemaView()));
