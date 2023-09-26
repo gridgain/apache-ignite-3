@@ -215,6 +215,9 @@ public class PlatformTestNodeRunner {
         }
 
         tbl.recordView().deleteAll(null, tuples);
+
+        // Never reached
+        System.out.println(" >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> REPRODUCE DELETE ALL HANG END <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<");
         ///
 
         Thread.sleep(runTimeMinutes * 60_000);
