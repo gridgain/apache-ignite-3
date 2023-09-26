@@ -56,8 +56,11 @@ public class ClientTupleDeleteAllRequest {
 
             System.out.println("ClientTupleDeleteAllRequest.process: tuples = " + tuples.size() + ", table = " + table.name());
 
-            return table.recordView().deleteAllAsync(tx, tuples).thenAccept(skippedTuples ->
-                    writeTuples(out, skippedTuples, TuplePart.KEY, table.schemaView()));
+            return table.recordView().deleteAllAsync(tx, tuples).thenAccept(skippedTuples -> {
+                System.out.println("ClientTupleDeleteAllRequest.process: END");
+
+                writeTuples(out, skippedTuples, TuplePart.KEY, table.schemaView());
+            });
         });
     }
 }
