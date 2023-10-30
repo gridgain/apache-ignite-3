@@ -21,6 +21,8 @@ import static it.unimi.dsi.fastutil.ints.Int2ObjectMaps.emptyMap;
 import static java.util.concurrent.CompletableFuture.completedFuture;
 import static java.util.concurrent.CompletableFuture.failedFuture;
 import static java.util.concurrent.TimeUnit.SECONDS;
+import static org.apache.ignite.Instrumentation.mark;
+import static org.apache.ignite.Instrumentation.measure;
 import static org.apache.ignite.internal.lang.IgniteStringFormatter.format;
 import static org.apache.ignite.internal.table.distributed.replicator.action.RequestType.RW_DELETE_ALL;
 import static org.apache.ignite.internal.table.distributed.replicator.action.RequestType.RW_GET;
@@ -370,7 +372,7 @@ public class InternalTableImpl implements InternalTable {
     }
 
     private InternalTransaction startImplicitRwTxIfNeeded(@Nullable InternalTransaction tx) {
-        return tx == null ? txManager.begin(observableTimestampTracker) : tx;
+        return measure(() -> tx == null ? txManager.begin(observableTimestampTracker) : tx, "startImplicitRwTxIfNeeded");
     }
 
     /**
@@ -572,11 +574,13 @@ public class InternalTableImpl implements InternalTable {
                 }); // Preserve failed state.
             } else {
                 if (autoCommit) {
-                    return tx0.commitAsync()
-                            .exceptionally(ex -> {
-                                throw wrapReplicationException(ex);
-                            })
-                            .thenApply(ignored -> r);
+                    return measure(() -> {
+                        return tx0.commitAsync()
+                                .exceptionally(ex -> {
+                                    throw wrapReplicationException(ex);
+                                })
+                                .thenApply(ignored -> r);
+                    }, "commitAsync");
                 } else {
                     return completedFuture(r);
                 }
@@ -696,24 +700,26 @@ public class InternalTableImpl implements InternalTable {
      */
     private <R> CompletableFuture<R> postEvaluate(CompletableFuture<R> fut, InternalTransaction tx) {
         return fut.handle((BiFunction<R, Throwable, CompletableFuture<R>>) (r, e) -> {
-            if (e != null) {
-                RuntimeException e0 = wrapReplicationException(e);
+            return measure(() -> {
+                if (e != null) {
+                    RuntimeException e0 = wrapReplicationException(e);
 
-                return tx.finish(false, clock.now())
-                        .handle((ignored, err) -> {
+                    return tx.finish(false, clock.now())
+                            .handle((ignored, err) -> {
 
-                            if (err != null) {
-                                e0.addSuppressed(err);
-                            }
-                            throw e0;
-                        }); // Preserve failed state.
-            }
+                                if (err != null) {
+                                    e0.addSuppressed(err);
+                                }
+                                throw e0;
+                            }); // Preserve failed state.
+                }
 
-            return tx.finish(true, clock.now())
-                    .exceptionally(ex -> {
-                        throw wrapReplicationException(ex);
-                    })
-                    .thenApply(ignored -> r);
+                return tx.finish(true, clock.now())
+                        .exceptionally(ex -> {
+                            throw wrapReplicationException(ex);
+                        })
+                        .thenApply(ignored -> r);
+            }, "postEvaluate");
         }).thenCompose(x -> x);
     }
 

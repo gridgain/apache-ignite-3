@@ -18,6 +18,8 @@
 package org.apache.ignite.network;
 
 import static java.util.concurrent.CompletableFuture.failedFuture;
+import static org.apache.ignite.Instrumentation.mark;
+import static org.apache.ignite.Instrumentation.measure;
 import static org.apache.ignite.internal.network.serialization.PerSessionSerializationService.createClassDescriptorsMessages;
 import static org.apache.ignite.network.NettyBootstrapFactory.isInNetworkThread;
 
@@ -37,6 +39,8 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.BiPredicate;
 import java.util.function.Function;
+import org.apache.ignite.Instrumentation;
+import org.apache.ignite.Instrumentation.Measurement;
 import org.apache.ignite.internal.future.OrderingFuture;
 import org.apache.ignite.internal.lang.NodeStoppingException;
 import org.apache.ignite.internal.logger.IgniteLogger;
@@ -251,8 +255,11 @@ public class DefaultMessagingService extends AbstractMessagingService {
 
         long correlationId = createCorrelationId();
 
-        CompletableFuture<NetworkMessage> responseFuture = new CompletableFuture<NetworkMessage>()
-                .orTimeout(timeout, TimeUnit.MILLISECONDS);
+        var m = new Measurement("responseFuture");
+        m.start();
+        CompletableFuture<NetworkMessage> responseFuture = new CompletableFuture<NetworkMessage>();
+        m.stop();
+        Instrumentation.add(m);
 
         requestsMap.put(correlationId, responseFuture);
 

@@ -22,6 +22,7 @@ import static java.nio.ByteBuffer.allocate;
 import static java.nio.ByteBuffer.allocateDirect;
 import static java.util.Arrays.copyOf;
 import static java.util.Arrays.copyOfRange;
+import static org.apache.ignite.Instrumentation.measure;
 import static org.apache.ignite.internal.storage.rocksdb.PartitionDataHelper.MAX_KEY_SIZE;
 import static org.apache.ignite.internal.storage.rocksdb.PartitionDataHelper.MV_KEY_BUFFER;
 import static org.apache.ignite.internal.storage.rocksdb.PartitionDataHelper.ROW_ID_OFFSET;
@@ -224,7 +225,7 @@ public class RocksDbMvPartitionStorage implements MvPartitionStorage {
                         V res = closure.execute(locker);
 
                         if (writeBatch.count() > 0) {
-                            db.write(DFLT_WRITE_OPTS, writeBatch);
+                            measure(() -> db.write(DFLT_WRITE_OPTS, writeBatch), "runConsistently");
 
                             // Here we assume that no two threads would try to update these values concurrently.
                             if (oldAppliedIndex != state.pendingAppliedIndex) {
@@ -238,7 +239,7 @@ public class RocksDbMvPartitionStorage implements MvPartitionStorage {
                         }
 
                         return res;
-                    } catch (RocksDBException e) {
+                    } catch (Throwable e) {
                         throw new StorageException("Unable to apply a write batch to RocksDB instance.", e);
                     } finally {
                         locker.unlockAll();
@@ -360,7 +361,7 @@ public class RocksDbMvPartitionStorage implements MvPartitionStorage {
     @Override
     public @Nullable BinaryRow addWrite(RowId rowId, @Nullable BinaryRow row, UUID txId, int commitTableId, int commitPartitionId)
             throws TxIdMismatchException, StorageException {
-        return busy(() -> {
+        return measure(() -> busy(() -> {
             @SuppressWarnings("resource") WriteBatchWithIndex writeBatch = PartitionDataHelper.requireWriteBatch();
 
             assert rowIsLocked(rowId);
@@ -408,7 +409,7 @@ public class RocksDbMvPartitionStorage implements MvPartitionStorage {
             }
 
             return res;
-        });
+        }), "addWriteRocks");
     }
 
     /**

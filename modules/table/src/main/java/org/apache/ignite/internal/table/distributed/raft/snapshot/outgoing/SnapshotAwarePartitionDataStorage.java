@@ -17,6 +17,8 @@
 
 package org.apache.ignite.internal.table.distributed.raft.snapshot.outgoing;
 
+import static org.apache.ignite.Instrumentation.measure;
+
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import org.apache.ignite.internal.hlc.HybridTimestamp;
@@ -111,7 +113,9 @@ public class SnapshotAwarePartitionDataStorage implements PartitionDataStorage {
 
     @Override
     public void lastApplied(long lastAppliedIndex, long lastAppliedTerm) throws StorageException {
-        partitionStorage.lastApplied(lastAppliedIndex, lastAppliedTerm);
+        measure(() -> {
+            partitionStorage.lastApplied(lastAppliedIndex, lastAppliedTerm);
+        }, "lastApplied");
     }
 
     @Override
@@ -130,9 +134,11 @@ public class SnapshotAwarePartitionDataStorage implements PartitionDataStorage {
     @Override
     public void addWriteCommitted(RowId rowId, @Nullable BinaryRow row, HybridTimestamp commitTs)
             throws TxIdMismatchException, StorageException {
-        handleSnapshotInterference(rowId);
+        measure(() -> {
+            handleSnapshotInterference(rowId);
 
-        partitionStorage.addWriteCommitted(rowId, row, commitTs);
+            partitionStorage.addWriteCommitted(rowId, row, commitTs);
+        }, "addWriteCommitted");
     }
 
     @Override
@@ -144,9 +150,11 @@ public class SnapshotAwarePartitionDataStorage implements PartitionDataStorage {
 
     @Override
     public void commitWrite(RowId rowId, HybridTimestamp timestamp) throws StorageException {
-        handleSnapshotInterference(rowId);
+        measure(() -> {
+            handleSnapshotInterference(rowId);
 
-        partitionStorage.commitWrite(rowId, timestamp);
+            partitionStorage.commitWrite(rowId, timestamp);
+        }, "commitWrite");
     }
 
     @Override

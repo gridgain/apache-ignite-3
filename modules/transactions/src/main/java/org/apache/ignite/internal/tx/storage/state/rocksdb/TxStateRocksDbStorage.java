@@ -18,6 +18,7 @@
 package org.apache.ignite.internal.tx.storage.state.rocksdb;
 
 import static java.util.concurrent.CompletableFuture.completedFuture;
+import static org.apache.ignite.Instrumentation.measure;
 import static org.apache.ignite.internal.util.ByteUtils.bytesToLong;
 import static org.apache.ignite.internal.util.ByteUtils.fromBytes;
 import static org.apache.ignite.internal.util.ByteUtils.putLongToBytes;
@@ -141,10 +142,10 @@ public class TxStateRocksDbStorage implements TxStateStorage {
             try {
                 throwExceptionIfStorageInProgressOfRebalance();
 
-                byte[] txMetaBytes = db.get(txIdToKey(txId));
+                byte[] txMetaBytes = measure(() -> db.get(txIdToKey(txId)), "txStateStorageGet");
 
                 return txMetaBytes == null ? null : fromBytes(txMetaBytes);
-            } catch (RocksDBException e) {
+            } catch (Throwable e) {
                 throw new IgniteInternalException(
                         TX_STATE_STORAGE_ERR,
                         IgniteStringFormatter.format("Failed to get a value from storage: [{}]", createStorageInfo()),
@@ -158,10 +159,10 @@ public class TxStateRocksDbStorage implements TxStateStorage {
     public void put(UUID txId, TxMeta txMeta) {
         busy(() -> {
             try {
-                db.put(txIdToKey(txId), toBytes(txMeta));
+                measure(() -> db.put(txIdToKey(txId), toBytes(txMeta)), "txStateStoragePut");
 
                 return null;
-            } catch (RocksDBException e) {
+            } catch (Throwable e) {
                 throw new IgniteInternalException(
                         TX_STATE_STORAGE_ERR,
                         IgniteStringFormatter.format("Failed to put a value into storage: [{}]", createStorageInfo()),
@@ -177,7 +178,7 @@ public class TxStateRocksDbStorage implements TxStateStorage {
             try (WriteBatch writeBatch = new WriteBatch()) {
                 byte[] txIdBytes = txIdToKey(txId);
 
-                byte[] txMetaExistingBytes = db.get(readOptions, txIdToKey(txId));
+                byte[] txMetaExistingBytes = measure(() -> db.get(readOptions, txIdToKey(txId)), "compareAndSetGet");
 
                 boolean result;
 
@@ -209,7 +210,7 @@ public class TxStateRocksDbStorage implements TxStateStorage {
                     updateLastApplied(writeBatch, commandIndex, commandTerm);
                 }
 
-                db.write(writeOptions, writeBatch);
+                measure(() -> db.write(writeOptions, writeBatch), "compareAndSet");
 
                 return result;
             } catch (RocksDBException e) {
@@ -228,10 +229,10 @@ public class TxStateRocksDbStorage implements TxStateStorage {
             try {
                 throwExceptionIfStorageInProgressOfRebalance();
 
-                db.delete(txIdToKey(txId));
+                measure(() -> db.delete(txIdToKey(txId)), "txStateStorageRemove");
 
                 return null;
-            } catch (RocksDBException e) {
+            } catch (Throwable e) {
                 throw new IgniteInternalException(
                         TX_STATE_STORAGE_ERR,
                         IgniteStringFormatter.format("Failed to remove a value from storage: [{}]", createStorageInfo()),
@@ -288,7 +289,7 @@ public class TxStateRocksDbStorage implements TxStateStorage {
                     return busy(() -> {
                         throwExceptionIfStorageInProgressOfRebalance();
 
-                        return super.next();
+                        return measure(() -> super.next(), "nextRocksIteratorElements");
                     });
                 }
 
@@ -304,7 +305,7 @@ public class TxStateRocksDbStorage implements TxStateStorage {
 
     @Override
     public CompletableFuture<Void> flush() {
-        return busy(() -> tableStorage.awaitFlush(true));
+        return measure(() -> busy(() -> tableStorage.awaitFlush(true)), "txStateStorageFlush");
     }
 
     @Override
@@ -323,13 +324,14 @@ public class TxStateRocksDbStorage implements TxStateStorage {
             try {
                 throwExceptionIfStorageInProgressOfRebalance();
 
-                db.put(lastAppliedIndexAndTermKey, indexAndTermToBytes(lastAppliedIndex, lastAppliedTerm));
+                measure(() -> db.put(lastAppliedIndexAndTermKey, indexAndTermToBytes(lastAppliedIndex, lastAppliedTerm)),
+                        "txStateStorageLastApplied");
 
                 this.lastAppliedIndex = lastAppliedIndex;
                 this.lastAppliedTerm = lastAppliedTerm;
 
                 return null;
-            } catch (RocksDBException e) {
+            } catch (Throwable e) {
                 throw new IgniteInternalException(
                         TX_STATE_STORAGE_ERR,
                         IgniteStringFormatter.format("Failed to write applied index value to storage: [{}]", createStorageInfo()),
@@ -366,8 +368,8 @@ public class TxStateRocksDbStorage implements TxStateStorage {
 
     private byte @Nullable [] readLastAppliedIndexAndTerm(ReadOptions readOptions) {
         try {
-            return db.get(readOptions, lastAppliedIndexAndTermKey);
-        } catch (RocksDBException e) {
+            return measure(() -> db.get(readOptions, lastAppliedIndexAndTermKey), "txStateStorageReadLastApplied");
+        } catch (Throwable e) {
             throw new IgniteInternalException(
                     TX_STATE_STORAGE_ERR,
                     IgniteStringFormatter.format("Failed to read applied term value from storage: [{}]", createStorageInfo()),
@@ -387,7 +389,7 @@ public class TxStateRocksDbStorage implements TxStateStorage {
 
             writeBatch.delete(lastAppliedIndexAndTermKey);
 
-            db.write(writeOptions, writeBatch);
+            measure(() -> db.write(writeOptions, writeBatch), "destroy");
         } catch (Exception e) {
             throw new IgniteInternalException(
                     TX_STATE_STORAGE_ERR,
@@ -442,7 +444,7 @@ public class TxStateRocksDbStorage implements TxStateStorage {
 
             updateLastApplied(writeBatch, REBALANCE_IN_PROGRESS, REBALANCE_IN_PROGRESS);
 
-            db.write(writeOptions, writeBatch);
+            measure(() -> db.write(writeOptions, writeBatch), "startRebalance");
 
             return completedFuture(null);
         } catch (Exception e) {
@@ -467,7 +469,7 @@ public class TxStateRocksDbStorage implements TxStateStorage {
 
             writeBatch.delete(lastAppliedIndexAndTermKey);
 
-            db.write(writeOptions, writeBatch);
+            measure(() -> db.write(writeOptions, writeBatch), "abortRebalance");
 
             lastAppliedIndex = 0;
             lastAppliedTerm = 0;
@@ -496,7 +498,7 @@ public class TxStateRocksDbStorage implements TxStateStorage {
         try (WriteBatch writeBatch = new WriteBatch()) {
             updateLastApplied(writeBatch, lastAppliedIndex, lastAppliedTerm);
 
-            db.write(writeOptions, writeBatch);
+            measure(() -> db.write(writeOptions, writeBatch), "finishRebalance");
 
             state.set(StorageState.RUNNABLE);
         } catch (Exception e) {
@@ -524,7 +526,7 @@ public class TxStateRocksDbStorage implements TxStateStorage {
 
             updateLastApplied(writeBatch, 0, 0);
 
-            db.write(writeOptions, writeBatch);
+            measure(() -> db.write(writeOptions, writeBatch), "clear");
 
             return completedFuture(null);
         } catch (RocksDBException e) {

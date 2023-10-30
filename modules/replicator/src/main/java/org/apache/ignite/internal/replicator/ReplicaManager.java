@@ -19,6 +19,8 @@ package org.apache.ignite.internal.replicator;
 
 import static java.util.concurrent.CompletableFuture.completedFuture;
 import static java.util.stream.Collectors.toSet;
+import static org.apache.ignite.Instrumentation.mark;
+import static org.apache.ignite.Instrumentation.measure;
 import static org.apache.ignite.internal.Kludges.IDLE_SAFE_TIME_PROPAGATION_PERIOD_MILLISECONDS_PROPERTY;
 import static org.apache.ignite.internal.replicator.LocalReplicaEvent.AFTER_REPLICA_STARTED;
 import static org.apache.ignite.internal.replicator.LocalReplicaEvent.BEFORE_REPLICA_STOPPED;
@@ -42,6 +44,8 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.LongSupplier;
+import org.apache.ignite.Instrumentation;
+import org.apache.ignite.Instrumentation.Measurement;
 import org.apache.ignite.internal.cluster.management.ClusterManagementGroupManager;
 import org.apache.ignite.internal.event.AbstractEventProducer;
 import org.apache.ignite.internal.hlc.HybridClock;
@@ -308,7 +312,11 @@ public class ReplicaManager extends AbstractEventProducer<LocalReplicaEvent, Loc
                     msg = prepareReplicaErrorResponse(sendTimestamp, ex);
                 }
 
+                Measurement resultMeasure = new Measurement("respond");
+                resultMeasure.start();
                 clusterNetSvc.messagingService().respond(senderConsistentId, msg, correlationId);
+                resultMeasure.stop();
+                Instrumentation.add(resultMeasure);
 
                 if (request instanceof PrimaryReplicaRequest) {
                     ClusterNode localNode = clusterNetSvc.topologyService().localMember();

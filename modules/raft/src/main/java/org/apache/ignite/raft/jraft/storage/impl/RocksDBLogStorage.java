@@ -17,6 +17,7 @@
 package org.apache.ignite.raft.jraft.storage.impl;
 
 import static java.nio.charset.StandardCharsets.US_ASCII;
+import static org.apache.ignite.Instrumentation.measure;
 
 import java.io.File;
 import java.io.IOException;
@@ -287,10 +288,11 @@ public class RocksDBLogStorage implements LogStorage, Describer {
             final byte[] vs = new byte[8];
             Bits.putLong(vs, 0, firstLogIndex);
             checkState();
-            this.db.put(this.confHandle, this.writeOptions, FIRST_LOG_IDX_KEY, vs);
+            measure(() -> this.db.put(this.confHandle, this.writeOptions, FIRST_LOG_IDX_KEY, vs),
+            "saveFirstLogIndex");
             return true;
         }
-        catch (final RocksDBException e) {
+        catch (final Throwable e) {
             LOG.error("Fail to save first log index {} in {}.", firstLogIndex, this.path, e);
             return false;
         }
@@ -331,7 +333,7 @@ public class RocksDBLogStorage implements LogStorage, Describer {
         }
         try (final WriteBatch batch = new WriteBatch()) {
             template.execute(batch);
-            this.db.write(this.writeOptions, batch);
+            measure(() -> this.db.write(this.writeOptions, batch), "execute batch");
         }
         catch (final RocksDBException e) {
             LOG.error("Execute batch failed with rocksdb exception.", e);
@@ -517,14 +519,15 @@ public class RocksDBLogStorage implements LogStorage, Describer {
                 final byte[] valueBytes = this.logEntryEncoder.encode(entry);
                 final byte[] newValueBytes = onDataAppend(logIndex, valueBytes, writeCtx);
                 writeCtx.startJob();
-                this.db.put(this.defaultHandle, this.writeOptions, getKeyBytes(logIndex), newValueBytes);
+                measure(() -> this.db.put(this.defaultHandle, this.writeOptions, getKeyBytes(logIndex), newValueBytes),
+                "appendEntry");
                 writeCtx.joinAll();
                 if (newValueBytes != valueBytes) {
                     doSync();
                 }
                 return true;
             }
-            catch (final RocksDBException | IOException e) {
+            catch (final IOException e) {
                 LOG.error("Fail to append entry.", e);
                 return false;
             }

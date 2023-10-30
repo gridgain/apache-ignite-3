@@ -26,6 +26,8 @@ import static java.util.concurrent.TimeUnit.SECONDS;
 import static java.util.stream.Collectors.toList;
 import static java.util.stream.Collectors.toMap;
 import static org.apache.ignite.internal.hlc.HybridTimestamp.hybridTimestampToLong;
+import static org.apache.ignite.Instrumentation.mark;
+import static org.apache.ignite.Instrumentation.measure;
 import static org.apache.ignite.internal.lang.IgniteStringFormatter.format;
 import static org.apache.ignite.internal.tx.TxState.ABANDONED;
 import static org.apache.ignite.internal.tx.TxState.ABORTED;
@@ -342,45 +344,47 @@ public class PartitionReplicaListener implements ReplicaListener {
     }
 
     private CompletableFuture<Boolean> onPrimaryElected(PrimaryReplicaEventParameters evt, @Nullable Throwable exception) {
-        if (!localNode.name().equals(evt.leaseholder())) {
-            return completedFuture(false);
-        }
-
-        List<CompletableFuture<?>> cleanupFutures = new ArrayList<>();
-
-        Cursor<IgniteBiTuple<UUID, TxMeta>> txs;
-
-        try {
-            txs = txStateStorage.scan();
-        } catch (IgniteInternalException e) {
-            return completedFuture(false);
-        }
-
-        for (IgniteBiTuple<UUID, TxMeta> tx : txs) {
-            UUID txId = tx.getKey();
-            TxMeta txMeta = tx.getValue();
-
-            assert !txMeta.enlistedPartitions().isEmpty();
-
-            if (isFinalState(txMeta.txState()) && !txMeta.locksReleased()) {
-                CompletableFuture<?> cleanupFuture = txManager.executeCleanupAsync(() -> durableCleanup(txId, txMeta));
-
-                cleanupFutures.add(cleanupFuture);
+        return measure(() -> {
+            if (!localNode.name().equals(evt.leaseholder())) {
+                return completedFuture(false);
             }
-        }
 
-        allOf(cleanupFutures.toArray(new CompletableFuture<?>[0]))
-                .whenComplete((v, e) -> {
-                    if (e != null) {
-                        LOG.error("Failure occurred while triggering cleanup on commit partition primary replica election "
-                                + "[commitPartition={}]", e, replicationGroupId);
-                    }
-                });
+            List<CompletableFuture<?>> cleanupFutures = new ArrayList<>();
 
-        // The future returned by this event handler can't wait for all cleanups because it's not necessary and it can block
-        // meta storage notification thread for a while, preventing it from delivering further updates (including leases) and therefore
-        // causing deadlock on primary replica waiting.
-        return completedFuture(false);
+            Cursor<IgniteBiTuple<UUID, TxMeta>> txs;
+
+            try {
+                txs = txStateStorage.scan();
+            } catch (IgniteInternalException e) {
+                return completedFuture(false);
+            }
+
+            for (IgniteBiTuple<UUID, TxMeta> tx : txs) {
+                UUID txId = tx.getKey();
+                TxMeta txMeta = tx.getValue();
+
+                assert !txMeta.enlistedPartitions().isEmpty();
+
+                if (isFinalState(txMeta.txState()) && !txMeta.locksReleased()) {
+                    CompletableFuture<?> cleanupFuture = txManager.executeCleanupAsync(() -> durableCleanup(txId, txMeta));
+
+                    cleanupFutures.add(cleanupFuture);
+                }
+            }
+
+            allOf(cleanupFutures.toArray(new CompletableFuture<?>[0]))
+                    .whenComplete((v, e) -> {
+                        if (e != null) {
+                            LOG.error("Failure occurred while triggering cleanup on commit partition primary replica election "
+                                    + "[commitPartition={}]", e, replicationGroupId);
+                        }
+                    });
+
+            // The future returned by this event handler can't wait for all cleanups because it's not necessary and it can block
+            // meta storage notification thread for a while, preventing it from delivering further updates (including leases) and therefore
+            // causing deadlock on primary replica waiting.
+            return completedFuture(false);
+        }, "onPrimaryElected");
     }
 
     private CompletableFuture<?> durableCleanup(UUID txId, TxMeta txMeta) {
@@ -864,8 +868,8 @@ public class PartitionReplicaListener implements ReplicaListener {
                     format("Unknown single request [actionType={}]", request.requestType()));
         }
 
-        CompletableFuture<Void> safeReadFuture = isPrimaryInTimestamp(isPrimary, readTimestamp) ? completedFuture(null)
-                : safeTime.waitFor(request.readTimestamp());
+        CompletableFuture<Void> safeReadFuture = measure(() -> isPrimaryInTimestamp(isPrimary, readTimestamp) ? completedFuture(null)
+                : safeTime.waitFor(request.readTimestamp()), "safeReadFuture");
 
         return safeReadFuture.thenCompose(unused -> resolveRowByPkForReadOnly(primaryKey, readTimestamp));
     }
@@ -3042,8 +3046,8 @@ public class PartitionReplicaListener implements ReplicaListener {
      * @param <T> Type of the {@code result}.
      */
     private <T> CompletableFuture<T> awaitCleanup(@Nullable RowId rowId, T result) {
-        return (rowId == null ? COMPLETED_EMPTY : rowCleanupMap.getOrDefault(rowId, COMPLETED_EMPTY))
-                .thenApply(ignored -> result);
+        return measure(() -> {return (rowId == null ? COMPLETED_EMPTY : rowCleanupMap.getOrDefault(rowId, COMPLETED_EMPTY))
+                .thenApply(ignored -> result);}, "awaitCleanup");
     }
 
     /**
@@ -3088,7 +3092,7 @@ public class PartitionReplicaListener implements ReplicaListener {
     }
 
     private BinaryTuple resolvePk(ByteBuffer bytes) {
-        return pkIndexStorage.get().resolve(bytes);
+        return measure(() -> pkIndexStorage.get().resolve(bytes), "resolvePk");
     }
 
     private List<BinaryTuple> resolvePks(List<ByteBuffer> bytesList) {
@@ -3491,7 +3495,7 @@ public class PartitionReplicaListener implements ReplicaListener {
     private CompletableFuture<Boolean> resolveWriteIntentReadability(ReadResult writeIntent, @Nullable HybridTimestamp timestamp) {
         UUID txId = writeIntent.transactionId();
 
-        return transactionStateResolver.resolveTxState(
+        return measure(() -> transactionStateResolver.resolveTxState(
                         txId,
                         new TablePartitionId(writeIntent.commitTableId(), writeIntent.commitPartitionId()),
                         timestamp)
@@ -3501,7 +3505,7 @@ public class PartitionReplicaListener implements ReplicaListener {
                     }
 
                     return canReadFromWriteIntent(txId, transactionMeta, timestamp);
-                });
+                }), "resolveWriteIntentReadability");
     }
 
     /**
@@ -3547,14 +3551,16 @@ public class PartitionReplicaListener implements ReplicaListener {
      * @return Future that will complete with catalog version associated with given operation though the operation timestamp.
      */
     private CompletableFuture<Integer> validateWriteAgainstSchemaAfterTakingLocks(UUID txId) {
-        HybridTimestamp operationTimestamp = hybridClock.now();
+        return measure(() -> {
+            HybridTimestamp operationTimestamp = hybridClock.now();
 
-        return reliableCatalogVersionFor(operationTimestamp)
-                .thenApply(catalogVersion -> {
-                    failIfSchemaChangedSinceTxStart(txId, operationTimestamp);
+            return reliableCatalogVersionFor(operationTimestamp)
+                    .thenApply(catalogVersion -> {
+                        failIfSchemaChangedSinceTxStart(txId, operationTimestamp);
 
-                    return catalogVersion;
-                });
+                        return catalogVersion;
+                    });
+        }, "validateWriteAgainstSchemaAfterTakingLocks");
     }
 
     private static UpdateCommand updateCommand(

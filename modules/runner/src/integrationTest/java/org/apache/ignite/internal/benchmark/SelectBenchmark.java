@@ -130,6 +130,12 @@ public class SelectBenchmark extends AbstractMultiNodeBenchmark {
         keyValueView.get(null, Tuple.create().set("ycsb_key", random.nextInt(TABLE_SIZE)));
     }
 
+    @Benchmark
+    @BenchmarkMode(Mode.SingleShotTime)
+    public void kvGetOnce() {
+        keyValueView.get(null, Tuple.create().set("ycsb_key", random.nextInt(TABLE_SIZE)));
+    }
+
     /**
      * Benchmark for KV get via thin client.
      */
@@ -143,7 +149,7 @@ public class SelectBenchmark extends AbstractMultiNodeBenchmark {
      */
     public static void main(String[] args) throws RunnerException {
         Options opt = new OptionsBuilder()
-                .include(".*" + SelectBenchmark.class.getSimpleName() + ".*")
+                .include(".*" + SelectBenchmark.class.getSimpleName() + ".kvGetOnce")
                 .build();
 
         new Runner(opt).run();

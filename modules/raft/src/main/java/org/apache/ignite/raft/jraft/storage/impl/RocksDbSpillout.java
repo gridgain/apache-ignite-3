@@ -17,6 +17,7 @@
 
 package org.apache.ignite.raft.jraft.storage.impl;
 
+import static org.apache.ignite.Instrumentation.measure;
 import java.io.IOException;
 import java.lang.invoke.MethodHandles;
 import java.lang.invoke.VarHandle;
@@ -242,8 +243,8 @@ public class RocksDbSpillout implements Logs {
 
             long logIndex = entry.getId().getIndex();
             byte[] valueBytes = this.logEntryEncoder.encode(entry);
-            this.db.put(this.columnFamily, this.writeOptions, createKey(logIndex), valueBytes);
-        } catch (RocksDBException e) {
+            measure(() -> this.db.put(this.columnFamily, this.writeOptions, createKey(logIndex), valueBytes), "appendEntry");
+        } catch (Throwable e) {
             LOG.error("Fail to append entry.", e);
             throw new LogStorageException("Fail to append entry", e);
         } finally {
@@ -326,7 +327,7 @@ public class RocksDbSpillout implements Logs {
             }
 
             template.execute(batch);
-            this.db.write(this.writeOptions, batch);
+            measure(() -> this.db.write(this.writeOptions, batch), "execute batch");
         } catch (RocksDBException e) {
             LOG.error("Execute batch failed with rocksdb exception.", e);
             throw new LogStorageException("Execute batch failed with rocksdb exception.", e);

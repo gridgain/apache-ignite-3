@@ -19,6 +19,7 @@ package org.apache.ignite.internal.hlc;
 
 import static java.lang.Math.max;
 import static java.time.Clock.systemUTC;
+import static org.apache.ignite.Instrumentation.measure;
 import static org.apache.ignite.internal.hlc.HybridTimestamp.LOGICAL_TIME_BITS_SIZE;
 import static org.apache.ignite.internal.hlc.HybridTimestamp.hybridTimestamp;
 
@@ -109,20 +110,22 @@ public class HybridClockImpl implements HybridClock {
      */
     @Override
     public HybridTimestamp update(HybridTimestamp requestTime) {
-        while (true) {
-            long now = currentTime();
+        return measure(() -> {
+            while (true) {
+                long now = currentTime();
 
-            // Read the latest time after accessing UTC time to reduce contention.
-            long oldLatestTime = this.latestTime;
+                // Read the latest time after accessing UTC time to reduce contention.
+                long oldLatestTime = this.latestTime;
 
-            long newLatestTime = max(requestTime.longValue() + 1, max(now, oldLatestTime + 1));
+                long newLatestTime = max(requestTime.longValue() + 1, max(now, oldLatestTime + 1));
 
-            if (LATEST_TIME.compareAndSet(this, oldLatestTime, newLatestTime)) {
-                notifyUpdateListeners(newLatestTime);
+                if (LATEST_TIME.compareAndSet(this, oldLatestTime, newLatestTime)) {
+                    notifyUpdateListeners(newLatestTime);
 
-                return hybridTimestamp(newLatestTime);
+                    return hybridTimestamp(newLatestTime);
+                }
             }
-        }
+        }, "HybridClock#update");
     }
 
     @Override

@@ -17,6 +17,8 @@
 
 package org.apache.ignite.internal.network.serialization.marshal;
 
+import static org.apache.ignite.Instrumentation.measure;
+
 import java.io.DataInput;
 import java.io.DataOutput;
 import java.io.Externalizable;
@@ -107,18 +109,20 @@ public class DefaultUserObjectMarshaller implements UserObjectMarshaller, Schema
     /** {@inheritDoc} */
     @Override
     public MarshalledObject marshal(@Nullable Object object) throws MarshalException {
-        MarshallingContext context = new MarshallingContext();
+        return measure(() -> {
+            MarshallingContext context = new MarshallingContext();
 
-        UosIgniteOutputStream output = freshByteArrayOutputStream();
-        try {
-            marshalShared(object, output, context);
-        } catch (IOException e) {
-            throw new MarshalException("Cannot marshal", e);
-        } finally {
-            output.release();
-        }
+            UosIgniteOutputStream output = freshByteArrayOutputStream();
+            try {
+                marshalShared(object, output, context);
+            } catch (IOException e) {
+                throw new MarshalException("Cannot marshal", e);
+            } finally {
+                output.release();
+            }
 
-        return new MarshalledObject(output.array(), context.usedDescriptorIds());
+            return new MarshalledObject(output.array(), context.usedDescriptorIds());
+        }, "marshalUserObject");
     }
 
     private UosIgniteOutputStream freshByteArrayOutputStream() {
@@ -272,18 +276,20 @@ public class DefaultUserObjectMarshaller implements UserObjectMarshaller, Schema
     @Override
     @Nullable
     public <T> T unmarshal(byte[] bytes, Object mergedDescriptors) throws UnmarshalException {
-        var input = new IgniteUnsafeDataInput(bytes);
+        return measure(() -> {
+            var input = new IgniteUnsafeDataInput(bytes);
 
-        try {
-            UnmarshallingContext context = new UnmarshallingContext(input, (DescriptorRegistry) mergedDescriptors, classLoader);
-            T result = unmarshalShared(input, context);
+            try {
+                UnmarshallingContext context = new UnmarshallingContext(input, (DescriptorRegistry) mergedDescriptors, classLoader);
+                T result = unmarshalShared(input, context);
 
-            throwIfNotDrained(input);
+                throwIfNotDrained(input);
 
-            return result;
-        } catch (IOException e) {
-            throw new UnmarshalException("Cannot unmarshal", e);
-        }
+                return result;
+            } catch (IOException e) {
+                throw new UnmarshalException("Cannot unmarshal", e);
+            }
+        }, "unmarshalUserObject");
     }
 
     private <T> T unmarshalShared(IgniteDataInput input, UnmarshallingContext context) throws IOException, UnmarshalException {

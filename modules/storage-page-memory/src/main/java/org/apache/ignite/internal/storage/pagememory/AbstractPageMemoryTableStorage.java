@@ -19,6 +19,7 @@ package org.apache.ignite.internal.storage.pagememory;
 
 import static java.util.concurrent.CompletableFuture.allOf;
 import static java.util.concurrent.CompletableFuture.completedFuture;
+import static org.apache.ignite.Instrumentation.measure;
 import static org.apache.ignite.internal.storage.MvPartitionStorage.REBALANCE_IN_PROGRESS;
 import static org.apache.ignite.internal.storage.util.StorageUtils.createMissingMvPartitionErrorMessage;
 import static org.apache.ignite.internal.util.IgniteUtils.inBusyLock;
@@ -227,7 +228,9 @@ public abstract class AbstractPageMemoryTableStorage implements MvTableStorage {
             return clearStorageAndUpdateDataStructures(mvPartitionStorage)
                     .thenAccept(unused ->
                             mvPartitionStorage.runConsistently(locker -> {
-                                mvPartitionStorage.lastAppliedOnRebalance(REBALANCE_IN_PROGRESS, REBALANCE_IN_PROGRESS);
+                                measure(
+                                        () -> mvPartitionStorage.lastAppliedOnRebalance(REBALANCE_IN_PROGRESS, REBALANCE_IN_PROGRESS),
+                                "startRebalancePartitoins");
 
                                 return null;
                             })
@@ -241,7 +244,7 @@ public abstract class AbstractPageMemoryTableStorage implements MvTableStorage {
                 clearStorageAndUpdateDataStructures(mvPartitionStorage)
                         .thenAccept(unused -> {
                             mvPartitionStorage.runConsistently(locker -> {
-                                mvPartitionStorage.lastAppliedOnRebalance(0, 0);
+                                measure(() -> mvPartitionStorage.lastAppliedOnRebalance(0, 0), "abortRebalancePartitions");
 
                                 return null;
                             });
@@ -260,9 +263,11 @@ public abstract class AbstractPageMemoryTableStorage implements MvTableStorage {
     ) {
         return inBusyLock(busyLock, () -> mvPartitionStorages.finishRebalance(partitionId, mvPartitionStorage -> {
             mvPartitionStorage.runConsistently(locker -> {
-                mvPartitionStorage.lastAppliedOnRebalance(lastAppliedIndex, lastAppliedTerm);
+                measure(() -> {
+                    mvPartitionStorage.lastAppliedOnRebalance(lastAppliedIndex, lastAppliedTerm);
 
-                mvPartitionStorage.committedGroupConfigurationOnRebalance(groupConfig);
+                    mvPartitionStorage.committedGroupConfigurationOnRebalance(groupConfig);
+                }, "finishRebalancePartitions");
 
                 return null;
             });

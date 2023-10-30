@@ -17,9 +17,13 @@
 
 package org.apache.ignite.internal.raft.util;
 
+import static org.apache.ignite.Instrumentation.measure;
+
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.util.Arrays;
+import org.apache.ignite.Instrumentation;
+import org.apache.ignite.Instrumentation.Measurement;
 import org.apache.ignite.internal.network.direct.DirectMessageReader;
 import org.apache.ignite.internal.network.direct.DirectMessageWriter;
 import org.apache.ignite.internal.network.direct.stream.DirectByteBufferStream;
@@ -86,35 +90,42 @@ public class OptimizedMarshaller implements Marshaller {
 
     @Override
     public byte[] marshall(Object o) {
-        assert o instanceof NetworkMessage;
+        return measure(() -> {
+            assert o instanceof NetworkMessage;
 
-        NetworkMessage message = (NetworkMessage) o;
+            NetworkMessage message = (NetworkMessage) o;
 
-        while (true) {
-            stream.setBuffer(buffer);
+            while (true) {
+                stream.setBuffer(buffer);
 
-            stream.writeMessage(message, messageWriter);
+                stream.writeMessage(message, messageWriter);
 
-            if (stream.lastFinished()) {
-                break;
+                if (stream.lastFinished()) {
+                    break;
+                }
+
+                buffer = expandBuffer(buffer);
             }
 
-            buffer = expandBuffer(buffer);
-        }
+            byte[] result = Arrays.copyOf(buffer.array(), buffer.position());
 
-        byte[] result = Arrays.copyOf(buffer.array(), buffer.position());
+            buffer.position(0);
 
-        buffer.position(0);
-
-        return result;
+            return result;
+        }, "marshall");
     }
 
     @SuppressWarnings("unchecked")
     @Override
     public <T> T unmarshall(ByteBuffer bytes) {
+        var measurement = new Measurement("unmarshall");
+        measurement.start();
         stream.setBuffer(bytes.duplicate().order(ORDER));
 
-        return stream.readMessage(messageReader);
+        T message = stream.readMessage(messageReader);
+        measurement.stop();
+        Instrumentation.add(measurement);
+        return message;
     }
 
     /**

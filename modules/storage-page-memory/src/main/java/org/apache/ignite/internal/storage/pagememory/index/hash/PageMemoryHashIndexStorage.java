@@ -17,6 +17,7 @@
 
 package org.apache.ignite.internal.storage.pagememory.index.hash;
 
+import static org.apache.ignite.Instrumentation.measure;
 import static org.apache.ignite.internal.storage.util.StorageUtils.throwExceptionIfStorageInProgressOfRebalance;
 import static org.apache.ignite.internal.storage.util.StorageUtils.throwExceptionIfStorageNotInCleanupOrRebalancedState;
 
@@ -80,25 +81,27 @@ public class PageMemoryHashIndexStorage extends AbstractPageMemoryIndexStorage<H
 
     @Override
     public Cursor<RowId> get(BinaryTuple key) throws StorageException {
-        return busy(() -> {
-            throwExceptionIfStorageInProgressOfRebalance(state.get(), this::createStorageInfo);
+        return measure(() -> {
+            return busy(() -> {
+                throwExceptionIfStorageInProgressOfRebalance(state.get(), this::createStorageInfo);
 
-            IndexColumns indexColumns = new IndexColumns(partitionId, key.byteBuffer());
+                IndexColumns indexColumns = new IndexColumns(partitionId, key.byteBuffer());
 
-            HashIndexRow lowerBound = new HashIndexRow(indexColumns, lowestRowId);
+                HashIndexRow lowerBound = new HashIndexRow(indexColumns, lowestRowId);
 
-            return new ScanCursor<RowId>(lowerBound, hashIndexTree) {
-                @Override
-                protected RowId map(HashIndexRow value) {
-                    return value.rowId();
-                }
+                return new ScanCursor<RowId>(lowerBound, hashIndexTree) {
+                    @Override
+                    protected RowId map(HashIndexRow value) {
+                        return value.rowId();
+                    }
 
-                @Override
-                protected boolean exceedsUpperBound(HashIndexRow value) {
-                    return !Objects.equals(value.indexColumns().valueBuffer(), key.byteBuffer());
-                }
-            };
-        });
+                    @Override
+                    protected boolean exceedsUpperBound(HashIndexRow value) {
+                        return !Objects.equals(value.indexColumns().valueBuffer(), key.byteBuffer());
+                    }
+                };
+            });
+        }, "indexGet");
     }
 
     @Override
@@ -122,26 +125,27 @@ public class PageMemoryHashIndexStorage extends AbstractPageMemoryIndexStorage<H
 
     @Override
     public void remove(IndexRow row) throws StorageException {
-        busy(() -> {
-            throwExceptionIfStorageInProgressOfRebalance(state.get(), this::createStorageInfo);
+        measure(() ->
+            busy(() -> {
+                throwExceptionIfStorageInProgressOfRebalance(state.get(), this::createStorageInfo);
 
-            try {
-                IndexColumns indexColumns = new IndexColumns(partitionId, row.indexColumns().byteBuffer());
+                try {
+                    IndexColumns indexColumns = new IndexColumns(partitionId, row.indexColumns().byteBuffer());
 
-                HashIndexRow hashIndexRow = new HashIndexRow(indexColumns, row.rowId());
+                    HashIndexRow hashIndexRow = new HashIndexRow(indexColumns, row.rowId());
 
-                var remove = new RemoveHashIndexRowInvokeClosure(hashIndexRow, freeList);
+                    var remove = new RemoveHashIndexRowInvokeClosure(hashIndexRow, freeList);
 
-                hashIndexTree.invoke(hashIndexRow, null, remove);
+                    hashIndexTree.invoke(hashIndexRow, null, remove);
 
-                // Performs actual deletion from freeList if necessary.
-                remove.afterCompletion();
+                    // Performs actual deletion from freeList if necessary.
+                    remove.afterCompletion();
 
-                return null;
-            } catch (IgniteInternalCheckedException e) {
-                throw new StorageException("Failed to remove value from index", e);
-            }
-        });
+                    return null;
+                } catch (IgniteInternalCheckedException e) {
+                    throw new StorageException("Failed to remove value from index", e);
+                }
+            }), "removeIndex");
     }
 
     @Override

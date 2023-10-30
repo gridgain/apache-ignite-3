@@ -21,6 +21,7 @@ import static java.util.concurrent.CompletableFuture.allOf;
 import static java.util.concurrent.CompletableFuture.completedFuture;
 import static java.util.concurrent.CompletableFuture.runAsync;
 import static java.util.concurrent.CompletableFuture.supplyAsync;
+import static org.apache.ignite.Instrumentation.measure;
 import static java.util.concurrent.TimeUnit.SECONDS;
 import static org.apache.ignite.internal.hlc.HybridTimestamp.hybridTimestampToLong;
 import static org.apache.ignite.internal.replicator.ReplicaManager.DEFAULT_IDLE_SAFE_TIME_PROPAGATION_PERIOD_MILLISECONDS;
@@ -229,43 +230,45 @@ public class TxManagerImpl implements TxManager, NetworkMessageHandler {
 
     @Override
     public InternalTransaction begin(HybridTimestampTracker timestampTracker, boolean readOnly) {
+        return measure(() -> {
         HybridTimestamp beginTimestamp = clock.now();
         UUID txId = transactionIdGenerator.transactionIdFor(beginTimestamp);
         updateTxMeta(txId, old -> new TxStateMeta(PENDING, coordinatorId(), null));
 
-        if (!readOnly) {
-            return new ReadWriteTransactionImpl(this, timestampTracker, txId);
-        }
+            if (!readOnly) {
+                return new ReadWriteTransactionImpl(this, timestampTracker, txId);
+            }
 
-        HybridTimestamp observableTimestamp = timestampTracker.get();
+            HybridTimestamp observableTimestamp = timestampTracker.get();
 
-        HybridTimestamp readTimestamp = observableTimestamp != null
-                ? HybridTimestamp.max(observableTimestamp, currentReadTimestamp())
-                : currentReadTimestamp();
+            HybridTimestamp readTimestamp = observableTimestamp != null
+                    ? HybridTimestamp.max(observableTimestamp, currentReadTimestamp())
+                    : currentReadTimestamp();
 
-        lowWatermarkReadWriteLock.readLock().lock();
+            lowWatermarkReadWriteLock.readLock().lock();
 
-        try {
-            HybridTimestamp lowWatermark1 = this.lowWatermark.get();
+            try {
+                HybridTimestamp lowWatermark1 = this.lowWatermark.get();
 
-            readOnlyTxFutureById.compute(new TxIdAndTimestamp(readTimestamp, txId), (txIdAndTimestamp, readOnlyTxFuture) -> {
-                assert readOnlyTxFuture == null : "previous transaction has not completed yet: " + txIdAndTimestamp;
+                readOnlyTxFutureById.compute(new TxIdAndTimestamp(readTimestamp, txId), (txIdAndTimestamp, readOnlyTxFuture) -> {
+                    assert readOnlyTxFuture == null : "previous transaction has not completed yet: " + txIdAndTimestamp;
 
-                if (lowWatermark1 != null && readTimestamp.compareTo(lowWatermark1) <= 0) {
-                    throw new IgniteInternalException(
-                            TX_READ_ONLY_TOO_OLD_ERR,
-                            "Timestamp of read-only transaction must be greater than the low watermark: [txTimestamp={}, lowWatermark={}]",
-                            readTimestamp, lowWatermark1
-                    );
-                }
+                    if (lowWatermark1 != null && readTimestamp.compareTo(lowWatermark1) <= 0) {
+                        throw new IgniteInternalException(
+                                TX_READ_ONLY_TOO_OLD_ERR,
+                                "Timestamp of read-only transaction must be greater than the low watermark: [txTimestamp={}, lowWatermark={}]",
+                                readTimestamp, lowWatermark1
+                        );
+                    }
 
-                return new CompletableFuture<>();
-            });
+                    return new CompletableFuture<>();
+                });
 
-            return new ReadOnlyTransactionImpl(this, timestampTracker, txId, readTimestamp);
-        } finally {
-            lowWatermarkReadWriteLock.readLock().unlock();
-        }
+                return new ReadOnlyTransactionImpl(this, timestampTracker, txId, readTimestamp);
+            } finally {
+                lowWatermarkReadWriteLock.readLock().unlock();
+            }
+        }, "beginTransaction");
     }
 
     /**
@@ -305,17 +308,19 @@ public class TxManagerImpl implements TxManager, NetworkMessageHandler {
 
     @Override
     public void finishFull(HybridTimestampTracker timestampTracker, UUID txId, boolean commit) {
-        TxState finalState;
+        measure(() -> {
+            TxState finalState;
 
-        if (commit) {
-            timestampTracker.update(clock.now());
+            if (commit) {
+                timestampTracker.update(clock.now());
 
-            finalState = COMMITED;
-        } else {
-            finalState = ABORTED;
-        }
+                finalState = COMMITED;
+            } else {
+                finalState = ABORTED;
+            }
 
-        updateTxMeta(txId, old -> new TxStateMeta(finalState, old.txCoordinatorId(), old.commitTimestamp()));
+            updateTxMeta(txId, old -> new TxStateMeta(finalState, old.txCoordinatorId(), old.commitTimestamp()));
+        }, "finishFull");
     }
 
     private @Nullable HybridTimestamp commitTimestamp(boolean commit) {

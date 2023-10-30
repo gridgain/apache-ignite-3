@@ -26,6 +26,7 @@ import static java.util.concurrent.CompletableFuture.completedFuture;
 import static java.util.concurrent.CompletableFuture.failedFuture;
 import static java.util.concurrent.CompletableFuture.runAsync;
 import static java.util.stream.Collectors.toList;
+import static org.apache.ignite.Instrumentation.measure;
 import static org.apache.ignite.internal.causality.IncrementalVersionedValue.dependingOn;
 import static org.apache.ignite.internal.distributionzones.rebalance.RebalanceUtil.partitionAssignments;
 import static org.apache.ignite.internal.distributionzones.rebalance.RebalanceUtil.tableAssignments;
@@ -1508,21 +1509,23 @@ public class TableManager implements IgniteTablesInternal, IgniteComponent {
      * @return Future representing pending completion of the {@code TableManager#tableAsyncInternal} operation.
      */
     private CompletableFuture<TableViewInternal> tableAsyncInternal(String name) {
+        return measure(() -> {
         return inBusyLockAsync(busyLock, () -> {
             HybridTimestamp now = clock.now();
 
-            return orStopManagerFuture(schemaSyncService.waitForMetadataCompleteness(now))
-                    .thenComposeAsync(unused -> inBusyLockAsync(busyLock, () -> {
-                        CatalogTableDescriptor tableDescriptor = catalogService.table(name, now.longValue());
+                return orStopManagerFuture(schemaSyncService.waitForMetadataCompleteness(now))
+                        .thenComposeAsync(unused -> inBusyLockAsync(busyLock, () -> {
+                            CatalogTableDescriptor tableDescriptor = catalogService.table(name, now.longValue());
 
-                        // Check if the table has been deleted.
-                        if (tableDescriptor == null) {
-                            return completedFuture(null);
-                        }
+                            // Check if the table has been deleted.
+                            if (tableDescriptor == null) {
+                                return completedFuture(null);
+                            }
 
-                        return tableAsyncInternalBusy(tableDescriptor.id());
-                    }));
-        });
+                            return tableAsyncInternalBusy(tableDescriptor.id());
+                        }));
+            });
+        }, "tableAsync");
     }
 
     private CompletableFuture<TableViewInternal> tableAsyncInternalBusy(int tableId) {

@@ -18,6 +18,7 @@
 package org.apache.ignite.internal.raft.storage.impl;
 
 import static java.util.Arrays.copyOfRange;
+import static org.apache.ignite.Instrumentation.measure;
 
 import java.io.IOException;
 import java.lang.invoke.MethodHandles;
@@ -270,9 +271,10 @@ public class RocksDbSharedLogStorage implements LogStorage, Describer {
         try {
             byte[] vs = new byte[8];
             LONG_ARRAY_HANDLE.set(vs, 0, firstLogIndex);
-            this.db.put(this.confHandle, this.writeOptions, createKey(FIRST_LOG_IDX_KEY), vs);
+            measure(() -> this.db.put(this.confHandle, this.writeOptions, createKey(FIRST_LOG_IDX_KEY), vs),
+                    "saveFirstLogIndex");
             return true;
-        } catch (RocksDBException e) {
+        } catch (Throwable e) {
             LOG.error("Fail to save first log index {}.", e, firstLogIndex);
             return false;
         } finally {
@@ -411,12 +413,12 @@ public class RocksDbSharedLogStorage implements LogStorage, Describer {
                 long logIndex = entry.getId().getIndex();
                 byte[] valueBytes = this.logEntryEncoder.encode(entry);
                 byte[] newValueBytes = onDataAppend(logIndex, valueBytes);
-                this.db.put(this.dataHandle, this.writeOptions, createKey(logIndex), newValueBytes);
+                measure(() -> this.db.put(this.dataHandle, this.writeOptions, createKey(logIndex), newValueBytes), "appendEntry");
                 if (newValueBytes != valueBytes) {
                     doSync();
                 }
                 return true;
-            } catch (RocksDBException e) {
+            } catch (Throwable e) {
                 LOG.error("Fail to append entry.", e);
                 return false;
             } finally {
@@ -601,7 +603,7 @@ public class RocksDbSharedLogStorage implements LogStorage, Describer {
             }
 
             template.execute(batch);
-            this.db.write(this.writeOptions, batch);
+            measure(() -> this.db.write(this.writeOptions, batch), "executeBatch");
         } catch (RocksDBException e) {
             LOG.error("Execute batch failed with rocksdb exception.", e);
             return false;

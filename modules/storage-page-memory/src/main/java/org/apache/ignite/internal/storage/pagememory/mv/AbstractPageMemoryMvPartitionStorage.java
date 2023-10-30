@@ -17,6 +17,8 @@
 
 package org.apache.ignite.internal.storage.pagememory.mv;
 
+import static org.apache.ignite.Instrumentation.dumpStack;
+import static org.apache.ignite.Instrumentation.measure;
 import static org.apache.ignite.internal.storage.util.StorageUtils.throwExceptionDependingOnStorageState;
 import static org.apache.ignite.internal.storage.util.StorageUtils.throwExceptionDependingOnStorageStateOnRebalance;
 import static org.apache.ignite.internal.storage.util.StorageUtils.throwExceptionIfStorageNotInRunnableOrRebalanceState;
@@ -206,10 +208,10 @@ public abstract class AbstractPageMemoryMvPartitionStorage implements MvPartitio
      * @param indexDescriptor Index descriptor.
      */
     public PageMemoryHashIndexStorage getOrCreateHashIndex(StorageHashIndexDescriptor indexDescriptor) {
-        return busy(() -> hashIndexes.computeIfAbsent(
+        return measure(() -> busy(() -> hashIndexes.computeIfAbsent(
                 indexDescriptor.id(),
                 id -> createOrRestoreHashIndex(createIndexMetaForNewIndex(id), indexDescriptor))
-        );
+        ), "getOrCreateHashIndex");
     }
 
     /**
@@ -218,10 +220,10 @@ public abstract class AbstractPageMemoryMvPartitionStorage implements MvPartitio
      * @param indexDescriptor Index descriptor.
      */
     public PageMemorySortedIndexStorage getOrCreateSortedIndex(StorageSortedIndexDescriptor indexDescriptor) {
-        return busy(() -> sortedIndexes.computeIfAbsent(
+        return measure(() -> busy(() -> sortedIndexes.computeIfAbsent(
                 indexDescriptor.id(),
                 id -> createOrRestoreSortedIndex(createIndexMetaForNewIndex(id), indexDescriptor))
-        );
+        ), "getOrCreateSortedIndex");
     }
 
     private PageMemoryHashIndexStorage createOrRestoreHashIndex(IndexMeta indexMeta, StorageHashIndexDescriptor indexDescriptor) {
@@ -321,7 +323,8 @@ public abstract class AbstractPageMemoryMvPartitionStorage implements MvPartitio
 
     @Override
     public ReadResult read(RowId rowId, HybridTimestamp timestamp) throws StorageException {
-        return busy(() -> {
+        dumpStack();
+        return measure(() -> (ReadResult) busy(() -> {
             throwExceptionIfStorageNotInRunnableState();
 
             if (rowId.partitionId() != partitionId) {
@@ -340,7 +343,7 @@ public abstract class AbstractPageMemoryMvPartitionStorage implements MvPartitio
                     return findRowVersionByTimestamp(versionChain, timestamp);
                 }
             });
-        });
+        }), "readPageMemory");
     }
 
     private static boolean lookingForLatestVersion(HybridTimestamp timestamp) {

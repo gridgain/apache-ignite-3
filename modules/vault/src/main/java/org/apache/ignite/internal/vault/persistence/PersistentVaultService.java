@@ -17,6 +17,8 @@
 
 package org.apache.ignite.internal.vault.persistence;
 
+import static org.apache.ignite.Instrumentation.measure;
+
 import java.nio.file.Path;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
@@ -144,7 +146,7 @@ public class PersistentVaultService implements VaultService {
                 if (val == null) {
                     db.delete(key.bytes());
                 } else {
-                    db.put(key.bytes(), val);
+                    measure(() -> db.put(key.bytes(), val), "vaultStoragePutData");
                 }
             } catch (RocksDBException e) {
                 throw new IgniteInternalException("Unable to write data to RocksDB", e);
@@ -208,7 +210,7 @@ public class PersistentVaultService implements VaultService {
                     }
                 }
 
-                db.write(writeOpts, writeBatch);
+                measure(() -> db.write(writeOpts, writeBatch), "putAll");
             } catch (RocksDBException e) {
                 throw new IgniteInternalException("Unable to write data to RocksDB", e);
             }

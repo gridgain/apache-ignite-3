@@ -17,6 +17,7 @@
 
 package org.apache.ignite.raft.jraft.rpc.impl;
 
+import static org.apache.ignite.Instrumentation.measure;
 import java.util.concurrent.Executor;
 import org.apache.ignite.internal.raft.Marshaller;
 import org.apache.ignite.raft.jraft.Node;
@@ -42,7 +43,7 @@ public class InterceptingActionRequestProcessor extends ActionRequestProcessor {
 
     @Override
     protected void handleRequestInternal(RpcContext rpcCtx, Node node, ActionRequest request, Marshaller commandsMarshaller) {
-        Message interceptionResult = interceptor.intercept(rpcCtx, request, commandsMarshaller);
+        Message interceptionResult = measure(() -> interceptor.intercept(rpcCtx, request, commandsMarshaller), "intercept");
 
         if (interceptionResult != null) {
             rpcCtx.sendResponse(interceptionResult);

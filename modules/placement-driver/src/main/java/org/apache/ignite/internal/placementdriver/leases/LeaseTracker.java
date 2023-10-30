@@ -22,6 +22,7 @@ import static java.util.Collections.emptyMap;
 import static java.util.Collections.unmodifiableMap;
 import static java.util.concurrent.CompletableFuture.allOf;
 import static java.util.concurrent.CompletableFuture.completedFuture;
+import static org.apache.ignite.Instrumentation.measure;
 import static org.apache.ignite.internal.hlc.HybridTimestamp.CLOCK_SKEW;
 import static org.apache.ignite.internal.hlc.HybridTimestamp.MIN_VALUE;
 import static org.apache.ignite.internal.placementdriver.PlacementDriverManager.PLACEMENTDRIVER_LEASES_KEY;
@@ -218,7 +219,7 @@ public class LeaseTracker extends AbstractEventProducer<PrimaryReplicaEvent, Pri
             long timeout,
             TimeUnit unit
     ) {
-        return inBusyLockAsync(busyLock, () -> getOrCreatePrimaryReplicaWaiter(groupId).waitFor(timestamp)
+        return measure(() -> inBusyLockAsync(busyLock, () -> getOrCreatePrimaryReplicaWaiter(groupId).waitFor(timestamp)
                 .orTimeout(timeout, unit)
                 .exceptionally(e -> {
                     if (e instanceof TimeoutException) {
@@ -226,12 +227,12 @@ public class LeaseTracker extends AbstractEventProducer<PrimaryReplicaEvent, Pri
                     }
 
                     throw new PrimaryReplicaAwaitException(groupId, timestamp, e);
-                }));
+                })), "awaitPrimaryReplica");
     }
 
     @Override
     public CompletableFuture<ReplicaMeta> getPrimaryReplica(ReplicationGroupId replicationGroupId, HybridTimestamp timestamp) {
-        return inBusyLockAsync(busyLock, () -> {
+        return measure(() -> inBusyLockAsync(busyLock, () -> {
             Lease lease = getLease(replicationGroupId);
 
             if (lease.isAccepted() && lease.getExpirationTime().after(timestamp)) {
@@ -250,7 +251,7 @@ public class LeaseTracker extends AbstractEventProducer<PrimaryReplicaEvent, Pri
                             return null;
                         }
                     }));
-        });
+        }), "getPrimaryReplica");
     }
 
     /**

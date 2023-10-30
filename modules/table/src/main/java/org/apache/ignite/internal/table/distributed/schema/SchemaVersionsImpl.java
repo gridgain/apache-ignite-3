@@ -17,6 +17,8 @@
 
 package org.apache.ignite.internal.table.distributed.schema;
 
+import static org.apache.ignite.Instrumentation.measure;
+
 import java.util.concurrent.CompletableFuture;
 import org.apache.ignite.internal.catalog.CatalogService;
 import org.apache.ignite.internal.catalog.descriptors.CatalogTableDescriptor;
@@ -48,8 +50,8 @@ public class SchemaVersionsImpl implements SchemaVersions {
 
     @Override
     public CompletableFuture<Integer> schemaVersionAt(HybridTimestamp timestamp, int tableId) {
-        return tableDescriptor(tableId, timestamp)
-                .thenApply(CatalogTableDescriptor::tableVersion);
+        return measure(() -> tableDescriptor(tableId, timestamp)
+                .thenApply(CatalogTableDescriptor::tableVersion), "schemaVersionAt");
     }
 
     private CompletableFuture<CatalogTableDescriptor> tableDescriptor(int tableId, HybridTimestamp timestamp) {

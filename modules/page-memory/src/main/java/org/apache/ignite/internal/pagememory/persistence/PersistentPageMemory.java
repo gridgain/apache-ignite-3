@@ -18,6 +18,7 @@
 package org.apache.ignite.internal.pagememory.persistence;
 
 import static java.lang.System.lineSeparator;
+import static org.apache.ignite.Instrumentation.measure;
 import static org.apache.ignite.internal.pagememory.FullPageId.NULL_PAGE;
 import static org.apache.ignite.internal.pagememory.configuration.schema.PersistentPageMemoryDataRegionConfigurationSchema.CLOCK_REPLACEMENT_MODE;
 import static org.apache.ignite.internal.pagememory.configuration.schema.PersistentPageMemoryDataRegionConfigurationSchema.RANDOM_LRU_REPLACEMENT_MODE;

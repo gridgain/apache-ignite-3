@@ -17,6 +17,9 @@
 
 package org.apache.ignite.internal.table;
 
+import static org.apache.ignite.Instrumentation.mark;
+import static org.apache.ignite.Instrumentation.measure;
+
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
@@ -26,6 +29,7 @@ import java.util.Map.Entry;
 import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Flow.Publisher;
+import org.apache.ignite.Instrumentation;
 import org.apache.ignite.internal.schema.BinaryRow;
 import org.apache.ignite.internal.schema.BinaryRowEx;
 import org.apache.ignite.internal.schema.SchemaRegistry;
@@ -69,7 +73,12 @@ public class KeyValueBinaryViewImpl extends AbstractTableView implements KeyValu
     /** {@inheritDoc} */
     @Override
     public Tuple get(@Nullable Transaction tx, Tuple key) {
-        return sync(getAsync(tx, key));
+        Instrumentation.start(true);
+        mark("kvGetMark");
+        var result = sync(getAsync(tx, key));
+        mark("kvGetEndMark");
+        Instrumentation.end();
+        return result;
     }
 
     /** {@inheritDoc} */
@@ -164,7 +173,11 @@ public class KeyValueBinaryViewImpl extends AbstractTableView implements KeyValu
     /** {@inheritDoc} */
     @Override
     public void put(@Nullable Transaction tx, Tuple key, Tuple val) {
+        Instrumentation.start(true);
+        mark("kvPutMark");
         sync(putAsync(tx, key, val));
+        mark("kvPutEndMark");
+        Instrumentation.end();
     }
 
     /** {@inheritDoc} */
@@ -466,7 +479,7 @@ public class KeyValueBinaryViewImpl extends AbstractTableView implements KeyValu
             return null;
         }
 
-        return TableRow.valueTuple(rowConverter.resolveRow(row, schemaVersion));
+        return measure(() -> TableRow.valueTuple(rowConverter.resolveRow(row, schemaVersion)), "unmarshalValue");
     }
 
     /**

@@ -17,6 +17,8 @@
 
 package org.apache.ignite.internal.rocksdb.flush;
 
+import static org.apache.ignite.Instrumentation.measure;
+
 import java.util.ArrayList;
 import java.util.List;
 import java.util.SortedMap;
@@ -178,23 +180,25 @@ public class RocksDbFlusher {
      * @see #scheduleFlush()
      */
     public CompletableFuture<Void> awaitFlush(boolean schedule) {
-        CompletableFuture<Void> future;
+        return measure(() -> {
+            CompletableFuture<Void> future;
 
-        long dbSequenceNumber = db.getLatestSequenceNumber();
+            long dbSequenceNumber = db.getLatestSequenceNumber();
 
-        synchronized (latestPersistedSequenceNumberMux) {
-            if (dbSequenceNumber <= latestPersistedSequenceNumber) {
-                return CompletableFuture.completedFuture(null);
+            synchronized (latestPersistedSequenceNumberMux) {
+                if (dbSequenceNumber <= latestPersistedSequenceNumber) {
+                    return CompletableFuture.completedFuture(null);
+                }
+
+                future = flushFuturesBySequenceNumber.computeIfAbsent(dbSequenceNumber, s -> new CompletableFuture<>());
             }
 
-            future = flushFuturesBySequenceNumber.computeIfAbsent(dbSequenceNumber, s -> new CompletableFuture<>());
-        }
+            if (schedule) {
+                scheduleFlush();
+            }
 
-        if (schedule) {
-            scheduleFlush();
-        }
-
-        return future;
+            return future;
+        }, "awaitFlush");
     }
 
     /**

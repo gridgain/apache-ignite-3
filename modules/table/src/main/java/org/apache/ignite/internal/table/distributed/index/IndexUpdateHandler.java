@@ -17,6 +17,8 @@
 
 package org.apache.ignite.internal.table.distributed.index;
 
+import static org.apache.ignite.Instrumentation.measure;
+
 import java.nio.ByteBuffer;
 import java.util.stream.Stream;
 import org.apache.ignite.internal.schema.BinaryRow;
@@ -148,7 +150,7 @@ public class IndexUpdateHandler {
      */
     // TODO: IGNITE-19513 Fix it, we should have already waited for the indexes to be created
     public void waitIndexes() {
-        indexes.get();
+        measure(() -> indexes.get(), "waitIndexes");
     }
 
     /**

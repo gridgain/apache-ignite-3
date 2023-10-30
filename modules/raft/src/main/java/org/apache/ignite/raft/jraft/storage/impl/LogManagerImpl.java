@@ -16,6 +16,7 @@
  */
 package org.apache.ignite.raft.jraft.storage.impl;
 
+import static org.apache.ignite.Instrumentation.measure;
 import com.lmax.disruptor.EventHandler;
 import com.lmax.disruptor.EventTranslator;
 import com.lmax.disruptor.RingBuffer;
@@ -292,6 +293,7 @@ public class LogManagerImpl implements LogManager {
     public void appendEntries(final List<LogEntry> entries, final StableClosure done) {
         assert(done != null);
 
+        measure(() -> {
         Requires.requireNonNull(done, "done");
         if (this.hasError) {
             entries.clear();
@@ -346,6 +348,7 @@ public class LogManagerImpl implements LogManager {
                 this.writeLock.unlock();
             }
         }
+        }, "appendEntries");
     }
 
     /**

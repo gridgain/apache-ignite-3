@@ -17,6 +17,7 @@
 
 package org.apache.ignite.internal.cluster.management.raft;
 
+import static org.apache.ignite.Instrumentation.measure;
 import static org.apache.ignite.internal.rocksdb.snapshot.ColumnFamilyRange.fullRange;
 
 import java.nio.file.Path;
@@ -98,8 +99,8 @@ public class RocksDbClusterStateStorage implements ClusterStateStorage {
     @Override
     public void put(byte[] key, byte[] value) {
         try {
-            db.put(key, value);
-        } catch (RocksDBException e) {
+            measure(() -> db.put(key, value), "rocksDbClusterStateStoragePut");
+        } catch (Throwable e) {
             throw new IgniteInternalException("Unable to put data into Rocks DB", e);
         }
     }
@@ -118,7 +119,7 @@ public class RocksDbClusterStateStorage implements ClusterStateStorage {
 
             batch.put(key, value);
 
-            db.write(options, batch);
+            measure(() -> db.write(options, batch), "RocksDB write");
         } catch (RocksDBException e) {
             throw new IgniteInternalException("Unable to replace data in Rocks DB", e);
         }
@@ -143,7 +144,7 @@ public class RocksDbClusterStateStorage implements ClusterStateStorage {
                 batch.delete(key);
             }
 
-            db.write(options, batch);
+            measure(() -> db.write(options, batch), "RocksDB write");
         } catch (RocksDBException e) {
             throw new IgniteInternalException("Unable to remove data from Rocks DB", e);
         }

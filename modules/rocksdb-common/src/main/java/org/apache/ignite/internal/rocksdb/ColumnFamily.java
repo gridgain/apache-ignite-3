@@ -17,6 +17,8 @@
 
 package org.apache.ignite.internal.rocksdb;
 
+import static org.apache.ignite.Instrumentation.measure;
+
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import org.jetbrains.annotations.Nullable;
@@ -116,7 +118,7 @@ public class ColumnFamily {
      * @see RocksDB#put(ColumnFamilyHandle, byte[], byte[])
      */
     public void put(byte[] key, byte[] value) throws RocksDBException {
-        db.put(cfHandle, key, value);
+        measure(() -> db.put(cfHandle, key, value), "columnFamilyPut");
     }
 
     /**

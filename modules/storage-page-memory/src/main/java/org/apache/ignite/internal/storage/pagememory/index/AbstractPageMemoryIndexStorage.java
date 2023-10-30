@@ -18,6 +18,7 @@
 
 package org.apache.ignite.internal.storage.pagememory.index;
 
+import static org.apache.ignite.Instrumentation.measure;
 import static org.apache.ignite.internal.storage.util.StorageUtils.throwExceptionDependingOnStorageState;
 import static org.apache.ignite.internal.storage.util.StorageUtils.throwExceptionDependingOnStorageStateOnRebalance;
 import static org.apache.ignite.internal.storage.util.StorageUtils.throwExceptionIfStorageInProgressOfRebalance;
@@ -245,13 +246,15 @@ public abstract class AbstractPageMemoryIndexStorage<K extends IndexRowKey, V ex
 
         @Override
         public boolean hasNext() {
-            return busy(() -> {
-                try {
-                    return advanceIfNeededBusy();
-                } catch (IgniteInternalCheckedException e) {
-                    throw new StorageException("Error while advancing the cursor", e);
-                }
-            });
+            return measure(() -> {
+                return busy(() -> {
+                    try {
+                        return advanceIfNeededBusy();
+                    } catch (IgniteInternalCheckedException e) {
+                        throw new StorageException("Error while advancing the cursor", e);
+                    }
+                });
+            }, "hasNextPageMemoryIndexStorage");
         }
 
         @Override

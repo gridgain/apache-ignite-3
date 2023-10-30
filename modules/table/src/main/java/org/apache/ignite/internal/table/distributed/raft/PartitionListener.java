@@ -20,6 +20,7 @@ package org.apache.ignite.internal.table.distributed.raft;
 import static java.util.Objects.requireNonNull;
 import static java.util.function.Predicate.not;
 import static java.util.stream.Collectors.toList;
+import static org.apache.ignite.Instrumentation.measure;
 import static org.apache.ignite.internal.lang.IgniteStringFormatter.format;
 import static org.apache.ignite.internal.tx.TxState.ABORTED;
 import static org.apache.ignite.internal.tx.TxState.COMMITED;
@@ -547,7 +548,7 @@ public class PartitionListener implements RaftGroupListener, BeforeApplyHandler 
             T newValue
     ) {
         try {
-            tracker.update(newValue, null);
+            measure(() -> tracker.update(newValue, null), "updateTrackerIgnoringTrackerClosedException");
         } catch (TrackerClosedException ignored) {
             // No-op.
         }

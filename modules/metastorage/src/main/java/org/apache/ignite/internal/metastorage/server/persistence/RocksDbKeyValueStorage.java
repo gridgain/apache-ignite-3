@@ -17,6 +17,7 @@
 
 package org.apache.ignite.internal.metastorage.server.persistence;
 
+import static org.apache.ignite.Instrumentation.measure;
 import static org.apache.ignite.internal.metastorage.server.Value.TOMBSTONE;
 import static org.apache.ignite.internal.metastorage.server.persistence.RocksStorageUtils.appendLong;
 import static org.apache.ignite.internal.metastorage.server.persistence.RocksStorageUtils.bytesToLong;
@@ -474,7 +475,7 @@ public class RocksDbKeyValueStorage implements KeyValueStorage {
                 revisionToTs.put(batch, revisionBytes, tsBytes);
             }
 
-            db.write(opts, batch);
+            measure(() -> db.write(opts, batch), "RocksDB write");
 
             rev = newRev;
             updCntr = newCntr;

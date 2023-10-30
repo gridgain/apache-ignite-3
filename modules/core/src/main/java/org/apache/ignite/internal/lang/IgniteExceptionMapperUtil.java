@@ -18,6 +18,7 @@
 package org.apache.ignite.internal.lang;
 
 import static java.util.Collections.unmodifiableMap;
+import static org.apache.ignite.Instrumentation.mark;
 import static org.apache.ignite.internal.util.ExceptionUtils.unwrapCause;
 import static org.apache.ignite.lang.ErrorGroups.Common.INTERNAL_ERR;
 
@@ -128,6 +129,7 @@ public class IgniteExceptionMapperUtil {
     public static <T> CompletableFuture<T> convertToPublicFuture(CompletableFuture<T> origin) {
         return origin
                 .handle((res, err) -> {
+                    mark("convertToPublicFuture");
                     if (err != null) {
                         throw new CompletionException(mapToPublicException(unwrapCause(err)));
                     }

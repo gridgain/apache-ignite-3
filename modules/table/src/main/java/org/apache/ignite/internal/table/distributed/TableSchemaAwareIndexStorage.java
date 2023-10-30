@@ -17,6 +17,8 @@
 
 package org.apache.ignite.internal.table.distributed;
 
+import static org.apache.ignite.Instrumentation.measure;
+
 import java.nio.ByteBuffer;
 import org.apache.ignite.internal.schema.BinaryRow;
 import org.apache.ignite.internal.schema.BinaryTuple;
@@ -78,9 +80,9 @@ public class TableSchemaAwareIndexStorage {
      * @param rowId An identifier of a row in a main storage.
      */
     public void put(BinaryRow binaryRow, RowId rowId) {
-        BinaryTuple tuple = indexRowResolver.extractColumns(binaryRow);
+        BinaryTuple tuple = measure(() -> indexRowResolver.extractColumns(binaryRow), "extractColumns");
 
-        storage.put(new IndexRowImpl(tuple, rowId));
+        measure(() -> storage.put(new IndexRowImpl(tuple, rowId)), "putIndex");
     }
 
     /**

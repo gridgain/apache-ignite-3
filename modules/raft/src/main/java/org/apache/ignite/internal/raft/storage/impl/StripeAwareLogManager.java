@@ -17,6 +17,8 @@
 
 package org.apache.ignite.internal.raft.storage.impl;
 
+import static org.apache.ignite.Instrumentation.measure;
+
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
@@ -225,7 +227,7 @@ public class StripeAwareLogManager extends LogManagerImpl {
 
             // At first, all log storages should prepare the data by adding it to the write batch in the log storage factory.
             for (StripeAwareAppendBatcher appendBatcher : appendBatchers) {
-                appendBatcher.appendToStorage();
+                measure(() -> appendBatcher.appendToStorage(), "StripeAwareAppendBatcher#appendToStorage");
             }
 
             if (!appendBatchers.isEmpty()) {
@@ -235,7 +237,7 @@ public class StripeAwareLogManager extends LogManagerImpl {
                 // The reason why we don't call this method on log factory, for example, is because the factory doesn't have proper access
                 // to the RAFT configuration, and can't say, whether it should use "fsync" or not, for example.
                 try {
-                    appendBatchers.iterator().next().commitWriteBatch();
+                    measure(() -> appendBatchers.iterator().next().commitWriteBatch(), "StripeAwareAppendBatcher#commitWriteBatch");
                 } catch (Exception e) {
                     LOG.error("**Critical error**, failed to appendEntries.", e);
 
@@ -249,7 +251,7 @@ public class StripeAwareLogManager extends LogManagerImpl {
 
             // When data is committed, we can notify all stable closures and send response messages.
             for (StripeAwareAppendBatcher appendBatcher : appendBatchers) {
-                appendBatcher.notifyClosures();
+                measure(() -> appendBatcher.notifyClosures(), "StripeAwareAppendBatcher#notifyClosures");
             }
 
             appendBatchers.clear();
