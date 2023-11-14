@@ -49,7 +49,7 @@ import org.jetbrains.annotations.Nullable;
  */
 public class NodeOptions extends RpcOptions implements Copiable<NodeOptions> {
     /** This value is used by default to determine the count of stripes in the striped queue. */
-    public static final int DEFAULT_STRIPES = Utils.cpus() * 2;
+    public static final int DEFAULT_STRIPES = 1;
 
     // A follower would become a candidate if it doesn't receive any message
     // from the leader in |election_timeout_ms| milliseconds
@@ -139,22 +139,22 @@ public class NodeOptions extends RpcOptions implements Copiable<NodeOptions> {
     /**
      * Timer manager thread pool size
      */
-    private int timerPoolSize = Math.min(Utils.cpus() * 3, 20);
+    private int timerPoolSize = 1;
 
     /**
      * CLI service request RPC executor pool size, use default executor if -1.
      */
-    private int cliRpcThreadPoolSize = Utils.cpus();
+    private int cliRpcThreadPoolSize = 1;
 
     /**
      * RAFT request RPC executor pool size, use default executor if -1.
      */
-    private int raftRpcThreadPoolSize = Utils.cpus() * 6;
+    private int raftRpcThreadPoolSize = 1;
 
     /**
      * Common executor pool size.
      */
-    private int commonThreadPollSize = Utils.cpus();
+    private int commonThreadPollSize = 1;
 
     /**
      * Whether to enable metrics for node.
