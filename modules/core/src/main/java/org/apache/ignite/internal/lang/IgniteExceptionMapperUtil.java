@@ -129,7 +129,6 @@ public class IgniteExceptionMapperUtil {
     public static <T> CompletableFuture<T> convertToPublicFuture(CompletableFuture<T> origin) {
         return origin
                 .handle((res, err) -> {
-                    mark("convertToPublicFuture");
                     if (err != null) {
                         throw new CompletionException(mapToPublicException(unwrapCause(err)));
                     }

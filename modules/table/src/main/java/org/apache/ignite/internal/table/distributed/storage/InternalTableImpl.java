@@ -372,7 +372,7 @@ public class InternalTableImpl implements InternalTable {
     }
 
     private InternalTransaction startImplicitRwTxIfNeeded(@Nullable InternalTransaction tx) {
-        return measure(() -> tx == null ? txManager.begin(observableTimestampTracker) : tx, "startImplicitRwTxIfNeeded");
+        return tx == null ? txManager.begin(observableTimestampTracker) : tx;
     }
 
     /**

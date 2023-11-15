@@ -63,7 +63,7 @@ public class AbstractMultiNodeBenchmark {
 
     protected static IgniteImpl clusterNode;
 
-    @Param({"true", "false"})
+    @Param({"false"})
     private boolean fsync;
 
     /**

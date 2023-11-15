@@ -57,12 +57,12 @@ import org.openjdk.jmh.runner.options.OptionsBuilder;
 @State(Scope.Benchmark)
 @Fork(1)
 @Threads(1)
-@Warmup(iterations = 10, time = 2)
-@Measurement(iterations = 20, time = 2)
+@Warmup(iterations = 1, time = 10)
+@Measurement(iterations = 1, time = 30)
 @BenchmarkMode(Mode.AverageTime)
 @OutputTimeUnit(TimeUnit.MILLISECONDS)
 public class InsertBenchmark extends AbstractMultiNodeBenchmark {
-    @Param({"1", "2", "3"})
+    @Param({"1"})
     private int clusterSize;
 
     /**

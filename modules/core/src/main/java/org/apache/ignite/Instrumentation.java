@@ -2,6 +2,8 @@ package org.apache.ignite;
 
 import static org.apache.ignite.internal.util.ExceptionUtils.sneakyThrow;
 
+import java.io.BufferedWriter;
+import java.io.FileWriter;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.OpenOption;
@@ -32,8 +34,10 @@ public class Instrumentation {
 
     private static volatile boolean jfr = false;
 
-    private static final Path file = Path.of("/Users/kgusakov/Projects/ignite-3/results.txt");
-//    private static final Path file = Path.of("/opt/pubagent/poc/log/stats/dstat/trace.txt");
+//    private static final Path file = Path.of("/Users/kgusakov/Projects/ignite-3/results.txt");
+    private static final Path file = Path.of("/opt/pubagent/poc/log/stats/dstat/trace.txt");
+
+    private static volatile BufferedWriter writer;
 
     private static volatile ConcurrentLinkedQueue<Measurement> measurements = new ConcurrentLinkedQueue<>();
 
@@ -45,6 +49,8 @@ public class Instrumentation {
         if (firstRun && !jfr) {
             try {
                 Files.deleteIfExists(file);
+                file.toFile().createNewFile();
+                writer = new BufferedWriter(new FileWriter(file.toFile(), true), 512 * 1024);
             } catch (IOException e) {
                 throw new RuntimeException(e);
             }
@@ -89,7 +95,7 @@ public class Instrumentation {
         sb.append(
                 "Found time: " + found + " Not found time: " + (wholeTime - found.get()) + " Percentage of found: " + 100 * found.get() / wholeTime + "\n\n");
         try {
-            Files.write(file, sb.toString().getBytes(), StandardOpenOption.APPEND, StandardOpenOption.CREATE);
+            writer.write(sb.toString());
         } catch (IOException e) {
             throw new RuntimeException(e);
         }

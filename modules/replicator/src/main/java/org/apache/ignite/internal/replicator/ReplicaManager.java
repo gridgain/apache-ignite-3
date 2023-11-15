@@ -312,11 +312,7 @@ public class ReplicaManager extends AbstractEventProducer<LocalReplicaEvent, Loc
                     msg = prepareReplicaErrorResponse(sendTimestamp, ex);
                 }
 
-                Measurement resultMeasure = new Measurement("respond");
-                resultMeasure.start();
                 clusterNetSvc.messagingService().respond(senderConsistentId, msg, correlationId);
-                resultMeasure.stop();
-                Instrumentation.add(resultMeasure);
 
                 if (request instanceof PrimaryReplicaRequest) {
                     ClusterNode localNode = clusterNetSvc.topologyService().localMember();

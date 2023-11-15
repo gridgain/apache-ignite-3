@@ -150,7 +150,7 @@ public class IndexUpdateHandler {
      */
     // TODO: IGNITE-19513 Fix it, we should have already waited for the indexes to be created
     public void waitIndexes() {
-        measure(() -> indexes.get(), "waitIndexes");
+        indexes.get();
     }
 
     /**
