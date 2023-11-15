@@ -19,7 +19,7 @@ package org.apache.ignite.raft.jraft.disruptor;
 import static org.apache.ignite.internal.lang.IgniteStringFormatter.format;
 
 import com.lmax.disruptor.BlockingWaitStrategy;
-import com.lmax.disruptor.EventFactory;
+import com.lmax.disruptor.BusySpinWaitStrategy;import com.lmax.disruptor.EventFactory;
 import com.lmax.disruptor.EventHandler;
 import com.lmax.disruptor.ExceptionHandler;
 import com.lmax.disruptor.RingBuffer;
@@ -93,7 +93,7 @@ public class StripedDisruptor<T extends NodeIdAware> {
                 .setEventFactory(eventFactory)
                 .setThreadFactory(new NamedThreadFactory(stripeName, true, LOG))
                 .setProducerType(ProducerType.MULTI)
-                .setWaitStrategy(new BlockingWaitStrategy())
+                .setWaitStrategy(new BusySpinWaitStrategy())
                 .build();
 
             eventHandlers.add(new StripeEntryHandler());
