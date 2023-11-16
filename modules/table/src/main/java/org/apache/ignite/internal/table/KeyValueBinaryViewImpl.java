@@ -73,11 +73,11 @@ public class KeyValueBinaryViewImpl extends AbstractTableView implements KeyValu
     /** {@inheritDoc} */
     @Override
     public Tuple get(@Nullable Transaction tx, Tuple key) {
-        Instrumentation.start(false);
-        mark("kvGetMark");
+//        Instrumentation.start(false);
+//        mark("kvGetMark");
         var result = sync(getAsync(tx, key));
-        mark("kvGetEndMark");
-        Instrumentation.end();
+//        mark("kvGetEndMark");
+//        Instrumentation.end();
         return result;
     }
 
