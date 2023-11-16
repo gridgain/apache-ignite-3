@@ -257,7 +257,7 @@ public class DefaultMessagingService extends AbstractMessagingService {
 
         var m = new Measurement("responseFuture");
         m.start();
-        CompletableFuture<NetworkMessage> responseFuture = new CompletableFuture<NetworkMessage>();
+        CompletableFuture<NetworkMessage> responseFuture = new CompletableFuture<NetworkMessage>().orTimeout(timeout, TimeUnit.MILLISECONDS);
         m.stop();
         Instrumentation.add(m);
 
