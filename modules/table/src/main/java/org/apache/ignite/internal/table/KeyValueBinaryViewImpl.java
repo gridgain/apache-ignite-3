@@ -17,6 +17,10 @@
 
 package org.apache.ignite.internal.table;
 
+import java.io.BufferedWriter;
+import java.io.FileWriter;
+import java.io.IOException;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
@@ -31,6 +35,7 @@ import org.apache.ignite.internal.schema.BinaryRowEx;
 import org.apache.ignite.internal.schema.SchemaRegistry;
 import org.apache.ignite.internal.schema.marshaller.TupleMarshallerException;
 import org.apache.ignite.internal.schema.row.Row;
+import org.apache.ignite.internal.storage.ReadResult;
 import org.apache.ignite.internal.streamer.StreamerBatchSender;
 import org.apache.ignite.internal.table.distributed.schema.SchemaVersions;
 import org.apache.ignite.internal.tx.InternalTransaction;
@@ -53,6 +58,19 @@ import org.jetbrains.annotations.Nullable;
 public class KeyValueBinaryViewImpl extends AbstractTableView implements KeyValueView<Tuple, Tuple> {
     private final TupleMarshallerCache marshallerCache;
 
+    private static final Path file = Path.of("/opt/pubagent/poc/log/trace.txt");
+
+    private static volatile BufferedWriter writer;
+
+    static {
+        try {
+            file.toFile().createNewFile();
+            writer = new BufferedWriter(new FileWriter(file.toFile(), true), 512 * 1024);
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
     /**
      * The constructor.
      *
@@ -69,7 +87,15 @@ public class KeyValueBinaryViewImpl extends AbstractTableView implements KeyValu
     /** {@inheritDoc} */
     @Override
     public Tuple get(@Nullable Transaction tx, Tuple key) {
-        return sync(getAsync(tx, key));
+        var begin = System.nanoTime();
+        var results = sync(getAsync(tx, key));
+        var duration = System.nanoTime() - begin;
+        try {
+            writer.write(duration/1000.0 + "\n");
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
+        return results;
     }
 
     /** {@inheritDoc} */
