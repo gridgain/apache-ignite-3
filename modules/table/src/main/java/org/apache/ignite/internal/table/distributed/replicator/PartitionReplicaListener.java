@@ -43,11 +43,7 @@ import static org.apache.ignite.lang.ErrorGroups.Transactions.TX_FAILED_READ_WRI
 import static org.apache.ignite.lang.ErrorGroups.Transactions.TX_WAS_ABORTED_ERR;
 import static org.apache.ignite.raft.jraft.util.internal.ThrowUtil.hasCause;
 
-import java.io.BufferedWriter;
-import java.io.FileWriter;
-import java.io.IOException;
 import java.nio.ByteBuffer;
-import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.EnumMap;
@@ -180,20 +176,6 @@ import org.jetbrains.annotations.Nullable;
 
 /** Partition replication listener. */
 public class PartitionReplicaListener implements ReplicaListener {
-
-    private static final Path file = Path.of("/opt/pubagent/poc/log/trace.txt");
-
-    private static volatile BufferedWriter writer;
-
-    static {
-        try {
-            file.toFile().createNewFile();
-            writer = new BufferedWriter(new FileWriter(file.toFile(), true), 512 * 1024);
-        } catch (IOException e) {
-            throw new RuntimeException(e);
-        }
-    }
-
     /** Logger. */
     private static final IgniteLogger LOG = Loggers.forClass(PartitionReplicaListener.class);
 
@@ -1990,10 +1972,7 @@ public class PartitionReplicaListener implements ReplicaListener {
             List<ReadResult> regularEntries = new ArrayList<>();
 
             for (RowId rowId : cursor) {
-                var begin = System.nanoTime();
                 ReadResult readResult = mvDataStorage.read(rowId, ts);
-                var duration = System.nanoTime() - begin;
-                writer.write(duration/1000.0 + " us\n");
 
                 if (readResult.isWriteIntent()) {
                     writeIntents.add(readResult);
