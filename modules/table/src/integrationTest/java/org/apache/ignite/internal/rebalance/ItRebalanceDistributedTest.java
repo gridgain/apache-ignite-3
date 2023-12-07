@@ -426,6 +426,12 @@ public class ItRebalanceDistributedTest extends BaseIgniteAbstractTest {
     }
 
     @Test
+    void testRestart() {
+        nodes.forEach(n -> n.stop());
+        nodes.forEach(n -> n.start());
+    }
+
+    @Test
     void testRebalanceRetryWhenCatchupFailed() throws Exception {
         Node node = getNode(0);
 

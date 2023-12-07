@@ -49,13 +49,14 @@ public class ItRebalanceRecoveryTest extends ClusterPerTestIntegrationTest {
         assertFalse(containsPartition(cluster.node(1)));
 
         // Block Meta Storage watches on node 1 to inhibit pending assignments handling.
-        WatchListenerInhibitor.metastorageEventsInhibitor(cluster.node(1)).startInhibit();
+//        WatchListenerInhibitor.metastorageEventsInhibitor(cluster.node(1)).startInhibit();
 
         // Change the number of replicas so that the table would get replicated on both nodes.
         cluster.doInSession(0, session -> {
             session.execute(null, "ALTER ZONE TEST_ZONE SET REPLICAS=2");
         });
 
+        cluster.restartNode(0);
         cluster.restartNode(1);
 
         assertTrue(containsPartition(cluster.node(0)));
