@@ -49,6 +49,8 @@ public abstract class AbstractNode<RowT> implements Node<RowT> {
 
     private List<Node<RowT>> sources;
 
+    public final int id;
+
     /**
      * Constructor.
      * TODO Documentation https://issues.apache.org/jira/browse/IGNITE-15859
@@ -57,6 +59,7 @@ public abstract class AbstractNode<RowT> implements Node<RowT> {
      */
     protected AbstractNode(ExecutionContext<RowT> ctx) {
         this.ctx = ctx;
+        this.id = ctx.operatorId();
     }
 
     /** {@inheritDoc} */

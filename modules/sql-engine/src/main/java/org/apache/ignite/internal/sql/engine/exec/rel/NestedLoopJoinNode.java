@@ -83,7 +83,7 @@ public abstract class NestedLoopJoinNode<RowT> extends AbstractNode<RowT> {
         requested = rowsCnt;
 
         if (!inLoop) {
-            context().execute(this::doJoin, this::onError);
+            context().executeNow(this::doJoin, this::onError, this);
         }
     }
 

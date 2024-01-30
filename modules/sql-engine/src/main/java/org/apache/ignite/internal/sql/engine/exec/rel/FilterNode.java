@@ -63,7 +63,7 @@ public class FilterNode<RowT> extends AbstractNode<RowT> implements SingleNode<R
         requested = rowsCnt;
 
         if (!inLoop) {
-            context().execute(this::doFilter, this::onError);
+            context().executeNow(this::doFilter, this::onError, this);
         }
     }
 

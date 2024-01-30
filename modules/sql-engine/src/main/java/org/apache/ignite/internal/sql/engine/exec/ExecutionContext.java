@@ -21,6 +21,7 @@ import static org.apache.ignite.internal.sql.engine.util.Commons.FRAMEWORK_CONFI
 import static org.apache.ignite.lang.ErrorGroups.Common.INTERNAL_ERR;
 
 import java.lang.reflect.Type;
+import java.util.BitSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -29,6 +30,7 @@ import java.util.TimeZone;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
 import org.apache.calcite.DataContext;
 import org.apache.calcite.linq4j.QueryProvider;
@@ -41,6 +43,7 @@ import org.apache.ignite.internal.sql.engine.exec.exp.ExpressionFactory;
 import org.apache.ignite.internal.sql.engine.exec.exp.ExpressionFactoryImpl;
 import org.apache.ignite.internal.sql.engine.exec.mapping.ColocationGroup;
 import org.apache.ignite.internal.sql.engine.exec.mapping.FragmentDescription;
+import org.apache.ignite.internal.sql.engine.exec.rel.AbstractNode;
 import org.apache.ignite.internal.sql.engine.type.IgniteTypeFactory;
 import org.apache.ignite.internal.sql.engine.util.TypeUtils;
 import org.apache.ignite.network.ClusterNode;
@@ -313,6 +316,34 @@ public class ExecutionContext<RowT> implements DataContext {
                 throw new IgniteInternalException(INTERNAL_ERR, "Unexpected exception", e);
             }
         });
+    }
+
+    private BitSet bitSet = new BitSet();
+
+    private final AtomicInteger operatorId = new AtomicInteger();
+
+    public int operatorId() {
+        return operatorId.getAndIncrement();
+    }
+
+    public void executeNow(RunnableX task, Consumer<Throwable> onError, AbstractNode<RowT> node) {
+        boolean first = !bitSet.get(node.id);
+
+        if (first) {
+            bitSet.set(node.id);
+
+            if (isCancelled()) {
+                return;
+            }
+
+            try {
+                task.run();
+            } catch (Throwable e) {
+                onError.accept(e);
+            }
+        } else {
+            execute(task, onError);
+        }
     }
 
     /**
