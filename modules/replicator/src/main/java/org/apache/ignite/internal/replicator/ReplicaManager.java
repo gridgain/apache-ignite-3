@@ -246,8 +246,13 @@ public class ReplicaManager extends AbstractEventProducer<LocalReplicaEvent, Loc
 
         ReplicaRequest request = (ReplicaRequest) message;
 
-        ExecutorService stripeExecutor = ReplicationGroupStripes.stripeFor(request.groupId(), requestsExecutor);
-        stripeExecutor.execute(() -> handleReplicaRequest(request, senderConsistentId, correlationId));
+        if (Thread.currentThread().getName().contains("MessagingService-inbound")) {
+            // The request is from the network.
+            ExecutorService stripeExecutor = ReplicationGroupStripes.stripeFor(request.groupId(), requestsExecutor);
+            stripeExecutor.execute(() -> handleReplicaRequest(request, senderConsistentId, correlationId));
+        } else {
+            handleReplicaRequest(request, senderConsistentId, correlationId);
+        }
     }
 
     private void handleReplicaRequest(ReplicaRequest request, String senderConsistentId, @Nullable Long correlationId) {
