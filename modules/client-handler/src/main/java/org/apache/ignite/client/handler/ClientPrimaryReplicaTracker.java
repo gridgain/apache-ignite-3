@@ -250,7 +250,7 @@ public class ClientPrimaryReplicaTracker implements EventListener<EventParameter
         maxStartTime.set(clock.nowLong());
 
         placementDriver.listen(PrimaryReplicaEvent.PRIMARY_REPLICA_ELECTED, (EventListener) this);
-        catalogService.listen(CatalogEvent.TABLE_DROP, (EventListener) this);
+        catalogService.listen(CatalogEvent.TABLE_DESTROY, (EventListener) this);
     }
 
     @SuppressWarnings({"rawtypes", "unchecked"})

@@ -141,6 +141,7 @@ public class CatalogManagerRecoveryTest extends BaseIgniteAbstractTest {
         createAndStartComponents();
 
         // Let's check that the versions for the points in time at which they were created are in place.
+        // TODO IGNITE-20680: Set snapshot Catalog version as earliest version on recovery.
         assertThrows(IllegalStateException.class, () -> catalogManager.activeCatalogVersion(0));
         assertThrows(IllegalStateException.class, () -> catalogManager.activeCatalogVersion(time0 - 1));
         assertThat(catalogManager.activeCatalogVersion(time0), equalTo(catalogVersion0));

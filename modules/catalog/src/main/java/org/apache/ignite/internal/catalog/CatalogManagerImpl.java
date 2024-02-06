@@ -25,6 +25,9 @@ import static org.apache.ignite.internal.catalog.commands.CatalogUtils.fromParam
 import static org.apache.ignite.internal.util.CollectionUtils.nullOrEmpty;
 import static org.apache.ignite.internal.util.CompletableFutures.nullCompletedFuture;
 
+import it.unimi.dsi.fastutil.ints.Int2ObjectMap;
+import it.unimi.dsi.fastutil.ints.Int2ObjectOpenHashMap;
+import it.unimi.dsi.fastutil.ints.IntSet;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
@@ -45,6 +48,7 @@ import org.apache.ignite.internal.catalog.descriptors.CatalogTableDescriptor;
 import org.apache.ignite.internal.catalog.descriptors.CatalogZoneDescriptor;
 import org.apache.ignite.internal.catalog.events.CatalogEvent;
 import org.apache.ignite.internal.catalog.events.CatalogEventParameters;
+import org.apache.ignite.internal.catalog.events.DestroyTableEvent;
 import org.apache.ignite.internal.catalog.storage.Fireable;
 import org.apache.ignite.internal.catalog.storage.SnapshotEntry;
 import org.apache.ignite.internal.catalog.storage.UpdateEntry;
@@ -344,7 +348,7 @@ public class CatalogManagerImpl extends AbstractEventProducer<CatalogEvent, Cata
         Catalog catalog = catalogAt(timestamp);
 
         return updateLog.saveSnapshot(new SnapshotEntry(catalog))
-                .thenAccept(ignore -> {});
+                .thenCompose(ignore -> truncateUpTo(catalog));
     }
 
     private void registerCatalog(Catalog newCatalog) {
@@ -352,9 +356,45 @@ public class CatalogManagerImpl extends AbstractEventProducer<CatalogEvent, Cata
         catalogByTs.put(newCatalog.time(), newCatalog);
     }
 
-    private void truncateUpTo(Catalog catalog) {
-        catalogByVer.headMap(catalog.version(), false).clear();
-        catalogByTs.headMap(catalog.time(), false).clear();
+    private CompletableFuture<Void> truncateUpTo(Catalog catalog) {
+        // Collect destroy events for dropped tables/indexes.
+        IntSet aliveTables = catalog.tablesIds();
+
+        // Use reverse order to find latest table descriptors.
+        Collection<Catalog> droppedCatalogVersions = catalogByVer.subMap(earliestCatalogVersion(), true, catalog.version(), false)
+                        .descendingMap().values();
+
+        // TODO IGNITE-20680: Drop indexes first.
+        // Dropped tables
+        Int2ObjectMap<DestroyTableEvent> droppedTables = new Int2ObjectOpenHashMap<>();
+        droppedCatalogVersions.forEach(oldCatalog -> oldCatalog.tables().stream()
+                .filter(tbl -> !aliveTables.contains(tbl.id()))
+                .forEach(tbl -> droppedTables.putIfAbsent(tbl.id(),
+                        new DestroyTableEvent(tbl.id(), oldCatalog.zone(tbl.zoneId()).partitions())
+                )));
+
+        // TODO IGNITE-20680: Truncate catalog collections. Make this synchronously if needed.
+
+        List<CompletableFuture<?>> eventFutures = new ArrayList<>(droppedTables.size());
+
+        for (Fireable fireEvent : droppedTables.values()) {
+            eventFutures.add(fireEvent(
+                    fireEvent.eventType(),
+                    // TODO fix causalityToken
+                    fireEvent.createEventParameters(0L, catalog.version())
+            ));
+        }
+
+        return allOf(eventFutures.toArray(CompletableFuture[]::new))
+                .whenComplete((ignore, err) -> {
+                    if (err != null) {
+                        LOG.warn("Failed to compact catalog.", err);
+                        //TODO: IGNITE-14611 Pass exception to an error handler?
+                    }
+
+                    catalogByVer.headMap(catalog.version(), false).clear();
+                    catalogByTs.headMap(catalog.time(), false).clear();
+                });
     }
 
     private CompletableFuture<Void> saveUpdateAndWaitForActivation(UpdateProducer updateProducer) {
@@ -449,7 +489,6 @@ public class CatalogManagerImpl extends AbstractEventProducer<CatalogEvent, Cata
             // On recovery phase, we must register catalog from the snapshot.
             // In other cases, it is ok to rewrite an existed version, because it's exactly the same.
             registerCatalog(catalog);
-            truncateUpTo(catalog);
 
             return nullCompletedFuture();
         }

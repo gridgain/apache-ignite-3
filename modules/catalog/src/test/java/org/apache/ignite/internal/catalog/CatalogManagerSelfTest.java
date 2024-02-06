@@ -131,6 +131,7 @@ import org.apache.ignite.internal.catalog.events.CatalogEventParameters;
 import org.apache.ignite.internal.catalog.events.CreateIndexEventParameters;
 import org.apache.ignite.internal.catalog.events.CreateTableEventParameters;
 import org.apache.ignite.internal.catalog.events.CreateZoneEventParameters;
+import org.apache.ignite.internal.catalog.events.DestroyTableEventParameters;
 import org.apache.ignite.internal.catalog.events.DropColumnEventParameters;
 import org.apache.ignite.internal.catalog.events.DropTableEventParameters;
 import org.apache.ignite.internal.catalog.events.DropZoneEventParameters;
@@ -146,7 +147,6 @@ import org.apache.ignite.internal.catalog.storage.VersionedUpdate;
 import org.apache.ignite.internal.event.EventListener;
 import org.apache.ignite.internal.hlc.HybridTimestamp;
 import org.apache.ignite.internal.lang.IgniteInternalException;
-import org.apache.ignite.internal.testframework.IgniteTestUtils;
 import org.apache.ignite.sql.ColumnType;
 import org.hamcrest.TypeSafeMatcher;
 import org.jetbrains.annotations.Nullable;
@@ -391,6 +391,31 @@ public class CatalogManagerSelfTest extends BaseCatalogManagerTest {
 
         // Validate schema wasn't changed.
         assertSame(schema, manager.activeSchema(clock.nowLong()));
+    }
+
+    @Test
+    void testReCreateTableWithSameName() {
+        assertThat(manager.execute(simpleTable(TABLE_NAME)), willBe(nullValue()));
+
+        int catalogVersion = manager.latestCatalogVersion();
+        CatalogTableDescriptor table1 = manager.table(TABLE_NAME, clock.nowLong());
+        assertNotNull(table1);
+
+        // Drop table.
+        assertThat(manager.execute(dropTableCommand(TABLE_NAME)), willBe(nullValue()));
+        assertNull(manager.table(TABLE_NAME, clock.nowLong()));
+
+        // Re-create table with same name.
+        assertThat(manager.execute(simpleTable(TABLE_NAME)), willBe(nullValue()));
+
+        CatalogTableDescriptor table2 = manager.table(TABLE_NAME, clock.nowLong());
+        assertNotNull(table2);
+
+        // Ensure these are different tables.
+        assertNotEquals(table1.id(), table2.id());
+
+        // Ensure table is available for historical queries.
+        manager.table(table1.id(), catalogVersion);
     }
 
     @Test
@@ -1146,12 +1171,20 @@ public class CatalogManagerSelfTest extends BaseCatalogManagerTest {
 
         manager.listen(CatalogEvent.TABLE_CREATE, eventListener);
         manager.listen(CatalogEvent.TABLE_DROP, eventListener);
+        manager.listen(CatalogEvent.TABLE_DESTROY, eventListener);
 
         assertThat(manager.execute(simpleTable(TABLE_NAME)), willBe(nullValue()));
         verify(eventListener).notify(any(CreateTableEventParameters.class), isNull());
 
         assertThat(manager.execute(dropTableCommand(TABLE_NAME)), willBe(nullValue()));
         verify(eventListener).notify(any(DropTableEventParameters.class), isNull());
+
+        verifyNoMoreInteractions(eventListener);
+        clearInvocations(eventListener);
+
+        // Got 'destroy' event only after Catalog compaction.
+        assertThat(manager.compactCatalog(clock.nowLong()), willCompleteSuccessfully());
+        verify(eventListener).notify(any(DestroyTableEventParameters.class), isNull());
 
         verifyNoMoreInteractions(eventListener);
     }
@@ -2457,7 +2490,7 @@ public class CatalogManagerSelfTest extends BaseCatalogManagerTest {
     }
 
     @Test
-    public void testCatalogCompaction() throws InterruptedException {
+    public void testCatalogCompaction() {
         assertThat(manager.execute(simpleTable(TABLE_NAME)), willBe(nullValue()));
         assertThat(manager.execute(simpleTable(TABLE_NAME_2)), willBe(nullValue()));
 
@@ -2469,8 +2502,6 @@ public class CatalogManagerSelfTest extends BaseCatalogManagerTest {
         assertThat(manager.execute(simpleIndex(TABLE_NAME, INDEX_NAME_2)), willBe(nullValue()));
 
         assertThat(manager.compactCatalog(timestamp), willCompleteSuccessfully());
-
-        IgniteTestUtils.waitForCondition(() -> manager.earliestCatalogVersion() != 0, 2_000);
 
         assertEquals(catalog.version(), manager.earliestCatalogVersion());
 

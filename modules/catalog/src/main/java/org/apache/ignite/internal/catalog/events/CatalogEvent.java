@@ -33,6 +33,9 @@ public enum CatalogEvent implements Event {
     /** This event is fired when a table has been renamed or a column has been modified, added to, or removed from a table. */
     TABLE_ALTER,
 
+    /** This event is fired when a table has been dropped from all catalog versions and can be destroyed. */
+    TABLE_DESTROY,
+
     /** This event is fired, when an index was created in Catalog. */
     INDEX_CREATE,
 
