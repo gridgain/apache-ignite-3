@@ -348,7 +348,7 @@ public class CatalogManagerImpl extends AbstractEventProducer<CatalogEvent, Cata
         Catalog catalog = catalogAt(timestamp);
 
         return updateLog.saveSnapshot(new SnapshotEntry(catalog))
-                .thenCompose(ignore -> truncateUpTo(catalog));
+                .thenAccept(ignore -> {});
     }
 
     private void registerCatalog(Catalog newCatalog) {
@@ -356,45 +356,9 @@ public class CatalogManagerImpl extends AbstractEventProducer<CatalogEvent, Cata
         catalogByTs.put(newCatalog.time(), newCatalog);
     }
 
-    private CompletableFuture<Void> truncateUpTo(Catalog catalog) {
-        // Collect destroy events for dropped tables/indexes.
-        IntSet aliveTables = catalog.tablesIds();
-
-        // Use reverse order to find latest table descriptors.
-        Collection<Catalog> droppedCatalogVersions = catalogByVer.subMap(earliestCatalogVersion(), true, catalog.version(), false)
-                        .descendingMap().values();
-
-        // TODO IGNITE-20680: Drop indexes first.
-        // Dropped tables
-        Int2ObjectMap<DestroyTableEvent> droppedTables = new Int2ObjectOpenHashMap<>();
-        droppedCatalogVersions.forEach(oldCatalog -> oldCatalog.tables().stream()
-                .filter(tbl -> !aliveTables.contains(tbl.id()))
-                .forEach(tbl -> droppedTables.putIfAbsent(tbl.id(),
-                        new DestroyTableEvent(tbl.id(), oldCatalog.zone(tbl.zoneId()).partitions())
-                )));
-
-        // TODO IGNITE-20680: Truncate catalog collections. Make this synchronously if needed.
-
-        List<CompletableFuture<?>> eventFutures = new ArrayList<>(droppedTables.size());
-
-        for (Fireable fireEvent : droppedTables.values()) {
-            eventFutures.add(fireEvent(
-                    fireEvent.eventType(),
-                    // TODO fix causalityToken
-                    fireEvent.createEventParameters(0L, catalog.version())
-            ));
-        }
-
-        return allOf(eventFutures.toArray(CompletableFuture[]::new))
-                .whenComplete((ignore, err) -> {
-                    if (err != null) {
-                        LOG.warn("Failed to compact catalog.", err);
-                        //TODO: IGNITE-14611 Pass exception to an error handler?
-                    }
-
-                    catalogByVer.headMap(catalog.version(), false).clear();
-                    catalogByTs.headMap(catalog.time(), false).clear();
-                });
+    private void truncateUpTo(Catalog catalog) {
+        catalogByVer.headMap(catalog.version(), false).clear();
+        catalogByTs.headMap(catalog.time(), false).clear();
     }
 
     private CompletableFuture<Void> saveUpdateAndWaitForActivation(UpdateProducer updateProducer) {
@@ -477,20 +441,54 @@ public class CatalogManagerImpl extends AbstractEventProducer<CatalogEvent, Cata
         @Override
         public CompletableFuture<Void> handle(UpdateLogEvent event, HybridTimestamp metaStorageUpdateTimestamp, long causalityToken) {
             if (event instanceof SnapshotEntry) {
-                return handle((SnapshotEntry) event);
+                return handle((SnapshotEntry) event, causalityToken);
             }
 
             return handle((VersionedUpdate) event, metaStorageUpdateTimestamp, causalityToken);
         }
 
-        private CompletableFuture<Void> handle(SnapshotEntry event) {
+        private CompletableFuture<Void> handle(SnapshotEntry event, long causalityToken) {
             Catalog catalog = event.snapshot();
+
+            // Collect destroy events for dropped tables/indexes.
+            IntSet aliveTables = catalog.tablesIds();
+
+            // Use reverse order to find latest table descriptors.
+            Collection<Catalog> droppedCatalogVersions = catalogByVer.subMap(earliestCatalogVersion(), true, catalog.version(), false)
+                    .descendingMap().values();
+
+            // TODO IGNITE-20680: Drop indexes first.
+            // Dropped tables
+            Int2ObjectMap<DestroyTableEvent> droppedTableEvents = new Int2ObjectOpenHashMap<>();
+            droppedCatalogVersions.forEach(oldCatalog -> oldCatalog.tables().stream()
+                    .filter(tbl -> !aliveTables.contains(tbl.id()))
+                    .filter(tbl -> !droppedTableEvents.containsKey(tbl.id()))
+                    .forEach(tbl -> droppedTableEvents.put(tbl.id(),
+                            new DestroyTableEvent(tbl.id(), oldCatalog.zone(tbl.zoneId()).partitions())
+                    )));
 
             // On recovery phase, we must register catalog from the snapshot.
             // In other cases, it is ok to rewrite an existed version, because it's exactly the same.
             registerCatalog(catalog);
 
-            return nullCompletedFuture();
+            List<CompletableFuture<?>> eventFutures = new ArrayList<>(droppedTableEvents.size());
+
+            for (Fireable fireEvent : droppedTableEvents.values()) {
+                eventFutures.add(fireEvent(
+                        fireEvent.eventType(),
+                        fireEvent.createEventParameters(causalityToken, catalog.version())
+                ));
+            }
+
+            return allOf(eventFutures.toArray(CompletableFuture[]::new))
+                    .whenComplete((ignore, err) -> {
+                        if (err != null) {
+                            LOG.warn("Failed to compact catalog.", err);
+                            //TODO: IGNITE-14611 Pass exception to an error handler?
+                        } else {
+                            truncateUpTo(catalog);
+                        }
+                    });
         }
 
         private CompletableFuture<Void> handle(VersionedUpdate update, HybridTimestamp metaStorageUpdateTimestamp, long causalityToken) {

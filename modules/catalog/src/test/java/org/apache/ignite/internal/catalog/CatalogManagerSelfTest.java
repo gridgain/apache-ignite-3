@@ -49,6 +49,7 @@ import static org.apache.ignite.internal.catalog.descriptors.CatalogIndexStatus.
 import static org.apache.ignite.internal.catalog.descriptors.CatalogIndexStatus.STOPPING;
 import static org.apache.ignite.internal.lang.IgniteStringFormatter.format;
 import static org.apache.ignite.internal.testframework.IgniteTestUtils.assertThrowsWithCause;
+import static org.apache.ignite.internal.testframework.IgniteTestUtils.waitForCondition;
 import static org.apache.ignite.internal.testframework.matchers.CompletableFutureExceptionMatcher.willThrow;
 import static org.apache.ignite.internal.testframework.matchers.CompletableFutureExceptionMatcher.willThrowFast;
 import static org.apache.ignite.internal.testframework.matchers.CompletableFutureMatcher.willBe;
@@ -1183,7 +1184,7 @@ public class CatalogManagerSelfTest extends BaseCatalogManagerTest {
         clearInvocations(eventListener);
 
         // Got 'destroy' event only after Catalog compaction.
-        assertThat(manager.compactCatalog(clock.nowLong()), willCompleteSuccessfully());
+        waitCatalogCompaction(clock.nowLong());
         verify(eventListener).notify(any(DestroyTableEventParameters.class), isNull());
 
         verifyNoMoreInteractions(eventListener);
@@ -2501,7 +2502,7 @@ public class CatalogManagerSelfTest extends BaseCatalogManagerTest {
         assertThat(manager.execute(simpleIndex(TABLE_NAME, INDEX_NAME)), willBe(nullValue()));
         assertThat(manager.execute(simpleIndex(TABLE_NAME, INDEX_NAME_2)), willBe(nullValue()));
 
-        assertThat(manager.compactCatalog(timestamp), willCompleteSuccessfully());
+        waitCatalogCompaction(timestamp);
 
         assertEquals(catalog.version(), manager.earliestCatalogVersion());
 
@@ -2521,7 +2522,7 @@ public class CatalogManagerSelfTest extends BaseCatalogManagerTest {
 
         long timestamp = clock.nowLong();
 
-        assertThat(manager.compactCatalog(timestamp), willCompleteSuccessfully());
+        waitCatalogCompaction(clock.nowLong());
 
         assertEquals(0, manager.earliestCatalogVersion());
         assertEquals(0, manager.latestCatalogVersion());
@@ -2530,6 +2531,23 @@ public class CatalogManagerSelfTest extends BaseCatalogManagerTest {
 
         assertEquals(0, manager.activeCatalogVersion(0));
         assertEquals(0, manager.activeCatalogVersion(timestamp));
+    }
+
+    /**
+     * Starts catalog compaction and waits it finished.
+     *
+     * @param timestamp Timestamp catalog should be compacted up to.
+     */
+    private void waitCatalogCompaction(long timestamp) {
+        int version = manager.activeCatalogVersion(timestamp);
+
+        assertThat(manager.compactCatalog(timestamp), willCompleteSuccessfully());
+
+        try {
+            waitForCondition(() -> manager.earliestCatalogVersion() == version, 3_000);
+        } catch (InterruptedException e) {
+            fail();
+        }
     }
 
     private CompletableFuture<Void> changeColumn(
