@@ -25,8 +25,7 @@ import static org.apache.ignite.internal.catalog.commands.CatalogUtils.fromParam
 import static org.apache.ignite.internal.util.CollectionUtils.nullOrEmpty;
 import static org.apache.ignite.internal.util.CompletableFutures.nullCompletedFuture;
 
-import it.unimi.dsi.fastutil.ints.Int2ObjectMap;
-import it.unimi.dsi.fastutil.ints.Int2ObjectOpenHashMap;
+import it.unimi.dsi.fastutil.ints.IntOpenHashSet;
 import it.unimi.dsi.fastutil.ints.IntSet;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -50,6 +49,7 @@ import org.apache.ignite.internal.catalog.events.CatalogEvent;
 import org.apache.ignite.internal.catalog.events.CatalogEventParameters;
 import org.apache.ignite.internal.catalog.events.DestroyTableEvent;
 import org.apache.ignite.internal.catalog.storage.Fireable;
+import org.apache.ignite.internal.catalog.storage.RemoveIndexEntry;
 import org.apache.ignite.internal.catalog.storage.SnapshotEntry;
 import org.apache.ignite.internal.catalog.storage.UpdateEntry;
 import org.apache.ignite.internal.catalog.storage.UpdateLog;
@@ -342,13 +342,13 @@ public class CatalogManagerImpl extends AbstractEventProducer<CatalogEvent, Cata
      * Cleanup outdated catalog versions, which can't be observed after given timestamp (inclusively), and compact underlying update log.
      *
      * @param timestamp Earliest observable timestamp.
-     * @return Operation future.
+     * @return Operation future, which is completing with {@code true} if a new snapshot has been successfully written, {@code false}
+     *         otherwise if a snapshot with the same or greater version already exists.
      */
-    public CompletableFuture<Void> compactCatalog(long timestamp) {
+    public CompletableFuture<Boolean> compactCatalog(long timestamp) {
         Catalog catalog = catalogAt(timestamp);
 
-        return updateLog.saveSnapshot(new SnapshotEntry(catalog))
-                .thenAccept(ignore -> {});
+        return updateLog.saveSnapshot(new SnapshotEntry(catalog));
     }
 
     private void registerCatalog(Catalog newCatalog) {
@@ -450,30 +450,27 @@ public class CatalogManagerImpl extends AbstractEventProducer<CatalogEvent, Cata
         private CompletableFuture<Void> handle(SnapshotEntry event, long causalityToken) {
             Catalog catalog = event.snapshot();
 
-            // Collect destroy events for dropped tables/indexes.
             IntSet aliveTables = catalog.tablesIds();
 
-            // Use reverse order to find latest table descriptors.
+            // Use reverse order to find latest descriptors.
             Collection<Catalog> droppedCatalogVersions = catalogByVer.subMap(earliestCatalogVersion(), true, catalog.version(), false)
                     .descendingMap().values();
 
-            // TODO IGNITE-20680: Drop indexes first.
-            // Dropped tables
-            Int2ObjectMap<DestroyTableEvent> droppedTableEvents = new Int2ObjectOpenHashMap<>();
+            // Collect destroy events for dropped tables/indexes.
+            IntSet droppedTables = new IntOpenHashSet();
+            List<Fireable> events = new ArrayList<>();
             droppedCatalogVersions.forEach(oldCatalog -> oldCatalog.tables().stream()
                     .filter(tbl -> !aliveTables.contains(tbl.id()))
-                    .filter(tbl -> !droppedTableEvents.containsKey(tbl.id()))
-                    .forEach(tbl -> droppedTableEvents.put(tbl.id(),
-                            new DestroyTableEvent(tbl.id(), oldCatalog.zone(tbl.zoneId()).partitions())
-                    )));
+                    .filter(tbl -> droppedTables.add(tbl.id()))
+                    .forEach(tbl -> events.add(new DestroyTableEvent(tbl.id(), oldCatalog.zone(tbl.zoneId()).partitions()))));
 
             // On recovery phase, we must register catalog from the snapshot.
             // In other cases, it is ok to rewrite an existed version, because it's exactly the same.
             registerCatalog(catalog);
 
-            List<CompletableFuture<?>> eventFutures = new ArrayList<>(droppedTableEvents.size());
+            List<CompletableFuture<?>> eventFutures = new ArrayList<>(events.size());
 
-            for (Fireable fireEvent : droppedTableEvents.values()) {
+            for (Fireable fireEvent : events) {
                 eventFutures.add(fireEvent(
                         fireEvent.eventType(),
                         fireEvent.createEventParameters(causalityToken, catalog.version())

@@ -25,15 +25,25 @@ import static org.apache.ignite.internal.catalog.BaseCatalogManagerTest.TABLE_NA
 import static org.apache.ignite.internal.catalog.BaseCatalogManagerTest.simpleIndex;
 import static org.apache.ignite.internal.catalog.BaseCatalogManagerTest.simpleTable;
 import static org.apache.ignite.internal.catalog.BaseCatalogManagerTest.startBuildingIndexCommand;
+import static org.apache.ignite.internal.testframework.matchers.CompletableFutureMatcher.willBe;
 import static org.apache.ignite.internal.testframework.matchers.CompletableFutureMatcher.willCompleteSuccessfully;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.greaterThan;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.Mockito.clearInvocations;
+import static org.mockito.Mockito.spy;
+import static org.mockito.Mockito.timeout;
+import static org.mockito.Mockito.verify;
 
 import java.nio.file.Path;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
+import org.apache.ignite.internal.catalog.storage.SnapshotEntry;
+import org.apache.ignite.internal.catalog.storage.UpdateLogEvent;
 import org.apache.ignite.internal.hlc.HybridClock;
 import org.apache.ignite.internal.hlc.HybridClockImpl;
 import org.apache.ignite.internal.hlc.HybridTimestamp;
@@ -42,9 +52,9 @@ import org.apache.ignite.internal.metastorage.impl.StandaloneMetaStorageManager;
 import org.apache.ignite.internal.metastorage.server.KeyValueStorage;
 import org.apache.ignite.internal.metastorage.server.TestRocksDbKeyValueStorage;
 import org.apache.ignite.internal.testframework.BaseIgniteAbstractTest;
-import org.apache.ignite.internal.testframework.IgniteTestUtils;
 import org.apache.ignite.internal.testframework.WorkDirectory;
 import org.apache.ignite.internal.testframework.WorkDirectoryExtension;
+import org.apache.ignite.internal.util.CompletableFutures;
 import org.apache.ignite.internal.util.IgniteUtils;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
@@ -63,6 +73,8 @@ public class CatalogManagerRecoveryTest extends BaseIgniteAbstractTest {
     private MetaStorageManager metaStorageManager;
 
     private CatalogManager catalogManager;
+
+    private TestUpdateHandlerInterceptor interceptor;
 
     @AfterEach
     void tearDown() throws Exception {
@@ -124,16 +136,15 @@ public class CatalogManagerRecoveryTest extends BaseIgniteAbstractTest {
         int catalogVersion1 = catalogManager.latestCatalogVersion();
         long time1 = catalogManager.catalog(catalogVersion1).time();
 
+        clearInvocations(interceptor);
+
+        interceptor.beginDropEvents();
+
         // Compact catalog.
-        assertThat(((CatalogManagerImpl) catalogManager).compactCatalog(time0), willCompleteSuccessfully());
+        assertThat(((CatalogManagerImpl) catalogManager).compactCatalog(time0), willBe(true));
 
-        IgniteTestUtils.waitForCondition(() -> catalogManager.earliestCatalogVersion() == catalogVersion0, 2_000);
-
-        // Let's check outdated versions are not reachable.
-        assertThrows(IllegalStateException.class, () -> catalogManager.activeCatalogVersion(0));
-        assertThrows(IllegalStateException.class, () -> catalogManager.activeCatalogVersion(time0 - 1));
-        assertThat(catalogManager.activeCatalogVersion(time0), equalTo(catalogVersion0));
-        assertThat(catalogManager.activeCatalogVersion(time1), equalTo(catalogVersion1));
+        verify(interceptor, timeout(2_000)).handle(any(SnapshotEntry.class), any(), anyLong());
+        assertThat(catalogManager.earliestCatalogVersion(), equalTo(0));
 
         // We will restart and recover the components and also set the clock to the future.
         stopComponents();
@@ -180,7 +191,9 @@ public class CatalogManagerRecoveryTest extends BaseIgniteAbstractTest {
 
         metaStorageManager = StandaloneMetaStorageManager.create(keyValueStorage);
 
-        catalogManager = CatalogTestUtils.createTestCatalogManager(NODE_NAME, clock, metaStorageManager);
+        interceptor = spy(new TestUpdateHandlerInterceptor());
+
+        catalogManager = CatalogTestUtils.createTestCatalogManagerWithInterceptor(NODE_NAME, clock, metaStorageManager, interceptor);
     }
 
     private void startComponentsAndDeployWatches() {
@@ -190,5 +203,25 @@ public class CatalogManagerRecoveryTest extends BaseIgniteAbstractTest {
 
     private void stopComponents() throws Exception {
         IgniteUtils.stopAll(catalogManager, metaStorageManager);
+    }
+
+    /**
+     * An interceptor, which allow dropping events.
+     */
+    private static class TestUpdateHandlerInterceptor extends CatalogTestUtils.UpdateHandlerInterceptor {
+        private volatile boolean dropEvents;
+
+        void beginDropEvents() {
+            this.dropEvents = true;
+        }
+
+        @Override
+        public CompletableFuture<Void> handle(UpdateLogEvent update, HybridTimestamp metaStorageUpdateTimestamp, long causalityToken) {
+            if (dropEvents) {
+                return CompletableFutures.nullCompletedFuture();
+            }
+
+            return delegate().handle(update, metaStorageUpdateTimestamp, causalityToken);
+        }
     }
 }

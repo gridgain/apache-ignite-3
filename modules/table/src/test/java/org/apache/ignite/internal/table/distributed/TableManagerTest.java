@@ -24,6 +24,7 @@ import static org.apache.ignite.internal.catalog.events.CatalogEvent.TABLE_CREAT
 import static org.apache.ignite.internal.catalog.events.CatalogEvent.TABLE_DROP;
 import static org.apache.ignite.internal.testframework.IgniteTestUtils.assertThrowsWithCause;
 import static org.apache.ignite.internal.testframework.matchers.CompletableFutureExceptionMatcher.willThrow;
+import static org.apache.ignite.internal.testframework.matchers.CompletableFutureMatcher.willBe;
 import static org.apache.ignite.internal.testframework.matchers.CompletableFutureMatcher.willCompleteSuccessfully;
 import static org.apache.ignite.internal.util.CompletableFutures.emptySetCompletedFuture;
 import static org.apache.ignite.internal.util.CompletableFutures.falseCompletedFuture;
@@ -353,7 +354,7 @@ public class TableManagerTest extends IgniteAbstractTest {
         verify(txStateTableStorage, atMost(0)).destroy();
         verify(replicaMgr, atMost(0)).stopReplica(any());
 
-        assertThat(((CatalogManagerImpl) catalogManager).compactCatalog(clock.nowLong()), willCompleteSuccessfully());
+        assertThat(((CatalogManagerImpl) catalogManager).compactCatalog(clock.nowLong()), willBe(true));
 
         verify(mvTableStorage, timeout(2_000)).destroy();
         verify(txStateTableStorage, timeout(2_000)).destroy();

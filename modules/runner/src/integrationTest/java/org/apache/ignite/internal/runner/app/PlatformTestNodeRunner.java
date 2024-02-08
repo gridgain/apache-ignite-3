@@ -55,6 +55,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
+import java.util.concurrent.ExecutionException;
 import java.util.stream.Collectors;
 import org.apache.ignite.Ignite;
 import org.apache.ignite.IgnitionManager;
@@ -568,7 +569,11 @@ public class PlatformTestNodeRunner {
                 session.execute(null, "DROP TABLE " + tableName + "");
             }
 
-            ((CatalogManagerImpl) ((IgniteImpl) context.ignite()).catalogManager()).compactCatalog(Long.MAX_VALUE);
+            try {
+                ((CatalogManagerImpl) ((IgniteImpl) context.ignite()).catalogManager()).compactCatalog(Long.MAX_VALUE).get();
+            } catch (InterruptedException | ExecutionException e) {
+                throw new RuntimeException(e);
+            }
 
             return tableName;
         }

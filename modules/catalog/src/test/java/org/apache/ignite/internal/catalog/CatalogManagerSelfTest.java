@@ -49,7 +49,6 @@ import static org.apache.ignite.internal.catalog.descriptors.CatalogIndexStatus.
 import static org.apache.ignite.internal.catalog.descriptors.CatalogIndexStatus.STOPPING;
 import static org.apache.ignite.internal.lang.IgniteStringFormatter.format;
 import static org.apache.ignite.internal.testframework.IgniteTestUtils.assertThrowsWithCause;
-import static org.apache.ignite.internal.testframework.IgniteTestUtils.waitForCondition;
 import static org.apache.ignite.internal.testframework.matchers.CompletableFutureExceptionMatcher.willThrow;
 import static org.apache.ignite.internal.testframework.matchers.CompletableFutureExceptionMatcher.willThrowFast;
 import static org.apache.ignite.internal.testframework.matchers.CompletableFutureMatcher.willBe;
@@ -1175,18 +1174,26 @@ public class CatalogManagerSelfTest extends BaseCatalogManagerTest {
         manager.listen(CatalogEvent.TABLE_DESTROY, eventListener);
 
         assertThat(manager.execute(simpleTable(TABLE_NAME)), willBe(nullValue()));
-        verify(eventListener).notify(any(CreateTableEventParameters.class), isNull());
+        assertThat(manager.execute(simpleTable(TABLE_NAME_2)), willBe(nullValue()));
+        assertThat(manager.execute(simpleTable(TABLE_NAME_3)), willBe(nullValue()));
+        verify(eventListener, times(3)).notify(any(CreateTableEventParameters.class), isNull());
 
         assertThat(manager.execute(dropTableCommand(TABLE_NAME)), willBe(nullValue()));
-        verify(eventListener).notify(any(DropTableEventParameters.class), isNull());
+        assertThat(manager.execute(dropTableCommand(TABLE_NAME_2)), willBe(nullValue()));
+        verify(eventListener, times(2)).notify(any(DropTableEventParameters.class), isNull());
 
         verifyNoMoreInteractions(eventListener);
         clearInvocations(eventListener);
 
         // Got 'destroy' event only after Catalog compaction.
-        waitCatalogCompaction(clock.nowLong());
-        verify(eventListener).notify(any(DestroyTableEventParameters.class), isNull());
+        assertThat(CatalogTestUtils.waitCatalogCompaction(manager, clock.nowLong()), equalTo(true));
+        verify(eventListener, times(2)).notify(any(DestroyTableEventParameters.class), isNull());
 
+        verifyNoMoreInteractions(eventListener);
+        clearInvocations();
+
+        // Expect no events if Catalog wasn't compacted.
+        assertThat(CatalogTestUtils.waitCatalogCompaction(manager, clock.nowLong()), equalTo(false));
         verifyNoMoreInteractions(eventListener);
     }
 
@@ -2502,7 +2509,7 @@ public class CatalogManagerSelfTest extends BaseCatalogManagerTest {
         assertThat(manager.execute(simpleIndex(TABLE_NAME, INDEX_NAME)), willBe(nullValue()));
         assertThat(manager.execute(simpleIndex(TABLE_NAME, INDEX_NAME_2)), willBe(nullValue()));
 
-        waitCatalogCompaction(timestamp);
+        assertThat(CatalogTestUtils.waitCatalogCompaction(manager, timestamp), equalTo(true));
 
         assertEquals(catalog.version(), manager.earliestCatalogVersion());
 
@@ -2514,6 +2521,8 @@ public class CatalogManagerSelfTest extends BaseCatalogManagerTest {
         assertThrows(IllegalStateException.class, () -> manager.activeCatalogVersion(catalog.time() - 1));
         assertSame(catalog.version(), manager.activeCatalogVersion(catalog.time()));
         assertSame(catalog.version(), manager.activeCatalogVersion(timestamp));
+
+        assertThat(manager.compactCatalog(timestamp), willBe(false));
     }
 
     @Test
@@ -2522,7 +2531,7 @@ public class CatalogManagerSelfTest extends BaseCatalogManagerTest {
 
         long timestamp = clock.nowLong();
 
-        waitCatalogCompaction(clock.nowLong());
+        assertThat(manager.compactCatalog(timestamp), willBe(false));
 
         assertEquals(0, manager.earliestCatalogVersion());
         assertEquals(0, manager.latestCatalogVersion());
@@ -2531,23 +2540,6 @@ public class CatalogManagerSelfTest extends BaseCatalogManagerTest {
 
         assertEquals(0, manager.activeCatalogVersion(0));
         assertEquals(0, manager.activeCatalogVersion(timestamp));
-    }
-
-    /**
-     * Starts catalog compaction and waits it finished.
-     *
-     * @param timestamp Timestamp catalog should be compacted up to.
-     */
-    private void waitCatalogCompaction(long timestamp) {
-        int version = manager.activeCatalogVersion(timestamp);
-
-        assertThat(manager.compactCatalog(timestamp), willCompleteSuccessfully());
-
-        try {
-            waitForCondition(() -> manager.earliestCatalogVersion() == version, 3_000);
-        } catch (InterruptedException e) {
-            fail();
-        }
     }
 
     private CompletableFuture<Void> changeColumn(
