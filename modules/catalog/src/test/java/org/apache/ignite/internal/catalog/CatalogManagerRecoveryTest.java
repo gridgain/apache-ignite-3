@@ -19,9 +19,10 @@ package org.apache.ignite.internal.catalog;
 
 import static java.util.concurrent.CompletableFuture.allOf;
 import static org.apache.ignite.internal.catalog.BaseCatalogManagerTest.INDEX_NAME;
-import static org.apache.ignite.internal.catalog.BaseCatalogManagerTest.INDEX_NAME_2;
 import static org.apache.ignite.internal.catalog.BaseCatalogManagerTest.TABLE_NAME;
 import static org.apache.ignite.internal.catalog.BaseCatalogManagerTest.TABLE_NAME_2;
+import static org.apache.ignite.internal.catalog.BaseCatalogManagerTest.TABLE_NAME_3;
+import static org.apache.ignite.internal.catalog.BaseCatalogManagerTest.dropTable;
 import static org.apache.ignite.internal.catalog.BaseCatalogManagerTest.simpleIndex;
 import static org.apache.ignite.internal.catalog.BaseCatalogManagerTest.simpleTable;
 import static org.apache.ignite.internal.catalog.BaseCatalogManagerTest.startBuildingIndexCommand;
@@ -37,6 +38,7 @@ import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.clearInvocations;
 import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.timeout;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
 import java.nio.file.Path;
@@ -44,6 +46,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import org.apache.ignite.internal.catalog.storage.SnapshotEntry;
 import org.apache.ignite.internal.catalog.storage.UpdateLogEvent;
+import org.apache.ignite.internal.catalog.storage.VersionedUpdate;
 import org.apache.ignite.internal.hlc.HybridClock;
 import org.apache.ignite.internal.hlc.HybridClockImpl;
 import org.apache.ignite.internal.hlc.HybridTimestamp;
@@ -59,6 +62,7 @@ import org.apache.ignite.internal.util.IgniteUtils;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.Mockito;
 
 /** For {@link CatalogManager} testing on recovery. */
 @ExtendWith(WorkDirectoryExtension.class)
@@ -112,6 +116,10 @@ public class CatalogManagerRecoveryTest extends BaseIgniteAbstractTest {
 
         createAndStartComponents();
 
+        // Check recovery events.
+        verify(interceptor, times(2)).handle(any(VersionedUpdate.class), any(), anyLong());
+        verify(interceptor, Mockito.never()).handle(any(SnapshotEntry.class), any(), anyLong());
+
         // Let's check that the versions for the points in time at which they were created are in place.
         assertThat(catalogManager.activeCatalogVersion(time0), equalTo(catalogVersion0));
         assertThat(catalogManager.activeCatalogVersion(time1), equalTo(catalogVersion1));
@@ -124,39 +132,43 @@ public class CatalogManagerRecoveryTest extends BaseIgniteAbstractTest {
         // Let's create a couple of versions of the catalog.
         assertThat(catalogManager.execute(simpleTable(TABLE_NAME)), willCompleteSuccessfully());
         assertThat(catalogManager.execute(simpleTable(TABLE_NAME_2)), willCompleteSuccessfully());
+        assertThat(catalogManager.execute(dropTable(TABLE_NAME_2)), willCompleteSuccessfully());
 
-        int catalogVersion0 = catalogManager.latestCatalogVersion();
-        long time0 = catalogManager.catalog(catalogVersion0).time();
+        // Save version, which will be earliest version after snapshot.
+        int earliestVersion = catalogManager.latestCatalogVersion();
+        long earliestVersionActivationTime = catalogManager.catalog(earliestVersion).time();
+        long snapshotTime = clock.nowLong();
 
-        assertThat(catalogVersion0, greaterThan(catalogManager.earliestCatalogVersion()));
+        assertThat(catalogManager.execute(simpleTable(TABLE_NAME_3)), willCompleteSuccessfully());
 
-        assertThat(catalogManager.execute(simpleIndex(TABLE_NAME, INDEX_NAME)), willCompleteSuccessfully());
-        assertThat(catalogManager.execute(simpleIndex(TABLE_NAME_2, INDEX_NAME_2)), willCompleteSuccessfully());
+        int latestVersion = catalogManager.latestCatalogVersion();
+        long latestVersionActivationTime = catalogManager.catalog(latestVersion).time();
 
-        int catalogVersion1 = catalogManager.latestCatalogVersion();
-        long time1 = catalogManager.catalog(catalogVersion1).time();
-
+        // Compact catalog with ignoring snapshot event, then ensure earliest version wasn't changed
         clearInvocations(interceptor);
-
         interceptor.beginDropEvents();
 
-        // Compact catalog.
-        assertThat(((CatalogManagerImpl) catalogManager).compactCatalog(time0), willBe(true));
+        assertThat(((CatalogManagerImpl) catalogManager).compactCatalog(snapshotTime), willBe(true));
 
         verify(interceptor, timeout(2_000)).handle(any(SnapshotEntry.class), any(), anyLong());
         assertThat(catalogManager.earliestCatalogVersion(), equalTo(0));
 
         // We will restart and recover the components and also set the clock to the future.
         stopComponents();
+        createComponents();
+        startComponentsAndDeployWatches();
 
-        createAndStartComponents();
+        // Check recovery events.
+        verify(interceptor).handle(any(SnapshotEntry.class), any(), anyLong());
+        verify(interceptor).handle(any(VersionedUpdate.class), any(), anyLong());
 
-        // Let's check that the versions for the points in time at which they were created are in place.
-        // TODO IGNITE-20680: Set snapshot Catalog version as earliest version on recovery.
+        // Let's check Catalog was recovered from a snapshot and history starts from the expected version.
+        assertThat(catalogManager.earliestCatalogVersion(), equalTo(earliestVersion));
         assertThrows(IllegalStateException.class, () -> catalogManager.activeCatalogVersion(0));
-        assertThrows(IllegalStateException.class, () -> catalogManager.activeCatalogVersion(time0 - 1));
-        assertThat(catalogManager.activeCatalogVersion(time0), equalTo(catalogVersion0));
-        assertThat(catalogManager.activeCatalogVersion(time1), equalTo(catalogVersion1));
+        assertThrows(IllegalStateException.class, () -> catalogManager.activeCatalogVersion(earliestVersionActivationTime - 1));
+        assertThat(catalogManager.activeCatalogVersion(earliestVersionActivationTime), equalTo(earliestVersion));
+        assertThat(catalogManager.activeCatalogVersion(snapshotTime), equalTo(earliestVersion));
+        assertThat(catalogManager.activeCatalogVersion(latestVersionActivationTime), equalTo(latestVersion));
     }
 
     @Test

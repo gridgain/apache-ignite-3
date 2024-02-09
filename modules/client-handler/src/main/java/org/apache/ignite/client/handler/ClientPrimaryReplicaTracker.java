@@ -32,7 +32,7 @@ import org.apache.ignite.internal.catalog.CatalogService;
 import org.apache.ignite.internal.catalog.descriptors.CatalogTableDescriptor;
 import org.apache.ignite.internal.catalog.descriptors.CatalogZoneDescriptor;
 import org.apache.ignite.internal.catalog.events.CatalogEvent;
-import org.apache.ignite.internal.catalog.events.DropTableEventParameters;
+import org.apache.ignite.internal.catalog.events.DestroyTableEventParameters;
 import org.apache.ignite.internal.event.EventListener;
 import org.apache.ignite.internal.event.EventParameters;
 import org.apache.ignite.internal.hlc.HybridClock;
@@ -261,7 +261,7 @@ public class ClientPrimaryReplicaTracker implements EventListener<EventParameter
 
         busyLock.block();
 
-        catalogService.removeListener(CatalogEvent.TABLE_DROP, (EventListener) this);
+        catalogService.removeListener(CatalogEvent.TABLE_DESTROY, (EventListener) this);
         placementDriver.removeListener(PrimaryReplicaEvent.PRIMARY_REPLICA_ELECTED, (EventListener) this);
         primaryReplicas.clear();
     }
@@ -284,8 +284,8 @@ public class ClientPrimaryReplicaTracker implements EventListener<EventParameter
     }
 
     private CompletableFuture<Boolean> notifyInternal(EventParameters parameters) {
-        if (parameters instanceof DropTableEventParameters) {
-            removeTable((DropTableEventParameters) parameters);
+        if (parameters instanceof DestroyTableEventParameters) {
+            removeTable((DestroyTableEventParameters) parameters);
 
             return falseCompletedFuture();
         }
@@ -308,17 +308,8 @@ public class ClientPrimaryReplicaTracker implements EventListener<EventParameter
         return falseCompletedFuture(); // false: don't remove listener.
     }
 
-    private void removeTable(DropTableEventParameters dropTableEvent) {
-        // Use previous version of the catalog to get the dropped table.
-        int prevCatalogVersion = dropTableEvent.catalogVersion() - 1;
-
-        CatalogTableDescriptor table = catalogService.table(dropTableEvent.tableId(), prevCatalogVersion);
-        assert table != null : "Table from DropTableEventParameters not found: " + dropTableEvent.tableId();
-
-        CatalogZoneDescriptor zone = catalogService.zone(table.zoneId(), prevCatalogVersion);
-        assert zone != null : "Zone from DropTableEventParameters not found: " + table.zoneId();
-
-        for (int partition = 0; partition < zone.partitions(); partition++) {
+    private void removeTable(DestroyTableEventParameters dropTableEvent) {
+        for (int partition = 0; partition < dropTableEvent.partitions(); partition++) {
             TablePartitionId tablePartitionId = new TablePartitionId(dropTableEvent.tableId(), partition);
             primaryReplicas.remove(tablePartitionId);
         }
