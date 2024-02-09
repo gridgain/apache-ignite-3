@@ -472,7 +472,7 @@ public class CatalogTestUtils {
     }
 
     /**
-     * Update handler interceptor for test pusposes.
+     * Update handler interceptor for test purposes.
      */
     public abstract static class UpdateHandlerInterceptor implements OnUpdateHandler {
         private OnUpdateHandler delegate;

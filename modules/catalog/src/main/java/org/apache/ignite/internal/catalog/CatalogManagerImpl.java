@@ -49,7 +49,6 @@ import org.apache.ignite.internal.catalog.events.CatalogEvent;
 import org.apache.ignite.internal.catalog.events.CatalogEventParameters;
 import org.apache.ignite.internal.catalog.events.DestroyTableEvent;
 import org.apache.ignite.internal.catalog.storage.Fireable;
-import org.apache.ignite.internal.catalog.storage.RemoveIndexEntry;
 import org.apache.ignite.internal.catalog.storage.SnapshotEntry;
 import org.apache.ignite.internal.catalog.storage.UpdateEntry;
 import org.apache.ignite.internal.catalog.storage.UpdateLog;
@@ -453,8 +452,7 @@ public class CatalogManagerImpl extends AbstractEventProducer<CatalogEvent, Cata
             IntSet aliveTables = catalog.tablesIds();
 
             // Use reverse order to find latest descriptors.
-            Collection<Catalog> droppedCatalogVersions = catalogByVer.subMap(earliestCatalogVersion(), true, catalog.version(), false)
-                    .descendingMap().values();
+            Collection<Catalog> droppedCatalogVersions = catalogByVer.headMap(catalog.version(), false).descendingMap().values();
 
             // Collect destroy events for dropped tables/indexes.
             IntSet droppedTables = new IntOpenHashSet();

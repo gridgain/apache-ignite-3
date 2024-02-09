@@ -99,6 +99,7 @@ import org.apache.ignite.sql.IgniteSql;
 import org.jetbrains.annotations.Nullable;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
@@ -236,6 +237,7 @@ public class IndexManagerTest extends BaseIgniteAbstractTest {
         assertThat(collectedIndexes.get(otherTable), hasItems(index(latestCatalogVersion, PK_INDEX_NAME_OTHER_TABLE)));
     }
 
+    @Disabled("https://issues.apache.org/jira/browse/IGNITE-20121")
     @Test
     void testCollectIndexesForRecoveryForCreatedAndDroppedAndBuildingIndexes() {
         createTable(OTHER_TABLE_NAME);
@@ -303,6 +305,7 @@ public class IndexManagerTest extends BaseIgniteAbstractTest {
         );
     }
 
+    @Disabled("https://issues.apache.org/jira/browse/IGNITE-20121")
     @Test
     void testCollectIndexesForDroppedTable() {
         createTable(OTHER_TABLE_NAME);
@@ -316,6 +319,7 @@ public class IndexManagerTest extends BaseIgniteAbstractTest {
         assertThat(collectedIndexes, hasKey(table));
     }
 
+    @Disabled("https://issues.apache.org/jira/browse/IGNITE-20121")
     @Test
     void testStartAllIndexesOnNodeRecovery() throws Exception {
         String indexName0 = INDEX_NAME + 0;

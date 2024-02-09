@@ -155,8 +155,8 @@ public class CatalogManagerRecoveryTest extends BaseIgniteAbstractTest {
 
         // We will restart and recover the components and also set the clock to the future.
         stopComponents();
-        createComponents();
-        startComponentsAndDeployWatches();
+
+        createAndStartComponents();
 
         // Check recovery events.
         verify(interceptor).handle(any(SnapshotEntry.class), any(), anyLong());

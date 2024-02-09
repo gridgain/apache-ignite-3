@@ -45,7 +45,6 @@ import org.apache.ignite.internal.catalog.CatalogManager;
 import org.apache.ignite.internal.catalog.CatalogService;
 import org.apache.ignite.internal.catalog.commands.RemoveIndexCommand;
 import org.apache.ignite.internal.catalog.descriptors.CatalogIndexDescriptor;
-import org.apache.ignite.internal.catalog.descriptors.CatalogIndexStatus;
 import org.apache.ignite.internal.catalog.descriptors.CatalogTableDescriptor;
 import org.apache.ignite.internal.catalog.events.CatalogEvent;
 import org.apache.ignite.internal.catalog.events.CreateIndexEventParameters;
@@ -73,6 +72,7 @@ import org.apache.ignite.internal.storage.index.StorageSortedIndexDescriptor;
 import org.apache.ignite.internal.table.TableViewInternal;
 import org.apache.ignite.internal.table.distributed.PartitionSet;
 import org.apache.ignite.internal.table.distributed.TableManager;
+import org.apache.ignite.internal.util.CollectionUtils;
 import org.apache.ignite.internal.util.IgniteSpinBusyLock;
 
 /**
@@ -351,12 +351,6 @@ public class IndexManager implements IgniteComponent {
             CatalogTableDescriptor table = e.getKey();
 
             for (CatalogIndexDescriptor index : e.getValue()) {
-                // TODO: IGNITE-21117 - remove this.
-                if (index.status() == CatalogIndexStatus.STOPPING
-                        && catalogManager.index(index.id(), catalogManager.latestCatalogVersion()) != null) {
-                    startIndexFutures.add(removeIndex(index.id()));
-                }
-
                 startIndexFutures.add(startIndexAsync(table, index, causalityToken));
             }
         }
@@ -492,26 +486,24 @@ public class IndexManager implements IgniteComponent {
         int earliestCatalogVersion = catalogService.earliestCatalogVersion();
         int latestCatalogVersion = catalogService.latestCatalogVersion();
 
+        var tablesById = new Int2ObjectOpenHashMap<CatalogTableDescriptor>();
         var indexesByTableId = new Int2ObjectOpenHashMap<Int2ObjectMap<CatalogIndexDescriptor>>();
 
-        for (CatalogTableDescriptor table : catalogService.tables(latestCatalogVersion)) {
-            indexesByTableId.put(table.id(), new Int2ObjectOpenHashMap<>());
-        }
+        for (int ver = latestCatalogVersion; ver >= earliestCatalogVersion; ver--) {
+            int ver0 = ver;
+            catalogService.tables(ver).forEach(tbl -> {
+                Int2ObjectMap<CatalogIndexDescriptor> indexes = catalogService.indexes(ver0, tbl.id()).stream()
+                        .collect(CollectionUtils.toIntMapCollector(CatalogIndexDescriptor::id, Function.identity()));
 
-        for (int catalogVersion = earliestCatalogVersion; catalogVersion <= latestCatalogVersion; catalogVersion++) {
-            for (CatalogIndexDescriptor index : catalogService.indexes(catalogVersion)) {
-                Int2ObjectMap<CatalogIndexDescriptor> indexById = indexesByTableId.get(index.tableId());
-
-                if (indexById != null) {
-                    indexById.put(index.id(), index);
-                }
-            }
+                tablesById.putIfAbsent(tbl.id(), tbl);
+                indexesByTableId.putIfAbsent(tbl.id(), indexes);
+            });
         }
 
         return indexesByTableId.int2ObjectEntrySet()
                 .stream()
                 .collect(toMap(
-                        entry -> catalogService.table(entry.getIntKey(), latestCatalogVersion),
+                        entry -> tablesById.get(entry.getIntKey()),
                         entry -> entry.getValue().values()
                 ));
     }

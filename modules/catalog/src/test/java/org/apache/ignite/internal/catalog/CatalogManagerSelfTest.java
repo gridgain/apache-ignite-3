@@ -2523,6 +2523,7 @@ public class CatalogManagerSelfTest extends BaseCatalogManagerTest {
         assertSame(catalog.version(), manager.activeCatalogVersion(timestamp));
 
         assertThat(manager.compactCatalog(timestamp), willBe(false));
+        assertEquals(catalog.version(), manager.earliestCatalogVersion());
     }
 
     @Test
