@@ -17,7 +17,6 @@
 
 package org.apache.ignite.internal.catalog.commands;
 
-import static org.apache.ignite.internal.catalog.commands.CatalogUtils.indexOrThrow;
 import static org.apache.ignite.internal.catalog.descriptors.CatalogIndexStatus.STOPPING;
 
 import java.util.List;

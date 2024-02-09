@@ -72,7 +72,6 @@ import org.apache.ignite.internal.storage.index.StorageSortedIndexDescriptor;
 import org.apache.ignite.internal.table.TableViewInternal;
 import org.apache.ignite.internal.table.distributed.PartitionSet;
 import org.apache.ignite.internal.table.distributed.TableManager;
-import org.apache.ignite.internal.util.CollectionUtils;
 import org.apache.ignite.internal.util.IgniteSpinBusyLock;
 
 /**
@@ -492,11 +491,11 @@ public class IndexManager implements IgniteComponent {
         for (int ver = latestCatalogVersion; ver >= earliestCatalogVersion; ver--) {
             int ver0 = ver;
             catalogService.tables(ver).forEach(tbl -> {
-                Int2ObjectMap<CatalogIndexDescriptor> indexes = catalogService.indexes(ver0, tbl.id()).stream()
-                        .collect(CollectionUtils.toIntMapCollector(CatalogIndexDescriptor::id, Function.identity()));
-
                 tablesById.putIfAbsent(tbl.id(), tbl);
-                indexesByTableId.putIfAbsent(tbl.id(), indexes);
+                Int2ObjectMap<CatalogIndexDescriptor> indexes = indexesByTableId.computeIfAbsent(tbl.id(), Int2ObjectOpenHashMap::new);
+
+                catalogService.indexes(ver0, tbl.id()).forEach(idx -> indexes.putIfAbsent(idx.id(), idx));
+
             });
         }
 

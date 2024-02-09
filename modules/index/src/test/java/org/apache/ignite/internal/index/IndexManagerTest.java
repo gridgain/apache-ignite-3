@@ -237,7 +237,6 @@ public class IndexManagerTest extends BaseIgniteAbstractTest {
         assertThat(collectedIndexes.get(otherTable), hasItems(index(latestCatalogVersion, PK_INDEX_NAME_OTHER_TABLE)));
     }
 
-    @Disabled("https://issues.apache.org/jira/browse/IGNITE-20121")
     @Test
     void testCollectIndexesForRecoveryForCreatedAndDroppedAndBuildingIndexes() {
         createTable(OTHER_TABLE_NAME);
@@ -319,7 +318,6 @@ public class IndexManagerTest extends BaseIgniteAbstractTest {
         assertThat(collectedIndexes, hasKey(table));
     }
 
-    @Disabled("https://issues.apache.org/jira/browse/IGNITE-20121")
     @Test
     void testStartAllIndexesOnNodeRecovery() throws Exception {
         String indexName0 = INDEX_NAME + 0;
