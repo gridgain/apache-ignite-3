@@ -47,7 +47,6 @@ import org.apache.ignite.internal.type.NativeType;
 import org.apache.ignite.internal.type.NativeTypeSpec;
 import org.apache.ignite.lang.ErrorGroups.Sql;
 import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
@@ -341,7 +340,6 @@ public class ItCreateTableDdlTest extends BaseSqlIntegrationTest {
         return SYSTEM_SCHEMAS.stream().map(Arguments::of);
     }
 
-    @Disabled("https://issues.apache.org/jira/browse/IGNITE-20680")
     @Test
     public void concurrentDrop() {
         sql("CREATE TABLE test (key INT PRIMARY KEY)");

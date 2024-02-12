@@ -142,7 +142,7 @@ public class ExecutableTableRegistrySelfTest extends BaseIgniteAbstractTest {
 
             SchemaDescriptor schemaDescriptor = newDescriptor(schemaVersion);
 
-            when(tableManager.tableAsync(tableId)).thenReturn(CompletableFuture.completedFuture(table));
+            when(tableManager.latestTables()).thenReturn(Map.of(tableId, table));
             when(schemaManager.schemaRegistry(tableId)).thenReturn(schemaRegistry);
             when(schemaRegistry.schema(tableVersion)).thenReturn(schemaDescriptor);
 
