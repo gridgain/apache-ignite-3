@@ -92,11 +92,7 @@ public class SchemaManager implements IgniteComponent {
     }
 
     private void registerExistingTables() {
-        CompletableFuture<Long> recoveryFinishFuture = metastorageMgr.recoveryFinishedFuture();
-
-        assert recoveryFinishFuture.isDone();
-
-        long causalityToken = recoveryFinishFuture.join();
+        long causalityToken = metastorageMgr.appliedRevision();
 
         for (int catalogVer = catalogService.latestCatalogVersion(); catalogVer >= catalogService.earliestCatalogVersion(); catalogVer--) {
             Collection<CatalogTableDescriptor> tables = catalogService.tables(catalogVer);
@@ -126,6 +122,8 @@ public class SchemaManager implements IgniteComponent {
                 return completedFuture(registries);
             });
         }
+
+        registriesVv.complete(causalityToken);
     }
 
     private CompletableFuture<Boolean> onTableCreated(CatalogEventParameters event, @Nullable Throwable ex) {
