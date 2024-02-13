@@ -31,7 +31,7 @@ public class DestroyTableEventParameters extends TableEventParameters {
      * @param tableId An Id of destroying table.
      * @param partitions Number of table partitions.
      */
-    DestroyTableEventParameters(long causalityToken, int catalogVersion, int tableId, int partitions) {
+    public DestroyTableEventParameters(long causalityToken, int catalogVersion, int tableId, int partitions) {
         super(causalityToken, catalogVersion, tableId);
         this.partitions = partitions;
     }

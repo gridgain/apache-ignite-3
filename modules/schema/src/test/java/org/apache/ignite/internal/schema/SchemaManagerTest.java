@@ -50,6 +50,7 @@ import org.apache.ignite.internal.catalog.events.AddColumnEventParameters;
 import org.apache.ignite.internal.catalog.events.CatalogEvent;
 import org.apache.ignite.internal.catalog.events.CatalogEventParameters;
 import org.apache.ignite.internal.catalog.events.CreateTableEventParameters;
+import org.apache.ignite.internal.catalog.events.DestroyTableEventParameters;
 import org.apache.ignite.internal.catalog.events.DropColumnEventParameters;
 import org.apache.ignite.internal.event.EventListener;
 import org.apache.ignite.internal.metastorage.MetaStorageManager;
@@ -93,6 +94,7 @@ class SchemaManagerTest extends BaseIgniteAbstractTest {
 
     private EventListener<CatalogEventParameters> tableCreatedListener;
     private EventListener<CatalogEventParameters> tableAlteredListener;
+    private EventListener<CatalogEventParameters> tableDestroyedListener;
 
     private final Exception cause = new Exception("Oops");
 
@@ -110,6 +112,11 @@ class SchemaManagerTest extends BaseIgniteAbstractTest {
             tableAlteredListener = invocation.getArgument(1);
             return null;
         }).when(catalogService).listen(eq(CatalogEvent.TABLE_ALTER), any());
+
+        doAnswer(invocation -> {
+            tableDestroyedListener = invocation.getArgument(1);
+            return null;
+        }).when(catalogService).listen(eq(CatalogEvent.TABLE_DESTROY), any());
 
         schemaManager = new SchemaManager(registry, catalogService, metaStorageManager);
         schemaManager.start();
@@ -147,6 +154,10 @@ class SchemaManagerTest extends BaseIgniteAbstractTest {
 
     private EventListener<CatalogEventParameters> tableAlteredListener() {
         return Objects.requireNonNull(tableAlteredListener, "tableAlteredListener is not registered with CatalogService");
+    }
+
+    private EventListener<CatalogEventParameters> tableDestroyedListener() {
+        return Objects.requireNonNull(tableDestroyedListener, "tableDestroyedListener is not registered with CatalogService");
     }
 
     private static CatalogTableDescriptor tableDescriptorAfterColumnAddition() {
@@ -202,6 +213,13 @@ class SchemaManagerTest extends BaseIgniteAbstractTest {
     @Test
     void propagatesExceptionFromCatalogOnColumnAlteration() {
         CompletableFuture<Boolean> future = tableAlteredListener().notify(mock(AddColumnEventParameters.class), cause);
+
+        assertThat(future, willThrow(equalTo(cause)));
+    }
+
+    @Test
+    void propagatesExceptionFromCatalogOnTableDestroying() {
+        CompletableFuture<Boolean> future = tableDestroyedListener().notify(mock(DestroyTableEventParameters.class), cause);
 
         assertThat(future, willThrow(equalTo(cause)));
     }
@@ -282,19 +300,23 @@ class SchemaManagerTest extends BaseIgniteAbstractTest {
     }
 
     @Test
-    void dropRegistryMakesItUnavailable() {
+    void destroyTableMakesRegistryUnavailable() {
         createSomeTable();
 
-        assertThat(schemaManager.dropRegistry(CAUSALITY_TOKEN_2, TABLE_ID), willCompleteSuccessfully());
+        DestroyTableEventParameters event = new DestroyTableEventParameters(
+                CAUSALITY_TOKEN_2,
+                CATALOG_VERSION_2,
+                TABLE_ID,
+                1
+        );
+
+        assertThat(tableDestroyedListener().notify(event, null), willBe(false));
 
         completeCausalityToken(CAUSALITY_TOKEN_2);
 
         CompletableFuture<SchemaRegistry> future = schemaManager.schemaRegistry(CAUSALITY_TOKEN_2, TABLE_ID);
         assertThat(future, is(completedFuture()));
-
-        SchemaRegistry schemaRegistry = future.join();
-
-        assertThat(schemaRegistry, is(nullValue()));
+        assertThat(future, willBe(nullValue()));
     }
 
     @Test

@@ -345,7 +345,7 @@ public class SchemaManager implements IgniteComponent {
      * @param causalityToken Causality token.
      * @param tableId Table id.
      */
-    CompletableFuture<?> dropRegistry(long causalityToken, int tableId) {
+    private CompletableFuture<?> dropRegistry(long causalityToken, int tableId) {
         if (!busyLock.enterBusy()) {
             throw new IgniteException(NODE_STOPPING_ERR, new NodeStoppingException());
         }
