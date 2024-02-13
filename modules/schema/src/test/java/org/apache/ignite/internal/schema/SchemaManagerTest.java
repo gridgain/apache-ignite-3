@@ -305,10 +305,12 @@ class SchemaManagerTest extends BaseIgniteAbstractTest {
 
         when(catalogService.latestCatalogVersion()).thenReturn(2);
         when(catalogService.tables(anyInt())).thenReturn(List.of(tableDescriptorAfterColumnAddition()));
-        doReturn(45L).when(metaStorageManager).appliedRevision();
+        doReturn(CompletableFuture.completedFuture(45L)).when(metaStorageManager).recoveryFinishedFuture();
 
         schemaManager = new SchemaManager(registry, catalogService, metaStorageManager);
         schemaManager.start();
+
+        completeCausalityToken(45L);
 
         SchemaRegistry schemaRegistry = schemaManager.schemaRegistry(TABLE_ID);
 
