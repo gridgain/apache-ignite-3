@@ -1512,7 +1512,6 @@ public class TableManager implements IgniteTablesInternal, IgniteComponent {
      *
      * @return Actual tables map.
      */
-    @TestOnly
     public Map<Integer, TableImpl> latestTables() {
         return unmodifiableMap(latestTablesById());
     }
@@ -2354,8 +2353,8 @@ public class TableManager implements IgniteTablesInternal, IgniteComponent {
         // TODO: IGNITE-20384 Clean up abandoned resources for dropped zones from volt and metastore
         for (int ver = latestCatalogVersion; ver >= earliestCatalogVersion; ver--) {
             int ver0 = ver;
-            catalogService.tables(ver).stream().
-                    filter(tbl -> startedTables.add(tbl.id()))
+            catalogService.tables(ver).stream()
+                    .filter(tbl -> startedTables.add(tbl.id()))
                     .forEach(tableDescriptor -> startTableFutures.add(createTableLocally(recoveryRevision, ver0, tableDescriptor, true)));
         }
 
