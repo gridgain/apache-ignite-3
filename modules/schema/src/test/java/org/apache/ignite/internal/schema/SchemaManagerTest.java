@@ -73,7 +73,7 @@ class SchemaManagerTest extends BaseIgniteAbstractTest {
     private static final int TABLE_ID = 3;
     private static final String TABLE_NAME = "t";
 
-    private static final long CAUSALITY_TOKEN_1 = 42;
+    private static final long CAUSALITY_TOKEN_1 = 0;
     private static final long CAUSALITY_TOKEN_2 = 45;
 
     private static final int CATALOG_VERSION_1 = 10;
@@ -320,12 +320,12 @@ class SchemaManagerTest extends BaseIgniteAbstractTest {
 
         when(catalogService.latestCatalogVersion()).thenReturn(2);
         when(catalogService.tables(anyInt())).thenReturn(List.of(tableDescriptorAfterColumnAddition()));
-        doReturn(CompletableFuture.completedFuture(45L)).when(metaStorageManager).recoveryFinishedFuture();
+        doReturn(CompletableFuture.completedFuture(CAUSALITY_TOKEN_2)).when(metaStorageManager).recoveryFinishedFuture();
 
         schemaManager = new SchemaManager(registry, catalogService, metaStorageManager);
         schemaManager.start();
 
-        completeCausalityToken(45L);
+        completeCausalityToken(CAUSALITY_TOKEN_2);
 
         SchemaRegistry schemaRegistry = schemaManager.schemaRegistry(TABLE_ID);
 
