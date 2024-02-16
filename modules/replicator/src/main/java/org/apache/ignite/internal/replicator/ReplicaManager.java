@@ -242,8 +242,12 @@ public class ReplicaManager extends AbstractEventProducer<LocalReplicaEvent, Loc
 
         ReplicaRequest request = (ReplicaRequest) message;
 
-        Executor stripeExecutor = requestStripeChooser.choose(request.groupId());
-        stripeExecutor.execute(() -> handleReplicaRequest(request, senderConsistentId, correlationId));
+        if (Thread.currentThread().getName().contains("MessagingService-inbound")) {
+            Executor stripeExecutor = requestStripeChooser.choose(request.groupId());
+            stripeExecutor.execute(() -> handleReplicaRequest(request, senderConsistentId, correlationId));
+        } else {
+            handleReplicaRequest(request, senderConsistentId, correlationId);
+        }
     }
 
     private void handleReplicaRequest(ReplicaRequest request, String senderConsistentId, @Nullable Long correlationId) {
