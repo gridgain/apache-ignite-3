@@ -114,8 +114,7 @@ loop Once per each partition after first (each time on new thread in partition-o
   PRL ->> PRL: partition-operations(N)
   PRL ->> MultiStepPlan: partition-operations(N)
 end
-MultiStepPlan ->> SQLProc: partition-operations(N)
-SQLProc ->> User: sql-execution-pool
+MultiStepPlan ->> User: sql-execution-pool
 ```
 
 ## Known anomalies
