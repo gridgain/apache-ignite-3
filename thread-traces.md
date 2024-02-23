@@ -98,8 +98,12 @@ participant PRL as PartitionReplicaListener
 
 User ->> ParserService: User thread
 ParserService ->> PrepareService: sql-execution-pool
-PrepareService ->> PrepareService: sql-planning-pool(X)
-PrepareService ->> MultiStepPlan: sql-planning-pool(Y)
+alt First query planning
+  PrepareService ->> PrepareService: sql-planning-pool(X)
+  PrepareService ->> MultiStepPlan: sql-planning-pool(Y)
+else Subsequent invocations
+  PrepareService ->> MultiStepPlan: sql-planning-pool
+end
 MultiStepPlan ->> RepManager: sql-execution-pool
 RepManager ->> PRL: partition-operations(1)
 PRL ->> PRL: partition-operations(1)
