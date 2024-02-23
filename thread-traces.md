@@ -111,7 +111,7 @@ opt If current batch is full
   MultiStepPlan ->> MultiStepPlan: sql-execution-pool
 end
 loop Once per each partition chunk after first
-  MultiStepPlan ->> RepManager: partition-operations(N-1)/sql-planning-pool (thread on which prev iteration was finished)
+  MultiStepPlan ->> RepManager: partition-operations(N-1)/sql-execution-pool (thread on which prev iteration was finished)
   RepManager ->> PRL: partition-operations(N)
   PRL ->> PRL: partition-operations(N)
   PRL ->> MultiStepPlan: partition-operations(N)
