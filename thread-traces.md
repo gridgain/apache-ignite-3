@@ -77,7 +77,7 @@ PrepareService ->> KVGetPlan: sql-planning-pool(Y)
 KVGetPlan ->> RepManager: tableManager-io
 RepManager ->> PRL: partition-operations
 PRL ->> PRL: partition-operations
-PRL ->> SQLProc: partition-operations
+PRL ->> User: partition-operations
 ```
 
 #### SQL table scan (embedded mode) on partitions colocated with current node
