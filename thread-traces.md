@@ -71,10 +71,14 @@ participant RepManager
 participant PRL as PartitionReplicaListener
 
 User ->> SQLProc: User thread
-SQLProc ->> PrepareService: sql-execution-pool
-PrepareService ->> PrepareService: sql-planning-pool(X)
-PrepareService ->> KVGetPlan: sql-planning-pool(Y)
-KVGetPlan ->> RepManager: tableManager-io
+alt First query execution
+  SQLProc ->> PrepareService: sql-execution-pool
+  PrepareService ->> PrepareService: sql-planning-pool(X)
+  PrepareService ->> KVGetPlan: sql-planning-pool(Y)
+  KVGetPlan ->> RepManager: tableManager-io
+else Subsequent executions
+  SQLProc ->> RepManager: sql-execution-pool
+end
 RepManager ->> PRL: partition-operations
 PRL ->> PRL: partition-operations
 PRL ->> User: partition-operations
