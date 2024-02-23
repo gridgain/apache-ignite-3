@@ -1,4 +1,4 @@
-# Hitchhikers guide to the Ignite 3 threads
+# Hitchhiker's guide to the Ignite 3 threads
 
 Which threads are passed by a 'request' made by a user.
 
