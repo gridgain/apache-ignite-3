@@ -61,7 +61,6 @@ PRL ->> View: partition-operations
 sequenceDiagram
 participant User
 participant SQLProc as SqlQueryProc
-participant ParserService
 participant PrepareService
 participant ExecutionService
 participant KVGetPlan
@@ -87,7 +86,6 @@ PRL ->> SQLProc: partition-operations
 sequenceDiagram
 participant User
 participant SQLProc as SqlQueryProc
-participant ParserService
 participant PrepareService
 participant ExecutionService
 participant MultiStepPlan
