@@ -108,11 +108,17 @@ MultiStepPlan ->> RepManager: sql-execution-pool
 RepManager ->> PRL: partition-operations(1)
 PRL ->> PRL: partition-operations(1)
 PRL ->> MultiStepPlan: partition-operations(1)
-loop Once per each partition after first (each time on new thread in partition-operations)
-  MultiStepPlan ->> RepManager: partition-operations(N-1)
+opt If current batch is full
+  MultiStepPlan ->> MultiStepPlan: sql-execution-pool
+end
+loop Once per each partition chunk after first
+  MultiStepPlan ->> RepManager: partition-operations(N-1)/sql-planning-pool (thread on which prev iteration was finished)
   RepManager ->> PRL: partition-operations(N)
   PRL ->> PRL: partition-operations(N)
   PRL ->> MultiStepPlan: partition-operations(N)
+  opt If current batch is full
+    MultiStepPlan ->> MultiStepPlan: sql-execution-pool
+  end
 end
 MultiStepPlan ->> User: sql-execution-pool
 ```
