@@ -59,6 +59,7 @@ PRL ->> View: partition-operations
 
 ```mermaid
 sequenceDiagram
+participant User
 participant SQLProc as SqlQueryProc
 participant ParserService
 participant PrepareService
@@ -70,8 +71,8 @@ participant MsgService
 participant RepManager
 participant PRL as PartitionReplicaListener
 
-SQLProc ->> ParserService: User thread
-ParserService ->> PrepareService: sql-execution-pool
+User ->> SQLProc: User thread
+SQLProc ->> PrepareService: sql-execution-pool
 PrepareService ->> PrepareService: sql-planning-pool(X)
 PrepareService ->> KVGetPlan: sql-planning-pool(Y)
 KVGetPlan ->> RepManager: tableManager-io
@@ -96,8 +97,8 @@ participant MsgService
 participant RepManager
 participant PRL as PartitionReplicaListener
 
-User ->> ParserService: User thread
-ParserService ->> PrepareService: sql-execution-pool
+User ->> SQLProc: User thread
+SQLProc ->> PrepareService: sql-execution-pool
 alt First query planning
   PrepareService ->> PrepareService: sql-planning-pool(X)
   PrepareService ->> MultiStepPlan: sql-planning-pool(Y)
