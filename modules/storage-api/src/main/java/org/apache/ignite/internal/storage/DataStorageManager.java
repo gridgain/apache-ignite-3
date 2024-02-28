@@ -73,17 +73,27 @@ public class DataStorageManager implements IgniteComponent {
     }
 
     /**
+     * Get storage engine name by storage profile name.
+     *
+     * @param storageProfileName Name of storage profile.
+     * @return Storage engine name of the input storage profile name or {@code null} if storage profile is not exist on the current node.
+     */
+    public String engineNameByStorageProfileName(String storageProfileName) {
+        return profilesToEngines.get(storageProfileName);
+    }
+
+    /**
      * Get storage engine by storage profile name.
      *
      * @param storageProfile Name of storage profile.
      * @return Storage engine of the input storage profile or {@code null} if storage profile is not exist on the current node.
      */
     public @Nullable StorageEngine engineByStorageProfile(String storageProfile) {
-        String engine = profilesToEngines.get(storageProfile);
+        String engineName = engineNameByStorageProfileName(storageProfile);
 
-        assert engine != null : "Unknown storage profile '" + storageProfile + "'";
+        assert engineName != null : "Unknown storage profile '" + storageProfile + "'";
 
-        return engines.get(engine);
+        return engines.get(engineName);
     }
 
     @Override

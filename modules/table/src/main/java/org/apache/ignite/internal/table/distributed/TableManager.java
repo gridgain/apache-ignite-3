@@ -1215,6 +1215,10 @@ public class TableManager implements IgniteTablesInternal, IgniteComponent {
 
         LOG.trace("Creating local table: name={}, id={}, token={}", tableDescriptor.name(), tableDescriptor.id(), causalityToken);
 
+        if (isProfileMismatches(tableDescriptor.storageProfile())) {
+            return nullCompletedFuture();
+        }
+
         MvTableStorage tableStorage = createTableStorage(tableDescriptor, zoneDescriptor);
         TxStateTableStorage txStateStorage = createTxStateTableStorage(tableDescriptor, zoneDescriptor);
 
@@ -1310,6 +1314,15 @@ public class TableManager implements IgniteTablesInternal, IgniteComponent {
 
         // TODO: https://issues.apache.org/jira/browse/IGNITE-19913 Possible performance degradation.
         return createPartsFut.thenApply(ignore -> null);
+    }
+
+    /**
+     * Checks that given table profile mismatches node's config.
+     *
+     * @return true if mismatch and false otherwise.
+     */
+    public boolean isProfileMismatches(String storageProfileName) {
+        return dataStorageMgr.engineNameByStorageProfileName(storageProfileName) == null;
     }
 
     /**

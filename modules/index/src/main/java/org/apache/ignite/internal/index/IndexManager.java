@@ -21,6 +21,7 @@ import static java.util.concurrent.CompletableFuture.allOf;
 import static java.util.concurrent.CompletableFuture.failedFuture;
 import static java.util.stream.Collectors.toMap;
 import static org.apache.ignite.internal.catalog.events.CatalogEvent.INDEX_CREATE;
+import static org.apache.ignite.internal.util.CompletableFutures.booleanCompletedFuture;
 import static org.apache.ignite.internal.util.CompletableFutures.nullCompletedFuture;
 import static org.apache.ignite.internal.util.IgniteUtils.inBusyLock;
 import static org.apache.ignite.internal.util.IgniteUtils.inBusyLockAsync;
@@ -213,9 +214,11 @@ public class IndexManager implements IgniteComponent {
 
             long causalityToken = parameters.causalityToken();
             int catalogVersion = parameters.catalogVersion();
-
             CatalogTableDescriptor table = catalogService.table(tableId, catalogVersion);
 
+            if (tableManager.isProfileMismatches(table.storageProfile())) {
+                return booleanCompletedFuture(false);
+            }
             assert table != null : "tableId=" + tableId + ", indexId=" + indexId;
 
             if (LOG.isInfoEnabled()) {
