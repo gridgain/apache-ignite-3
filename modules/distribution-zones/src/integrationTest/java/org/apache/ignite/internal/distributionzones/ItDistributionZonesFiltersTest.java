@@ -51,7 +51,6 @@ import org.apache.ignite.internal.table.distributed.TableManager;
 import org.apache.ignite.internal.testframework.IgniteTestUtils;
 import org.apache.ignite.sql.Session;
 import org.intellij.lang.annotations.Language;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -115,20 +114,21 @@ public class ItDistributionZonesFiltersTest extends ClusterPerTestIntegrationTes
      *
      * @throws Exception If failed.
      */
-    @Disabled("https://issues.apache.org/jira/browse/IGNITE-21387")
+    @Test
     void testFilteredDataNodesPropagatedToStable() throws Exception {
         String filter = "$[?(@.region == \"US\" && @.storage == \"SSD\")]";
 
         // This node do not pass the filter
         @Language("JSON") String firstNodeAttributes = "{region:{attribute:\"EU\"},storage:{attribute:\"SSD\"}}";
+        @Language("JSON") String storageProfiles = "{custom_profile:{engine:\"aipersist\"}}";
 
-        IgniteImpl node = startNode(1, createStartConfig(firstNodeAttributes, STORAGE_PROFILES_CONFIGS));
+        IgniteImpl node = startNode(1, createStartConfig(firstNodeAttributes, storageProfiles));
 
         Session session = node.sql().createSession();
 
-        session.execute(null, createZoneSql(2, 3, IMMEDIATE_TIMER_VALUE, IMMEDIATE_TIMER_VALUE, filter, STORAGE_PROFILES));
+        session.execute(null, createZoneSql(2, 3, IMMEDIATE_TIMER_VALUE, IMMEDIATE_TIMER_VALUE, filter, "'custom_profile'"));
 
-        session.execute(null, createTableSql());
+        session.execute(null, createTableSql("custom_profile"));
 
         MetaStorageManager metaStorageManager = (MetaStorageManager) IgniteTestUtils
                 .getFieldValue(node, IgniteImpl.class, "metaStorageMgr");
@@ -152,11 +152,11 @@ public class ItDistributionZonesFiltersTest extends ClusterPerTestIntegrationTes
         // This node pass the filter but storage profiles of a node do not match zone's storage profiles.
         // TODO: https://issues.apache.org/jira/browse/IGNITE-21387 recovery of this node is failing,
         // TODO: because there are no appropriate storage profile on the node
-        @Language("JSON") String notMatchingProfiles = "{dummy:{engine:\"dummy\"},another_dummy:{engine:\"dummy\"}}";
+        @Language("JSON") String notMatchingProfiles = "{dummy:{engine:\"aipersist\"},another_dummy:{engine:\"aipersist\"}}";
         startNode(2, createStartConfig(secondNodeAttributes, notMatchingProfiles));
 
         // This node pass the filter and storage profiles of a node match zone's storage profiles.
-        startNode(3, createStartConfig(secondNodeAttributes, STORAGE_PROFILES_CONFIGS));
+        startNode(3, createStartConfig(secondNodeAttributes, storageProfiles));
 
         int zoneId = getZoneId(node);
 
@@ -479,11 +479,15 @@ public class ItDistributionZonesFiltersTest extends ClusterPerTestIntegrationTes
         return String.format("ALTER ZONE \"%s\" SET \"REPLICAS\" = %s", ZONE_NAME, replicas);
     }
 
-    private static String createTableSql() {
+    private static String createTableSql(String profile) {
         return String.format(
                 "CREATE TABLE %s(%s INT PRIMARY KEY, %s VARCHAR) WITH STORAGE_PROFILE='%s',PRIMARY_ZONE='%s'",
-                TABLE_NAME, COLUMN_KEY, COLUMN_VAL, DEFAULT_AIPERSIST_PROFILE_NAME, ZONE_NAME
+                TABLE_NAME, COLUMN_KEY, COLUMN_VAL, profile, ZONE_NAME
         );
+    }
+
+    private static String createTableSql() {
+        return createTableSql(DEFAULT_AIPERSIST_PROFILE_NAME);
     }
 
     private static int getZoneId(IgniteImpl node) {
