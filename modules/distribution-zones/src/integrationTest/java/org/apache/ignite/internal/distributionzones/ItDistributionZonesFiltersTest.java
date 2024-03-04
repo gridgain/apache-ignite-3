@@ -66,9 +66,15 @@ public class ItDistributionZonesFiltersTest extends ClusterPerTestIntegrationTes
 
     private static final String STORAGE_PROFILES = String.format("'%s, %s'", DEFAULT_ROCKSDB_PROFILE_NAME, DEFAULT_AIPERSIST_PROFILE_NAME);
 
+    private static final String CUSTOM_PROFILE_1_NAME = "custom_profile_1";
+
+    private static final String CUSTOM_PROFILE_2_NAME = "custom_profile_2";
+
+    private static final String CUSTOM_PROFILE_TEMPLATE = "%s:{engine:\"aipersist\"}";
+
     @Language("JSON")
     private static final String STORAGE_PROFILES_CONFIGS = String.format(
-            "{%s:{engine:\"rocksDb\"}, %s:{engine:\"aipersist\"}}",
+            "{%s:{engine:\"rocksDb\"},%s:{engine:\"aipersist\"}}",
             DEFAULT_ROCKSDB_PROFILE_NAME,
             DEFAULT_AIPERSIST_PROFILE_NAME
     );
@@ -101,7 +107,21 @@ public class ItDistributionZonesFiltersTest extends ClusterPerTestIntegrationTes
 
     @Override
     protected String getNodeBootstrapConfigTemplate() {
-        return createStartConfig(NODE_ATTRIBUTES, STORAGE_PROFILES_CONFIGS);
+        return createStartConfig(NODE_ATTRIBUTES, storageProfilesConfigsWithCustom(CUSTOM_PROFILE_1_NAME));
+    }
+
+    private String storageProfilesConfigsWithCustom(String customProfileName) {
+        return String.format(
+                STORAGE_PROFILES_CONFIGS.substring(0, STORAGE_PROFILES_CONFIGS.length() - 1) + ", %s}",
+                customStorageProfile(customProfileName));
+    }
+
+    private String customStorageProfile(String customProfileName) {
+        return String.format(CUSTOM_PROFILE_TEMPLATE, customProfileName);
+    }
+
+    private String customStorageProfileInBraces(String customProfileName) {
+        return String.format("{ %s }", customStorageProfile(customProfileName));
     }
 
     @Override
@@ -116,23 +136,22 @@ public class ItDistributionZonesFiltersTest extends ClusterPerTestIntegrationTes
      */
     @Test
     void testFilteredDataNodesPropagatedToStable() throws Exception {
-        String filter = "$[?(@.region == \"US\" && @.storage == \"SSD\")]";
+        final String filter = "$[?(@.region == \"US\" && @.storage == \"SSD\")]";
+        final String matchingCustomProfileName = CUSTOM_PROFILE_1_NAME;
+        final String mismatchingCustomProfileName = CUSTOM_PROFILE_2_NAME;
 
         // This node do not pass the filter
         @Language("JSON") String firstNodeAttributes = "{region:{attribute:\"EU\"},storage:{attribute:\"SSD\"}}";
-        @Language("JSON") String storageProfiles = "{custom_profile:{engine:\"aipersist\"}}";
+        @Language("JSON") String matchingStorageProfile = customStorageProfileInBraces(matchingCustomProfileName);
 
-        IgniteImpl node = startNode(1);
-
-        @Language("JSON") String secondNodeAttributes = "{region:{attribute:\"US\"},storage:{attribute:\"SSD\"}}";
-        @Language("JSON") String notMatchingCustomProfiles = "{custom_profile_2:{engine:\"aipersist\"}}";
-        IgniteImpl node2 = startNode(2, createStartConfig(secondNodeAttributes, notMatchingCustomProfiles));
+        IgniteImpl node = startNode(1, createStartConfig(firstNodeAttributes, matchingStorageProfile));
 
         Session session = node.sql().createSession();
 
-        session.execute(null, createZoneSql(2, 3, IMMEDIATE_TIMER_VALUE, IMMEDIATE_TIMER_VALUE, filter, "'custom_profile_1'"));
+        session.execute(null, createZoneSql(2, 3, IMMEDIATE_TIMER_VALUE, IMMEDIATE_TIMER_VALUE, filter,
+                String.format("'%s'", matchingCustomProfileName)));
 
-        session.execute(null, createTableSql("custom_profile_1"));
+        session.execute(null, createTableSql(matchingCustomProfileName));
 
         MetaStorageManager metaStorageManager = (MetaStorageManager) IgniteTestUtils
                 .getFieldValue(node, IgniteImpl.class, "metaStorageMgr");
@@ -151,14 +170,16 @@ public class ItDistributionZonesFiltersTest extends ClusterPerTestIntegrationTes
                 TIMEOUT_MILLIS
         );
 
+        @Language("JSON") String secondNodeAttributes = "{region:{attribute:\"US\"},storage:{attribute:\"SSD\"}}";
 
         // This node pass the filter but storage profiles of a node do not match zone's storage profiles.
         // TODO: https://issues.apache.org/jira/browse/IGNITE-21387 recovery of this node is failing,
         // TODO: because there are no appropriate storage profile on the node
-
+        @Language("JSON") String mismatchingStorageProfile = customStorageProfileInBraces(mismatchingCustomProfileName);
+        startNode(2, createStartConfig(secondNodeAttributes, mismatchingStorageProfile));
 
         // This node pass the filter and storage profiles of a node match zone's storage profiles.
-        startNode(3);
+        startNode(3, createStartConfig(secondNodeAttributes, matchingStorageProfile));
 
         int zoneId = getZoneId(node);
 
