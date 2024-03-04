@@ -122,13 +122,17 @@ public class ItDistributionZonesFiltersTest extends ClusterPerTestIntegrationTes
         @Language("JSON") String firstNodeAttributes = "{region:{attribute:\"EU\"},storage:{attribute:\"SSD\"}}";
         @Language("JSON") String storageProfiles = "{custom_profile:{engine:\"aipersist\"}}";
 
-        IgniteImpl node = startNode(1, createStartConfig(firstNodeAttributes, storageProfiles));
+        IgniteImpl node = startNode(1);
+
+        @Language("JSON") String secondNodeAttributes = "{region:{attribute:\"US\"},storage:{attribute:\"SSD\"}}";
+        @Language("JSON") String notMatchingCustomProfiles = "{custom_profile_2:{engine:\"aipersist\"}}";
+        IgniteImpl node2 = startNode(2, createStartConfig(secondNodeAttributes, notMatchingCustomProfiles));
 
         Session session = node.sql().createSession();
 
-        session.execute(null, createZoneSql(2, 3, IMMEDIATE_TIMER_VALUE, IMMEDIATE_TIMER_VALUE, filter, "'custom_profile'"));
+        session.execute(null, createZoneSql(2, 3, IMMEDIATE_TIMER_VALUE, IMMEDIATE_TIMER_VALUE, filter, "'custom_profile_1'"));
 
-        session.execute(null, createTableSql("custom_profile"));
+        session.execute(null, createTableSql("custom_profile_1"));
 
         MetaStorageManager metaStorageManager = (MetaStorageManager) IgniteTestUtils
                 .getFieldValue(node, IgniteImpl.class, "metaStorageMgr");
@@ -147,16 +151,14 @@ public class ItDistributionZonesFiltersTest extends ClusterPerTestIntegrationTes
                 TIMEOUT_MILLIS
         );
 
-        @Language("JSON") String secondNodeAttributes = "{region:{attribute:\"US\"},storage:{attribute:\"SSD\"}}";
 
         // This node pass the filter but storage profiles of a node do not match zone's storage profiles.
         // TODO: https://issues.apache.org/jira/browse/IGNITE-21387 recovery of this node is failing,
         // TODO: because there are no appropriate storage profile on the node
-        @Language("JSON") String notMatchingProfiles = "{dummy:{engine:\"aipersist\"},another_dummy:{engine:\"aipersist\"}}";
-        startNode(2, createStartConfig(secondNodeAttributes, notMatchingProfiles));
+
 
         // This node pass the filter and storage profiles of a node match zone's storage profiles.
-        startNode(3, createStartConfig(secondNodeAttributes, storageProfiles));
+        startNode(3);
 
         int zoneId = getZoneId(node);
 
