@@ -216,9 +216,6 @@ public class IndexManager implements IgniteComponent {
             int catalogVersion = parameters.catalogVersion();
             CatalogTableDescriptor table = catalogService.table(tableId, catalogVersion);
 
-            if (tableManager.isProfileMismatches(table.storageProfile())) {
-                return booleanCompletedFuture(false);
-            }
             assert table != null : "tableId=" + tableId + ", indexId=" + indexId;
 
             if (LOG.isInfoEnabled()) {
@@ -353,6 +350,9 @@ public class IndexManager implements IgniteComponent {
     ) {
         int tableId = index.tableId();
 
+        if (tableManager.isProfileMismatches(table.storageProfile())) {
+            return booleanCompletedFuture(false);
+        }
         // TODO: IGNITE-19712 Listen to assignment changes and start new index storages.
         CompletableFuture<PartitionSet> tablePartitionFuture = tableManager.localPartitionSetAsync(causalityToken, tableId);
 
