@@ -1215,12 +1215,15 @@ public class TableManager implements IgniteTablesInternal, IgniteComponent {
 
         LOG.trace("Creating local table: name={}, id={}, token={}", tableDescriptor.name(), tableDescriptor.id(), causalityToken);
 
-        if (isProfileMismatches(tableDescriptor.storageProfile())) {
-            return nullCompletedFuture();
-        }
+        MvTableStorage tableStorage = null;
+        TxStateTableStorage txStateStorage = null;
 
-        MvTableStorage tableStorage = createTableStorage(tableDescriptor, zoneDescriptor);
-        TxStateTableStorage txStateStorage = createTxStateTableStorage(tableDescriptor, zoneDescriptor);
+        final boolean shouldCreateStorage = isProfileMatches(tableDescriptor.storageProfile());
+        
+        if (shouldCreateStorage) {
+            tableStorage = createTableStorage(tableDescriptor, zoneDescriptor);
+            txStateStorage = createTxStateTableStorage(tableDescriptor, zoneDescriptor);
+        }
 
         int partitions = zoneDescriptor.partitions();
 
@@ -1268,6 +1271,11 @@ public class TableManager implements IgniteTablesInternal, IgniteComponent {
         // NB: all vv.update() calls must be made from the synchronous part of the method (not in thenCompose()/etc!).
         CompletableFuture<?> localPartsUpdateFuture = localPartsByTableIdVv.update(causalityToken,
                 (previous, throwable) -> inBusyLock(busyLock, () -> assignmentsFuture.thenComposeAsync(newAssignments -> {
+                    if (!shouldCreateStorage) {
+                        return nullCompletedFuture();
+                    }
+
+
                     PartitionSet parts = new BitSetPartitionSet();
 
                     // TODO: https://issues.apache.org/jira/browse/IGNITE-19713 Process assignments and set partitions only for
@@ -1295,8 +1303,12 @@ public class TableManager implements IgniteTablesInternal, IgniteComponent {
                 return failedFuture(e);
             }
 
+            if (!shouldCreateStorage) {
+                return nullCompletedFuture();
+            }
+
             return localPartsUpdateFuture.thenCompose(unused ->
-                    tablesByIdFuture.thenComposeAsync(tablesById -> inBusyLock(
+                    tablesByIdFuture.thenComposeAsync(tableCatalogTableDescriptorsById -> inBusyLock(
                             busyLock,
                             () -> startLocalPartitionsAndClients(assignmentsFuture, table)
                     ), ioExecutor)
@@ -1317,12 +1329,12 @@ public class TableManager implements IgniteTablesInternal, IgniteComponent {
     }
 
     /**
-     * Checks that given table profile mismatches node's config.
+     * Checks that given table profile matches node's config.
      *
-     * @return true if mismatch and false otherwise.
+     * @return true if is match and false otherwise.
      */
-    public boolean isProfileMismatches(String storageProfileName) {
-        return dataStorageMgr.engineNameByStorageProfileName(storageProfileName) == null;
+    public boolean isProfileMatches(String storageProfileName) {
+        return dataStorageMgr.engineNameByStorageProfileName(storageProfileName) != null;
     }
 
     /**
@@ -2064,6 +2076,8 @@ public class TableManager implements IgniteTablesInternal, IgniteComponent {
      */
     private static PartitionStorages getPartitionStorages(TableImpl table, int partitionId) {
         InternalTable internalTable = table.internalTable();
+
+        assert internalTable.storage() != null;
 
         MvPartitionStorage mvPartition = internalTable.storage().getMvPartition(partitionId);
 

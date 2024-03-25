@@ -350,7 +350,7 @@ public class IndexManager implements IgniteComponent {
     ) {
         int tableId = index.tableId();
 
-        if (tableManager.isProfileMismatches(table.storageProfile())) {
+        if (!tableManager.isProfileMatches(table.storageProfile())) {
             return booleanCompletedFuture(false);
         }
         // TODO: IGNITE-19712 Listen to assignment changes and start new index storages.

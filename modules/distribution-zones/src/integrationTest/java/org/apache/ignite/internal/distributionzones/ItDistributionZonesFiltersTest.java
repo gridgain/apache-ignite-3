@@ -20,7 +20,6 @@ package org.apache.ignite.internal.distributionzones;
 import static java.util.concurrent.TimeUnit.MILLISECONDS;
 import static org.apache.ignite.internal.TestDefaultProfilesNames.DEFAULT_AIPERSIST_PROFILE_NAME;
 import static org.apache.ignite.internal.TestDefaultProfilesNames.DEFAULT_ROCKSDB_PROFILE_NAME;
-import static org.apache.ignite.internal.catalog.commands.CatalogUtils.DEFAULT_FILTER;
 import static org.apache.ignite.internal.catalog.commands.CatalogUtils.IMMEDIATE_TIMER_VALUE;
 import static org.apache.ignite.internal.distributionzones.DistributionZonesTestUtil.assertValueInStorage;
 import static org.apache.ignite.internal.distributionzones.DistributionZonesUtil.zoneDataNodesKey;
@@ -64,9 +63,11 @@ public class ItDistributionZonesFiltersTest extends ClusterPerTestIntegrationTes
     @Language("JSON")
     private static final String NODE_ATTRIBUTES = "{region:{attribute:\"US\"},storage:{attribute:\"SSD\"}}";
 
+    private static final String DEFAULT_FILTER = "$[?(@.region == \"US\" && @.storage == \"SSD\")]";
+
     private static final String STORAGE_PROFILES = String.format("'%s, %s'", DEFAULT_ROCKSDB_PROFILE_NAME, DEFAULT_AIPERSIST_PROFILE_NAME);
 
-    private static final String CUSTOM_PROFILE_1_NAME = "custom_profile_1";
+    private static final String CUSTOM_PROFILE_NAME = "custom_profile";
 
     private static final String CUSTOM_PROFILE_2_NAME = "custom_profile_2";
 
@@ -107,20 +108,20 @@ public class ItDistributionZonesFiltersTest extends ClusterPerTestIntegrationTes
 
     @Override
     protected String getNodeBootstrapConfigTemplate() {
-        return createStartConfig(NODE_ATTRIBUTES, storageProfilesConfigsWithCustom(CUSTOM_PROFILE_1_NAME));
+        return createStartConfig(NODE_ATTRIBUTES, STORAGE_PROFILES_CONFIGS);
     }
 
-    private String storageProfilesConfigsWithCustom(String customProfileName) {
+    private static String storageProfilesConfigsWithCustom(String customProfileName) {
         return String.format(
                 STORAGE_PROFILES_CONFIGS.substring(0, STORAGE_PROFILES_CONFIGS.length() - 1) + ", %s}",
                 customStorageProfile(customProfileName));
     }
 
-    private String customStorageProfile(String customProfileName) {
+    private static String customStorageProfile(String customProfileName) {
         return String.format(CUSTOM_PROFILE_TEMPLATE, customProfileName);
     }
 
-    private String customStorageProfileInBraces(String customProfileName) {
+    private static String customStorageProfileInBraces(String customProfileName) {
         return String.format("{ %s }", customStorageProfile(customProfileName));
     }
 
@@ -132,12 +133,157 @@ public class ItDistributionZonesFiltersTest extends ClusterPerTestIntegrationTes
     /**
      * Tests the scenario when filter was applied to data nodes and stable key for rebalance was changed to that filtered value.
      *
+     * Node0 | Init node              | default Filter | should be passed
+     * Node1 | Custom mismatched node | custom Filter  | should be skipped
+     * Node2 | Default matched node   | default Filter | should be passed
+     *
+     * The second node should be presented there for replication mechanism checking with replica factor > 1
+     *
      * @throws Exception If failed.
      */
     @Test
-    void testFilteredDataNodesPropagatedToStable() throws Exception {
-        final String filter = "$[?(@.region == \"US\" && @.storage == \"SSD\")]";
-        final String matchingCustomProfileName = CUSTOM_PROFILE_1_NAME;
+    void testDataNodesByFilterPropagatedToStable() throws Exception {
+        final String commonProfileName = DEFAULT_AIPERSIST_PROFILE_NAME;
+        @Language("JSON") final String mismatchAttributes = "{region:{attribute:\"EU\"},storage:{attribute:\"SSD\"}}";
+
+        IgniteImpl mismatchedNode = startNode(1, createStartConfig(mismatchAttributes, STORAGE_PROFILES_CONFIGS));
+        // the second matched node
+        startNode(2, createStartConfig(NODE_ATTRIBUTES, STORAGE_PROFILES_CONFIGS));
+
+        Session session = mismatchedNode.sql().createSession();
+        final var zoneSQL = createZoneSql(
+                2,
+                2,
+                IMMEDIATE_TIMER_VALUE,
+                IMMEDIATE_TIMER_VALUE,
+                DEFAULT_FILTER,
+                String.format("'%s'", commonProfileName));
+        session.execute(null, zoneSQL);
+        session.execute(null, createTableSql(commonProfileName));
+
+        MetaStorageManager metaStorageManager = IgniteTestUtils.getFieldValue(mismatchedNode, IgniteImpl.class, "metaStorageMgr");
+        TableManager tableManager = IgniteTestUtils.getFieldValue(mismatchedNode, IgniteImpl.class, "distributedTblMgr");
+        TableViewInternal table = (TableViewInternal) tableManager.table(TABLE_NAME);
+        TablePartitionId partId = new TablePartitionId(table.tableId(), 0);
+        assertValueInStorage(
+                metaStorageManager,
+                stablePartAssignmentsKey(partId),
+                (v) -> Assignments.fromBytes(v).nodes().size(),
+                2,
+                TIMEOUT_MILLIS
+        );
+
+        int zoneId = getZoneId(mismatchedNode);
+
+        assertValueInStorage(
+                metaStorageManager,
+                zoneDataNodesKey(zoneId),
+                (v) -> ((Map<Node, Integer>) fromBytes(v)).size(),
+                3,
+                TIMEOUT_MILLIS
+        );
+
+        Entry dataNodesEntry = metaStorageManager.get(zoneDataNodesKey(zoneId)).get(5_000, MILLISECONDS);
+
+        assertTrue(waitForCondition(() -> metaStorageManager.appliedRevision() >= dataNodesEntry.revision(), TIMEOUT_MILLIS));
+
+        // We check that two nodes that pass the filter and storage profiles are presented in the stable key.
+        assertValueInStorage(
+                metaStorageManager,
+                stablePartAssignmentsKey(partId),
+                (v) -> Assignments.fromBytes(v).nodes()
+                        .stream().map(Assignment::consistentId).collect(Collectors.toSet()),
+                Set.of(node(0).name(), node(2).name()),
+                TIMEOUT_MILLIS * 2
+        );
+    }
+
+    /**
+     * Tests the scenario when custom profile was applied to data node and stable key for rebalance was changed to that filtered value.
+     *
+     * Node0 | Init node           | default Profile | should be skipped
+     * Node1 | Custom matched node | custom Profile  | should be passed
+     * Node2 | Custom matched node | custom Profile  | should be passed
+     *
+     * The second node should be presented there for replication mechanism checking with replica factor > 1
+     * @throws Exception If failed.
+     */
+    @Test
+    void testDataNodesByProfilePropagatedToStable() throws Exception {
+        final String customProfileName = CUSTOM_PROFILE_NAME;
+        @Language("JSON") String matchingProfile = customStorageProfileInBraces(customProfileName);
+
+        IgniteImpl matchedNode = startNode(1, createStartConfig(NODE_ATTRIBUTES, matchingProfile));
+        // the second matched node
+        startNode(2, createStartConfig(NODE_ATTRIBUTES, matchingProfile));
+
+        Session session = matchedNode.sql().createSession();
+        final var zoneSQL = createZoneSql(
+                2,
+                2,
+                IMMEDIATE_TIMER_VALUE,
+                IMMEDIATE_TIMER_VALUE,
+                DEFAULT_FILTER,
+                String.format("'%s'", customProfileName));
+        session.execute(null, zoneSQL);
+        session.execute(null, createTableSql(customProfileName));
+
+        MetaStorageManager metaStorageManager = (MetaStorageManager) IgniteTestUtils
+                .getFieldValue(matchedNode, IgniteImpl.class, "metaStorageMgr");
+        TableManager tableManager = IgniteTestUtils.getFieldValue(matchedNode, IgniteImpl.class, "distributedTblMgr");
+        TableViewInternal table = (TableViewInternal) tableManager.table(TABLE_NAME);
+        TablePartitionId partId = new TablePartitionId(table.tableId(), 0);
+        assertValueInStorage(
+                metaStorageManager,
+                stablePartAssignmentsKey(partId),
+                (v) -> Assignments.fromBytes(v).nodes().size(),
+                2,
+                TIMEOUT_MILLIS
+        );
+
+        int zoneId = getZoneId(matchedNode);
+
+        assertValueInStorage(
+                metaStorageManager,
+                zoneDataNodesKey(zoneId),
+                (v) -> ((Map<Node, Integer>) fromBytes(v)).size(),
+                3,
+                TIMEOUT_MILLIS
+        );
+
+        Entry dataNodesEntry = metaStorageManager.get(zoneDataNodesKey(zoneId)).get(5_000, MILLISECONDS);
+
+        assertTrue(waitForCondition(() -> metaStorageManager.appliedRevision() >= dataNodesEntry.revision(), TIMEOUT_MILLIS));
+
+        // We check that two nodes that pass the filter and storage profiles are presented in the stable key.
+        assertValueInStorage(
+                metaStorageManager,
+                stablePartAssignmentsKey(partId),
+                (v) -> Assignments.fromBytes(v).nodes()
+                        .stream().map(Assignment::consistentId).collect(Collectors.toSet()),
+                Set.of(node(1).name(), node(2).name()),
+                TIMEOUT_MILLIS * 2
+        );
+    }
+
+    /**
+     * Tests the scenario when filter and custom profile was applied to data nodes and stable key for rebalance was changed to that filtered
+     * value.
+     *
+     * ID | node description                                | filter  | profile | verdict
+     * -- + ----------------------------------------------- + ------- + ------- + -------
+     * 0  | Init default profile mismatch node              | default | default | skipped
+     * 1  | Custom filter mismatch node                     | custom  | custom  | skipped
+     * 2  | Custom filter & default profile mismatched node | custom  | default | skipped
+     * 3  | Custom matched node                             | default | custom  | passed
+     * 4  | Custom matched node                             | default | custom  | passed
+     *
+     * The fourth node should be presented there for replication mechanism checking with replica factor > 1
+     * @throws Exception If failed.
+     */
+    @Test
+    void testDataNodesByFilterAndProfilePropagatedToStable() throws Exception {
+        final String matchingCustomProfileName = CUSTOM_PROFILE_NAME;
         final String mismatchingCustomProfileName = CUSTOM_PROFILE_2_NAME;
 
         // This node do not pass the filter
@@ -148,7 +294,7 @@ public class ItDistributionZonesFiltersTest extends ClusterPerTestIntegrationTes
 
         Session session = node.sql().createSession();
 
-        session.execute(null, createZoneSql(2, 3, IMMEDIATE_TIMER_VALUE, IMMEDIATE_TIMER_VALUE, filter,
+        session.execute(null, createZoneSql(2, 3, IMMEDIATE_TIMER_VALUE, IMMEDIATE_TIMER_VALUE, DEFAULT_FILTER,
                 String.format("'%s'", matchingCustomProfileName)));
 
         session.execute(null, createTableSql(matchingCustomProfileName));
@@ -205,6 +351,8 @@ public class ItDistributionZonesFiltersTest extends ClusterPerTestIntegrationTes
                 TIMEOUT_MILLIS * 2
         );
     }
+
+
 
     /**
      * Tests the scenario when altering filter triggers immediate scale up so data nodes
