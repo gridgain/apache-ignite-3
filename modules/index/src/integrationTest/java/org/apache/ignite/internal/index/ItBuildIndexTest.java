@@ -56,7 +56,6 @@ import org.apache.ignite.internal.raft.Peer;
 import org.apache.ignite.internal.raft.service.RaftGroupService;
 import org.apache.ignite.internal.sql.BaseSqlIntegrationTest;
 import org.apache.ignite.internal.storage.index.IndexStorage;
-import org.apache.ignite.internal.storage.index.StorageIndexDescriptor;
 import org.apache.ignite.internal.table.InternalTable;
 import org.apache.ignite.internal.table.TableTestUtils;
 import org.apache.ignite.internal.table.TableViewInternal;
@@ -67,7 +66,6 @@ import org.apache.ignite.table.Table;
 import org.jetbrains.annotations.Nullable;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Assertions;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -80,12 +78,6 @@ public class ItBuildIndexTest extends BaseSqlIntegrationTest {
     private static final String TABLE_NAME = "TEST_TABLE";
 
     private static final String INDEX_NAME = "TEST_INDEX";
-
-    @BeforeEach
-    void setup() {
-        // Do not wait for indexes to become available.
-        setAwaitIndexAvailability(false);
-    }
 
     @AfterEach
     void tearDown() {
@@ -282,7 +274,7 @@ public class ItBuildIndexTest extends BaseSqlIntegrationTest {
     }
 
     private static void checkIndexBuild(int partitions, int replicas, String indexName) throws Exception {
-        // TODO: IGNITE-19150 We are waiting for schema synchronization to avoid races to create and destroy indexes
+        // TODO: IGNITE-20525 We are waiting for schema synchronization to avoid races to create and destroy indexes
         Map<Integer, List<Ignite>> nodesWithBuiltIndexesByPartitionId = waitForIndexBuild(TABLE_NAME, indexName);
 
         // Check that the number of nodes with built indexes is equal to the number of replicas.
@@ -319,23 +311,16 @@ public class ItBuildIndexTest extends BaseSqlIntegrationTest {
      * @param tableName Table name.
      * @param indexName Index name.
      * @return Nodes on which the partition index was built.
-     * @throws Exception If failed.
      */
     private static Map<Integer, List<Ignite>> waitForIndexBuild(String tableName, String indexName) {
         Map<Integer, List<Ignite>> partitionIdToNodes = new HashMap<>();
 
         CLUSTER.runningNodes().forEach(clusterNode -> {
             try {
-                TableViewInternal table = getTableView(clusterNode, tableName);
+                InternalTable internalTable = getTableView(clusterNode, tableName).internalTable();
+                CatalogIndexDescriptor indexDescriptor = getIndexDescriptor(clusterNode, indexName);
 
-                assertNotNull(table, clusterNode.name() + " : " + tableName);
-
-                InternalTable internalTable = table.internalTable();
-
-                assertTrue(
-                        waitForCondition(() -> getIndexDescriptor(clusterNode, indexName) != null, 10, TimeUnit.SECONDS.toMillis(10)),
-                        String.format("node=%s, tableName=%s, indexName=%s", clusterNode.name(), tableName, indexName)
-                );
+                assertNotNull(indexDescriptor);
 
                 for (int partitionId = 0; partitionId < internalTable.partitions(); partitionId++) {
                     RaftGroupService raftGroupService = internalTable.tableRaftService().partitionRaftGroupService(partitionId);
@@ -347,20 +332,14 @@ public class ItBuildIndexTest extends BaseSqlIntegrationTest {
                         continue;
                     }
 
-                    CatalogTableDescriptor tableDescriptor = getTableDescriptor(clusterNode, tableName);
-                    CatalogIndexDescriptor indexDescriptor = getIndexDescriptor(clusterNode, indexName);
-
-                    IndexStorage index = internalTable.storage().getOrCreateIndex(
-                            partitionId,
-                            StorageIndexDescriptor.create(tableDescriptor, indexDescriptor)
-                    );
+                    IndexStorage index = internalTable.storage().getIndex(partitionId, indexDescriptor.id());
 
                     assertTrue(waitForCondition(() -> index.getNextRowIdToBuild() == null, 10, TimeUnit.SECONDS.toMillis(10)));
 
                     partitionIdToNodes.computeIfAbsent(partitionId, p -> new ArrayList<>()).add(clusterNode);
                 }
             } catch (InterruptedException e) {
-                throw new RuntimeException(e);
+                throw new RuntimeException("Node operation failed: node=" + clusterNode.name(), e);
             }
         });
 

@@ -42,6 +42,7 @@ import org.apache.ignite.internal.client.PayloadInputChannel;
 import org.apache.ignite.internal.client.PayloadOutputChannel;
 import org.apache.ignite.internal.client.proto.ClientOp;
 import org.apache.ignite.internal.client.proto.TuplePart;
+import org.apache.ignite.internal.client.sql.ClientSql;
 import org.apache.ignite.internal.lang.IgniteBiTuple;
 import org.apache.ignite.internal.marshaller.ClientMarshallerReader;
 import org.apache.ignite.internal.marshaller.ClientMarshallerWriter;
@@ -76,11 +77,12 @@ public class ClientKeyValueView<K, V> extends AbstractClientView<Entry<K, V>> im
      * Constructor.
      *
      * @param tbl Underlying table.
+     * @param sql Sql.
      * @param keyMapper Key mapper.
      * @param valMapper value mapper.
      */
-    public ClientKeyValueView(ClientTable tbl, Mapper<K> keyMapper, Mapper<V> valMapper) {
-        super(tbl);
+    ClientKeyValueView(ClientTable tbl, ClientSql sql, Mapper<K> keyMapper, Mapper<V> valMapper) {
+        super(tbl, sql);
 
         assert keyMapper != null;
         assert valMapper != null;
@@ -509,7 +511,7 @@ public class ClientKeyValueView<K, V> extends AbstractClientView<Entry<K, V>> im
                 // TODO: Optimize (IGNITE-16022).
                 if (in.in().unpackBoolean()) {
                     var tupleReader = new BinaryTupleReader(schema.columns().length, in.in().readBinaryUnsafe());
-                    var reader = new ClientMarshallerReader(tupleReader);
+                    var reader = new ClientMarshallerReader(tupleReader, schema.columns());
                     res.put((K) keyMarsh.readObject(reader, null), (V) valMarsh.readObject(reader, null));
                 }
             }
@@ -547,7 +549,7 @@ public class ClientKeyValueView<K, V> extends AbstractClientView<Entry<K, V>> im
 
                     for (Entry<K, V> e : items) {
                         boolean del = deleted != null && deleted.get(i++);
-                        int colCount = del ? s.keyColumnCount() : s.columns().length;
+                        int colCount = del ? s.keyColumns().length : s.columns().length;
 
                         noValueSet.clear();
                         var builder = new BinaryTupleBuilder(colCount);
@@ -576,8 +578,8 @@ public class ClientKeyValueView<K, V> extends AbstractClientView<Entry<K, V>> im
     /** {@inheritDoc} */
     @Override
     protected Function<SqlRow, Entry<K, V>> queryMapper(ResultSetMetadata meta, ClientSchema schema) {
-        String[] keyCols = columnNames(schema.columns(), 0, schema.keyColumnCount());
-        String[] valCols = columnNames(schema.columns(), schema.keyColumnCount(), schema.columns().length);
+        String[] keyCols = columnNames(schema.keyColumns());
+        String[] valCols = columnNames(schema.valColumns());
 
         Marshaller keyMarsh = schema.getMarshaller(keySer.mapper(), TuplePart.KEY, true);
         Marshaller valMarsh = schema.getMarshaller(valSer.mapper(), TuplePart.VAL, true);

@@ -31,7 +31,8 @@ import org.apache.ignite.internal.util.io.IgniteDataOutput;
  * Storage profiles descriptor.
  */
 public class CatalogStorageProfilesDescriptor {
-    public static CatalogObjectSerializer<CatalogStorageProfilesDescriptor> SERIALIZER = new StorageProfilesDescriptorSerializer();
+    public static final CatalogObjectSerializer<CatalogStorageProfilesDescriptor> SERIALIZER = new StorageProfilesDescriptorSerializer();
+
     private final List<CatalogStorageProfileDescriptor> storageProfiles;
 
     private final CatalogStorageProfileDescriptor defaultStorageProfile;

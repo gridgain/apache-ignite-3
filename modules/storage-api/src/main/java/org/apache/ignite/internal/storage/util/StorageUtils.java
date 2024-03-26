@@ -17,10 +17,13 @@
 
 package org.apache.ignite.internal.storage.util;
 
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Supplier;
 import org.apache.ignite.internal.lang.IgniteInternalCheckedException;
 import org.apache.ignite.internal.lang.IgniteStringFormatter;
+import org.apache.ignite.internal.storage.RowId;
 import org.apache.ignite.internal.storage.StorageClosedException;
+import org.apache.ignite.internal.storage.StorageDestroyedException;
 import org.apache.ignite.internal.storage.StorageException;
 import org.apache.ignite.internal.storage.StorageRebalanceException;
 
@@ -107,6 +110,8 @@ public class StorageUtils {
                 throw new StorageRebalanceException(createStorageInProcessOfRebalanceErrorMessage(storageInfo));
             case CLEANUP:
                 throw new StorageRebalanceException(createStorageInProcessOfCleanupErrorMessage(storageInfo));
+            case DESTROYED:
+                throw new StorageRebalanceException(createStorageDestroyedErrorMessage(storageInfo));
             default:
                 throw new StorageRebalanceException(createUnexpectedStorageStateErrorMessage(state, storageInfo));
         }
@@ -129,6 +134,8 @@ public class StorageUtils {
                 throw new StorageRebalanceException(createStorageInProcessOfRebalanceErrorMessage(storageInfo));
             case CLEANUP:
                 throw new StorageException(createStorageInProcessOfCleanupErrorMessage(storageInfo));
+            case DESTROYED:
+                throw new StorageDestroyedException(createStorageDestroyedErrorMessage(storageInfo));
             default:
                 throw new StorageException(createUnexpectedStorageStateErrorMessage(state, storageInfo));
         }
@@ -169,5 +176,35 @@ public class StorageUtils {
 
     private static String createStorageInProcessOfCleanupErrorMessage(String storageInfo) {
         return IgniteStringFormatter.format("Storage is in the process of cleanup: [{}]", storageInfo);
+    }
+
+    private static String createStorageDestroyedErrorMessage(String storageInfo) {
+        return IgniteStringFormatter.format("Storage is in the process of being destroyed or destroyed: [{}]", storageInfo);
+    }
+
+    /**
+     * If not already in a terminal state, transitions to the supplied state and returns {@code true}, otherwise just returns {@code false}.
+     */
+    public static boolean transitionToTerminalState(StorageState targetState, AtomicReference<StorageState> stateRef) {
+        assert targetState.isTerminal() : "Not a terminal state: " + targetState;
+
+        while (true) {
+            StorageState previous = stateRef.get();
+
+            if (previous.isTerminal()) {
+                return false;
+            }
+
+            if (stateRef.compareAndSet(previous, targetState)) {
+                return true;
+            }
+        }
+    }
+
+    /**
+     * Returns the row ID value used by index storages as the row ID to start the index building process with.
+     */
+    public static RowId initialRowIdToBuild(int partitionId) {
+        return RowId.lowestRowId(partitionId);
     }
 }

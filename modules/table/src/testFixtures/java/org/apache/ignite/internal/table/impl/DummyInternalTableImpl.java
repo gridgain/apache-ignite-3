@@ -18,7 +18,7 @@
 package org.apache.ignite.internal.table.impl;
 
 import static java.util.concurrent.CompletableFuture.completedFuture;
-import static org.apache.ignite.internal.replicator.ReplicaManager.DEFAULT_IDLE_SAFE_TIME_PROPAGATION_PERIOD_MILLISECONDS;
+import static org.apache.ignite.internal.replicator.ReplicatorConstants.DEFAULT_IDLE_SAFE_TIME_PROPAGATION_PERIOD_MILLISECONDS;
 import static org.apache.ignite.internal.util.CompletableFutures.nullCompletedFuture;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
@@ -95,7 +95,9 @@ import org.apache.ignite.internal.tx.TxManager;
 import org.apache.ignite.internal.tx.configuration.TransactionConfiguration;
 import org.apache.ignite.internal.tx.impl.HeapLockManager;
 import org.apache.ignite.internal.tx.impl.RemotelyTriggeredResourceRegistry;
+import org.apache.ignite.internal.tx.impl.ResourceCleanupManager;
 import org.apache.ignite.internal.tx.impl.TransactionIdGenerator;
+import org.apache.ignite.internal.tx.impl.TransactionInflights;
 import org.apache.ignite.internal.tx.impl.TxManagerImpl;
 import org.apache.ignite.internal.tx.storage.state.test.TestTxStateTableStorage;
 import org.apache.ignite.internal.tx.test.TestLocalRwTxCounter;
@@ -163,14 +165,9 @@ public class DummyInternalTableImpl extends InternalTableImpl {
         this(
                 replicaSvc,
                 new TestMvPartitionStorage(0),
-                false,
-                null,
                 schema,
-                new HybridTimestampTracker(),
-                new TestPlacementDriver(LOCAL_NODE),
-                storageUpdateConfiguration,
                 txConfiguration,
-                new RemotelyTriggeredResourceRegistry()
+                storageUpdateConfiguration
         );
     }
 
@@ -200,7 +197,8 @@ public class DummyInternalTableImpl extends InternalTableImpl {
                 new TestPlacementDriver(LOCAL_NODE),
                 storageUpdateConfiguration,
                 txConfiguration,
-                new RemotelyTriggeredResourceRegistry()
+                new RemotelyTriggeredResourceRegistry(),
+                new TransactionInflights(new TestPlacementDriver(LOCAL_NODE))
         );
     }
 
@@ -227,7 +225,8 @@ public class DummyInternalTableImpl extends InternalTableImpl {
             PlacementDriver placementDriver,
             StorageUpdateConfiguration storageUpdateConfiguration,
             TransactionConfiguration txConfiguration,
-            RemotelyTriggeredResourceRegistry resourcesRegistry
+            RemotelyTriggeredResourceRegistry resourcesRegistry,
+            TransactionInflights transactionInflights
     ) {
         super(
                 "test",
@@ -246,7 +245,10 @@ public class DummyInternalTableImpl extends InternalTableImpl {
                         1,
                         Int2ObjectMaps.singleton(PART_ID, mock(RaftGroupService.class)),
                         new SingleClusterNodeResolver(LOCAL_NODE)
-                )
+                ),
+                transactionInflights,
+                3_000,
+                0
         );
 
         RaftGroupService svc = tableRaftService().partitionRaftGroupService(PART_ID);
@@ -333,7 +335,7 @@ public class DummyInternalTableImpl extends InternalTableImpl {
         StorageHashIndexDescriptor pkIndexDescriptor = mock(StorageHashIndexDescriptor.class);
 
         when(pkIndexDescriptor.columns()).then(
-                invocation -> Collections.nCopies(schema.keyColumns().columns().length, mock(StorageHashIndexColumnDescriptor.class))
+                invocation -> Collections.nCopies(schema.keyColumns().size(), mock(StorageHashIndexColumnDescriptor.class))
         );
 
         Lazy<TableSchemaAwareIndexStorage> pkStorage = new Lazy<>(() -> new TableSchemaAwareIndexStorage(
@@ -364,6 +366,7 @@ public class DummyInternalTableImpl extends InternalTableImpl {
         CatalogTableDescriptor tableDescriptor = mock(CatalogTableDescriptor.class);
 
         lenient().when(catalogService.table(anyInt(), anyLong())).thenReturn(tableDescriptor);
+        lenient().when(catalogService.table(anyInt(), anyInt())).thenReturn(tableDescriptor);
         lenient().when(tableDescriptor.tableVersion()).thenReturn(1);
 
         CatalogIndexDescriptor indexDescriptor = mock(CatalogIndexDescriptor.class);
@@ -393,7 +396,8 @@ public class DummyInternalTableImpl extends InternalTableImpl {
                 catalogService,
                 new TestPlacementDriver(LOCAL_NODE),
                 mock(ClusterNodeResolver.class),
-                resourcesRegistry
+                resourcesRegistry,
+                schemaManager
         );
 
         partitionListener = new PartitionListener(
@@ -403,7 +407,8 @@ public class DummyInternalTableImpl extends InternalTableImpl {
                 txStateStorage().getOrCreateTxStateStorage(PART_ID),
                 safeTime,
                 new PendingComparableValuesTracker<>(0L),
-                catalogService
+                catalogService,
+                schemaManager
         );
     }
 
@@ -453,8 +458,18 @@ public class DummyInternalTableImpl extends InternalTableImpl {
 
         ClusterService clusterService = mock(ClusterService.class);
 
-        when(clusterService.messagingService()).thenReturn(new DummyMessagingService(LOCAL_NODE.name()));
+        when(clusterService.messagingService()).thenReturn(new DummyMessagingService(LOCAL_NODE));
         when(clusterService.topologyService()).thenReturn(topologyService);
+
+        TransactionInflights transactionInflights = new TransactionInflights(placementDriver);
+
+        ResourceCleanupManager resourceCleanupManager = new ResourceCleanupManager(
+                LOCAL_NODE.name(),
+                resourcesRegistry,
+                clusterService.topologyService(),
+                clusterService.messagingService(),
+                transactionInflights
+        );
 
         var txManager = new TxManagerImpl(
                 txConfiguration,
@@ -466,7 +481,9 @@ public class DummyInternalTableImpl extends InternalTableImpl {
                 placementDriver,
                 () -> DEFAULT_IDLE_SAFE_TIME_PROPAGATION_PERIOD_MILLISECONDS,
                 new TestLocalRwTxCounter(),
-                resourcesRegistry
+                resourcesRegistry,
+                resourceCleanupManager,
+                transactionInflights
         );
 
         txManager.start();
@@ -505,12 +522,12 @@ public class DummyInternalTableImpl extends InternalTableImpl {
      * Dummy messaging service for tests purposes. It does not provide any messaging functionality, but allows to trigger events.
      */
     private static class DummyMessagingService extends AbstractMessagingService {
-        private final String localNodeName;
+        private final ClusterNode localNode;
 
         private final AtomicLong correlationIdGenerator = new AtomicLong();
 
-        DummyMessagingService(String localNodeName) {
-            this.localNodeName = localNodeName;
+        DummyMessagingService(ClusterNode localNode) {
+            this.localNode = localNode;
         }
 
         /** {@inheritDoc} */
@@ -551,7 +568,7 @@ public class DummyInternalTableImpl extends InternalTableImpl {
         /** {@inheritDoc} */
         @Override
         public CompletableFuture<NetworkMessage> invoke(String recipientNodeId, ChannelType type, NetworkMessage msg, long timeout) {
-            getMessageHandlers(msg.groupType()).forEach(h -> h.onReceived(msg, localNodeName, correlationIdGenerator.getAndIncrement()));
+            getMessageHandlers(msg.groupType()).forEach(h -> h.onReceived(msg, localNode, correlationIdGenerator.getAndIncrement()));
 
             return nullCompletedFuture();
         }

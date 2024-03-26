@@ -414,7 +414,7 @@ public class PersistentPageMemory implements PageMemory {
             writeTimestamp(absPtr, coarseCurrentTimeMillis());
         }
 
-        assert getCrc(absPtr + PAGE_OVERHEAD) == 0; //TODO IGNITE-16612
+        assert getCrc(absPtr + PAGE_OVERHEAD) == 0; // TODO IGNITE-16612
 
         return absPtr + PAGE_OVERHEAD;
     }
@@ -519,9 +519,10 @@ public class PersistentPageMemory implements PageMemory {
 
         seg.writeLock().lock();
 
-        FullPageId fullId = new FullPageId(pageId, grpId);
 
         try {
+            FullPageId fullId = new FullPageId(pageId, grpId);
+
             long relPtr = seg.loadedPages.get(
                     grpId,
                     effectivePageId(pageId),
@@ -553,7 +554,7 @@ public class PersistentPageMemory implements PageMemory {
 
             rwLock.init(absPtr + PAGE_LOCK_OFFSET, tag(pageId));
 
-            assert getCrc(absPtr + PAGE_OVERHEAD) == 0; //TODO IGNITE-16612
+            assert getCrc(absPtr + PAGE_OVERHEAD) == 0; // TODO IGNITE-16612
 
             assert !isAcquired(absPtr) :
                     "Pin counter must be 0 for a new page [relPtr=" + hexLong(relPtr)
@@ -860,8 +861,8 @@ public class PersistentPageMemory implements PageMemory {
 
             copyMemory(absPtr + PAGE_OVERHEAD, tmpPtr, pageSize());
 
-            assert getCrc(absPtr + PAGE_OVERHEAD) == 0; //TODO IGNITE-16612
-            assert getCrc(tmpPtr) == 0; //TODO IGNITE-16612
+            assert getCrc(absPtr + PAGE_OVERHEAD) == 0; // TODO IGNITE-16612
+            assert getCrc(tmpPtr) == 0; // TODO IGNITE-16612
         } else {
             byte[] arr = tmpBuf.array();
 
@@ -1096,7 +1097,7 @@ public class PersistentPageMemory implements PageMemory {
             long tmpRelPtr = checkpointPool.borrowOrAllocateFreePage(tag(fullId.pageId()));
 
             if (tmpRelPtr == INVALID_REL_PTR) {
-                rwLock.writeUnlock(absPtr + PAGE_LOCK_OFFSET, OffheapReadWriteLock.TAG_LOCK_ALWAYS);
+                rwLock.writeUnlock(absPtr + PAGE_LOCK_OFFSET, TAG_LOCK_ALWAYS);
 
                 throw new IgniteInternalException(
                         "Failed to allocate temporary buffer for checkpoint (increase checkpointPageBufferSize configuration property): "
@@ -1125,11 +1126,11 @@ public class PersistentPageMemory implements PageMemory {
             // info for checkpoint buffer cleaner.
             fullPageId(tmpAbsPtr, fullId);
 
-            assert getCrc(absPtr + PAGE_OVERHEAD) == 0; //TODO GG-11480
-            assert getCrc(tmpAbsPtr + PAGE_OVERHEAD) == 0; //TODO GG-11480
+            assert getCrc(absPtr + PAGE_OVERHEAD) == 0; // TODO GG-11480
+            assert getCrc(tmpAbsPtr + PAGE_OVERHEAD) == 0; // TODO GG-11480
         }
 
-        assert getCrc(absPtr + PAGE_OVERHEAD) == 0; //TODO IGNITE-16612
+        assert getCrc(absPtr + PAGE_OVERHEAD) == 0; // TODO IGNITE-16612
 
         return absPtr + PAGE_OVERHEAD;
     }
@@ -1148,7 +1149,7 @@ public class PersistentPageMemory implements PageMemory {
                 changeTracker.apply(page, fullId, this);
             }
 
-            assert getCrc(page + PAGE_OVERHEAD) == 0; //TODO IGNITE-16612
+            assert getCrc(page + PAGE_OVERHEAD) == 0; // TODO IGNITE-16612
 
             if (markDirty) {
                 setDirty(fullId, page, true, false);

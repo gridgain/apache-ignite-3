@@ -1525,7 +1525,7 @@ public abstract class BplusTree<L, T extends L> extends DataStructure implements
      * @param x Implementation specific argument, {@code null} always means that we need to return full detached data row.
      * @throws IgniteInternalCheckedException If failed.
      */
-    public final <R> @Nullable R findOne(L row, Object x) throws IgniteInternalCheckedException {
+    public final <R> @Nullable R findOne(L row, @Nullable Object x) throws IgniteInternalCheckedException {
         return findOne(row, null, x);
     }
 
@@ -1963,16 +1963,15 @@ public abstract class BplusTree<L, T extends L> extends DataStructure implements
     private String printPage(BplusIo<L> io, long pageAddr, boolean keys) throws IgniteInternalCheckedException {
         StringBuilder b = new StringBuilder();
 
-        b.append(formatPageId(PageIo.getPageId(pageAddr)));
-
-        b.append(" [ ");
-        b.append(io.isLeaf() ? "L " : "I ");
+        b.append(formatPageId(PageIo.getPageId(pageAddr)))
+                .append(" [ ")
+                .append(io.isLeaf() ? "L " : "I ");
 
         int cnt = io.getCount(pageAddr);
         long fwdId = io.getForward(pageAddr, partId);
 
-        b.append("cnt=").append(cnt).append(' ');
-        b.append("fwd=").append(formatPageId(fwdId)).append(' ');
+        b.append("cnt=").append(cnt).append(' ')
+                .append("fwd=").append(formatPageId(fwdId)).append(' ');
 
         if (!io.isLeaf()) {
             b.append("lm=").append(formatPageId(inner(io).getLeft(pageAddr, 0, partId))).append(' ');
@@ -2072,7 +2071,7 @@ public abstract class BplusTree<L, T extends L> extends DataStructure implements
     }
 
     @Override
-    public void invoke(L row, Object z, InvokeClosure<T> c) throws IgniteInternalCheckedException {
+    public void invoke(L row, @Nullable Object z, InvokeClosure<T> c) throws IgniteInternalCheckedException {
         checkDestroyed();
 
         Invoke x = new Invoke(row, z, c);
@@ -2850,11 +2849,15 @@ public abstract class BplusTree<L, T extends L> extends DataStructure implements
      *
      * @param c Visitor closure. Visits only leaf pages.
      * @param forceDestroy Whether to proceed with destroying, even if tree is already marked as destroyed (see {@link #markDestroyed()}).
+     * @param maxWorkUnits Maximum amount of allowed "work units" per every {@link GradualTask} step. Recycling of a node counts as 1
+     *     work unit; also, visiting an item using a Consumer also counts as 1 work unit per item.
      * @return GradualTask that will destroy the tree; it is the responsibility of a caller to pass this task for
      *     execution to a {@link org.apache.ignite.internal.pagememory.util.GradualTaskExecutor}.
      * @throws IgniteInternalCheckedException If failed.
      */
-    public final GradualTask startGradualDestruction(@Nullable Consumer<L> c, boolean forceDestroy) throws IgniteInternalCheckedException {
+    public final GradualTask startGradualDestruction(
+            @Nullable Consumer<L> c, boolean forceDestroy, int maxWorkUnits
+    ) throws IgniteInternalCheckedException {
         close();
 
         if (!markDestroyed() && !forceDestroy) {
@@ -2869,7 +2872,7 @@ public abstract class BplusTree<L, T extends L> extends DataStructure implements
 
         RootPageIdAndLevel rootPageIdAndLevel = detachMetaPage(bag);
 
-        return new DestroyTreeTask(bag, c, rootPageIdAndLevel.level, rootPageIdAndLevel.pageId);
+        return new DestroyTreeTask(bag, c, rootPageIdAndLevel.level, rootPageIdAndLevel.pageId, maxWorkUnits);
     }
 
     private RootPageIdAndLevel detachMetaPage(LongListReuseBag bag) throws IgniteInternalCheckedException {
@@ -5642,7 +5645,7 @@ public abstract class BplusTree<L, T extends L> extends DataStructure implements
                 cmp = -shift; // We need to fix the case when search row matches multiple data rows.
             }
 
-            //noinspection Duplicates
+            // noinspection Duplicates
             if (cmp < 0) {
                 low = mid + 1;
             } else if (cmp > 0) {
@@ -6690,15 +6693,10 @@ public abstract class BplusTree<L, T extends L> extends DataStructure implements
     }
 
     private class DestroyTreeTask implements GradualTask {
-        /**
-         * Number of work units per step to execute. Recycling of a node counts as 1 work unit; also, visiting an item
-         * using a Consumer also counts as 1 work unit per item.
-         */
-        private static final int WORK_UNITS_PER_STEP = 1_000_000;
-
         private final LongListReuseBag bag;
         private final @Nullable Consumer<L> actOnEachElement;
         private final int rootLevel;
+        private final int maxWorkUnits;
 
         /** IDs of pages contained in inner pages on each level. First index is level. */
         private final long[][] childrenPageIds;
@@ -6714,10 +6712,17 @@ public abstract class BplusTree<L, T extends L> extends DataStructure implements
 
         private boolean finished = false;
 
-        private DestroyTreeTask(LongListReuseBag bag, @Nullable Consumer<L> actOnEachElement, int rootLevel, long rootPageId) {
+        private DestroyTreeTask(
+                LongListReuseBag bag,
+                @Nullable Consumer<L> actOnEachElement,
+                int rootLevel,
+                long rootPageId,
+                int maxWorkUnits
+        ) {
             this.bag = bag;
             this.actOnEachElement = actOnEachElement;
             this.rootLevel = rootLevel;
+            this.maxWorkUnits = maxWorkUnits;
 
             childrenPageIds = new long[rootLevel + 1][];
             currentChildIndices = new int[rootLevel + 1];
@@ -6736,9 +6741,11 @@ public abstract class BplusTree<L, T extends L> extends DataStructure implements
         }
 
         private void destroyNextBatch() throws IgniteInternalCheckedException {
+            // Recycling of a node counts as 1 work unit; also, visiting an item
+            // using a Consumer also counts as 1 work unit per item.
             int workDone = 0;
 
-            while (!finished && workDone < WORK_UNITS_PER_STEP) {
+            while (!finished && workDone < maxWorkUnits) {
                 long pageId = currentPageId;
 
                 long page = acquirePage(pageId);

@@ -75,7 +75,7 @@ public class ItDistributionZonesFiltersTest extends ClusterPerTestIntegrationTes
 
     @Language("JSON")
     private static final String STORAGE_PROFILES_CONFIGS = String.format(
-            "{%s:{engine:\"rocksDb\"},%s:{engine:\"aipersist\"}}",
+            "{%s:{engine:\"rocksDb\"}, %s:{engine:\"aipersist\"}}",
             DEFAULT_ROCKSDB_PROFILE_NAME,
             DEFAULT_AIPERSIST_PROFILE_NAME
     );
@@ -292,12 +292,9 @@ public class ItDistributionZonesFiltersTest extends ClusterPerTestIntegrationTes
 
         IgniteImpl node = startNode(1, createStartConfig(firstNodeAttributes, matchingStorageProfile));
 
-        Session session = node.sql().createSession();
+        node.sql().execute(null, createZoneSql(2, 3, IMMEDIATE_TIMER_VALUE, IMMEDIATE_TIMER_VALUE, filter, STORAGE_PROFILES));
 
-        session.execute(null, createZoneSql(2, 3, IMMEDIATE_TIMER_VALUE, IMMEDIATE_TIMER_VALUE, DEFAULT_FILTER,
-                String.format("'%s'", matchingCustomProfileName)));
-
-        session.execute(null, createTableSql(matchingCustomProfileName));
+        node.sql().execute(null, createTableSql());
 
         MetaStorageManager metaStorageManager = (MetaStorageManager) IgniteTestUtils
                 .getFieldValue(node, IgniteImpl.class, "metaStorageMgr");
@@ -352,8 +349,6 @@ public class ItDistributionZonesFiltersTest extends ClusterPerTestIntegrationTes
         );
     }
 
-
-
     /**
      * Tests the scenario when altering filter triggers immediate scale up so data nodes
      * and stable key for rebalance is changed to the new value even if scale up timer is big enough.
@@ -366,11 +361,9 @@ public class ItDistributionZonesFiltersTest extends ClusterPerTestIntegrationTes
 
         IgniteImpl node0 = node(0);
 
-        Session session = node0.sql().createSession();
+        node0.sql().execute(null, createZoneSql(2, 3, 10_000, 10_000, filter, STORAGE_PROFILES));
 
-        session.execute(null, createZoneSql(2, 3, 10_000, 10_000, filter, STORAGE_PROFILES));
-
-        session.execute(null, createTableSql());
+        node0.sql().execute(null, createTableSql());
 
         MetaStorageManager metaStorageManager = (MetaStorageManager) IgniteTestUtils
                 .getFieldValue(node0, IgniteImpl.class, "metaStorageMgr");
@@ -398,7 +391,7 @@ public class ItDistributionZonesFiltersTest extends ClusterPerTestIntegrationTes
         // Expected size is 1 because we have timers equals to 10000, so no scale up will be propagated.
         waitDataNodeAndListenersAreHandled(metaStorageManager, 1, getZoneId(node0));
 
-        session.execute(null, alterZoneSql(DEFAULT_FILTER));
+        node0.sql().execute(null, alterZoneSql(DEFAULT_FILTER));
 
         // We check that all nodes that pass the filter are presented in the stable key because altering filter triggers immediate scale up.
         assertValueInStorage(
@@ -423,11 +416,9 @@ public class ItDistributionZonesFiltersTest extends ClusterPerTestIntegrationTes
 
         IgniteImpl node0 = node(0);
 
-        Session session = node0.sql().createSession();
+        node0.sql().execute(null, createZoneSql(2, 3, 10_000, 10_000, filter, STORAGE_PROFILES));
 
-        session.execute(null, createZoneSql(2, 3, 10_000, 10_000, filter, STORAGE_PROFILES));
-
-        session.execute(null, createTableSql());
+        node0.sql().execute(null, createTableSql());
 
         MetaStorageManager metaStorageManager = (MetaStorageManager) IgniteTestUtils
                 .getFieldValue(node0, IgniteImpl.class, "metaStorageMgr");
@@ -460,7 +451,7 @@ public class ItDistributionZonesFiltersTest extends ClusterPerTestIntegrationTes
         // There is no node that match the filter
         String newFilter = "$[?(@.region == \"FOO\" && @.storage == \"BAR\")]";
 
-        session.execute(null, alterZoneSql(newFilter));
+        node0.sql().execute(null, alterZoneSql(newFilter));
 
         waitDataNodeAndListenersAreHandled(metaStorageManager, 2, zoneId);
 
@@ -492,9 +483,7 @@ public class ItDistributionZonesFiltersTest extends ClusterPerTestIntegrationTes
 
         IgniteImpl node1 = startNode(1, createStartConfig(firstNodeAttributes, STORAGE_PROFILES_CONFIGS));
 
-        Session session = node1.sql().createSession();
-
-        session.execute(null, createZoneSql(1, 1, IMMEDIATE_TIMER_VALUE, IMMEDIATE_TIMER_VALUE, filter, STORAGE_PROFILES));
+        node1.sql().execute(null, createZoneSql(1, 1, IMMEDIATE_TIMER_VALUE, IMMEDIATE_TIMER_VALUE, filter, STORAGE_PROFILES));
 
         MetaStorageManager metaStorageManager = (MetaStorageManager) IgniteTestUtils.getFieldValue(
                 node0,
@@ -506,7 +495,7 @@ public class ItDistributionZonesFiltersTest extends ClusterPerTestIntegrationTes
 
         waitDataNodeAndListenersAreHandled(metaStorageManager, 2, zoneId);
 
-        session.execute(null, createTableSql());
+        node1.sql().execute(null, createTableSql());
 
         TableManager tableManager = (TableManager) IgniteTestUtils.getFieldValue(node0, IgniteImpl.class, "distributedTblMgr");
 
@@ -522,7 +511,7 @@ public class ItDistributionZonesFiltersTest extends ClusterPerTestIntegrationTes
 
         waitDataNodeAndListenersAreHandled(metaStorageManager, 1, zoneId);
 
-        //Check that pending are null, so there wasn't any rebalance.
+        // Check that pending are null, so there wasn't any rebalance.
         assertPendingAssignmentsWereNeverExist(metaStorageManager, partId);
     }
 
@@ -538,9 +527,7 @@ public class ItDistributionZonesFiltersTest extends ClusterPerTestIntegrationTes
 
         startNode(1, createStartConfig(firstNodeAttributes, STORAGE_PROFILES_CONFIGS));
 
-        Session session = node0.sql().createSession();
-
-        session.execute(null, createZoneSql(1, 1, IMMEDIATE_TIMER_VALUE, IMMEDIATE_TIMER_VALUE, filter, STORAGE_PROFILES));
+        node0.sql().execute(null, createZoneSql(1, 1, IMMEDIATE_TIMER_VALUE, IMMEDIATE_TIMER_VALUE, filter, STORAGE_PROFILES));
 
         MetaStorageManager metaStorageManager = (MetaStorageManager) IgniteTestUtils.getFieldValue(
                 node0,
@@ -552,7 +539,7 @@ public class ItDistributionZonesFiltersTest extends ClusterPerTestIntegrationTes
 
         waitDataNodeAndListenersAreHandled(metaStorageManager, 2, zoneId);
 
-        session.execute(null, createTableSql());
+        node0.sql().execute(null, createTableSql());
 
         TableManager tableManager = (TableManager) IgniteTestUtils.getFieldValue(node0, IgniteImpl.class, "distributedTblMgr");
 
@@ -568,10 +555,10 @@ public class ItDistributionZonesFiltersTest extends ClusterPerTestIntegrationTes
 
         waitDataNodeAndListenersAreHandled(metaStorageManager, 1, zoneId);
 
-        //Check that stable and pending are null, so there wasn't any rebalance.
+        // Check that stable and pending are null, so there wasn't any rebalance.
         assertPendingAssignmentsWereNeverExist(metaStorageManager, partId);
 
-        session.execute(null, alterZoneSql(2));
+        node0.sql().execute(null, alterZoneSql(2));
 
         CountDownLatch latch = new CountDownLatch(1);
 
@@ -584,11 +571,11 @@ public class ItDistributionZonesFiltersTest extends ClusterPerTestIntegrationTes
             return falseCompletedFuture();
         });
 
-        session.execute(null, alterZoneSql(3));
+        node0.sql().execute(null, alterZoneSql(3));
 
         assertTrue(latch.await(10_000, MILLISECONDS));
 
-        //Check that stable and pending are null, so there wasn't any rebalance.
+        // Check that stable and pending are null, so there wasn't any rebalance.
         assertPendingAssignmentsWereNeverExist(metaStorageManager, partId);
     }
 

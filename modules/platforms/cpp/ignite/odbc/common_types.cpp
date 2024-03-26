@@ -169,7 +169,6 @@ sql_state error_code_to_sql_state(error::code code) {
             return sql_state::S42000_SYNTAX_ERROR_OR_ACCESS_VIOLATION;
         case error::code::QUERY_NO_RESULT_SET:
         case error::code::RUNTIME:
-        case error::code::SESSION_CLOSED:
         case error::code::MAPPING:
             return sql_state::SHY000_GENERAL_ERROR;
 
@@ -227,6 +226,7 @@ sql_state error_code_to_sql_state(error::code code) {
         case error::code::DIRECTORY_CREATION:
         case error::code::ALREADY_CLOSED:
         case error::code::STORAGE_REBALANCE:
+        case error::code::ALREADY_DESTROYED:
             return sql_state::SHY000_GENERAL_ERROR;
 
         // DistributionZones group. Group code: 10
@@ -237,6 +237,7 @@ sql_state error_code_to_sql_state(error::code code) {
         case error::code::UNRESOLVABLE_CONSISTENT_ID:
         case error::code::PORT_IN_USE:
         case error::code::RECIPIENT_LEFT:
+        case error::code::ADDRESS_UNRESOLVED:
             return sql_state::S08001_CANNOT_CONNECT;
 
         // NodeConfiguration group. Group code: 12

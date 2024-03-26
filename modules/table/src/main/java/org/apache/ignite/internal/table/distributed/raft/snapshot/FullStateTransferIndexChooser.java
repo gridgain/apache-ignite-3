@@ -17,12 +17,17 @@
 
 package org.apache.ignite.internal.table.distributed.raft.snapshot;
 
+import static java.util.Comparator.comparingInt;
+import static java.util.stream.Collectors.toCollection;
 import static java.util.stream.Collectors.toList;
 import static java.util.stream.Collectors.toSet;
 import static org.apache.ignite.internal.catalog.descriptors.CatalogIndexStatus.AVAILABLE;
 import static org.apache.ignite.internal.catalog.descriptors.CatalogIndexStatus.REGISTERED;
 import static org.apache.ignite.internal.catalog.descriptors.CatalogIndexStatus.STOPPING;
+import static org.apache.ignite.internal.catalog.events.CatalogEvent.INDEX_CREATE;
 import static org.apache.ignite.internal.catalog.events.CatalogEvent.INDEX_REMOVED;
+import static org.apache.ignite.internal.event.EventListener.fromConsumer;
+import static org.apache.ignite.internal.hlc.HybridTimestamp.hybridTimestampToLong;
 import static org.apache.ignite.internal.lang.IgniteStringFormatter.format;
 import static org.apache.ignite.internal.util.CollectionUtils.difference;
 import static org.apache.ignite.internal.util.CollectionUtils.view;
@@ -33,11 +38,16 @@ import static org.apache.ignite.internal.util.IgniteUtils.inBusyLockSafe;
 
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Iterator;
 import java.util.List;
+import java.util.Map;
 import java.util.NavigableSet;
+import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentSkipListSet;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Predicate;
@@ -46,29 +56,40 @@ import org.apache.ignite.internal.catalog.CatalogService;
 import org.apache.ignite.internal.catalog.descriptors.CatalogIndexDescriptor;
 import org.apache.ignite.internal.catalog.descriptors.CatalogIndexStatus;
 import org.apache.ignite.internal.catalog.descriptors.CatalogObjectDescriptor;
+import org.apache.ignite.internal.catalog.descriptors.CatalogTableDescriptor;
+import org.apache.ignite.internal.catalog.events.CreateIndexEventParameters;
 import org.apache.ignite.internal.catalog.events.RemoveIndexEventParameters;
 import org.apache.ignite.internal.close.ManuallyCloseable;
 import org.apache.ignite.internal.hlc.HybridTimestamp;
 import org.apache.ignite.internal.schema.BinaryRow;
 import org.apache.ignite.internal.storage.RowId;
+import org.apache.ignite.internal.table.distributed.LowWatermark;
 import org.apache.ignite.internal.util.IgniteSpinBusyLock;
 
 /** Index chooser for full state transfer. */
 // TODO: IGNITE-21502 Deal with the case of drop a table
 // TODO: IGNITE-21502 Stop writing to a dropped index that was in status before AVAILABLE
-// TODO: IGNITE-21514 Stop writing to indexes that are destroyed during catalog compaction
 public class FullStateTransferIndexChooser implements ManuallyCloseable {
     private final CatalogService catalogService;
 
-    private final NavigableSet<ReadOnlyIndexInfo> readOnlyIndexes = new ConcurrentSkipListSet<>();
+    private final LowWatermark lowWatermark;
+
+    private final NavigableSet<ReadOnlyIndexInfo> readOnlyIndexes = new ConcurrentSkipListSet<>(
+            comparingInt(ReadOnlyIndexInfo::tableId)
+                    .thenComparingLong(ReadOnlyIndexInfo::activationTs)
+                    .thenComparingInt(ReadOnlyIndexInfo::indexId)
+    );
+
+    private final Map<Integer, Integer> tableVersionByIndexId = new ConcurrentHashMap<>();
 
     private final IgniteSpinBusyLock busyLock = new IgniteSpinBusyLock();
 
     private final AtomicBoolean closeGuard = new AtomicBoolean();
 
     /** Constructor. */
-    public FullStateTransferIndexChooser(CatalogService catalogService) {
+    public FullStateTransferIndexChooser(CatalogService catalogService, LowWatermark lowWatermark) {
         this.catalogService = catalogService;
+        this.lowWatermark = lowWatermark;
     }
 
     /** Starts the component. */
@@ -76,7 +97,7 @@ public class FullStateTransferIndexChooser implements ManuallyCloseable {
         inBusyLockSafe(busyLock, () -> {
             addListenersBusy();
 
-            recoverReadOnlyIndexesBusy();
+            recoverStructuresBusy();
         });
     }
 
@@ -94,21 +115,25 @@ public class FullStateTransferIndexChooser implements ManuallyCloseable {
     /**
      * Collect indexes for {@link PartitionAccess#addWrite(RowId, BinaryRow, UUID, int, int, int)} (write intent).
      *
+     * <p>NOTE: When updating a low watermark, the index storages that were returned from the method may begin to be destroyed, such a
+     * situation should be handled by the calling code.</p>
+     *
      * <p>Index selection algorithm:</p>
      * <ul>
      *     <li>If the index in the snapshot catalog version is in status {@link CatalogIndexStatus#BUILDING},
-     *     {@link CatalogIndexStatus#AVAILABLE} or {@link CatalogIndexStatus#STOPPING}.</li>
+     *     {@link CatalogIndexStatus#AVAILABLE} or {@link CatalogIndexStatus#STOPPING} and not removed in the latest catalog version.</li>
      *     <li>If the index in status {@link CatalogIndexStatus#REGISTERED} and it is in this status on the active version of the catalog
-     *     for {@code beginTs}.</li>
-     *     <li>For a read-only index, if {@code beginTs} is strictly less than the activation time of dropping the index.</li>
+     *     for {@code beginTs} and not removed in the latest catalog version.</li>
+     *     <li>For a read-only index, if {@code beginTs} is strictly less than the activation time of dropping the index and not removed due
+     *     to low watermark.</li>
      * </ul>
      *
      * @param catalogVersion Catalog version of the incoming partition snapshot.
      * @param tableId Table ID for which indexes will be chosen.
      * @param beginTs Begin timestamp of the transaction.
-     * @return List of index IDs sorted in ascending order.
+     * @return List of {@link IndexIdAndTableVersion} sorted in ascending order by index ID.
      */
-    public List<Integer> chooseForAddWrite(int catalogVersion, int tableId, HybridTimestamp beginTs) {
+    public List<IndexIdAndTableVersion> chooseForAddWrite(int catalogVersion, int tableId, HybridTimestamp beginTs) {
         return inBusyLock(busyLock, () -> {
             int activeCatalogVersionAtBeginTxTs = catalogService.activeCatalogVersion(beginTs.longValue());
 
@@ -124,32 +149,36 @@ public class FullStateTransferIndexChooser implements ManuallyCloseable {
 
             List<Integer> fromReadOnlyIndexes = chooseFromReadOnlyIndexesBusy(tableId, beginTs);
 
-            return mergeWithoutDuplicates(fromCatalog, fromReadOnlyIndexes);
+            return enrichWithTableVersions(mergeWithoutDuplicates(fromCatalog, fromReadOnlyIndexes));
         });
     }
 
     /**
      * Collect indexes for {@link PartitionAccess#addWriteCommitted(RowId, BinaryRow, HybridTimestamp, int)} (write committed only).
      *
+     * <p>NOTE: When updating a low watermark, the index storages that were returned from the method may begin to be destroyed, such a
+     * situation should be handled by the calling code.</p>
+     *
      * <p>Index selection algorithm:</p>
      * <ul>
      *     <li>If the index in the snapshot catalog version is in status {@link CatalogIndexStatus#BUILDING},
-     *     {@link CatalogIndexStatus#AVAILABLE} or {@link CatalogIndexStatus#STOPPING}.</li>
-     *     <li>For a read-only index, if {@code commitTs} is strictly less than the activation time of dropping the index.</li>
+     *     {@link CatalogIndexStatus#AVAILABLE} or {@link CatalogIndexStatus#STOPPING} and not removed in the latest catalog version.</li>
+     *     <li>For a read-only index, if {@code commitTs} is strictly less than the activation time of dropping the index and not removed
+     *     due to low watermark.</li>
      * </ul>
      *
      * @param catalogVersion Catalog version of the incoming partition snapshot.
      * @param tableId Table ID for which indexes will be chosen.
      * @param commitTs Timestamp to associate with committed value.
-     * @return List of index IDs sorted in ascending order.
+     * @return List of {@link IndexIdAndTableVersion} sorted in ascending order by index ID.
      */
-    public List<Integer> chooseForAddWriteCommitted(int catalogVersion, int tableId, HybridTimestamp commitTs) {
+    public List<IndexIdAndTableVersion> chooseForAddWriteCommitted(int catalogVersion, int tableId, HybridTimestamp commitTs) {
         return inBusyLock(busyLock, () -> {
             List<Integer> fromCatalog = chooseFromCatalogBusy(catalogVersion, tableId, index -> index.status() != REGISTERED);
 
             List<Integer> fromReadOnlyIndexes = chooseFromReadOnlyIndexesBusy(tableId, commitTs);
 
-            return mergeWithoutDuplicates(fromCatalog, fromReadOnlyIndexes);
+            return enrichWithTableVersions(mergeWithoutDuplicates(fromCatalog, fromReadOnlyIndexes));
         });
     }
 
@@ -181,8 +210,8 @@ public class FullStateTransferIndexChooser implements ManuallyCloseable {
     }
 
     private List<Integer> chooseFromReadOnlyIndexesBusy(int tableId, HybridTimestamp fromTsExcluded) {
-        ReadOnlyIndexInfo fromKeyIncluded = new ReadOnlyIndexInfo(tableId, fromTsExcluded.longValue() + 1, 0);
-        ReadOnlyIndexInfo toKeyExcluded = new ReadOnlyIndexInfo(tableId + 1, 0, 0);
+        ReadOnlyIndexInfo fromKeyIncluded = new ReadOnlyIndexInfo(tableId, fromTsExcluded.longValue() + 1, 0, 0);
+        ReadOnlyIndexInfo toKeyExcluded = new ReadOnlyIndexInfo(tableId + 1, 0, 0, 0);
 
         NavigableSet<ReadOnlyIndexInfo> subSet = readOnlyIndexes.subSet(fromKeyIncluded, true, toKeyExcluded, false);
 
@@ -229,26 +258,49 @@ public class FullStateTransferIndexChooser implements ManuallyCloseable {
     }
 
     private void addListenersBusy() {
-        catalogService.listen(INDEX_REMOVED, parameters -> {
-            return onIndexRemoved((RemoveIndexEventParameters) parameters).thenApply(unused -> false);
-        });
+        catalogService.listen(INDEX_CREATE, fromConsumer(this::onIndexCreated));
+        catalogService.listen(INDEX_REMOVED, fromConsumer(this::onIndexRemoved));
+
+        lowWatermark.addUpdateListener(this::onLwmChanged);
     }
 
-    private CompletableFuture<?> onIndexRemoved(RemoveIndexEventParameters parameters) {
-        return inBusyLockAsync(busyLock, () -> {
+    private void onIndexRemoved(RemoveIndexEventParameters parameters) {
+        inBusyLock(busyLock, () -> {
             int indexId = parameters.indexId();
             int catalogVersion = parameters.catalogVersion();
 
-            CatalogIndexDescriptor index = indexBusy(indexId, catalogVersion - 1);
+            lowWatermark.getLowWatermarkSafe(lwm -> {
+                int lwmCatalogVersion = catalogService.activeCatalogVersion(hybridTimestampToLong(lwm));
 
-            if (index.status() == AVAILABLE) {
-                // On drop table event.
-                readOnlyIndexes.add(new ReadOnlyIndexInfo(index, catalogActivationTimestampBusy(catalogVersion)));
-            } else if (index.status() == STOPPING) {
-                readOnlyIndexes.add(new ReadOnlyIndexInfo(index, findStoppingActivationTsBusy(indexId, catalogVersion - 1)));
-            }
+                if (catalogVersion <= lwmCatalogVersion) {
+                    // There is no need to add a read-only indexes, since the index should be destroyed under the updated low watermark.
+                    tableVersionByIndexId.remove(indexId);
+                } else {
+                    CatalogIndexDescriptor index = indexBusy(indexId, catalogVersion - 1);
 
-            return nullCompletedFuture();
+                    if (index.status() == AVAILABLE) {
+                        // On drop table event.
+                        readOnlyIndexes.add(new ReadOnlyIndexInfo(index, catalogActivationTimestampBusy(catalogVersion), catalogVersion));
+                    } else if (index.status() == STOPPING) {
+                        readOnlyIndexes.add(
+                                new ReadOnlyIndexInfo(index, findStoppingActivationTsBusy(indexId, catalogVersion - 1), catalogVersion)
+                        );
+                    } else {
+                        // Index that is dropped before even becoming available.
+                        tableVersionByIndexId.remove(indexId);
+                    }
+                }
+            });
+        });
+    }
+
+    private void onIndexCreated(CreateIndexEventParameters parameters) {
+        inBusyLock(busyLock, () -> {
+            CatalogIndexDescriptor index = parameters.indexDescriptor();
+
+            int tableVersion = tableVersionBusy(index, parameters.catalogVersion());
+
+            tableVersionByIndexId.put(index.id(), tableVersion);
         });
     }
 
@@ -260,35 +312,56 @@ public class FullStateTransferIndexChooser implements ManuallyCloseable {
         return catalog.time();
     }
 
-    private void recoverReadOnlyIndexesBusy() {
+    // TODO: IGNITE-21771 Deal with catalog compaction
+    private void recoverStructuresBusy() {
         int earliestCatalogVersion = catalogService.earliestCatalogVersion();
         int latestCatalogVersion = catalogService.latestCatalogVersion();
+        int lwmCatalogVersion = catalogService.activeCatalogVersion(hybridTimestampToLong(lowWatermark.getLowWatermark()));
 
-        var readOnlyIndexById = new HashMap<Integer, ReadOnlyIndexInfo>();
-        var previousCatalogVersionTableIds = Set.<Integer>of();
+        var tableVersionByIndexId = new HashMap<Integer, Integer>();
+        var readOnlyIndexes = new HashSet<ReadOnlyIndexInfo>();
 
-        // TODO: IGNITE-21514 Deal with catalog compaction
+        var stoppingActivationTsByIndexId = new HashMap<Integer, Long>();
+        var previousCatalogVersionIndexIds = Set.<Integer>of();
+
         for (int catalogVersion = earliestCatalogVersion; catalogVersion <= latestCatalogVersion; catalogVersion++) {
-            long activationTs = catalogActivationTimestampBusy(catalogVersion);
-
-            catalogService.indexes(catalogVersion).stream()
-                    .filter(index -> index.status() == STOPPING)
-                    .forEach(index -> readOnlyIndexById.computeIfAbsent(index.id(), i -> new ReadOnlyIndexInfo(index, activationTs)));
-
-            Set<Integer> currentCatalogVersionTableIds = tableIds(catalogVersion);
-
-            // Here we look for indices that transitioned directly from AVAILABLE to [deleted] (corresponding to the logical READ_ONLY
-            // state) as such transitions only happen when a table is dropped.
             int finalCatalogVersion = catalogVersion;
-            difference(previousCatalogVersionTableIds, currentCatalogVersionTableIds).stream()
-                    .flatMap(droppedTableId -> catalogService.indexes(finalCatalogVersion - 1, droppedTableId).stream())
-                    .filter(index -> index.status() == AVAILABLE)
-                    .forEach(index -> readOnlyIndexById.computeIfAbsent(index.id(), i -> new ReadOnlyIndexInfo(index, activationTs)));
 
-            previousCatalogVersionTableIds = currentCatalogVersionTableIds;
+            var indexIds = new HashSet<Integer>();
+
+            catalogService.indexes(finalCatalogVersion).forEach(index -> {
+                tableVersionByIndexId.computeIfAbsent(index.id(), i -> tableVersionBusy(index, finalCatalogVersion));
+
+                if (index.status() == STOPPING) {
+                    stoppingActivationTsByIndexId.computeIfAbsent(index.id(), i -> catalogActivationTimestampBusy(finalCatalogVersion));
+                }
+
+                indexIds.add(index.id());
+            });
+
+            // We are looking for removed indexes.
+            difference(previousCatalogVersionIndexIds, indexIds).stream()
+                    .map(indexId -> catalogService.index(indexId, finalCatalogVersion - 1))
+                    .forEach(index -> {
+                        if (index.status() == STOPPING && finalCatalogVersion > lwmCatalogVersion) {
+                            readOnlyIndexes.add(
+                                    new ReadOnlyIndexInfo(index, stoppingActivationTsByIndexId.get(index.id()), finalCatalogVersion)
+                            );
+                        } else if (index.status() == AVAILABLE && finalCatalogVersion > lwmCatalogVersion) {
+                            // Drop table case.
+                            readOnlyIndexes.add(
+                                    new ReadOnlyIndexInfo(index, catalogActivationTimestampBusy(finalCatalogVersion), finalCatalogVersion)
+                            );
+                        } else {
+                            tableVersionByIndexId.remove(index.id());
+                        }
+                    });
+
+            previousCatalogVersionIndexIds = indexIds;
         }
 
-        readOnlyIndexes.addAll(readOnlyIndexById.values());
+        this.tableVersionByIndexId.putAll(tableVersionByIndexId);
+        this.readOnlyIndexes.addAll(readOnlyIndexes);
     }
 
     private CatalogIndexDescriptor indexBusy(int indexId, int catalogVersion) {
@@ -316,5 +389,44 @@ public class FullStateTransferIndexChooser implements ManuallyCloseable {
 
     private Set<Integer> tableIds(int catalogVersion) {
         return catalogService.tables(catalogVersion).stream().map(CatalogObjectDescriptor::id).collect(toSet());
+    }
+
+    private int tableVersionBusy(CatalogIndexDescriptor index, int catalogVersion) {
+        CatalogTableDescriptor table = catalogService.table(index.tableId(), catalogVersion);
+
+        assert table != null : "indexId=" + index.id() + ", tableId=" + index.tableId() + ", catalogVersion=" + catalogVersion;
+
+        return table.tableVersion();
+    }
+
+    private List<IndexIdAndTableVersion> enrichWithTableVersions(List<Integer> indexIds) {
+        return indexIds.stream()
+                .map(indexId -> {
+                    Integer tableVersion = tableVersionByIndexId.get(indexId);
+
+                    return tableVersion == null ? null : new IndexIdAndTableVersion(indexId, tableVersion);
+                })
+                .filter(Objects::nonNull)
+                .collect(toCollection(() -> new ArrayList<>(indexIds.size())));
+    }
+
+    private CompletableFuture<Void> onLwmChanged(HybridTimestamp ts) {
+        return inBusyLockAsync(busyLock, () -> {
+            int lwmCatalogVersion = catalogService.activeCatalogVersion(ts.longValue());
+
+            Iterator<ReadOnlyIndexInfo> it = readOnlyIndexes.iterator();
+
+            while (it.hasNext()) {
+                ReadOnlyIndexInfo readOnlyIndexInfo = it.next();
+
+                if (readOnlyIndexInfo.indexRemovalCatalogVersion() <= lwmCatalogVersion) {
+                    it.remove();
+
+                    tableVersionByIndexId.remove(readOnlyIndexInfo.indexId());
+                }
+            }
+
+            return nullCompletedFuture();
+        });
     }
 }

@@ -108,7 +108,7 @@ public class IgniteSqlValidator extends SqlValidatorImpl {
 
     public static final String NUMERIC_FIELD_OVERFLOW_ERROR = "Numeric field overflow";
 
-    //approximate and exact numeric types
+    // Approximate and exact numeric types.
     private static final Pattern NUMERIC = Pattern.compile("^\\s*\\d+(\\.{1}\\d*)\\s*$");
 
     static {
@@ -687,7 +687,7 @@ public class IgniteSqlValidator extends SqlValidatorImpl {
             BigDecimal max = (BigDecimal) toType.getSqlTypeName().getLimit(true, Limit.OVERFLOW, false, precision, scale);
             BigDecimal min = (BigDecimal) toType.getSqlTypeName().getLimit(false, Limit.OVERFLOW, false, precision, scale);
 
-            String litValue = Objects.requireNonNull(literal.toValue());
+            String litValue = requireNonNull(literal.toValue());
 
             BigDecimal litValueToDecimal = null;
 

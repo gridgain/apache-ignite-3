@@ -18,7 +18,7 @@
 package org.apache.ignite.distributed;
 
 import static java.util.concurrent.CompletableFuture.completedFuture;
-import static org.apache.ignite.internal.replicator.ReplicaManager.DEFAULT_IDLE_SAFE_TIME_PROPAGATION_PERIOD_MILLISECONDS;
+import static org.apache.ignite.internal.replicator.ReplicatorConstants.DEFAULT_IDLE_SAFE_TIME_PROPAGATION_PERIOD_MILLISECONDS;
 import static org.apache.ignite.internal.testframework.matchers.CompletableFutureMatcher.willCompleteSuccessfully;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -42,6 +42,7 @@ import org.apache.ignite.internal.raft.service.RaftGroupService;
 import org.apache.ignite.internal.replicator.ReplicaResult;
 import org.apache.ignite.internal.replicator.ReplicaService;
 import org.apache.ignite.internal.replicator.message.ReplicaRequest;
+import org.apache.ignite.internal.schema.SchemaRegistry;
 import org.apache.ignite.internal.storage.MvPartitionStorage;
 import org.apache.ignite.internal.table.TxAbstractTest;
 import org.apache.ignite.internal.table.distributed.IndexLocker;
@@ -57,7 +58,9 @@ import org.apache.ignite.internal.tx.TxManager;
 import org.apache.ignite.internal.tx.configuration.TransactionConfiguration;
 import org.apache.ignite.internal.tx.impl.HeapLockManager;
 import org.apache.ignite.internal.tx.impl.RemotelyTriggeredResourceRegistry;
+import org.apache.ignite.internal.tx.impl.ResourceCleanupManager;
 import org.apache.ignite.internal.tx.impl.TransactionIdGenerator;
+import org.apache.ignite.internal.tx.impl.TransactionInflights;
 import org.apache.ignite.internal.tx.impl.TxManagerImpl;
 import org.apache.ignite.internal.tx.message.WriteIntentSwitchReplicaRequest;
 import org.apache.ignite.internal.tx.storage.state.TxStateStorage;
@@ -113,7 +116,9 @@ public class ItTxDistributedTestSingleNodeNoCleanupMessage extends TxAbstractTes
                     TransactionIdGenerator generator,
                     ClusterNode node,
                     PlacementDriver placementDriver,
-                    RemotelyTriggeredResourceRegistry resourcesRegistry
+                    RemotelyTriggeredResourceRegistry resourcesRegistry,
+                    ResourceCleanupManager resourceCleanupManager,
+                    TransactionInflights transactionInflights
             ) {
                 return new TxManagerImpl(
                         txConfiguration,
@@ -125,11 +130,13 @@ public class ItTxDistributedTestSingleNodeNoCleanupMessage extends TxAbstractTes
                         placementDriver,
                         () -> DEFAULT_IDLE_SAFE_TIME_PROPAGATION_PERIOD_MILLISECONDS,
                         new TestLocalRwTxCounter(),
-                        resourcesRegistry
+                        resourcesRegistry,
+                        resourceCleanupManager,
+                        transactionInflights
                 ) {
                     @Override
-                    public CompletableFuture<Void> executeCleanupAsync(Runnable runnable) {
-                        CompletableFuture<Void> cleanupFuture = super.executeCleanupAsync(runnable);
+                    public CompletableFuture<Void> executeWriteIntentSwitchAsync(Runnable runnable) {
+                        CompletableFuture<Void> cleanupFuture = super.executeWriteIntentSwitchAsync(runnable);
 
                         cleanupFutures.add(cleanupFuture);
 
@@ -160,7 +167,8 @@ public class ItTxDistributedTestSingleNodeNoCleanupMessage extends TxAbstractTes
                     CatalogService catalogService,
                     PlacementDriver placementDriver,
                     ClusterNodeResolver clusterNodeResolver,
-                    RemotelyTriggeredResourceRegistry resourcesRegistry
+                    RemotelyTriggeredResourceRegistry resourcesRegistry,
+                    SchemaRegistry schemaRegistry
             ) {
                 return new PartitionReplicaListener(
                         mvDataStorage,
@@ -184,7 +192,8 @@ public class ItTxDistributedTestSingleNodeNoCleanupMessage extends TxAbstractTes
                         catalogService,
                         placementDriver,
                         clusterNodeResolver,
-                        resourcesRegistry
+                        resourcesRegistry,
+                        schemaRegistry
                 ) {
                     @Override
                     public CompletableFuture<ReplicaResult> invoke(ReplicaRequest request, String senderId) {
@@ -246,7 +255,7 @@ public class ItTxDistributedTestSingleNodeNoCleanupMessage extends TxAbstractTes
 
         tx1.commit();
 
-        //Now start the seconds transaction and make sure write intent resolution is called  by adding a `get` operaiton.
+        // Now start the seconds transaction and make sure write intent resolution is called  by adding a `get` operation.
         InternalTransaction tx2 = (InternalTransaction) igniteTransactions.begin();
 
         assertEquals(100., accounts.recordView().get(tx2, makeKey(1)).doubleValue("balance"));

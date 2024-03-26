@@ -174,6 +174,7 @@ import org.apache.ignite.internal.table.distributed.schema.FullTableSchema;
 import org.apache.ignite.internal.table.distributed.schema.SchemaSyncService;
 import org.apache.ignite.internal.table.distributed.schema.ValidationSchemasSource;
 import org.apache.ignite.internal.table.impl.DummyInternalTableImpl;
+import org.apache.ignite.internal.table.impl.DummySchemaManagerImpl;
 import org.apache.ignite.internal.testframework.IgniteAbstractTest;
 import org.apache.ignite.internal.tostring.IgniteToStringInclude;
 import org.apache.ignite.internal.tostring.S;
@@ -451,6 +452,7 @@ public class PartitionReplicaListenerTest extends IgniteAbstractTest {
         when(validationSchemasSource.waitForSchemaAvailability(anyInt(), anyInt())).thenReturn(nullCompletedFuture());
 
         lenient().when(catalogService.table(anyInt(), anyLong())).thenReturn(tableDescriptor);
+        lenient().when(catalogService.table(anyInt(), anyInt())).thenReturn(tableDescriptor);
 
         int pkIndexId = 1;
         int sortedIndexId = 2;
@@ -579,7 +581,8 @@ public class PartitionReplicaListenerTest extends IgniteAbstractTest {
                 catalogService,
                 placementDriver,
                 new SingleClusterNodeResolver(localNode),
-                new RemotelyTriggeredResourceRegistry()
+                new RemotelyTriggeredResourceRegistry(),
+                new DummySchemaManagerImpl(schemaDescriptor, schemaDescriptorVersion2)
         );
 
         kvMarshaller = marshallerFor(schemaDescriptor);
@@ -800,11 +803,11 @@ public class PartitionReplicaListenerTest extends IgniteAbstractTest {
         BinaryRow testBinaryKey = nextBinaryKey();
         BinaryRow testBinaryRow = binaryRow(key(testBinaryKey), new TestValue(1, "v1"));
         var rowId = new RowId(PART_ID);
-        txState = TxState.ABORTED;
+        txState = ABORTED;
 
         pkStorage().put(testBinaryRow, rowId);
         testMvPartitionStorage.addWrite(rowId, testBinaryRow, txId, TABLE_ID, PART_ID);
-        txManager.updateTxMeta(txId, old -> new TxStateMeta(TxState.ABORTED, localNode.id(), commitPartitionId, null));
+        txManager.updateTxMeta(txId, old -> new TxStateMeta(ABORTED, localNode.id(), commitPartitionId, null));
 
         CompletableFuture<ReplicaResult> fut = doReadOnlySingleGet(testBinaryKey);
 
@@ -1523,6 +1526,7 @@ public class PartitionReplicaListenerTest extends IgniteAbstractTest {
 
         BinaryRow br2Pk = marshalQuietly(new TestKey(2, "k" + 2), kvMarshaller);
 
+        // Preloading the data if needed.
         if (insertFirst) {
             UUID tx0 = newTxId();
             upsert(tx0, br1);
@@ -1532,40 +1536,37 @@ public class PartitionReplicaListenerTest extends IgniteAbstractTest {
 
         txState = null;
 
+        // Delete the same row 2 times within the same transaction to generate garbage rows in storage.
+        // If the data was not preloaded, there will be one deletion actually.
         UUID tx1 = newTxId();
         delete(tx1, br1Pk);
         upsert(tx1, br1);
+        delete(tx1, br1Pk);
 
-        while (true) {
-            delete(tx1, br1Pk);
-
-            if (upsertAfterDelete) {
-                upsert(tx1, br1);
-            }
-
-            Cursor<RowId> cursor = pkStorage().get(br1);
-
-            if (!insertFirst) {
-                if (!upsertAfterDelete) {
-                    assertFalse(cursor.hasNext());
-                }
-
-                // If there were no other entries in index, break after first iteration.
-                break;
-            } else {
-                // This check is only for cases when new rows generation mess the index contents and some rows there have no value.
-                // We try to reach the point when the first row in cursor have no value, to test that this row will be skipped by RO tx.
-                // TODO https://issues.apache.org/jira/browse/IGNITE-18767 after this, the following check may be not needed.
-                RowId rowId = cursor.next();
-
-                BinaryRow row = testMvPartitionStorage.read(rowId, HybridTimestamp.MAX_VALUE).binaryRow();
-
-                if (row == null) {
-                    break;
-                }
-            }
+        if (upsertAfterDelete) {
+            upsert(tx1, br1);
         }
 
+        if (!insertFirst && !upsertAfterDelete) {
+            Cursor<RowId> cursor = pkStorage().get(br1);
+
+            // Data was not preloaded or inserted after deletion.
+            assertFalse(cursor.hasNext());
+        } else {
+            // We create a null row with a row id having minimum possible value to ensure this row would be the first in cursor.
+            // This is needed to check that this row will be skipped by RO tx and it will see the data anyway.
+            // TODO https://issues.apache.org/jira/browse/IGNITE-18767 after this, the following check may be not needed.
+            RowId emptyRowId = new RowId(PART_ID, new UUID(Long.MIN_VALUE, Long.MIN_VALUE));
+            testMvPartitionStorage.addWrite(emptyRowId, null, tx1, TABLE_ID, PART_ID);
+
+            if (committed) {
+                testMvPartitionStorage.commitWrite(emptyRowId, clock.now());
+            }
+
+            pkStorage().put(br1, emptyRowId);
+        }
+
+        // If committed, there will be actual values in storage, otherwise write intents.
         if (committed) {
             cleanup(tx1);
         }
@@ -2006,7 +2007,7 @@ public class PartitionReplicaListenerTest extends IgniteAbstractTest {
             return null;
         }).when(txManager).updateTxMeta(any(), any());
 
-        doAnswer(invocation -> nullCompletedFuture()).when(txManager).executeCleanupAsync(any(Runnable.class));
+        doAnswer(invocation -> nullCompletedFuture()).when(txManager).executeWriteIntentSwitchAsync(any(Runnable.class));
 
         doAnswer(invocation -> nullCompletedFuture()).when(txManager).finish(any(), any(), anyBoolean(), any(), any());
         doAnswer(invocation -> nullCompletedFuture()).when(txManager).cleanup(anyString(), any());

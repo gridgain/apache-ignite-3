@@ -20,36 +20,39 @@ package org.apache.ignite.internal.catalog;
 import static java.util.concurrent.CompletableFuture.allOf;
 import static java.util.concurrent.CompletableFuture.completedFuture;
 import static java.util.concurrent.CompletableFuture.failedFuture;
-import static org.apache.ignite.internal.catalog.commands.CatalogUtils.clusterWideEnsuredActivationTimestamp;
+import static java.util.stream.Collectors.joining;
+import static org.apache.ignite.internal.catalog.commands.CatalogUtils.clusterWideEnsuredActivationTsSafeForRoReads;
 import static org.apache.ignite.internal.catalog.commands.CatalogUtils.fromParams;
+import static org.apache.ignite.internal.catalog.descriptors.CatalogIndexDescriptor.CatalogIndexDescriptorType.HASH;
+import static org.apache.ignite.internal.type.NativeTypes.BOOLEAN;
+import static org.apache.ignite.internal.type.NativeTypes.INT32;
+import static org.apache.ignite.internal.type.NativeTypes.STRING;
+import static org.apache.ignite.internal.type.NativeTypes.stringOf;
 import static org.apache.ignite.internal.util.CollectionUtils.nullOrEmpty;
 import static org.apache.ignite.internal.util.CompletableFutures.nullCompletedFuture;
 
-import it.unimi.dsi.fastutil.ints.IntOpenHashSet;
-import it.unimi.dsi.fastutil.ints.IntSet;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map.Entry;
 import java.util.NavigableMap;
-import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentSkipListMap;
 import java.util.concurrent.Flow.Publisher;
 import java.util.function.Function;
 import java.util.function.LongSupplier;
+import org.apache.ignite.internal.catalog.descriptors.CatalogHashIndexDescriptor;
 import org.apache.ignite.internal.catalog.descriptors.CatalogIndexDescriptor;
 import org.apache.ignite.internal.catalog.descriptors.CatalogObjectDescriptor;
 import org.apache.ignite.internal.catalog.descriptors.CatalogSchemaDescriptor;
+import org.apache.ignite.internal.catalog.descriptors.CatalogSortedIndexDescriptor;
 import org.apache.ignite.internal.catalog.descriptors.CatalogSystemViewDescriptor;
 import org.apache.ignite.internal.catalog.descriptors.CatalogTableColumnDescriptor;
 import org.apache.ignite.internal.catalog.descriptors.CatalogTableDescriptor;
 import org.apache.ignite.internal.catalog.descriptors.CatalogZoneDescriptor;
 import org.apache.ignite.internal.catalog.events.CatalogEvent;
 import org.apache.ignite.internal.catalog.events.CatalogEventParameters;
-import org.apache.ignite.internal.catalog.events.DestroyIndexEvent;
-import org.apache.ignite.internal.catalog.events.DestroyTableEvent;
 import org.apache.ignite.internal.catalog.storage.Fireable;
 import org.apache.ignite.internal.catalog.storage.SnapshotEntry;
 import org.apache.ignite.internal.catalog.storage.UpdateEntry;
@@ -58,6 +61,7 @@ import org.apache.ignite.internal.catalog.storage.UpdateLog.OnUpdateHandler;
 import org.apache.ignite.internal.catalog.storage.UpdateLogEvent;
 import org.apache.ignite.internal.catalog.storage.VersionedUpdate;
 import org.apache.ignite.internal.event.AbstractEventProducer;
+import org.apache.ignite.internal.hlc.HybridClock;
 import org.apache.ignite.internal.hlc.HybridTimestamp;
 import org.apache.ignite.internal.lang.IgniteInternalException;
 import org.apache.ignite.internal.lang.NodeStoppingException;
@@ -66,7 +70,6 @@ import org.apache.ignite.internal.logger.Loggers;
 import org.apache.ignite.internal.systemview.api.SystemView;
 import org.apache.ignite.internal.systemview.api.SystemViewProvider;
 import org.apache.ignite.internal.systemview.api.SystemViews;
-import org.apache.ignite.internal.type.NativeTypes;
 import org.apache.ignite.internal.util.IgniteSpinBusyLock;
 import org.apache.ignite.internal.util.PendingComparableValuesTracker;
 import org.apache.ignite.internal.util.SubscriptionUtils;
@@ -118,18 +121,26 @@ public class CatalogManagerImpl extends AbstractEventProducer<CatalogEvent, Cata
     /** Busy lock to stop synchronously. */
     private final IgniteSpinBusyLock busyLock = new IgniteSpinBusyLock();
 
+    /** Clock. */
+    private final HybridClock clock;
+
     /**
      * Constructor.
      */
-    public CatalogManagerImpl(UpdateLog updateLog, ClockWaiter clockWaiter) {
-        this(updateLog, clockWaiter, DEFAULT_DELAY_DURATION, DEFAULT_PARTITION_IDLE_SAFE_TIME_PROPAGATION_PERIOD);
+    public CatalogManagerImpl(UpdateLog updateLog, ClockWaiter clockWaiter, HybridClock clock) {
+        this(updateLog, clockWaiter, clock, DEFAULT_DELAY_DURATION, DEFAULT_PARTITION_IDLE_SAFE_TIME_PROPAGATION_PERIOD);
     }
 
     /**
      * Constructor.
      */
-    CatalogManagerImpl(UpdateLog updateLog, ClockWaiter clockWaiter, long delayDurationMs, long partitionIdleSafeTimePropagationPeriod) {
-        this(updateLog, clockWaiter, () -> delayDurationMs, () -> partitionIdleSafeTimePropagationPeriod);
+    CatalogManagerImpl(UpdateLog updateLog,
+            ClockWaiter clockWaiter,
+            HybridClock clock,
+            long delayDurationMs,
+            long partitionIdleSafeTimePropagationPeriod
+    ) {
+        this(updateLog, clockWaiter, clock, () -> delayDurationMs, () -> partitionIdleSafeTimePropagationPeriod);
     }
 
     /**
@@ -138,11 +149,13 @@ public class CatalogManagerImpl extends AbstractEventProducer<CatalogEvent, Cata
     public CatalogManagerImpl(
             UpdateLog updateLog,
             ClockWaiter clockWaiter,
+            HybridClock clock,
             LongSupplier delayDurationMsSupplier,
             LongSupplier partitionIdleSafeTimePropagationPeriodMsSupplier
     ) {
         this.updateLog = updateLog;
         this.clockWaiter = clockWaiter;
+        this.clock = clock;
         this.delayDurationMsSupplier = delayDurationMsSupplier;
         this.partitionIdleSafeTimePropagationPeriodMsSupplier = partitionIdleSafeTimePropagationPeriodMsSupplier;
     }
@@ -326,12 +339,12 @@ public class CatalogManagerImpl extends AbstractEventProducer<CatalogEvent, Cata
     }
 
     @Override
-    public CompletableFuture<Void> execute(CatalogCommand command) {
+    public CompletableFuture<Integer> execute(CatalogCommand command) {
         return saveUpdateAndWaitForActivation(command);
     }
 
     @Override
-    public CompletableFuture<Void> execute(List<CatalogCommand> commands) {
+    public CompletableFuture<Integer> execute(List<CatalogCommand> commands) {
         if (nullOrEmpty(commands)) {
             return nullCompletedFuture();
         }
@@ -360,20 +373,20 @@ public class CatalogManagerImpl extends AbstractEventProducer<CatalogEvent, Cata
     private void truncateUpTo(Catalog catalog) {
         catalogByVer.headMap(catalog.version(), false).clear();
         catalogByTs.headMap(catalog.time(), false).clear();
+
+        LOG.info("Catalog history was truncated up to version=" + catalog.version());
     }
 
-    private CompletableFuture<Void> saveUpdateAndWaitForActivation(UpdateProducer updateProducer) {
+    private CompletableFuture<Integer> saveUpdateAndWaitForActivation(UpdateProducer updateProducer) {
         return saveUpdate(updateProducer, 0)
                 .thenCompose(newVersion -> {
                     Catalog catalog = catalogByVer.get(newVersion);
 
-                    HybridTimestamp clusterWideEnsuredActivationTs = clusterWideEnsuredActivationTimestamp(catalog);
-                    // TODO: this addition has to be removed when IGNITE-20378 is implemented.
-                    HybridTimestamp tsSafeForRoReadingInPastOptimization = clusterWideEnsuredActivationTs.addPhysicalTime(
-                            partitionIdleSafeTimePropagationPeriodMsSupplier.getAsLong() + HybridTimestamp.maxClockSkew()
+                    HybridTimestamp tsSafeForRoReadingInPastOptimization = clusterWideEnsuredActivationTsSafeForRoReads(
+                            catalog, partitionIdleSafeTimePropagationPeriodMsSupplier
                     );
 
-                    return clockWaiter.waitFor(tsSafeForRoReadingInPastOptimization);
+                    return clockWaiter.waitFor(tsSafeForRoReadingInPastOptimization).thenApply(unused -> newVersion);
                 });
     }
 
@@ -434,7 +447,8 @@ public class CatalogManagerImpl extends AbstractEventProducer<CatalogEvent, Cata
         return List.of(
                 createSystemViewsView(),
                 createSystemViewColumnsView(),
-                createSystemViewZonesView()
+                createZonesView(),
+                createIndexesView()
         );
     }
 
@@ -442,57 +456,20 @@ public class CatalogManagerImpl extends AbstractEventProducer<CatalogEvent, Cata
         @Override
         public CompletableFuture<Void> handle(UpdateLogEvent event, HybridTimestamp metaStorageUpdateTimestamp, long causalityToken) {
             if (event instanceof SnapshotEntry) {
-                return handle((SnapshotEntry) event, causalityToken);
+                return handle((SnapshotEntry) event);
             }
 
             return handle((VersionedUpdate) event, metaStorageUpdateTimestamp, causalityToken);
         }
 
-        private CompletableFuture<Void> handle(SnapshotEntry event, long causalityToken) {
+        private CompletableFuture<Void> handle(SnapshotEntry event) {
             Catalog catalog = event.snapshot();
-
-            // Use reverse order to find latest descriptors.
-            Collection<Catalog> droppedCatalogVersions = catalogByVer.headMap(catalog.version(), false).descendingMap().values();
-
-            // Collect destroy events for dropped tables/indexes.
-            IntSet droppedObjects = new IntOpenHashSet();
-            List<Fireable> events = new ArrayList<>();
-
-            droppedCatalogVersions.forEach(oldCatalog -> oldCatalog.indexes().stream()
-                    .filter(idx -> catalog.index(idx.id()) == null)
-                    .filter(idx -> droppedObjects.add(idx.id()))
-                    .forEach(idx -> events.add(
-                            new DestroyIndexEvent(idx.id(), idx.tableId(), tableZoneDescriptor(oldCatalog, idx.tableId()).partitions()))
-                    ));
-
-            droppedObjects.clear();
-            droppedCatalogVersions.forEach(oldCatalog -> oldCatalog.tables().stream()
-                    .filter(tbl -> catalog.table(tbl.id()) == null)
-                    .filter(tbl -> droppedObjects.add(tbl.id()))
-                    .forEach(tbl -> events.add(new DestroyTableEvent(tbl.id(), tableZoneDescriptor(oldCatalog, tbl.id()).partitions()))));
-
             // On recovery phase, we must register catalog from the snapshot.
             // In other cases, it is ok to rewrite an existed version, because it's exactly the same.
             registerCatalog(catalog);
+            truncateUpTo(catalog);
 
-            List<CompletableFuture<?>> eventFutures = new ArrayList<>(events.size());
-
-            for (Fireable fireEvent : events) {
-                eventFutures.add(fireEvent(
-                        fireEvent.eventType(),
-                        fireEvent.createEventParameters(causalityToken, catalog.version())
-                ));
-            }
-
-            return allOf(eventFutures.toArray(CompletableFuture[]::new))
-                    .whenComplete((ignore, err) -> {
-                        if (err != null) {
-                            LOG.warn("Failed to compact catalog.", err);
-                            //TODO: IGNITE-14611 Pass exception to an error handler?
-                        } else {
-                            truncateUpTo(catalog);
-                        }
-                    });
+            return nullCompletedFuture();
         }
 
         private CompletableFuture<Void> handle(VersionedUpdate update, HybridTimestamp metaStorageUpdateTimestamp, long causalityToken) {
@@ -531,16 +508,12 @@ public class CatalogManagerImpl extends AbstractEventProducer<CatalogEvent, Cata
                     .whenComplete((ignore, err) -> {
                         if (err != null) {
                             LOG.warn("Failed to apply catalog update.", err);
-                            //TODO: IGNITE-14611 Pass exception to an error handler because catalog got into inconsistent state.
+                            // TODO: IGNITE-14611 Pass exception to an error handler because catalog got into inconsistent state.
                         }
 
                         versionTracker.update(version, null);
                     });
         }
-    }
-
-    private static CatalogZoneDescriptor tableZoneDescriptor(Catalog catalog, int tableId) {
-        return Objects.requireNonNull(catalog.zone(Objects.requireNonNull(catalog.table(tableId), "table").zoneId()), "zone");
     }
 
     private static Catalog applyUpdateFinal(Catalog catalog, VersionedUpdate update, HybridTimestamp metaStorageUpdateTimestamp) {
@@ -586,9 +559,7 @@ public class CatalogManagerImpl extends AbstractEventProducer<CatalogEvent, Cata
 
     private SystemView<?> createSystemViewsView() {
         Iterable<SchemaAwareDescriptor<CatalogSystemViewDescriptor>> viewData = () -> {
-            int version = latestCatalogVersion();
-
-            Catalog catalog = catalog(version);
+            Catalog catalog = catalogAt(clock.nowLong());
 
             return catalog.schemas().stream()
                     .flatMap(schema -> Arrays.stream(schema.systemViews())
@@ -601,12 +572,12 @@ public class CatalogManagerImpl extends AbstractEventProducer<CatalogEvent, Cata
 
         return SystemViews.<SchemaAwareDescriptor<CatalogSystemViewDescriptor>>clusterViewBuilder()
                 .name("SYSTEM_VIEWS")
-                .addColumn("ID", NativeTypes.INT32, entry -> entry.descriptor.id())
-                .addColumn("SCHEMA", NativeTypes.stringOf(SYSTEM_VIEW_STRING_COLUMN_LENGTH),
+                .addColumn("ID", INT32, entry -> entry.descriptor.id())
+                .addColumn("SCHEMA", stringOf(SYSTEM_VIEW_STRING_COLUMN_LENGTH),
                         entry -> entry.schema)
-                .addColumn("NAME", NativeTypes.stringOf(SYSTEM_VIEW_STRING_COLUMN_LENGTH),
+                .addColumn("NAME", stringOf(SYSTEM_VIEW_STRING_COLUMN_LENGTH),
                         entry -> entry.descriptor.name())
-                .addColumn("TYPE", NativeTypes.stringOf(SYSTEM_VIEW_STRING_COLUMN_LENGTH),
+                .addColumn("TYPE", stringOf(SYSTEM_VIEW_STRING_COLUMN_LENGTH),
                         entry -> entry.descriptor.systemViewType().name())
                 .dataProvider(viewDataPublisher)
                 .build();
@@ -614,9 +585,7 @@ public class CatalogManagerImpl extends AbstractEventProducer<CatalogEvent, Cata
 
     private SystemView<?> createSystemViewColumnsView() {
         Iterable<ParentIdAwareDescriptor<CatalogTableColumnDescriptor>> viewData = () -> {
-            int version = latestCatalogVersion();
-
-            Catalog catalog = catalog(version);
+            Catalog catalog = catalogAt(clock.nowLong());
 
             return catalog.schemas().stream()
                     .flatMap(schema -> Arrays.stream(schema.systemViews()))
@@ -630,29 +599,73 @@ public class CatalogManagerImpl extends AbstractEventProducer<CatalogEvent, Cata
 
         return SystemViews.<ParentIdAwareDescriptor<CatalogTableColumnDescriptor>>clusterViewBuilder()
                 .name("SYSTEM_VIEW_COLUMNS")
-                .addColumn("VIEW_ID", NativeTypes.INT32, entry -> entry.id)
-                .addColumn("NAME", NativeTypes.stringOf(SYSTEM_VIEW_STRING_COLUMN_LENGTH), entry -> entry.descriptor.name())
-                .addColumn("TYPE", NativeTypes.stringOf(SYSTEM_VIEW_STRING_COLUMN_LENGTH), entry -> entry.descriptor.type().name())
-                .addColumn("NULLABLE", NativeTypes.BOOLEAN, entry -> entry.descriptor.nullable())
-                .addColumn("PRECISION", NativeTypes.INT32, entry -> entry.descriptor.precision())
-                .addColumn("SCALE", NativeTypes.INT32, entry -> entry.descriptor.scale())
-                .addColumn("LENGTH", NativeTypes.INT32, entry -> entry.descriptor.length())
+                .addColumn("VIEW_ID", INT32, entry -> entry.id)
+                .addColumn("NAME", stringOf(SYSTEM_VIEW_STRING_COLUMN_LENGTH), entry -> entry.descriptor.name())
+                .addColumn("TYPE", stringOf(SYSTEM_VIEW_STRING_COLUMN_LENGTH), entry -> entry.descriptor.type().name())
+                .addColumn("NULLABLE", BOOLEAN, entry -> entry.descriptor.nullable())
+                .addColumn("PRECISION", INT32, entry -> entry.descriptor.precision())
+                .addColumn("SCALE", INT32, entry -> entry.descriptor.scale())
+                .addColumn("LENGTH", INT32, entry -> entry.descriptor.length())
                 .dataProvider(viewDataPublisher)
                 .build();
     }
 
-    private SystemView<?> createSystemViewZonesView() {
+    private SystemView<?> createZonesView() {
         return SystemViews.<CatalogZoneDescriptor>clusterViewBuilder()
                 .name("ZONES")
-                .addColumn("NAME", NativeTypes.STRING, CatalogZoneDescriptor::name)
-                .addColumn("PARTITIONS", NativeTypes.INT32, CatalogZoneDescriptor::partitions)
-                .addColumn("REPLICAS", NativeTypes.INT32, CatalogZoneDescriptor::replicas)
-                .addColumn("DATA_NODES_AUTO_ADJUST_SCALE_UP", NativeTypes.INT32, CatalogZoneDescriptor::dataNodesAutoAdjustScaleUp)
-                .addColumn("DATA_NODES_AUTO_ADJUST_SCALE_DOWN", NativeTypes.INT32, CatalogZoneDescriptor::dataNodesAutoAdjustScaleDown)
-                .addColumn("DATA_NODES_FILTER", NativeTypes.STRING, CatalogZoneDescriptor::filter)
-                .addColumn("IS_DEFAULT_ZONE", NativeTypes.BOOLEAN, isDefaultZone())
-                .dataProvider(SubscriptionUtils.fromIterable(() -> catalog(latestCatalogVersion()).zones().iterator()))
+                .addColumn("NAME", STRING, CatalogZoneDescriptor::name)
+                .addColumn("PARTITIONS", INT32, CatalogZoneDescriptor::partitions)
+                .addColumn("REPLICAS", INT32, CatalogZoneDescriptor::replicas)
+                .addColumn("DATA_NODES_AUTO_ADJUST_SCALE_UP", INT32, CatalogZoneDescriptor::dataNodesAutoAdjustScaleUp)
+                .addColumn("DATA_NODES_AUTO_ADJUST_SCALE_DOWN", INT32, CatalogZoneDescriptor::dataNodesAutoAdjustScaleDown)
+                .addColumn("DATA_NODES_FILTER", STRING, CatalogZoneDescriptor::filter)
+                .addColumn("IS_DEFAULT_ZONE", BOOLEAN, isDefaultZone())
+                .dataProvider(SubscriptionUtils.fromIterable(() -> catalogAt(clock.nowLong()).zones().iterator()))
                 .build();
+    }
+
+    private SystemView<?> createIndexesView() {
+        Iterable<CatalogAwareDescriptor<CatalogIndexDescriptor>> viewData = () -> {
+            Catalog catalog = catalogAt(clock.nowLong());
+
+            return catalog.indexes().stream()
+                    .filter(index -> index.status().isAlive())
+                    .map(index -> new CatalogAwareDescriptor<>(index, catalog))
+                    .iterator();
+        };
+
+        return SystemViews.<CatalogAwareDescriptor<CatalogIndexDescriptor>>clusterViewBuilder()
+                .name("INDEXES")
+                .addColumn("INDEX_ID", INT32, entry -> entry.descriptor.id())
+                .addColumn("INDEX_NAME", STRING, entry -> entry.descriptor.name())
+                .addColumn("TABLE_ID", INT32, entry -> entry.descriptor.tableId())
+                .addColumn("TABLE_NAME", STRING, entry -> getTableDescriptor(entry).name())
+                .addColumn("SCHEMA_ID", INT32, CatalogManagerImpl::getSchemaId)
+                .addColumn("SCHEMA_NAME", STRING, entry -> entry.catalog.schema(getSchemaId(entry)).name())
+                .addColumn("TYPE", STRING, entry -> entry.descriptor.indexType().name())
+                .addColumn("IS_UNIQUE", BOOLEAN, entry -> entry.descriptor.unique())
+                .addColumn("COLUMNS", STRING, CatalogManagerImpl::getColumnsString)
+                .addColumn("STATUS", STRING, entry -> entry.descriptor.status().name())
+                .dataProvider(SubscriptionUtils.fromIterable(viewData))
+                .build();
+    }
+
+    private static int getSchemaId(CatalogAwareDescriptor<CatalogIndexDescriptor> entry) {
+        return getTableDescriptor(entry).schemaId();
+    }
+
+    private static CatalogTableDescriptor getTableDescriptor(CatalogAwareDescriptor<CatalogIndexDescriptor> entry) {
+        return entry.catalog.table(entry.descriptor.tableId());
+    }
+
+    private static String getColumnsString(CatalogAwareDescriptor<CatalogIndexDescriptor> entry) {
+        return entry.descriptor.indexType() == HASH
+                ? String.join(", ", ((CatalogHashIndexDescriptor) entry.descriptor).columns())
+                : ((CatalogSortedIndexDescriptor) entry.descriptor)
+                        .columns()
+                        .stream()
+                        .map(column -> column.name() + (column.collation().asc() ? " ASC" : " DESC"))
+                        .collect(joining(", "));
     }
 
     private static Function<CatalogZoneDescriptor, Boolean> isDefaultZone() {
@@ -683,6 +696,19 @@ public class CatalogManagerImpl extends AbstractEventProducer<CatalogEvent, Cata
         ParentIdAwareDescriptor(T descriptor, int id) {
             this.descriptor = descriptor;
             this.id = id;
+        }
+    }
+
+    /**
+     * A container that keeps given descriptor along with the catalog it belongs to.
+     */
+    private static class CatalogAwareDescriptor<T> {
+        private final T descriptor;
+        private final Catalog catalog;
+
+        CatalogAwareDescriptor(T descriptor, Catalog catalog) {
+            this.descriptor = descriptor;
+            this.catalog = catalog;
         }
     }
 }

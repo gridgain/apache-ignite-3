@@ -34,13 +34,14 @@ import static org.apache.ignite.internal.storage.rocksdb.PartitionDataHelper.put
 import static org.apache.ignite.internal.storage.rocksdb.PartitionDataHelper.readTimestampDesc;
 import static org.apache.ignite.internal.storage.rocksdb.RocksDbMetaStorage.PARTITION_CONF_PREFIX;
 import static org.apache.ignite.internal.storage.rocksdb.RocksDbMetaStorage.PARTITION_META_PREFIX;
-import static org.apache.ignite.internal.storage.rocksdb.RocksDbMetaStorage.createKey;
 import static org.apache.ignite.internal.storage.rocksdb.RocksDbStorageUtils.KEY_BYTE_ORDER;
+import static org.apache.ignite.internal.storage.rocksdb.RocksDbStorageUtils.createKey;
 import static org.apache.ignite.internal.storage.rocksdb.RocksDbStorageUtils.normalize;
 import static org.apache.ignite.internal.storage.rocksdb.instance.SharedRocksDbInstance.DFLT_WRITE_OPTS;
 import static org.apache.ignite.internal.storage.util.StorageUtils.throwExceptionDependingOnStorageState;
 import static org.apache.ignite.internal.storage.util.StorageUtils.throwExceptionDependingOnStorageStateOnRebalance;
 import static org.apache.ignite.internal.storage.util.StorageUtils.throwExceptionIfStorageInProgressOfRebalance;
+import static org.apache.ignite.internal.storage.util.StorageUtils.transitionToTerminalState;
 import static org.apache.ignite.internal.util.ArrayUtils.BYTE_EMPTY_ARRAY;
 
 import java.nio.ByteBuffer;
@@ -231,7 +232,7 @@ public class RocksDbMvPartitionStorage implements MvPartitionStorage {
                                 lastAppliedIndex = state.pendingAppliedIndex;
                                 lastAppliedTerm = state.pendingAppliedTerm;
                             }
-                            //noinspection ArrayEquality
+                            // noinspection ArrayEquality
                             if (oldGroupConfig != state.pendingGroupConfig) {
                                 lastGroupConfig = state.pendingGroupConfig;
                             }
@@ -304,7 +305,7 @@ public class RocksDbMvPartitionStorage implements MvPartitionStorage {
 
         ThreadLocalState state = THREAD_LOCAL_STATE.get();
 
-        //TODO Complicated code.
+        // TODO Complicated code.
         if (state != null) {
             state.pendingAppliedIndex = lastAppliedIndex;
             state.pendingAppliedTerm = lastAppliedTerm;
@@ -351,7 +352,7 @@ public class RocksDbMvPartitionStorage implements MvPartitionStorage {
 
         ThreadLocalState state = THREAD_LOCAL_STATE.get();
 
-        //TODO Complicated code.
+        // TODO Complicated code.
         if (state != null) {
             state.pendingGroupConfig = config.clone();
         }
@@ -479,7 +480,7 @@ public class RocksDbMvPartitionStorage implements MvPartitionStorage {
                 byte[] previousValue = writeBatch.getFromBatchAndDB(db, helper.partCf, readOpts, keyBytes);
 
                 if (previousValue == null) {
-                    //the chain doesn't contain an uncommitted write intent
+                    // The chain doesn't contain an uncommitted write intent.
                     return null;
                 }
 
@@ -569,7 +570,7 @@ public class RocksDbMvPartitionStorage implements MvPartitionStorage {
             // We only write tombstone if the previous value for the same row id was not a tombstone.
             // So there won't be consecutive tombstones for the same row id.
             if (!newAndPrevTombstones) {
-                //TODO IGNITE-16913 Add proper way to write row bytes into array without allocations.
+                // TODO IGNITE-16913 Add proper way to write row bytes into array without allocations.
                 byte[] rowBytes;
 
                 if (row == null) {
@@ -848,16 +849,20 @@ public class RocksDbMvPartitionStorage implements MvPartitionStorage {
 
                 @Override
                 public boolean hasNext() {
-                    assert rowIsLocked(rowId);
+                    return busy(() -> {
+                        assert rowIsLocked(rowId) : "rowId=" + rowId + ", " + createStorageInfo();
 
-                    return super.hasNext();
+                        return super.hasNext();
+                    });
                 }
 
                 @Override
                 public ReadResult next() {
-                    assert rowIsLocked(rowId);
+                    return busy(() -> {
+                        assert rowIsLocked(rowId) : "rowId=" + rowId + ", " + createStorageInfo();
 
-                    return super.next();
+                        return super.next();
+                    });
                 }
 
                 @Override
@@ -872,7 +877,6 @@ public class RocksDbMvPartitionStorage implements MvPartitionStorage {
         });
     }
 
-    // TODO: IGNITE-16914 Play with prefix settings and benchmark results.
     @Override
     public PartitionTimestampCursor scan(HybridTimestamp timestamp) throws StorageException {
         Objects.requireNonNull(timestamp, "timestamp is null");
@@ -990,7 +994,7 @@ public class RocksDbMvPartitionStorage implements MvPartitionStorage {
 
     @Override
     public @Nullable GcEntry peek(HybridTimestamp lowWatermark) {
-        //noinspection resource
+        // noinspection resource
         PartitionDataHelper.requireWriteBatch();
 
         // No busy lock required, we're already in "runConsistently" closure.
@@ -1015,17 +1019,25 @@ public class RocksDbMvPartitionStorage implements MvPartitionStorage {
 
     @Override
     public void close() {
-        StorageState previous = state.getAndSet(StorageState.CLOSED);
+        transitionToDestroyedOrClosedState(StorageState.CLOSED);
+    }
 
-        if (previous == StorageState.CLOSED) {
+    private void transitionToDestroyedOrClosedState(StorageState targetState) {
+        if (!transitionToTerminalState(targetState, state)) {
             return;
         }
 
         busyLock.block();
 
-        RocksUtils.closeAll(readOpts);
-
+        readOpts.close();
         helper.close();
+    }
+
+    /**
+     * Transitions this storage to the {@link StorageState#DESTROYED} state.
+     */
+    public void transitionToDestroyedState() {
+        transitionToDestroyedOrClosedState(StorageState.DESTROYED);
     }
 
     /**
@@ -1270,7 +1282,7 @@ public class RocksDbMvPartitionStorage implements MvPartitionStorage {
                 //          - R1 > R0, this means that we found next row and T1 is either missing (pending row) or represents the latest
                 //            version of the row. It doesn't matter in this case, because this row id will be reused to find its value
                 //            at time T0. Additional "seek" will be required to do it.
-                //TODO IGNITE-18201 Remove copying.
+                // TODO IGNITE-18201 Remove copying.
                 it.seek(copyOf(seekKeyBuf.array(), ROW_PREFIX_SIZE));
 
                 // Finish scan if nothing was found.
@@ -1368,7 +1380,7 @@ public class RocksDbMvPartitionStorage implements MvPartitionStorage {
             ByteBuffer directBuffer = DIRECT_KEY_BUFFER.get();
 
             while (true) {
-                //TODO IGNITE-18201 Remove copying.
+                // TODO IGNITE-18201 Remove copying.
                 it.seek(copyOf(seekKeyBuf.array(), ROW_PREFIX_SIZE));
 
                 if (invalid(it)) {

@@ -299,6 +299,7 @@ public class JraftServerImpl implements RaftServer {
                     opts.getRaftOptions().getDisruptorBufferSize(),
                     ApplyTask::new,
                     opts.getStripes(),
+                    false,
                     false
             ));
         }
@@ -310,6 +311,7 @@ public class JraftServerImpl implements RaftServer {
                     opts.getRaftOptions().getDisruptorBufferSize(),
                     LogEntryAndClosure::new,
                     opts.getStripes(),
+                    false,
                     false
             ));
         }
@@ -321,6 +323,7 @@ public class JraftServerImpl implements RaftServer {
                     opts.getRaftOptions().getDisruptorBufferSize(),
                     ReadIndexEvent::new,
                     opts.getStripes(),
+                    false,
                     false
             ));
         }
@@ -331,11 +334,12 @@ public class JraftServerImpl implements RaftServer {
                     "JRaft-LogManager-Disruptor",
                     opts.getRaftOptions().getDisruptorBufferSize(),
                     StableClosureEvent::new,
-                    opts.getStripes(),
-                    true
+                    opts.getLogStripesCount(),
+                    true,
+                    opts.isLogYieldStrategy()
             ));
 
-            opts.setLogStripes(IntStream.range(0, opts.getStripes()).mapToObj(i -> new Stripe()).collect(toList()));
+            opts.setLogStripes(IntStream.range(0, opts.getLogStripesCount()).mapToObj(i -> new Stripe()).collect(toList()));
         }
 
         logStorageFactory.start();
@@ -563,6 +567,22 @@ public class JraftServerImpl implements RaftServer {
                 return false;
             }
         });
+    }
+
+    /**
+     * Performs a {@code resetPeers} operation on raft node.
+     *
+     * @param raftNodeId Raft node ID.
+     * @param peersAndLearners New node configuration.
+     */
+    public void resetPeers(RaftNodeId raftNodeId, PeersAndLearners peersAndLearners) {
+        RaftGroupService raftGroupService = nodes.get(raftNodeId);
+
+        List<PeerId> peerIds = peersAndLearners.peers().stream().map(PeerId::fromPeer).collect(toList());
+
+        List<PeerId> learnerIds = peersAndLearners.learners().stream().map(PeerId::fromPeer).collect(toList());
+
+        raftGroupService.getRaftNode().resetPeers(new Configuration(peerIds, learnerIds));
     }
 
     /** {@inheritDoc} */

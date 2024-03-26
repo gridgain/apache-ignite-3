@@ -22,7 +22,6 @@ import static org.apache.ignite.internal.sql.engine.util.QueryChecker.containsSu
 import static org.apache.ignite.internal.testframework.IgniteTestUtils.assertThrows;
 
 import org.apache.ignite.internal.sql.BaseSqlIntegrationTest;
-import org.apache.ignite.sql.Session;
 import org.apache.ignite.sql.SqlException;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
@@ -37,12 +36,10 @@ public class ItKeyValuePutTest extends BaseSqlIntegrationTest {
     @BeforeAll
     @SuppressWarnings({"ConcatenationWithEmptyString", "resource"})
     static void initSchema() {
-        try (Session session = CLUSTER.aliveNode().sql().createSession()) {
-            session.executeScript(""
-                    + "CREATE TABLE simple_key (id INT PRIMARY KEY, val INT);"
-                    + "CREATE TABLE complex_key (id1 INT, id2 INT, val INT, PRIMARY KEY(id1, id2));"
-            );
-        }
+        CLUSTER.aliveNode().sql().executeScript(""
+                + "CREATE TABLE simple_key (id INT PRIMARY KEY, val INT);"
+                + "CREATE TABLE complex_key (id1 INT, id2 INT, val INT, PRIMARY KEY(id1, id2));"
+        );
     }
 
     @AfterEach
@@ -55,7 +52,7 @@ public class ItKeyValuePutTest extends BaseSqlIntegrationTest {
     void insertConstantSimpleKey() {
         for (int i = 0; i < TABLE_SIZE; i++) {
             assertQuery(format("INSERT INTO simple_key VALUES ({}, {})", i, i))
-                    .matches(containsSubPlan("IgniteKeyValueModify"))
+                    .matches(containsSubPlan("KeyValueModify"))
                     .returns(1L)
                     .check();
         }
@@ -72,7 +69,7 @@ public class ItKeyValuePutTest extends BaseSqlIntegrationTest {
     void insertDynamicParamsSimpleKey() {
         for (int i = 0; i < TABLE_SIZE; i++) {
             assertQuery("INSERT INTO simple_key VALUES (?, ?)")
-                    .matches(containsSubPlan("IgniteKeyValueModify"))
+                    .matches(containsSubPlan("KeyValueModify"))
                     .withParams(i, i)
                     .returns(1L)
                     .check();
@@ -90,7 +87,7 @@ public class ItKeyValuePutTest extends BaseSqlIntegrationTest {
     void insertSimpleKeyWithCast() {
         for (int i = 0; i < TABLE_SIZE; i++) {
             assertQuery("INSERT INTO simple_key VALUES (?, ?)")
-                    .matches(containsSubPlan("IgniteKeyValueModify"))
+                    .matches(containsSubPlan("KeyValueModify"))
                     .withParams((byte) i, (byte) i)
                     .returns(1L)
                     .check();
@@ -108,7 +105,7 @@ public class ItKeyValuePutTest extends BaseSqlIntegrationTest {
     void insertComplexKey() {
         for (int i = 0; i < TABLE_SIZE; i++) {
             assertQuery("INSERT INTO complex_key VALUES (?, ?, ?)")
-                    .matches(containsSubPlan("IgniteKeyValueModify"))
+                    .matches(containsSubPlan("KeyValueModify"))
                     .withParams(i, 2 * i, i)
                     .returns(1L)
                     .check();

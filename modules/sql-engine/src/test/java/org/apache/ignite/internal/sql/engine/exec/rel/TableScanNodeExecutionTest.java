@@ -17,7 +17,7 @@
 
 package org.apache.ignite.internal.sql.engine.exec.rel;
 
-import static org.apache.ignite.internal.replicator.ReplicaManager.DEFAULT_IDLE_SAFE_TIME_PROPAGATION_PERIOD_MILLISECONDS;
+import static org.apache.ignite.internal.replicator.ReplicatorConstants.DEFAULT_IDLE_SAFE_TIME_PROPAGATION_PERIOD_MILLISECONDS;
 import static org.apache.ignite.internal.sql.engine.util.TypeUtils.rowSchemaFromRelTypes;
 import static org.apache.ignite.internal.util.IgniteUtils.closeAll;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -54,6 +54,7 @@ import org.apache.ignite.internal.schema.BinaryRow;
 import org.apache.ignite.internal.schema.BinaryRowEx;
 import org.apache.ignite.internal.schema.BinaryTuplePrefix;
 import org.apache.ignite.internal.sql.engine.exec.ExecutionContext;
+import org.apache.ignite.internal.sql.engine.exec.PartitionProvider;
 import org.apache.ignite.internal.sql.engine.exec.PartitionWithConsistencyToken;
 import org.apache.ignite.internal.sql.engine.exec.RowHandler;
 import org.apache.ignite.internal.sql.engine.exec.RowHandler.RowFactory;
@@ -72,7 +73,9 @@ import org.apache.ignite.internal.tx.TxManager;
 import org.apache.ignite.internal.tx.configuration.TransactionConfiguration;
 import org.apache.ignite.internal.tx.impl.HeapLockManager;
 import org.apache.ignite.internal.tx.impl.RemotelyTriggeredResourceRegistry;
+import org.apache.ignite.internal.tx.impl.ResourceCleanupManager;
 import org.apache.ignite.internal.tx.impl.TransactionIdGenerator;
+import org.apache.ignite.internal.tx.impl.TransactionInflights;
 import org.apache.ignite.internal.tx.impl.TxManagerImpl;
 import org.apache.ignite.internal.tx.storage.state.TxStateTableStorage;
 import org.apache.ignite.internal.tx.test.TestLocalRwTxCounter;
@@ -143,6 +146,20 @@ public class TableScanNodeExecutionTest extends AbstractExecutionTest<Object[]> 
 
             ReplicaService replicaSvc = mock(ReplicaService.class, RETURNS_DEEP_STUBS);
 
+            RemotelyTriggeredResourceRegistry resourcesRegistry = new RemotelyTriggeredResourceRegistry();
+
+            PlacementDriver placementDriver = new TestPlacementDriver(leaseholder, leaseholder);
+
+            TransactionInflights transactionInflights = new TransactionInflights(placementDriver);
+
+            ResourceCleanupManager resourceCleanupManager = new ResourceCleanupManager(
+                    leaseholder,
+                    resourcesRegistry,
+                    clusterService.topologyService(),
+                    clusterService.messagingService(),
+                    transactionInflights
+            );
+
             TxManagerImpl txManager = new TxManagerImpl(
                     txConfiguration,
                     clusterService,
@@ -150,10 +167,12 @@ public class TableScanNodeExecutionTest extends AbstractExecutionTest<Object[]> 
                     new HeapLockManager(),
                     new HybridClockImpl(),
                     new TransactionIdGenerator(0xdeadbeef),
-                    new TestPlacementDriver(leaseholder, leaseholder),
+                    placementDriver,
                     () -> DEFAULT_IDLE_SAFE_TIME_PROPAGATION_PERIOD_MILLISECONDS,
                     new TestLocalRwTxCounter(),
-                    new RemotelyTriggeredResourceRegistry()
+                    resourcesRegistry,
+                    resourceCleanupManager,
+                    transactionInflights
             );
 
             txManager.start();
@@ -174,8 +193,9 @@ public class TableScanNodeExecutionTest extends AbstractExecutionTest<Object[]> 
                 }
             };
             ScannableTableImpl scanableTable = new ScannableTableImpl(internalTable, rf -> rowConverter);
+            PartitionProvider<Object[]> partitionProvider = PartitionProvider.fromPartitions(partsWithConsistencyTokens);
             TableScanNode<Object[]> scanNode = new TableScanNode<>(ctx, rowFactory, scanableTable,
-                    partsWithConsistencyTokens, null, null, null);
+                    partitionProvider, null, null, null);
 
             RootNode<Object[]> root = new RootNode<>(ctx);
 
@@ -232,7 +252,10 @@ public class TableScanNodeExecutionTest extends AbstractExecutionTest<Object[]> 
                             PART_CNT,
                             Int2ObjectMaps.singleton(0, mock(RaftGroupService.class)),
                             new SingleClusterNodeResolver(mock(ClusterNode.class))
-                    )
+                    ),
+                    mock(TransactionInflights.class),
+                    3_000,
+                    0
             );
             this.dataAmount = dataAmount;
 

@@ -250,7 +250,7 @@ public class LeaseUpdater {
      * @return Cluster node, or {@code null} if no node in assignments can be the leaseholder.
      */
     private @Nullable ClusterNode nextLeaseHolder(Set<Assignment> assignments, @Nullable String proposedConsistentId) {
-        //TODO: IGNITE-18879 Implement more intellectual algorithm to choose a node.
+        // TODO: IGNITE-18879 Implement more intellectual algorithm to choose a node.
         ClusterNode primaryCandidate = null;
 
         for (Assignment assignment : assignments) {
@@ -340,6 +340,7 @@ public class LeaseUpdater {
 
             for (Map.Entry<ReplicationGroupId, Set<Assignment>> entry : currentAssignments.entrySet()) {
                 ReplicationGroupId grpId = entry.getKey();
+                Set<Assignment> assignments = entry.getValue();
 
                 Lease lease = leaseTracker.getLease(grpId);
 
@@ -348,7 +349,9 @@ public class LeaseUpdater {
                 }
 
                 if (!lease.isAccepted()) {
-                    LeaseAgreement agreement = leaseNegotiator.negotiated(grpId);
+                    LeaseAgreement agreement = leaseNegotiator.getAndRemoveIfReady(grpId);
+
+                    agreement.checkValid(grpId, topologyTracker.currentTopologySnapshot(), assignments);
 
                     if (agreement.isAccepted()) {
                         publishLease(grpId, lease, renewedLeases);
@@ -356,7 +359,7 @@ public class LeaseUpdater {
                         continue;
                     } else if (agreement.ready()) {
                         // Here we initiate negotiations for UNDEFINED_AGREEMENT and retry them on newly started active actor as well.
-                        ClusterNode candidate = nextLeaseHolder(entry.getValue(), agreement.getRedirectTo());
+                        ClusterNode candidate = nextLeaseHolder(assignments, agreement.getRedirectTo());
 
                         if (candidate == null) {
                             leaseUpdateStatistics.onLeaseWithoutCandidate();
@@ -373,10 +376,7 @@ public class LeaseUpdater {
 
                 // The lease is expired or close to this.
                 if (lease.getExpirationTime().getPhysical() < outdatedLeaseThreshold) {
-                    ClusterNode candidate = nextLeaseHolder(
-                            entry.getValue(),
-                            lease.isProlongable() ? lease.getLeaseholder() : null
-                    );
+                    ClusterNode candidate = nextLeaseHolder(assignments, lease.isProlongable() ? lease.getLeaseholder() : null);
 
                     if (candidate == null) {
                         leaseUpdateStatistics.onLeaseWithoutCandidate();
@@ -561,7 +561,7 @@ public class LeaseUpdater {
     /** Message handler to process notification from replica side. */
     private class PlacementDriverActorMessageHandler implements NetworkMessageHandler {
         @Override
-        public void onReceived(NetworkMessage msg0, String sender, @Nullable Long correlationId) {
+        public void onReceived(NetworkMessage msg0, ClusterNode sender, @Nullable Long correlationId) {
             if (!(msg0 instanceof PlacementDriverActorMessage)) {
                 return;
             }
@@ -573,7 +573,7 @@ public class LeaseUpdater {
             }
 
             try {
-                processMessageInternal(sender, msg);
+                processMessageInternal(sender.name(), msg);
             } finally {
                 stateChangingLock.leaveBusy();
             }

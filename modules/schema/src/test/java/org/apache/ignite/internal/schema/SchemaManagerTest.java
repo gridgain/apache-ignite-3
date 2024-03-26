@@ -103,9 +103,8 @@ class SchemaManagerTest extends BaseIgniteAbstractTest {
 
         doNothing().when(catalogService).listen(eq(CatalogEvent.TABLE_CREATE), tableCreatedListener.capture());
         doNothing().when(catalogService).listen(eq(CatalogEvent.TABLE_ALTER), tableAlteredListener.capture());
-        doNothing().when(catalogService).listen(eq(CatalogEvent.TABLE_DROP), tableDestroyedListener.capture());
 
-        schemaManager = new SchemaManager(registry, catalogService, metaStorageManager);
+        schemaManager = new SchemaManager(registry, catalogService);
         schemaManager.start();
 
         assertThat("Watches were not deployed", metaStorageManager.deployWatches(), willCompleteSuccessfully());
@@ -257,16 +256,13 @@ class SchemaManagerTest extends BaseIgniteAbstractTest {
     void destroyTableMakesRegistryUnavailable() {
         createSomeTable();
 
-        assertThat(schemaManager.dropRegistry(CAUSALITY_TOKEN_2, TABLE_ID), willCompleteSuccessfully());
+        assertThat(schemaManager.dropRegistryAsync(TABLE_ID), willCompleteSuccessfully());
 
         completeCausalityToken(CAUSALITY_TOKEN_2);
 
         CompletableFuture<SchemaRegistry> future = schemaManager.schemaRegistry(CAUSALITY_TOKEN_2, TABLE_ID);
         assertThat(future, is(completedFuture()));
-
-        SchemaRegistry schemaRegistry = future.join();
-
-        assertThat(schemaRegistry, is(nullValue()));
+        assertThat(future, willBe(nullValue()));
     }
 
     @Test
@@ -279,7 +275,7 @@ class SchemaManagerTest extends BaseIgniteAbstractTest {
         when(catalogService.tables(anyInt())).thenReturn(List.of(tableDescriptorAfterColumnAddition()));
         doReturn(CompletableFuture.completedFuture(CAUSALITY_TOKEN_2)).when(metaStorageManager).recoveryFinishedFuture();
 
-        schemaManager = new SchemaManager(registry, catalogService, metaStorageManager);
+        schemaManager = new SchemaManager(registry, catalogService);
         schemaManager.start();
 
         completeCausalityToken(CAUSALITY_TOKEN_2);

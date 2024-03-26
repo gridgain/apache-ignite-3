@@ -29,6 +29,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.function.LongSupplier;
 import org.apache.ignite.internal.catalog.Catalog;
 import org.apache.ignite.internal.catalog.CatalogService;
 import org.apache.ignite.internal.catalog.CatalogValidationException;
@@ -374,7 +375,7 @@ public class CatalogUtils {
      * @param precision Type precision.
      */
     public static int defaultLength(ColumnType columnType, int precision) {
-        //TODO IGNITE-20432: Return length for other types. See SQL`16 part 2 section 6.1 syntax rule 39
+        // TODO IGNITE-20432: Return length for other types. See SQL`16 part 2 section 6.1 syntax rule 39
         switch (columnType) {
             case BITMASK:
             case STRING:
@@ -542,5 +543,22 @@ public class CatalogUtils {
                 // Rounding up to the closest millisecond to account for possibility of HLC.now() having different
                 // logical parts on different nodes of the cluster (see IGNITE-21084).
                 .roundUpToPhysicalTick();
+    }
+
+    /**
+     * Returns timestamp for which we'll wait after adding a new version to a Catalog.
+     *
+     * @param catalog Catalog version that has been added.
+     * @param partitionIdleSafeTimePropagationPeriodMsSupplier Supplies partition idle safe time propagation period in millis.
+     */
+    public static HybridTimestamp clusterWideEnsuredActivationTsSafeForRoReads(
+            Catalog catalog,
+            LongSupplier partitionIdleSafeTimePropagationPeriodMsSupplier
+    ) {
+        HybridTimestamp clusterWideEnsuredActivationTs = clusterWideEnsuredActivationTimestamp(catalog);
+        // TODO: this addition has to be removed when IGNITE-20378 is implemented.
+        return clusterWideEnsuredActivationTs.addPhysicalTime(
+                partitionIdleSafeTimePropagationPeriodMsSupplier.getAsLong() + HybridTimestamp.maxClockSkew()
+        );
     }
 }

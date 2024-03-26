@@ -104,12 +104,12 @@ public interface TxManager extends IgniteComponent {
     LockManager lockManager();
 
     /**
-     * Execute transaction cleanup asynchronously.
+     * Execute write intent switch asynchronously.
      *
-     * @param runnable Cleanup action.
-     * @return Future that completes once the cleanup action finishes.
+     * @param runnable Write intent switch action.
+     * @return Future that completes once the write intent switch action finishes.
      */
-    CompletableFuture<Void> executeCleanupAsync(Runnable runnable);
+    CompletableFuture<Void> executeWriteIntentSwitchAsync(Runnable runnable);
 
     /**
      * Finishes a one-phase committed transaction. This method doesn't contain any distributed communication.
@@ -190,21 +190,6 @@ public interface TxManager extends IgniteComponent {
      * @return Future of all read-only transactions with read timestamp less or equals the given new low watermark.
      */
     CompletableFuture<Void> updateLowWatermark(HybridTimestamp newLowWatermark);
-
-    /**
-     * Registers the infligh update for a transaction.
-     *
-     * @param txId The transaction id.
-     * @return {@code True} if the inflight was registered. The update must be failed on false.
-     */
-    boolean addInflight(UUID txId);
-
-    /**
-     * Unregisters the inflight for a transaction.
-     *
-     * @param txId The transction id
-     */
-    void removeInflight(UUID txId);
 
     /** Returns the node's hybrid clock. */
     HybridClock clock();

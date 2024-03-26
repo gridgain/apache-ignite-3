@@ -166,7 +166,7 @@ public class FakeTxManager implements TxManager {
     }
 
     @Override
-    public CompletableFuture<Void> executeCleanupAsync(Runnable runnable) {
+    public CompletableFuture<Void> executeWriteIntentSwitchAsync(Runnable runnable) {
         return CompletableFuture.runAsync(runnable);
     }
 
@@ -213,16 +213,6 @@ public class FakeTxManager implements TxManager {
     @Override
     public CompletableFuture<Void> updateLowWatermark(HybridTimestamp newLowWatermark) {
         return null;
-    }
-
-    @Override
-    public boolean addInflight(UUID txId) {
-        return false;
-    }
-
-    @Override
-    public void removeInflight(UUID txId) {
-        // No-op.
     }
 
     @Override

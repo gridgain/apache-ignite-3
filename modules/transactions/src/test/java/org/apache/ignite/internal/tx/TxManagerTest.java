@@ -22,7 +22,7 @@ import static java.util.concurrent.CompletableFuture.completedFuture;
 import static java.util.concurrent.CompletableFuture.failedFuture;
 import static org.apache.ignite.internal.hlc.HybridTimestamp.CLOCK_SKEW;
 import static org.apache.ignite.internal.hlc.HybridTimestamp.hybridTimestamp;
-import static org.apache.ignite.internal.replicator.ReplicaManager.DEFAULT_IDLE_SAFE_TIME_PROPAGATION_PERIOD_MILLISECONDS;
+import static org.apache.ignite.internal.replicator.ReplicatorConstants.DEFAULT_IDLE_SAFE_TIME_PROPAGATION_PERIOD_MILLISECONDS;
 import static org.apache.ignite.internal.testframework.IgniteTestUtils.assertThrowsWithCause;
 import static org.apache.ignite.internal.testframework.matchers.CompletableFutureMatcher.willSucceedFast;
 import static org.apache.ignite.internal.util.CompletableFutures.nullCompletedFuture;
@@ -76,7 +76,9 @@ import org.apache.ignite.internal.tx.configuration.TransactionConfiguration;
 import org.apache.ignite.internal.tx.impl.HeapLockManager;
 import org.apache.ignite.internal.tx.impl.PrimaryReplicaExpiredException;
 import org.apache.ignite.internal.tx.impl.RemotelyTriggeredResourceRegistry;
+import org.apache.ignite.internal.tx.impl.ResourceCleanupManager;
 import org.apache.ignite.internal.tx.impl.TransactionIdGenerator;
+import org.apache.ignite.internal.tx.impl.TransactionInflights;
 import org.apache.ignite.internal.tx.impl.TxManagerImpl;
 import org.apache.ignite.internal.tx.message.TxFinishReplicaRequest;
 import org.apache.ignite.internal.tx.test.TestLocalRwTxCounter;
@@ -140,6 +142,18 @@ public class TxManagerTest extends IgniteAbstractTest {
 
         when(replicaService.invoke(anyString(), any())).thenReturn(nullCompletedFuture());
 
+        RemotelyTriggeredResourceRegistry resourceRegistry = new RemotelyTriggeredResourceRegistry();
+
+        TransactionInflights transactionInflights = new TransactionInflights(placementDriver);
+
+        ResourceCleanupManager cleanupManager = new ResourceCleanupManager(
+                LOCAL_NODE.name(),
+                resourceRegistry,
+                clusterService.topologyService(),
+                clusterService.messagingService(),
+                transactionInflights
+        );
+
         txManager = new TxManagerImpl(
                 txConfiguration,
                 clusterService,
@@ -150,7 +164,9 @@ public class TxManagerTest extends IgniteAbstractTest {
                 placementDriver,
                 idleSafeTimePropagationPeriodMsSupplier,
                 localRwTxCounter,
-                new RemotelyTriggeredResourceRegistry()
+                resourceRegistry,
+                cleanupManager,
+                transactionInflights
         );
 
         txManager.start();
@@ -643,7 +659,7 @@ public class TxManagerTest extends IgniteAbstractTest {
 
         assertSame(TransactionException.class, throwable.getClass());
         // short cast is useful for better error code readability
-        //noinspection NumericCastThatLosesPrecision
+        // noinspection NumericCastThatLosesPrecision
         assertEquals((short) TX_COMMIT_ERR, (short) ((TransactionException) throwable).code());
 
         assertEquals(TxState.ABORTED, txManager.stateMeta(committedTransaction.id()).txState());
@@ -748,7 +764,7 @@ public class TxManagerTest extends IgniteAbstractTest {
 
         assertSame(TransactionException.class, throwable.getClass());
         // short cast is useful for better error code readability
-        //noinspection NumericCastThatLosesPrecision
+        // noinspection NumericCastThatLosesPrecision
         assertEquals((short) TX_PRIMARY_REPLICA_EXPIRED_ERR, (short) ((TransactionException) throwable).code());
 
         assertEquals(TxState.ABORTED, txManager.stateMeta(committedTransaction.id()).txState());
