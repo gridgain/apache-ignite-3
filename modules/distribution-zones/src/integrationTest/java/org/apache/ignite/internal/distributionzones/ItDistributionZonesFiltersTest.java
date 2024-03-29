@@ -48,7 +48,6 @@ import org.apache.ignite.internal.replicator.TablePartitionId;
 import org.apache.ignite.internal.table.TableViewInternal;
 import org.apache.ignite.internal.table.distributed.TableManager;
 import org.apache.ignite.internal.testframework.IgniteTestUtils;
-import org.apache.ignite.sql.Session;
 import org.intellij.lang.annotations.Language;
 import org.junit.jupiter.api.Test;
 
@@ -150,7 +149,6 @@ public class ItDistributionZonesFiltersTest extends ClusterPerTestIntegrationTes
         // the second matched node
         startNode(2, createStartConfig(NODE_ATTRIBUTES, STORAGE_PROFILES_CONFIGS));
 
-        Session session = mismatchedNode.sql().createSession();
         final var zoneSQL = createZoneSql(
                 2,
                 2,
@@ -158,8 +156,8 @@ public class ItDistributionZonesFiltersTest extends ClusterPerTestIntegrationTes
                 IMMEDIATE_TIMER_VALUE,
                 DEFAULT_FILTER,
                 String.format("'%s'", commonProfileName));
-        session.execute(null, zoneSQL);
-        session.execute(null, createTableSql(commonProfileName));
+        mismatchedNode.sql().execute(null, zoneSQL);
+        mismatchedNode.sql().execute(null, createTableSql(commonProfileName));
 
         MetaStorageManager metaStorageManager = IgniteTestUtils.getFieldValue(mismatchedNode, IgniteImpl.class, "metaStorageMgr");
         TableManager tableManager = IgniteTestUtils.getFieldValue(mismatchedNode, IgniteImpl.class, "distributedTblMgr");
@@ -217,7 +215,6 @@ public class ItDistributionZonesFiltersTest extends ClusterPerTestIntegrationTes
         // the second matched node
         startNode(2, createStartConfig(NODE_ATTRIBUTES, matchingProfile));
 
-        Session session = matchedNode.sql().createSession();
         final var zoneSQL = createZoneSql(
                 2,
                 2,
@@ -225,8 +222,8 @@ public class ItDistributionZonesFiltersTest extends ClusterPerTestIntegrationTes
                 IMMEDIATE_TIMER_VALUE,
                 DEFAULT_FILTER,
                 String.format("'%s'", customProfileName));
-        session.execute(null, zoneSQL);
-        session.execute(null, createTableSql(customProfileName));
+        matchedNode.sql().execute(null, zoneSQL);
+        matchedNode.sql().execute(null, createTableSql(customProfileName));
 
         MetaStorageManager metaStorageManager = (MetaStorageManager) IgniteTestUtils
                 .getFieldValue(matchedNode, IgniteImpl.class, "metaStorageMgr");
@@ -292,7 +289,8 @@ public class ItDistributionZonesFiltersTest extends ClusterPerTestIntegrationTes
 
         IgniteImpl node = startNode(1, createStartConfig(firstNodeAttributes, matchingStorageProfile));
 
-        node.sql().execute(null, createZoneSql(2, 3, IMMEDIATE_TIMER_VALUE, IMMEDIATE_TIMER_VALUE, filter, STORAGE_PROFILES));
+        var zoneQuery = createZoneSql(2, 3, IMMEDIATE_TIMER_VALUE, IMMEDIATE_TIMER_VALUE, DEFAULT_FILTER, STORAGE_PROFILES);
+        node.sql().execute(null, zoneQuery);
 
         node.sql().execute(null, createTableSql());
 
