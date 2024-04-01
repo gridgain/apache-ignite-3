@@ -23,7 +23,6 @@ import static org.apache.ignite.internal.catalog.events.CatalogEvent.INDEX_REMOV
 import static org.apache.ignite.internal.event.EventListener.fromConsumer;
 import static org.apache.ignite.internal.hlc.HybridTimestamp.hybridTimestampToLong;
 import static org.apache.ignite.internal.table.distributed.index.IndexUtils.registerIndexToTable;
-import static org.apache.ignite.internal.util.CompletableFutures.booleanCompletedFuture;
 import static org.apache.ignite.internal.util.CompletableFutures.nullCompletedFuture;
 import static org.apache.ignite.internal.util.IgniteUtils.inBusyLock;
 import static org.apache.ignite.internal.util.IgniteUtils.inBusyLockAsync;
@@ -245,9 +244,6 @@ public class IndexManager implements IgniteComponent {
     ) {
         int tableId = index.tableId();
 
-        if (!tableManager.isProfileMatches(table.storageProfile())) {
-            return booleanCompletedFuture(false);
-        }
         // TODO: IGNITE-19712 Listen to assignment changes and start new index storages.
         CompletableFuture<PartitionSet> tablePartitionFuture = tableManager.localPartitionSetAsync(causalityToken, tableId);
 
