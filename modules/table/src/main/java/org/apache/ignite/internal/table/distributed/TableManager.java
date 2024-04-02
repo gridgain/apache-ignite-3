@@ -221,6 +221,7 @@ import org.apache.ignite.network.TopologyService;
 import org.apache.ignite.raft.jraft.storage.impl.VolatileRaftMetaStorage;
 import org.apache.ignite.sql.IgniteSql;
 import org.apache.ignite.table.Table;
+import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.jetbrains.annotations.TestOnly;
 
@@ -1225,40 +1226,18 @@ public class TableManager implements IgniteTablesInternal, IgniteComponent {
             boolean onNodeRecovery
     ) {
         return inBusyLockAsync(busyLock, () -> {
-            int tableId = tableDescriptor.id();
-            int zoneId = tableDescriptor.zoneId();
-
             // Retrieve descriptor during synchronous call, before the previous catalog version could be concurrently compacted.
             CatalogZoneDescriptor zoneDescriptor = getZoneDescriptor(tableDescriptor, catalogVersion);
 
-            CompletableFuture<List<Assignments>> assignmentsFuture;
+            CompletableFuture<List<Assignments>> assignmentsFuture = createOrGetLocallyAssignmentsAsync(
+                    tableDescriptor,
+                    zoneDescriptor,
+                    catalogVersion,
+                    causalityToken);
 
-            // Check if the table already has assignmentsList in the meta storage locally.
-            // So, it means, that it is a recovery process and we should use the meta storage local assignmentsList instead of calculation
-            // of the new ones.
-            if (partitionAssignmentsGetLocally(metaStorageMgr, tableId, 0, causalityToken) != null) {
-                assignmentsFuture = completedFuture(
-                        tableAssignmentsGetLocally(metaStorageMgr, tableId, zoneDescriptor.partitions(), causalityToken));
-            } else {
-                assignmentsFuture = distributionZoneManager.dataNodes(causalityToken, catalogVersion, zoneId)
-                        .thenApply(dataNodes -> AffinityUtils.calculateAssignments(
-                                dataNodes,
-                                zoneDescriptor.partitions(),
-                                zoneDescriptor.replicas()
-                        ).stream().map(Assignments::of).collect(toList()));
-
-                assignmentsFuture.thenAccept(assignmentsList -> {
-                    LOG.info(IgniteStringFormatter.format(
-                            "Assignments calculated from data nodes [table={}, tableId={}, assignmentsList={}, revision={}]",
-                            tableDescriptor.name(),
-                            tableId,
-                            assignmentListToString(assignmentsList),
-                            causalityToken));
-                });
-            }
-
-            CompletableFuture<List<Assignments>> assignmentsFutureAfterInvoke =
-                    writeTableAssignmentsToMetastore(tableId, assignmentsFuture);
+            CompletableFuture<List<Assignments>> assignmentsFutureAfterInvoke = writeTableAssignmentsToMetastore(
+                    tableDescriptor.id(),
+                    assignmentsFuture);
 
             return createTableLocally(
                     causalityToken,
@@ -1303,15 +1282,40 @@ public class TableManager implements IgniteTablesInternal, IgniteComponent {
                         tableId));
     }
 
-    public boolean isLocalNodeAssignedForTable(CatalogTableDescriptor tableDescriptor, long causalityToken) {
-        CatalogZoneDescriptor zoneDescriptor = getZoneDescriptor(tableDescriptor, catalogService.latestCatalogVersion());
+    /**
+     * Check if the table already has assignmentsList in the meta storage locally. So, it means, that it is a recovery process and we should
+     * use the meta storage local assignmentsList instead of calculation of the new ones.
+     */
+    @NotNull
+    public CompletableFuture<List<Assignments>> createOrGetLocallyAssignmentsAsync(
+            CatalogTableDescriptor tableDescriptor,
+            CatalogZoneDescriptor zoneDescriptor,
+            int catalogVersion,
+            long causalityToken
+    ) {
         int tableId = tableDescriptor.id();
         int partitionsCount = zoneDescriptor.partitions();
-        List<Assignments> assignmentList = tableAssignmentsGetLocally(metaStorageMgr, tableId, partitionsCount, causalityToken);
-        return isLocalNodeInAssignmentList(assignmentList);
+        CompletableFuture<List<Assignments>> assignmentsFuture;
+        if (partitionAssignmentsGetLocally(metaStorageMgr, tableId, 0, causalityToken) != null) {
+            assignmentsFuture = completedFuture(tableAssignmentsGetLocally(metaStorageMgr, tableId, partitionsCount, causalityToken));
+        } else {
+            assignmentsFuture = distributionZoneManager.dataNodes(causalityToken, catalogVersion, zoneDescriptor.id())
+                    .thenApply(dataNodes -> AffinityUtils
+                            .calculateAssignments(dataNodes, partitionsCount, zoneDescriptor.replicas())
+                            .stream()
+                            .map(Assignments::of)
+                            .collect(toList()));
+            assignmentsFuture.thenAccept(assignmentsList -> LOG.info(IgniteStringFormatter.format(
+                    "Assignments calculated from data nodes [table={}, tableId={}, assignmentsList={}, revision={}]",
+                    tableDescriptor.name(),
+                    tableId,
+                    assignmentListToString(assignmentsList),
+                    causalityToken)));
+        }
+        return assignmentsFuture;
     }
 
-    private boolean isLocalNodeInAssignmentList(List<Assignments> assignmentList) {
+    public boolean isLocalNodeInAssignmentList(List<Assignments> assignmentList) {
         return assignmentList.stream()
                 .map(Assignments::nodes)
                 .flatMap(Collection::stream)
@@ -2496,7 +2500,7 @@ public class TableManager implements IgniteTablesInternal, IgniteComponent {
         return tableDescriptor;
     }
 
-    private CatalogZoneDescriptor getZoneDescriptor(CatalogTableDescriptor tableDescriptor, int catalogVersion) {
+    public CatalogZoneDescriptor getZoneDescriptor(CatalogTableDescriptor tableDescriptor, int catalogVersion) {
         CatalogZoneDescriptor zoneDescriptor = catalogService.zone(tableDescriptor.zoneId(), catalogVersion);
 
         assert zoneDescriptor != null :

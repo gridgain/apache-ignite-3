@@ -38,6 +38,7 @@ import java.util.function.LongFunction;
 import org.apache.ignite.internal.catalog.CatalogService;
 import org.apache.ignite.internal.catalog.descriptors.CatalogIndexDescriptor;
 import org.apache.ignite.internal.catalog.descriptors.CatalogTableDescriptor;
+import org.apache.ignite.internal.catalog.descriptors.CatalogZoneDescriptor;
 import org.apache.ignite.internal.catalog.events.CatalogEvent;
 import org.apache.ignite.internal.catalog.events.CreateIndexEventParameters;
 import org.apache.ignite.internal.catalog.events.RemoveIndexEventParameters;
@@ -191,7 +192,7 @@ public class IndexManager implements IgniteComponent {
                 );
             }
 
-            return startIndexAsync(table, index, causalityToken).thenApply(unused -> false);
+            return startIndexAsync(table, index, catalogVersion, causalityToken).thenApply(unused -> false);
         });
     }
 
@@ -238,16 +239,25 @@ public class IndexManager implements IgniteComponent {
     }
 
     private CompletableFuture<?> startIndexAsync(
-            CatalogTableDescriptor table,
-            CatalogIndexDescriptor index,
+            CatalogTableDescriptor tableDescriptor,
+            CatalogIndexDescriptor indexDescriptor,
+            int catalogVersion,
+            long causalityToken) {
+        CatalogZoneDescriptor zoneDescriptor = tableManager.getZoneDescriptor(tableDescriptor, catalogVersion);
+        return tableManager
+                .createOrGetLocallyAssignmentsAsync(tableDescriptor, zoneDescriptor, catalogVersion, causalityToken)
+                .thenApply(tableManager::isLocalNodeInAssignmentList)
+                .thenCompose(isNodeAssignedForIndex -> isNodeAssignedForIndex
+                    ? startIndexAsync(tableDescriptor, indexDescriptor, causalityToken)
+                    : nullCompletedFuture());
+    }
+
+    private CompletableFuture<Void> startIndexAsync(
+            CatalogTableDescriptor tableDescriptor,
+            CatalogIndexDescriptor indexDescriptor,
             long causalityToken
     ) {
-        int tableId = index.tableId();
-
-        boolean isNodeAssignedForIndex = tableManager.isLocalNodeAssignedForTable(table, causalityToken);
-        if (!isNodeAssignedForIndex) {
-            return nullCompletedFuture();
-        }
+        int tableId = indexDescriptor.tableId();
 
         // TODO: IGNITE-19712 Listen to assignment changes and start new index storages.
         CompletableFuture<PartitionSet> tablePartitionFuture = tableManager.localPartitionSetAsync(causalityToken, tableId);
@@ -258,7 +268,7 @@ public class IndexManager implements IgniteComponent {
                 causalityToken,
                 updater(mvTableStorageById -> tablePartitionFuture.thenCombineAsync(schemaRegistryFuture,
                         (partitionSet, schemaRegistry) -> inBusyLock(busyLock, () -> {
-                            registerIndex(table, index, partitionSet, schemaRegistry);
+                            registerIndex(tableDescriptor, indexDescriptor, partitionSet, schemaRegistry);
 
                             return null;
                         }), ioExecutor))
