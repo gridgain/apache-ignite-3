@@ -706,8 +706,11 @@ public class TableManager implements IgniteTablesInternal, IgniteComponent {
                     .invoke(condition, partitionAssignments, Collections.emptyList())
                     .thenCompose(invokeResult -> {
                         if (invokeResult) {
-                            LOG.info(IgniteStringFormatter.format("Assignments calculated from data nodes are successfully written"
-                                    + " to meta storage [tableId={}, assignmentsList={}]", tableId, assignmentListToString(newAssignments)));
+                            LOG.info(IgniteStringFormatter.format(
+                                    "Assignments calculated from data nodes are successfully written to meta storage "
+                                            + "[tableId={}, assignmentsList={}]",
+                                    tableId,
+                                    assignmentListToString(newAssignments)));
 
                             return completedFuture(newAssignments);
                         } else {
@@ -883,7 +886,7 @@ public class TableManager implements IgniteTablesInternal, IgniteComponent {
                 storageUpdateConfig
         );
 
-        Peer serverPeer = realConfiguration.peer(localConsistentID());
+        Peer serverPeer = realConfiguration.peer(localConsistentId());
 
         var raftNodeId = localMemberAssignment == null ? null : new RaftNodeId(replicaGrpId, serverPeer);
 
@@ -1068,7 +1071,7 @@ public class TableManager implements IgniteTablesInternal, IgniteComponent {
     }
 
     private boolean isLocalPeer(Peer peer) {
-        return peer.consistentId().equals(localConsistentID());
+        return peer.consistentId().equals(localConsistentId());
     }
 
     private PartitionDataStorage partitionDataStorage(MvPartitionStorage partitionStorage, InternalTable internalTbl, int partId) {
@@ -1245,8 +1248,12 @@ public class TableManager implements IgniteTablesInternal, IgniteComponent {
                         ).stream().map(Assignments::of).collect(toList()));
 
                 assignmentsFuture.thenAccept(assignmentsList -> {
-                    LOG.info(IgniteStringFormatter.format("Assignments calculated from data nodes [table={}, tableId={}, assignmentsList={}, "
-                            + "revision={}]", tableDescriptor.name(), tableId, assignmentListToString(assignmentsList), causalityToken));
+                    LOG.info(IgniteStringFormatter.format(
+                            "Assignments calculated from data nodes [table={}, tableId={}, assignmentsList={}, revision={}]",
+                            tableDescriptor.name(),
+                            tableId,
+                            assignmentListToString(assignmentsList),
+                            causalityToken));
                 });
             }
 
@@ -1296,6 +1303,14 @@ public class TableManager implements IgniteTablesInternal, IgniteComponent {
                         tableId));
     }
 
+    public boolean isLocalNodeAssignedForTable(CatalogTableDescriptor tableDescriptor, long causalityToken) {
+        CatalogZoneDescriptor zoneDescriptor = getZoneDescriptor(tableDescriptor, catalogService.latestCatalogVersion());
+        int tableId = tableDescriptor.id();
+        int partitionsCount = zoneDescriptor.partitions();
+        List<Assignments> assignmentList = tableAssignmentsGetLocally(metaStorageMgr, tableId, partitionsCount, causalityToken);
+        return isLocalNodeInAssignmentList(assignmentList);
+    }
+
     private boolean isLocalNodeInAssignmentList(List<Assignments> assignmentList) {
         return assignmentList.stream()
                 .map(Assignments::nodes)
@@ -1304,7 +1319,7 @@ public class TableManager implements IgniteTablesInternal, IgniteComponent {
     }
 
     private boolean isLocalNodeMatchAssignment(Assignment assignment) {
-        return assignment.consistentId().equals(localConsistentID());
+        return assignment.consistentId().equals(localConsistentId());
     }
 
     private CompletableFuture<Void> createStorages(long causalityToken, CatalogTableDescriptor tableDescriptor,
@@ -1849,7 +1864,7 @@ public class TableManager implements IgniteTablesInternal, IgniteComponent {
             boolean isRecovery
     ) {
         ClusterNode localMember = localNode();
-        RaftNodeId raftNodeId = new RaftNodeId(replicaGrpId, new Peer(localConsistentID()));
+        RaftNodeId raftNodeId = new RaftNodeId(replicaGrpId, new Peer(localConsistentId()));
 
         boolean pendingAssignmentsAreForced = pendingAssignments.force();
         Set<Assignment> pendingAssignmentsNodes = pendingAssignments.nodes();
@@ -1865,10 +1880,11 @@ public class TableManager implements IgniteTablesInternal, IgniteComponent {
 
         int zoneId = getTableDescriptor(tableId, catalogService.latestCatalogVersion()).zoneId();
 
-        // This is a set of assignmentsList for nodes that are not the part of stable assignmentsList, i.e. unstable part of the distribution.
-        // For regular pending assignmentsList we use (old) stable set, so that none of new nodes would be able to propose itself as a leader.
-        // For forced assignmentsList, we should do the same thing, but only for the subset of stable set that is alive right now. Dead nodes
-        // are excluded. It is calculated precisely as an intersection between forced assignmentsList and (old) stable assignmentsList.
+        // This is a set of assignmentsList for nodes that are not the part of stable assignmentsList, i.e. unstable part of the
+        // distribution. For regular pending assignmentsList we use (old) stable set, so that none of new nodes would be able to propose
+        // itself as a leader. For forced assignmentsList, we should do the same thing, but only for the subset of stable set that is alive
+        // right now. Dead nodes are excluded. It is calculated precisely as an intersection between forced assignmentsList and (old) stable
+        // assignmentsList.
         Assignments nonStableNodeAssignments = pendingAssignmentsAreForced
                 ? Assignments.forced(intersect(stableAssignments, pendingAssignmentsNodes))
                 : Assignments.of(stableAssignments);
@@ -2425,7 +2441,7 @@ public class TableManager implements IgniteTablesInternal, IgniteComponent {
         return topologyService.localMember();
     }
 
-    private String localConsistentID() {
+    private String localConsistentId() {
         return localNode().name();
     }
 

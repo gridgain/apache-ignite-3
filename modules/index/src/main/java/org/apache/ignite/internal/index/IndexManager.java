@@ -244,6 +244,11 @@ public class IndexManager implements IgniteComponent {
     ) {
         int tableId = index.tableId();
 
+        boolean isNodeAssignedForIndex = tableManager.isLocalNodeAssignedForTable(table, causalityToken);
+        if (!isNodeAssignedForIndex) {
+            return nullCompletedFuture();
+        }
+
         // TODO: IGNITE-19712 Listen to assignment changes and start new index storages.
         CompletableFuture<PartitionSet> tablePartitionFuture = tableManager.localPartitionSetAsync(causalityToken, tableId);
 
