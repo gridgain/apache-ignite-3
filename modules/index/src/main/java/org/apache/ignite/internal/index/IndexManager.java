@@ -247,7 +247,10 @@ public class IndexManager implements IgniteComponent {
         return tableManager
                 .createOrGetLocallyAssignmentsAsync(tableDescriptor, zoneDescriptor, catalogVersion, causalityToken)
                 .thenApply(tableManager::isLocalNodeInAssignmentList)
-                .thenCompose(isNodeAssignedForIndex -> isNodeAssignedForIndex
+                .exceptionally(e -> {
+                    LOG.error("ASSIGNMENTS in IndexManager", e);
+                    return false;
+                }).thenCompose(isNodeAssignedForIndex -> isNodeAssignedForIndex
                         ? startIndexAsync(tableDescriptor, indexDescriptor, causalityToken)
                         : nullCompletedFuture());
     }

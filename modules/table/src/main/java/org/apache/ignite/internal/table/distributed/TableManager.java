@@ -1267,7 +1267,8 @@ public class TableManager implements IgniteTablesInternal, IgniteComponent {
 
         LOG.trace("Creating local table: name={}, id={}, token={}", tableDescriptor.name(), tableDescriptor.id(), causalityToken);
 
-        return assignmentsFuture.thenCompose(assignmentList -> createStorages(
+        return assignmentsFuture
+                .thenCompose(assignmentList -> createStorages(
                         causalityToken,
                         tableDescriptor,
                         zoneDescriptor,
@@ -1275,7 +1276,11 @@ public class TableManager implements IgniteTablesInternal, IgniteComponent {
                         onNodeRecovery,
                         isLocalNodeInAssignmentList(assignmentList),
                         tableName,
-                        tableId));
+                        tableId))
+                .exceptionally(e -> {
+                    LOG.error("ASSIGNMENTS in TableManager", e);
+                    return null;
+                });
     }
 
     /**
@@ -1293,15 +1298,22 @@ public class TableManager implements IgniteTablesInternal, IgniteComponent {
         int partitionsCount = zoneDescriptor.partitions();
         CompletableFuture<List<Assignments>> assignmentsFuture;
         if (partitionAssignmentsGetLocally(metaStorageMgr, tableId, 0, causalityToken) != null) {
-            assignmentsFuture = completedFuture(tableAssignmentsGetLocally(metaStorageMgr, tableId, partitionsCount, causalityToken));
+            var gottenAssignments = tableAssignmentsGetLocally(metaStorageMgr, tableId, partitionsCount, causalityToken);
+            assert gottenAssignments != null : "Gotten Assignments NPE";
+            assignmentsFuture = completedFuture(gottenAssignments);
             assignmentsFuture.whenComplete((a, e) -> LOG.info("!!Locally: {}, {}", a, e));
         } else {
             assignmentsFuture = distributionZoneManager.dataNodes(causalityToken, catalogVersion, zoneDescriptor.id())
-                    .thenApply(dataNodes -> AffinityUtils
-                            .calculateAssignments(dataNodes, partitionsCount, zoneDescriptor.replicas())
-                            .stream()
-                            .map(Assignments::of)
-                            .collect(toList()));
+                    .thenApply(dataNodes -> {
+                        var calculatedAssignentsListSet = AffinityUtils.calculateAssignments(dataNodes, partitionsCount, zoneDescriptor.replicas());
+                        assert calculatedAssignentsListSet != null : "Calculated Assignments NPE";
+                        var calculatedAssignentsList = calculatedAssignentsListSet
+                                .stream()
+                                .map(Assignments::of)
+                                .collect(toList());
+                        return calculatedAssignentsList;
+                    });
+
             assignmentsFuture.thenAccept(assignmentsList -> LOG.info(IgniteStringFormatter.format(
                     "Assignments calculated from data nodes [table={}, tableId={}, assignmentsList={}, revision={}]",
                     tableDescriptor.name(),

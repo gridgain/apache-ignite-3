@@ -49,7 +49,6 @@ import org.apache.ignite.internal.table.TableViewInternal;
 import org.apache.ignite.internal.table.distributed.TableManager;
 import org.apache.ignite.internal.testframework.IgniteTestUtils;
 import org.intellij.lang.annotations.Language;
-import org.junit.jupiter.api.RepeatedTest;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -207,9 +206,8 @@ public class ItDistributionZonesFiltersTest extends ClusterPerTestIntegrationTes
      * The second node should be presented there for replication mechanism checking with replica factor > 1
      * @throws Exception If failed.
      */
-    //@Test
-    //@Timeout(value = 300, unit = MILLISECONDS)
-    @RepeatedTest(10)
+    @Test
+    //@Timeout(value = 3000, unit = MILLISECONDS)
     void testDataNodesByProfilePropagatedToStable() throws Exception {
         final String customProfileName = CUSTOM_PROFILE_NAME;
         @Language("JSON") String matchingProfile = customStorageProfileInBraces(customProfileName);
