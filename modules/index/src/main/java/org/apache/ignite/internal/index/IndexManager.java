@@ -248,8 +248,8 @@ public class IndexManager implements IgniteComponent {
                 .createOrGetLocallyAssignmentsAsync(tableDescriptor, zoneDescriptor, catalogVersion, causalityToken)
                 .thenApply(tableManager::isLocalNodeInAssignmentList)
                 .thenCompose(isNodeAssignedForIndex -> isNodeAssignedForIndex
-                    ? startIndexAsync(tableDescriptor, indexDescriptor, causalityToken)
-                    : nullCompletedFuture());
+                        ? startIndexAsync(tableDescriptor, indexDescriptor, causalityToken)
+                        : nullCompletedFuture());
     }
 
     private CompletableFuture<Void> startIndexAsync(

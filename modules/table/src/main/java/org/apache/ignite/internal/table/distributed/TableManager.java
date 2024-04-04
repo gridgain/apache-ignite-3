@@ -1235,15 +1235,11 @@ public class TableManager implements IgniteTablesInternal, IgniteComponent {
                     catalogVersion,
                     causalityToken);
 
-            CompletableFuture<List<Assignments>> assignmentsFutureAfterInvoke = writeTableAssignmentsToMetastore(
-                    tableDescriptor.id(),
-                    assignmentsFuture);
-
             return createTableLocally(
                     causalityToken,
                     tableDescriptor,
                     zoneDescriptor,
-                    assignmentsFutureAfterInvoke,
+                    assignmentsFuture,
                     onNodeRecovery
             );
         });
@@ -1298,6 +1294,7 @@ public class TableManager implements IgniteTablesInternal, IgniteComponent {
         CompletableFuture<List<Assignments>> assignmentsFuture;
         if (partitionAssignmentsGetLocally(metaStorageMgr, tableId, 0, causalityToken) != null) {
             assignmentsFuture = completedFuture(tableAssignmentsGetLocally(metaStorageMgr, tableId, partitionsCount, causalityToken));
+            assignmentsFuture.whenComplete((a, e) -> LOG.info("!!Locally: {}, {}", a, e));
         } else {
             assignmentsFuture = distributionZoneManager.dataNodes(causalityToken, catalogVersion, zoneDescriptor.id())
                     .thenApply(dataNodes -> AffinityUtils
@@ -1311,8 +1308,12 @@ public class TableManager implements IgniteTablesInternal, IgniteComponent {
                     tableId,
                     assignmentListToString(assignmentsList),
                     causalityToken)));
+            assignmentsFuture.whenComplete((a, e) -> LOG.info("!!Created: {}, {}", a, e));
         }
-        return assignmentsFuture;
+
+        return writeTableAssignmentsToMetastore(
+                tableDescriptor.id(),
+                assignmentsFuture);
     }
 
     public boolean isLocalNodeInAssignmentList(List<Assignments> assignmentList) {
@@ -1380,7 +1381,9 @@ public class TableManager implements IgniteTablesInternal, IgniteComponent {
                 return failedFuture(e);
             }
 
-            return schemaManager.schemaRegistry(causalityToken, tableId).thenAccept(table::schemaView);
+            return schemaManager
+                    .schemaRegistry(causalityToken, tableId)
+                    .thenAccept(table::schemaView);
         }));
 
         // NB: all vv.update() calls must be made from the synchronous part of the method (not in thenCompose()/etc!).

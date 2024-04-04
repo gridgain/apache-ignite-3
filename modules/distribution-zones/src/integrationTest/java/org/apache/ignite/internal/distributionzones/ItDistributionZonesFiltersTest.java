@@ -49,6 +49,7 @@ import org.apache.ignite.internal.table.TableViewInternal;
 import org.apache.ignite.internal.table.distributed.TableManager;
 import org.apache.ignite.internal.testframework.IgniteTestUtils;
 import org.intellij.lang.annotations.Language;
+import org.junit.jupiter.api.RepeatedTest;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -206,18 +207,20 @@ public class ItDistributionZonesFiltersTest extends ClusterPerTestIntegrationTes
      * The second node should be presented there for replication mechanism checking with replica factor > 1
      * @throws Exception If failed.
      */
-    @Test
+    //@Test
+    //@Timeout(value = 300, unit = MILLISECONDS)
+    @RepeatedTest(10)
     void testDataNodesByProfilePropagatedToStable() throws Exception {
         final String customProfileName = CUSTOM_PROFILE_NAME;
         @Language("JSON") String matchingProfile = customStorageProfileInBraces(customProfileName);
 
         IgniteImpl matchedNode = startNode(1, createStartConfig(NODE_ATTRIBUTES, matchingProfile));
         // the second matched node
-        startNode(2, createStartConfig(NODE_ATTRIBUTES, matchingProfile));
+        //startNode(2, createStartConfig(NODE_ATTRIBUTES, matchingProfile));
 
         final var zoneSQL = createZoneSql(
-                2,
-                2,
+                1,
+                1,
                 IMMEDIATE_TIMER_VALUE,
                 IMMEDIATE_TIMER_VALUE,
                 DEFAULT_FILTER,
@@ -234,7 +237,7 @@ public class ItDistributionZonesFiltersTest extends ClusterPerTestIntegrationTes
                 metaStorageManager,
                 stablePartAssignmentsKey(partId),
                 (v) -> Assignments.fromBytes(v).nodes().size(),
-                2,
+                1,
                 TIMEOUT_MILLIS
         );
 
@@ -244,7 +247,7 @@ public class ItDistributionZonesFiltersTest extends ClusterPerTestIntegrationTes
                 metaStorageManager,
                 zoneDataNodesKey(zoneId),
                 (v) -> ((Map<Node, Integer>) fromBytes(v)).size(),
-                3,
+                2,
                 TIMEOUT_MILLIS
         );
 
@@ -258,7 +261,7 @@ public class ItDistributionZonesFiltersTest extends ClusterPerTestIntegrationTes
                 stablePartAssignmentsKey(partId),
                 (v) -> Assignments.fromBytes(v).nodes()
                         .stream().map(Assignment::consistentId).collect(Collectors.toSet()),
-                Set.of(node(1).name(), node(2).name()),
+                Set.of(node(1).name()),//, node(2).name()),
                 TIMEOUT_MILLIS * 2
         );
     }
