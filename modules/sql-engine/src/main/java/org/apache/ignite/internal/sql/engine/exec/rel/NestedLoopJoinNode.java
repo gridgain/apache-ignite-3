@@ -29,6 +29,7 @@ import java.util.function.BiPredicate;
 import org.apache.calcite.plan.RelOptUtil;
 import org.apache.calcite.rel.core.JoinRelType;
 import org.apache.calcite.rel.type.RelDataType;
+import org.apache.ignite.internal.schema.BinaryTuple;
 import org.apache.ignite.internal.sql.engine.exec.ExecutionContext;
 import org.apache.ignite.internal.sql.engine.exec.RowHandler;
 import org.apache.ignite.internal.sql.engine.exec.row.RowSchema;
@@ -381,6 +382,13 @@ public abstract class NestedLoopJoinNode<RowT> extends AbstractNode<RowT> {
 
                         while (requested > 0 && rightIdx < rightMaterialized.size()) {
                             checkState();
+
+                            for (RowT right : rightMaterialized) {
+                                BinaryTuple btl = handler.toBinaryTuple(left);
+                                BinaryTuple btr = handler.toBinaryTuple(right);
+                                int comp = btl.byteBuffer().compareTo(btr.byteBuffer());
+                                System.err.println(comp);
+                            }
 
                             if (!cond.test(left, rightMaterialized.get(rightIdx++))) {
                                 continue;
