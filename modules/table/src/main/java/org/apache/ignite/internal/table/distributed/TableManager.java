@@ -193,7 +193,6 @@ import org.apache.ignite.internal.table.distributed.storage.TableRaftServiceImpl
 import org.apache.ignite.internal.table.distributed.wrappers.ExecutorInclinedPlacementDriver;
 import org.apache.ignite.internal.thread.IgniteThreadFactory;
 import org.apache.ignite.internal.thread.NamedThreadFactory;
-import org.apache.ignite.internal.tostring.S;
 import org.apache.ignite.internal.tx.HybridTimestampTracker;
 import org.apache.ignite.internal.tx.LockManager;
 import org.apache.ignite.internal.tx.TxManager;
@@ -711,7 +710,7 @@ public class TableManager implements IgniteTablesInternal, IgniteComponent {
                                     "Assignments calculated from data nodes are successfully written to meta storage "
                                             + "[tableId={}, assignmentsList={}]",
                                     tableId,
-                                    assignmentListToString(newAssignments)));
+                                    Assignments.assignmentListToString(newAssignments)));
 
                             return completedFuture(newAssignments);
                         } else {
@@ -737,16 +736,15 @@ public class TableManager implements IgniteTablesInternal, IgniteComponent {
                                 }
 
                                 LOG.info(IgniteStringFormatter.format("Assignments picked up from meta storage [tableId={}, "
-                                        + "assignmentsList={}]", tableId, assignmentListToString(realAssignments)));
+                                        + "assignmentsList={}]", tableId, Assignments.assignmentListToString(realAssignments)));
 
                                 return realAssignments;
                             });
                         }
                     })
                     .exceptionally(e -> {
-                        LOG.error("Couldn't write assignmentsList to metastore", e);
-
-                        return null;
+                        LOG.error("Couldn't write assignments to metastore", e);
+                        throw new AssignmentsToMetastoreWritingException(tableId, newAssignments, e);
                     });
         });
     }
@@ -1318,7 +1316,7 @@ public class TableManager implements IgniteTablesInternal, IgniteComponent {
                     "Assignments calculated from data nodes [table={}, tableId={}, assignmentsList={}, revision={}]",
                     tableDescriptor.name(),
                     tableId,
-                    assignmentListToString(assignmentsList),
+                    Assignments.assignmentListToString(assignmentsList),
                     causalityToken)));
             assignmentsFuture.whenComplete((a, e) -> LOG.info("!!Created: {}, {}", a, e));
         }
@@ -1339,9 +1337,15 @@ public class TableManager implements IgniteTablesInternal, IgniteComponent {
         return assignment.consistentId().equals(localConsistentId());
     }
 
-    private CompletableFuture<Void> createStorages(long causalityToken, CatalogTableDescriptor tableDescriptor,
-            CatalogZoneDescriptor zoneDescriptor, CompletableFuture<List<Assignments>> assignmentsFuture, boolean onNodeRecovery,
-            boolean isNodeInAssignment, String tableName, int tableId) {
+    private CompletableFuture<Void> createStorages(
+            long causalityToken,
+            CatalogTableDescriptor tableDescriptor,
+            CatalogZoneDescriptor zoneDescriptor,
+            CompletableFuture<List<Assignments>> assignmentsFuture,
+            boolean onNodeRecovery,
+            boolean isNodeInAssignment,
+            String tableName,
+            int tableId) {
 
         MvTableStorage tableStorage = null;
         TxStateTableStorage txStateStorage = null;
@@ -1449,16 +1453,6 @@ public class TableManager implements IgniteTablesInternal, IgniteComponent {
 
         // TODO: https://issues.apache.org/jira/browse/IGNITE-19913 Possible performance degradation.
         return createPartsFut.thenAccept(ignore -> startedTables.put(tableId, table));
-    }
-
-    /**
-     * Creates a string representation of the given assignmentsList list to use it for logging.
-     *
-     * @param assignments List of assignmentsList.
-     * @return String representation of the given assignmentsList list to use it for logging.
-     */
-    private static String assignmentListToString(List<Assignments> assignments) {
-        return S.toString(assignments, (sb, e, i) -> sb.app(i).app('=').app(e.nodes()));
     }
 
     /**
