@@ -5,8 +5,13 @@ import static org.apache.ignite.internal.util.CollectionUtils.nullOrEmpty;
 
 import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Collections;
 import java.util.Deque;
+import java.util.HashMap;
+import java.util.Iterator;
 import java.util.List;
+import java.util.Map;
 import java.util.function.BiPredicate;
 import org.apache.calcite.plan.RelOptUtil;
 import org.apache.calcite.rel.core.JoinRelType;
@@ -20,13 +25,14 @@ public class HashJoinNode<RowT> extends AbstractNode<RowT> {
     private final BiPredicate<RowT, RowT> cond;
     private final RowHandler<RowT> handler;
     private int requested;
-    private final Deque<RowT> leftInBuf = new ArrayDeque<>(inBufSize); // deque ??
-    private final List<RowT> rightInBuf = new ArrayList<>(inBufSize);
-    private boolean leftReady;
+    private final List<RowT> leftInBuf = new ArrayList<>(inBufSize);
+    private List<RowT> rightInBuf = new ArrayList<>(inBufSize);
+    //private boolean leftReady;
     private int waitingLeft;
     private int waitingRight;
     private static final int NOT_WAITING = -1;
     RelDataType rightRowType; /// only for left fix it
+    Map<RowT, Collection<RowT>> joined = new HashMap<>();
 
     public HashJoinNode(ExecutionContext<RowT> ctx, RelDataType outputRowType,
             RelDataType leftRowType, RelDataType rightRowType, JoinRelType joinType, BiPredicate<RowT, RowT> cond) {
@@ -100,11 +106,9 @@ public class HashJoinNode<RowT> extends AbstractNode<RowT> {
         waitingLeft--;
 
         if (waitingLeft == 0) {
-            if (!leftReady) {
-                leftSource().request(inBufSize);
+            leftSource().request(inBufSize);
 
-                waitingLeft = inBufSize;
-            }
+            waitingLeft = inBufSize;
         }
     }
 
@@ -119,8 +123,8 @@ public class HashJoinNode<RowT> extends AbstractNode<RowT> {
 
         waitingRight--;
 
-        if (leftReady && waitingRight == 0) {
-            //context().execute(this::doJoin, this::onError);
+        if (leftReady() && waitingRight == 0) {
+            context().execute(this::doJoin, this::onError);
         }
     }
 
@@ -130,6 +134,10 @@ public class HashJoinNode<RowT> extends AbstractNode<RowT> {
         join();
     }
 
+    private boolean leftReady() {
+        return waitingLeft == NOT_WAITING;
+    }
+
     private void endLeft() throws Exception {
         assert downstream() != null;
 
@@ -137,7 +145,7 @@ public class HashJoinNode<RowT> extends AbstractNode<RowT> {
 
         System.err.println("!!! endLeft");
 
-        leftReady = true;
+        waitingLeft = NOT_WAITING;
 
         context().execute(this::doJoin, this::onError);
     }
@@ -149,8 +157,8 @@ public class HashJoinNode<RowT> extends AbstractNode<RowT> {
 
         waitingRight = NOT_WAITING;
 
-        if (leftReady) {
-            //context().execute(this::doJoin, this::onError);
+        if (leftReady()) {
+            context().execute(this::doJoin, this::onError);
         }
     }
 
@@ -185,40 +193,61 @@ public class HashJoinNode<RowT> extends AbstractNode<RowT> {
     }
 
     protected void join() throws Exception {
-        System.err.println("start join");
-        for (RowT left : leftInBuf) {
+        System.err.println("start join " + Thread.currentThread().getName());
 
-            boolean matched = false;
+        boolean leftProcessed = false;
+
+        System.err.println("!!!!: " + leftInBuf);
+
+        for (RowT left : leftInBuf) {
+            leftProcessed = true;
 
             for (RowT right : rightInBuf) {
-                if (!cond.test(left, right)) {
-                    continue;
+                if (cond.test(left, right)) {
+                    Collection<RowT> coll = joined.computeIfAbsent(left, k -> new ArrayList<>());
+                    coll.add(right);
                 }
-
-                matched = true;
-
-                RowT row = handler.concat(left, right);
-                downstream().push(row);
-
-                requested--;
             }
+        }
 
-            if (!matched) {
-                requested--;
+        if (leftProcessed) {
+            rightInBuf = new ArrayList<>();
+        }
 
-                RowSchema rightRowSchema = rowSchemaFromRelTypes(RelOptUtil.getFieldTypeList(rightRowType));
-                RowHandler.RowFactory<RowT> rightRowFactory = context().rowHandler().factory(rightRowSchema);
+        if (waitingRight != NOT_WAITING && waitingRight == 0) {
+            rightSource().request(inBufSize);
+            waitingRight = inBufSize;
+        }
 
-                downstream().push(handler.concat(left, rightRowFactory.create()));
-            }
+        if (waitingRight == NOT_WAITING) {
+            RowSchema rightRowSchema = rowSchemaFromRelTypes(RelOptUtil.getFieldTypeList(rightRowType));
+            RowHandler.RowFactory<RowT> rightRowFactory = context().rowHandler().factory(rightRowSchema);
+            RowT emptyRow = rightRowFactory.create();
 
-            if (requested == 0) {
-                break;
-            }
+            for (RowT left : leftInBuf) {
+                Collection<RowT> rightJoined = joined.get(left);
 
-            if (waitingRight != NOT_WAITING) {
-                rightSource().request(inBufSize);
-                waitingRight = inBufSize;
+                if (rightJoined == null) {
+                    downstream().push(handler.concat(left, emptyRow));
+
+                    requested--;
+
+                    if (requested == 0) {
+                        break;
+                    }
+                } else {
+                    for (RowT row : rightJoined) {
+                        RowT concated = handler.concat(left, row);
+
+                        downstream().push(concated);
+
+                        requested--;
+
+                        if (requested == 0) {
+                            break;
+                        }
+                    }
+                }
             }
         }
 

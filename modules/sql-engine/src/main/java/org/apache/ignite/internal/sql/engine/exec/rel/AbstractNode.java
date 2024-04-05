@@ -36,7 +36,7 @@ public abstract class AbstractNode<RowT> implements Node<RowT> {
 
     protected static final int IO_BATCH_CNT = Commons.IO_BATCH_COUNT;
 
-    protected final int inBufSize = Commons.IN_BUFFER_SIZE;
+    protected final int inBufSize = 2;//Commons.IN_BUFFER_SIZE;
 
     private final ExecutionContext<RowT> ctx;
 
