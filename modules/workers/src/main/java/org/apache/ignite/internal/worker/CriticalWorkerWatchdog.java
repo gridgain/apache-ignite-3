@@ -133,7 +133,7 @@ public class CriticalWorkerWatchdog implements CriticalWorkerRegistry, IgniteCom
                         maxAllowedLag,
                         toString(threadInfo));
 
-                LOG.error(message);
+                //LOG.error(message);
 
                 failureProcessor.process(
                         new FailureContext(

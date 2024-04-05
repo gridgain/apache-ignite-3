@@ -256,7 +256,7 @@ public class ItJoinTest extends BaseSqlIntegrationTest {
                 + "select t1.c1 c11, t1.c2 c12, t1.c3 c13, t2.c1 c21, t2.c2 c22 "
                 + "  from t1 "
                 + "  left join t2 "
-                + "    on t1.c1 +1 = t2.c1 "
+                + "    on t1.c1 = t2.c1"
                 + "   and t1.c2 = t2.c2 "
                 + " order by t1.c1, t1.c2, t1.c3",
                 joinType
