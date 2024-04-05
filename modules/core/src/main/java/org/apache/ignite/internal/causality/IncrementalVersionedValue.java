@@ -189,8 +189,16 @@ public class IncrementalVersionedValue<T> implements VersionedValue<T> {
      * @return Future for updated value.
      */
     public CompletableFuture<T> update(long causalityToken, BiFunction<T, Throwable, CompletableFuture<T>> updater) {
+        System.out.println(String.format("KKK object=%s token=%s", this, causalityToken));
         synchronized (updateMutex) {
             if (expectedToken == -1) {
+                if (causalityToken <= lastCompleteToken) {
+
+                    System.out.println(String.format("KKK Causality token is outdated, previous token %d, got %d. object %s",
+                            lastCompleteToken, causalityToken, this));
+                    new RuntimeException().printStackTrace();
+                    System.exit(-1);
+                }
                 assert causalityToken > lastCompleteToken
                         : String.format("Causality token is outdated, previous token %d, got %d", lastCompleteToken, causalityToken);
 
@@ -244,6 +252,9 @@ public class IncrementalVersionedValue<T> implements VersionedValue<T> {
             assert expectedToken == -1 || expectedToken == causalityToken
                     : String.format("Causality token mismatch, expected %d, got %d", expectedToken, causalityToken);
 
+            System.out.println(String.format("KKK Update object %s to lastCompleteToken %d",
+                    this, causalityToken));
+            new RuntimeException().printStackTrace();
             lastCompleteToken = causalityToken;
             expectedToken = -1;
 
