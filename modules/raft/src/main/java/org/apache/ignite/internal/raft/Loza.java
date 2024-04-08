@@ -44,6 +44,8 @@ import org.apache.ignite.internal.raft.server.RaftServer;
 import org.apache.ignite.internal.raft.server.impl.JraftServerImpl;
 import org.apache.ignite.internal.raft.service.RaftGroupListener;
 import org.apache.ignite.internal.raft.service.RaftGroupService;
+import org.apache.ignite.internal.raft.storage.LogStorageFactory;
+import org.apache.ignite.internal.raft.storage.impl.DefaultLogStorageFactory;
 import org.apache.ignite.internal.raft.util.ThreadLocalOptimizedMarshaller;
 import org.apache.ignite.internal.replicator.ReplicationGroupId;
 import org.apache.ignite.internal.thread.NamedThreadFactory;
@@ -110,7 +112,8 @@ public class Loza implements RaftManager {
             RaftConfiguration raftConfiguration,
             Path dataPath,
             HybridClock clock,
-            RaftGroupEventsClientListener raftGroupEventsClientListener
+            RaftGroupEventsClientListener raftGroupEventsClientListener,
+            LogStorageFactory defaultLogStorageFactory
     ) {
         this.clusterNetSvc = clusterNetSvc;
         this.raftConfiguration = raftConfiguration;
@@ -122,7 +125,7 @@ public class Loza implements RaftManager {
 
         this.opts = options;
 
-        this.raftServer = new JraftServerImpl(clusterNetSvc, dataPath, options, raftGroupEventsClientListener);
+        this.raftServer = new JraftServerImpl(clusterNetSvc, dataPath, options, raftGroupEventsClientListener, defaultLogStorageFactory);
 
         this.executor = new ScheduledThreadPoolExecutor(
                 CLIENT_POOL_SIZE,
@@ -150,7 +153,8 @@ public class Loza implements RaftManager {
                 raftConfiguration,
                 dataPath,
                 clock,
-                new RaftGroupEventsClientListener()
+                new RaftGroupEventsClientListener(),
+                new DefaultLogStorageFactory(clusterNetSvc.nodeName(), dataPath.resolve("log"))
         );
     }
 
