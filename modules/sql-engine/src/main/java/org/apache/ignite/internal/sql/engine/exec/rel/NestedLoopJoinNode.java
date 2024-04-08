@@ -362,6 +362,26 @@ public abstract class NestedLoopJoinNode<RowT> extends AbstractNode<RowT> {
         }
     }
 
+    private static void buildJoinPositions(RexNode cond, Map<Integer, Integer> joinCondPos, RelDataType leftRowType) {
+        RexShuttle rexShuttle = new RexShuttle() {
+            @Override public RexNode visitInputRef(RexInputRef inputRef) {
+                return inputRef;
+            }
+
+            @Override public RexNode visitCall(RexCall call) {
+                if (call.getOperator().getKind() == SqlKind.EQUALS) {
+                    List<RexNode> node = call.getOperands();
+                    RexInputRef n1 = (RexInputRef) node.get(0);
+                    RexInputRef n2 = (RexInputRef) node.get(1);
+                    joinCondPos.put(n1.getIndex(), n2.getIndex() - leftRowType.getFieldCount());
+                }
+                return super.visitCall(call);
+            }
+        };
+
+        rexShuttle.apply(cond);
+    }
+
     private static class LeftJoin<RowT> extends NestedLoopJoinNode<RowT> {
         /** Right row factory. */
         private final RowHandler.RowFactory<RowT> rightRowFactory;
@@ -372,8 +392,6 @@ public abstract class NestedLoopJoinNode<RowT> extends AbstractNode<RowT> {
         private RowT left;
 
         private int rightIdx;
-
-        //Map<Integer, Integer> joinCondPos = new LinkedHashMap<>();
 
         /**
          * Constructor.
@@ -394,23 +412,7 @@ public abstract class NestedLoopJoinNode<RowT> extends AbstractNode<RowT> {
 
             this.rightRowFactory = rightRowFactory;
 
-            RexShuttle rexShuttle = new RexShuttle() {
-                @Override public RexNode visitInputRef(RexInputRef inputRef) {
-                    return inputRef;
-                }
-
-                @Override public RexNode visitCall(RexCall call) {
-                    if (call.getOperator().getKind() == SqlKind.EQUALS) {
-                        List<RexNode> node = call.getOperands();
-                        RexInputRef n1 = (RexInputRef) node.get(0);
-                        RexInputRef n2 = (RexInputRef) node.get(1);
-                        joinCondPos.put(n1.getIndex(), n2.getIndex() - leftRowType.getFieldCount());
-                    }
-                    return super.visitCall(call);
-                }
-            };
-
-            rexShuttle.apply(cond0);
+            buildJoinPositions(cond0, joinCondPos, leftRowType);
         }
 
         @Override
