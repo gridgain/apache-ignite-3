@@ -43,4 +43,8 @@ public interface LogStorageFactory extends ManuallyCloseable, LogSyncer {
      */
     @Override
     void close();
+
+    default void wipe() {
+        // Intentionally left blank.
+    }
 }

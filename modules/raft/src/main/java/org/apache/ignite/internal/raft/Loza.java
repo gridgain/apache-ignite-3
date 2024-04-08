@@ -18,6 +18,7 @@
 package org.apache.ignite.internal.raft;
 
 import static java.util.Objects.requireNonNullElse;
+import static org.apache.ignite.internal.util.CompletableFutures.nullCompletedFuture;
 
 import java.nio.file.Path;
 import java.util.Set;
@@ -27,6 +28,7 @@ import java.util.concurrent.ScheduledThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.BiConsumer;
+import java.util.function.Supplier;
 import org.apache.ignite.internal.components.LogSyncer;
 import org.apache.ignite.internal.hlc.HybridClock;
 import org.apache.ignite.internal.lang.IgniteInternalException;
@@ -83,21 +85,26 @@ public class Loza implements RaftManager {
     private final ClusterService clusterNetSvc;
 
     /** Raft server. */
-    private final JraftServerImpl raftServer;
+    private final Supplier<JraftServerImpl> raftServerFactory;
+
+    /** Raft server. */
+    private JraftServerImpl raftServer;
 
     /** Executor for raft group services. */
-    private final ScheduledExecutorService executor;
+    private ScheduledExecutorService executor;
 
     /** Busy lock to stop synchronously. */
     private final IgniteSpinBusyLock busyLock = new IgniteSpinBusyLock();
 
     /** Prevents double stopping of the component. */
-    private final AtomicBoolean stopGuard = new AtomicBoolean();
+    private final AtomicBoolean stopGuard = new AtomicBoolean(true);
 
     /** Raft configuration. */
     private final RaftConfiguration raftConfiguration;
 
     private final NodeOptions opts;
+
+    private final LogStorageFactory defaultLogStorageFactory;
 
     /**
      * The constructor.
@@ -125,12 +132,15 @@ public class Loza implements RaftManager {
 
         this.opts = options;
 
-        this.raftServer = new JraftServerImpl(clusterNetSvc, dataPath, options, raftGroupEventsClientListener, defaultLogStorageFactory);
+        this.raftServerFactory = () -> new JraftServerImpl(clusterNetSvc, dataPath, options, raftGroupEventsClientListener, defaultLogStorageFactory);
+        this.raftServer = this.raftServerFactory.get();
 
         this.executor = new ScheduledThreadPoolExecutor(
                 CLIENT_POOL_SIZE,
                 NamedThreadFactory.create(clusterNetSvc.nodeName(), CLIENT_POOL_NAME, LOG)
         );
+
+        this.defaultLogStorageFactory = defaultLogStorageFactory;
     }
 
     /**
@@ -181,6 +191,10 @@ public class Loza implements RaftManager {
     /** {@inheritDoc} */
     @Override
     public CompletableFuture<Void> start() {
+        if (!stopGuard.compareAndSet(true, false)) {
+            return nullCompletedFuture();
+        }
+
         RaftView raftConfig = raftConfiguration.value();
 
         opts.setRpcInstallSnapshotTimeout(raftConfig.rpcInstallSnapshotTimeout());
@@ -189,6 +203,8 @@ public class Loza implements RaftManager {
         opts.setLogYieldStrategy(raftConfig.logYieldStrategy());
 
         opts.getRaftOptions().setSync(raftConfig.fsync());
+
+        defaultLogStorageFactory.start();
 
         return raftServer.start();
     }
@@ -203,8 +219,17 @@ public class Loza implements RaftManager {
         busyLock.block();
 
         IgniteUtils.shutdownAndAwaitTermination(executor, 10, TimeUnit.SECONDS);
+        executor = new ScheduledThreadPoolExecutor(
+                CLIENT_POOL_SIZE,
+                NamedThreadFactory.create(clusterNetSvc.nodeName(), CLIENT_POOL_NAME, LOG)
+        );
 
         raftServer.stop();
+
+        // TODO: Move this to the start.
+        this.raftServer = this.raftServerFactory.get();
+
+        busyLock.unblock();
     }
 
     @Override
@@ -389,6 +414,12 @@ public class Loza implements RaftManager {
         }
     }
 
+    @Override
+    public void wipeLogStorage() {
+        // TODO: I would prefer to have this done on the cluster manager directly but it caused many classes to move to the API.
+        this.defaultLogStorageFactory.wipe();
+    }
+
     private <T extends RaftGroupService> CompletableFuture<T> startRaftGroupNodeInternal(
             RaftNodeId nodeId,
             PeersAndLearners configuration,
@@ -397,6 +428,7 @@ public class Loza implements RaftManager {
             RaftGroupOptions groupOptions,
             @Nullable RaftServiceFactory<T> raftServiceFactory
     ) {
+        // TODO: Make sure the log storage is started.
         startRaftGroupNodeInternalWithoutService(nodeId, configuration, lsnr, raftGrpEvtsLsnr, groupOptions);
 
         Marshaller cmdMarshaller = requireNonNullElse(groupOptions.commandsMarshaller(), opts.getCommandsMarshaller());

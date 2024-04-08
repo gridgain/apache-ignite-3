@@ -431,7 +431,12 @@ public class ClusterManagementGroupManager implements IgniteComponent {
 
                 raftManager.stopRaftNodes(CmgGroupId.INSTANCE);
 
+                raftManager.stop();
+                raftManager.wipeLogStorage();
+
                 localStateStorage.clear();
+
+                raftManager.start();
             } catch (Exception e) {
                 throw new IgniteInternalException("Error when cleaning the CMG state", e);
             }

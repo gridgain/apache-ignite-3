@@ -32,6 +32,7 @@ import org.apache.ignite.internal.logger.Loggers;
 import org.apache.ignite.internal.raft.storage.LogStorageFactory;
 import org.apache.ignite.internal.rocksdb.RocksUtils;
 import org.apache.ignite.internal.thread.NamedThreadFactory;
+import org.apache.ignite.internal.util.IgniteUtils;
 import org.apache.ignite.raft.jraft.option.RaftOptions;
 import org.apache.ignite.raft.jraft.storage.LogStorage;
 import org.apache.ignite.raft.jraft.util.ExecutorServiceHelper;
@@ -152,6 +153,18 @@ public class DefaultLogStorageFactory implements LogStorageFactory {
         ExecutorServiceHelper.shutdownAndAwaitTermination(executorService);
 
         RocksUtils.closeAll(confHandle, dataHandle, db, dbOptions);
+    }
+
+    @Override
+    public void wipe() {
+        this.close();
+
+        try {
+            IgniteUtils.deleteIfExistsThrowable(this.path);
+        } catch (IOException e) {
+            // TODO: Should we throw a better exception here?? The file tree was probably left in a wrong state at this point.
+            throw new RuntimeException(e);
+        }
     }
 
     /** {@inheritDoc} */
