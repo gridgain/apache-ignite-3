@@ -17,22 +17,37 @@
 
 package org.apache.ignite.internal.sql.engine.exec.rel;
 
+import static org.apache.ignite.internal.sql.engine.util.RexUtils.replaceInputRefs;
 import static org.apache.ignite.internal.sql.engine.util.TypeUtils.rowSchemaFromRelTypes;
 import static org.apache.ignite.internal.util.CollectionUtils.nullOrEmpty;
 
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.BitSet;
+import java.util.Collections;
 import java.util.Deque;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Map.Entry;
+import java.util.Objects;
 import java.util.function.BiPredicate;
+import java.util.stream.Collectors;
 import org.apache.calcite.plan.RelOptUtil;
 import org.apache.calcite.rel.core.JoinRelType;
 import org.apache.calcite.rel.type.RelDataType;
+import org.apache.calcite.rex.RexCall;
+import org.apache.calcite.rex.RexInputRef;
+import org.apache.calcite.rex.RexNode;
+import org.apache.calcite.rex.RexShuttle;
+import org.apache.calcite.sql.SqlBinaryOperator;
+import org.apache.calcite.sql.SqlKind;
 import org.apache.ignite.internal.schema.BinaryTuple;
 import org.apache.ignite.internal.sql.engine.exec.ExecutionContext;
 import org.apache.ignite.internal.sql.engine.exec.RowHandler;
 import org.apache.ignite.internal.sql.engine.exec.row.RowSchema;
+import org.apache.ignite.internal.sql.engine.util.RexUtils.InputRefReplacer;
 import org.jetbrains.annotations.Nullable;
 
 /**
@@ -58,6 +73,10 @@ public abstract class NestedLoopJoinNode<RowT> extends AbstractNode<RowT> {
     protected final Deque<RowT> leftInBuf = new ArrayDeque<>(inBufSize);
 
     protected boolean inLoop;
+
+    Map<Object, Map> hashMap = new HashMap<>();
+
+    Map<Integer, Integer> joinCondPos = new LinkedHashMap<>();
 
     /**
      * Constructor.
@@ -109,7 +128,7 @@ public abstract class NestedLoopJoinNode<RowT> extends AbstractNode<RowT> {
     @Override
     protected Downstream<RowT> requestDownstream(int idx) {
         if (idx == 0) {
-            return new Downstream<RowT>() {
+            return new Downstream<>() {
                 /** {@inheritDoc} */
                 @Override
                 public void push(RowT row) throws Exception {
@@ -129,7 +148,7 @@ public abstract class NestedLoopJoinNode<RowT> extends AbstractNode<RowT> {
                 }
             };
         } else if (idx == 1) {
-            return new Downstream<RowT>() {
+            return new Downstream<>() {
                 /** {@inheritDoc} */
                 @Override
                 public void push(RowT row) throws Exception {
@@ -176,6 +195,19 @@ public abstract class NestedLoopJoinNode<RowT> extends AbstractNode<RowT> {
 
         rightMaterialized.add(row);
 
+        Map<Object, Map> next = hashMap;
+        int filled = 0;
+        for (Map.Entry <Integer, Integer> entry : joinCondPos.entrySet()) {
+            filled++;
+            Object ent = handler.get(entry.getValue(), row);
+            if (filled == joinCondPos.size()) {
+                Map raw = next.computeIfAbsent(ent, k -> new HashMap<>());
+                raw.put(row, null);
+            } else {
+                next = next.computeIfAbsent(ent, k -> new HashMap<>());
+            }
+        }
+
         if (waitingRight == 0) {
             rightSource().request(waitingRight = inBufSize);
         }
@@ -203,11 +235,11 @@ public abstract class NestedLoopJoinNode<RowT> extends AbstractNode<RowT> {
         join();
     }
 
-    protected Node<RowT> leftSource() {
+    Node<RowT> leftSource() {
         return sources().get(0);
     }
 
-    protected Node<RowT> rightSource() {
+    Node<RowT> rightSource() {
         return sources().get(1);
     }
 
@@ -218,7 +250,8 @@ public abstract class NestedLoopJoinNode<RowT> extends AbstractNode<RowT> {
      * TODO Documentation https://issues.apache.org/jira/browse/IGNITE-15859
      */
     public static <RowT> NestedLoopJoinNode<RowT> create(ExecutionContext<RowT> ctx, RelDataType outputRowType,
-            RelDataType leftRowType, RelDataType rightRowType, JoinRelType joinType, BiPredicate<RowT, RowT> cond) {
+            RelDataType leftRowType, RelDataType rightRowType, JoinRelType joinType, BiPredicate<RowT, RowT> cond, RexNode cond0) {
+
         switch (joinType) {
             case INNER:
                 return new InnerJoin<>(ctx, cond);
@@ -227,7 +260,7 @@ public abstract class NestedLoopJoinNode<RowT> extends AbstractNode<RowT> {
                 RowSchema rightRowSchema = rowSchemaFromRelTypes(RelOptUtil.getFieldTypeList(rightRowType));
                 RowHandler.RowFactory<RowT> rightRowFactory = ctx.rowHandler().factory(rightRowSchema);
 
-                return new LeftJoin<>(ctx, cond, rightRowFactory);
+                return new LeftJoin<>(ctx, cond, rightRowFactory, cond0, leftRowType);
             }
 
             case RIGHT: {
@@ -340,6 +373,8 @@ public abstract class NestedLoopJoinNode<RowT> extends AbstractNode<RowT> {
 
         private int rightIdx;
 
+        //Map<Integer, Integer> joinCondPos = new LinkedHashMap<>();
+
         /**
          * Constructor.
          * TODO Documentation https://issues.apache.org/jira/browse/IGNITE-15859
@@ -351,11 +386,31 @@ public abstract class NestedLoopJoinNode<RowT> extends AbstractNode<RowT> {
         private LeftJoin(
                 ExecutionContext<RowT> ctx,
                 BiPredicate<RowT, RowT> cond,
-                RowHandler.RowFactory<RowT> rightRowFactory
+                RowHandler.RowFactory<RowT> rightRowFactory,
+                RexNode cond0,
+                RelDataType leftRowType
         ) {
             super(ctx, cond);
 
             this.rightRowFactory = rightRowFactory;
+
+            RexShuttle rexShuttle = new RexShuttle() {
+                @Override public RexNode visitInputRef(RexInputRef inputRef) {
+                    return inputRef;
+                }
+
+                @Override public RexNode visitCall(RexCall call) {
+                    if (call.getOperator().getKind() == SqlKind.EQUALS) {
+                        List<RexNode> node = call.getOperands();
+                        RexInputRef n1 = (RexInputRef) node.get(0);
+                        RexInputRef n2 = (RexInputRef) node.get(1);
+                        joinCondPos.put(n1.getIndex(), n2.getIndex() - leftRowType.getFieldCount());
+                    }
+                    return super.visitCall(call);
+                }
+            };
+
+            rexShuttle.apply(cond0);
         }
 
         @Override
@@ -368,7 +423,7 @@ public abstract class NestedLoopJoinNode<RowT> extends AbstractNode<RowT> {
         }
 
         /** {@inheritDoc} */
-        @Override
+/*        @Override
         protected void join() throws Exception {
             if (waitingRight == NOT_WAITING) {
                 inLoop = true;
@@ -386,6 +441,7 @@ public abstract class NestedLoopJoinNode<RowT> extends AbstractNode<RowT> {
                             for (RowT right : rightMaterialized) {
                                 BinaryTuple btl = handler.toBinaryTuple(left);
                                 BinaryTuple btr = handler.toBinaryTuple(right);
+                                @Nullable Object ho = handler.get(0, right);
                                 int comp = btl.byteBuffer().compareTo(btr.byteBuffer());
                                 System.err.println(comp);
                             }
@@ -434,6 +490,74 @@ public abstract class NestedLoopJoinNode<RowT> extends AbstractNode<RowT> {
                 requested = 0;
                 downstream().end();
             }
+        }*/
+
+        /** {@inheritDoc} */
+        @Override
+        protected void join() throws Exception {
+            if (waitingRight == NOT_WAITING) {
+                inLoop = true;
+                try {
+                    while (requested > 0 && (left != null || !leftInBuf.isEmpty())) {
+
+                        System.err.println("!!!!join");
+                        if (left == null) {
+                            left = leftInBuf.remove();
+                        }
+
+                        List<RowT> rightRows = lookup(left, handler);
+
+                        if (rightRows.isEmpty()) {
+                            requested--;
+                            downstream().push(handler.concat(left, rightRowFactory.create()));
+                        } else {
+                            for (RowT r : rightRows) {
+                                if (requested == 0) {
+                                    break;
+                                }
+
+                                requested--;
+
+                                RowT row = handler.concat(left, r);
+                                downstream().push(row);
+                            }
+                        }
+
+                        left = null; // !!!!
+                    }
+                } finally {
+                    inLoop = false;
+                }
+            }
+
+            if (waitingRight == 0) {
+                rightSource().request(waitingRight = inBufSize);
+            }
+
+            if (waitingLeft == 0 && leftInBuf.isEmpty()) {
+                leftSource().request(waitingLeft = inBufSize);
+            }
+
+            System.err.println(requested + " " + waitingLeft + " " + waitingRight + " " + left + " " + leftInBuf.isEmpty());
+
+            if (requested > 0 && waitingLeft == NOT_WAITING && waitingRight == NOT_WAITING && left == null && leftInBuf.isEmpty()) {
+                requested = 0;
+                downstream().end();
+            }
+        }
+
+        private <RowT> List<RowT> lookup(RowT row, RowHandler<RowT> handler) {
+            Map<Object, Map> next = hashMap;
+            for (Map.Entry <Integer, Integer> entry : joinCondPos.entrySet()) {
+                Object ent = handler.get(entry.getKey(), row);
+                System.err.println("lookup: " + ent);
+                next = next.get(ent);
+                if (next == null) {
+                    return Collections.emptyList();
+                }
+            }
+
+            return next.keySet().stream().map(k -> (RowT) k).collect(Collectors.toList());
         }
     }
 

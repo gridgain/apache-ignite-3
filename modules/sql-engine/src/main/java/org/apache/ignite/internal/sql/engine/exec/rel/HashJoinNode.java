@@ -195,13 +195,7 @@ public class HashJoinNode<RowT> extends AbstractNode<RowT> {
     protected void join() throws Exception {
         System.err.println("start join " + Thread.currentThread().getName());
 
-        boolean leftProcessed = false;
-
-        System.err.println("!!!!: " + leftInBuf);
-
         for (RowT left : leftInBuf) {
-            leftProcessed = true;
-
             for (RowT right : rightInBuf) {
                 if (cond.test(left, right)) {
                     Collection<RowT> coll = joined.computeIfAbsent(left, k -> new ArrayList<>());
@@ -210,8 +204,8 @@ public class HashJoinNode<RowT> extends AbstractNode<RowT> {
             }
         }
 
-        if (leftProcessed) {
-            rightInBuf = new ArrayList<>();
+        if (!leftInBuf.isEmpty()) {
+            rightInBuf = new ArrayList<>(inBufSize);
         }
 
         if (waitingRight != NOT_WAITING && waitingRight == 0) {
@@ -250,10 +244,6 @@ public class HashJoinNode<RowT> extends AbstractNode<RowT> {
                 }
             }
         }
-
-            //BinaryTuple btl = handler.toBinaryTuple(left);
-            //int comp = btl.byteBuffer().compareTo(btr.byteBuffer());
-            //System.err.println(comp);
 
         if (waitingRight == NOT_WAITING || requested == 0) {
             downstream().end();
