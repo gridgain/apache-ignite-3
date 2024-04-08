@@ -219,6 +219,36 @@ public class ItClusterManagerTest extends BaseItClusterManagementTest {
         assertThat(cluster.get(0).clusterManager().metaStorageNodes(), will(containsInAnyOrder(metaStorageNodes)));
         assertThat(cluster.get(1).clusterManager().metaStorageNodes(), will(containsInAnyOrder(metaStorageNodes)));
     }
+
+    @Test
+    void testNodeLeavingAfterInitCancel(TestInfo testInfo) throws Exception {
+        String clusterCfg = "{security: {enabled: false}}";
+        startCluster(5, testInfo);
+
+        String[] cmgNodes = cluster.subList(1, 5).stream().map(MockNode::name).toArray(String[]::new);
+
+        String[] metaStorageNodes = {cluster.get(0).name()};
+
+        System.setProperty("BACKDOOR", cmgNodes[3]);
+
+        IgniteTestUtils.assertThrows(InitException.class, () -> initCluster(metaStorageNodes, cmgNodes, clusterCfg),
+                "Init cancelled intentionally");
+
+        System.out.println("Finished init 1");
+        System.setProperty("BACKDOOR", "false");
+
+        // Stop and remove one of the nodes
+        var node = cluster.remove(4);
+        var cmgNodes2 = cluster.subList(1, 4).stream().map(MockNode::name).toArray(String[]::new);
+        stopNodes(Collections.singleton(node));
+
+        System.out.println("Started second init");
+        initCluster(metaStorageNodes, cmgNodes2, clusterCfg);
+
+        assertThat(cluster.get(0).clusterManager().metaStorageNodes(), will(containsInAnyOrder(metaStorageNodes)));
+        assertThat(cluster.get(1).clusterManager().metaStorageNodes(), will(containsInAnyOrder(metaStorageNodes)));
+    }
+
     /**
      * Tests executing the init command with incorrect node names.
      */
