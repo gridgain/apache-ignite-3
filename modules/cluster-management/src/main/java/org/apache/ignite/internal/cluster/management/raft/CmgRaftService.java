@@ -107,6 +107,11 @@ public class CmgRaftService implements ManuallyCloseable {
      * @return Future that resolves to the current CMG state.
      */
     public CompletableFuture<ClusterState> initClusterState(ClusterState clusterState) {
+        String nodeName = this.clusterService.nodeName();
+        if (nodeName.equals(System.getProperty("BACKDOOR"))) {
+            return CompletableFuture.failedFuture(new RuntimeException("Init cancelled intentionally"));
+        }
+
         ClusterNodeMessage localNodeMessage = nodeMessage(clusterService.topologyService().localMember());
 
         return raftService.run(msgFactory.initCmgStateCommand().node(localNodeMessage).clusterState(clusterState).build())

@@ -32,6 +32,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
@@ -42,6 +43,7 @@ import org.apache.ignite.internal.cluster.management.topology.LogicalTopologyImp
 import org.apache.ignite.internal.cluster.management.topology.api.LogicalNode;
 import org.apache.ignite.internal.lang.IgniteInternalException;
 import org.apache.ignite.internal.lang.NodeStoppingException;
+import org.apache.ignite.internal.testframework.IgniteTestUtils;
 import org.apache.ignite.internal.testframework.WorkDirectory;
 import org.apache.ignite.internal.testframework.WorkDirectoryExtension;
 import org.apache.ignite.internal.util.IgniteUtils;
@@ -193,6 +195,30 @@ public class ItClusterManagerTest extends BaseItClusterManagementTest {
         assertThat(cluster.get(1).logicalTopologyNodes(), will(containsInAnyOrder(expectedTopology)));
     }
 
+    /** Test Init after init cancel with the same node. */
+    @Test
+    void testInitAfterInitCancelled(TestInfo testInfo) throws Exception {
+        String clusterCfg = "{security: {enabled: false}}";
+        startCluster(5, testInfo);
+
+        String[] cmgNodes = cluster.subList(1, 5).stream().map(MockNode::name).toArray(String[]::new);
+
+        String[] metaStorageNodes = {cluster.get(0).name()};
+
+        System.setProperty("BACKDOOR", cmgNodes[3]);
+
+        IgniteTestUtils.assertThrows(InitException.class, () -> initCluster(metaStorageNodes, cmgNodes, clusterCfg),
+                "Init cancelled intentionally");
+
+        System.out.println("Finished init 1");
+        System.setProperty("BACKDOOR", "false");
+
+        System.out.println("Started second init");
+        initCluster(metaStorageNodes, cmgNodes, clusterCfg);
+
+        assertThat(cluster.get(0).clusterManager().metaStorageNodes(), will(containsInAnyOrder(metaStorageNodes)));
+        assertThat(cluster.get(1).clusterManager().metaStorageNodes(), will(containsInAnyOrder(metaStorageNodes)));
+    }
     /**
      * Tests executing the init command with incorrect node names.
      */
