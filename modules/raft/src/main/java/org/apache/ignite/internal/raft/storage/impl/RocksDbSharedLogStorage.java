@@ -24,12 +24,14 @@ import java.lang.invoke.MethodHandles;
 import java.lang.invoke.VarHandle;
 import java.nio.ByteOrder;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.Executor;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
+import org.apache.commons.lang3.reflect.FieldUtils;
 import org.apache.ignite.internal.logger.IgniteLogger;
 import org.apache.ignite.internal.logger.Loggers;
 import org.apache.ignite.raft.jraft.conf.Configuration;
@@ -136,6 +138,8 @@ public class RocksDbSharedLogStorage implements LogStorage, Describer {
     /** First log index loaded flag. */
     private volatile boolean hasLoadFirstLogIndex;
 
+    private final String logFMT;
+
     /** Constructor. */
     RocksDbSharedLogStorage(
             DefaultLogStorageFactory logStorageFactory,
@@ -172,6 +176,15 @@ public class RocksDbSharedLogStorage implements LogStorage, Describer {
 
         this.writeOptions = new WriteOptions();
         this.writeOptions.setSync(raftOptions.isSync());
+
+        try {
+            Path p = (Path) FieldUtils.readField(logStorageFactory, "path", true);
+            var folderName = p.getFileName().toString();
+            var nodeName = p.getParent().getFileName().toString();
+            this.logFMT = String.format("[%s] [%s] [%s] ", groupId, nodeName, folderName);
+        } catch (IllegalAccessException e) {
+            throw new RuntimeException(e);
+        }
     }
 
     /**
@@ -211,8 +224,10 @@ public class RocksDbSharedLogStorage implements LogStorage, Describer {
                 var readOptions = new ReadOptions().setIterateUpperBound(groupEndBound);
                 RocksIterator it = this.db.newIterator(this.confHandle, readOptions)
         ) {
+            int nRecEntries = 0;
             it.seek(groupStartPrefix);
             while (it.isValid()) {
+                nRecEntries++;
                 byte[] keyWithPrefix = it.key();
                 byte[] ks = getKey(keyWithPrefix);
                 byte[] bs = it.value();
@@ -220,6 +235,7 @@ public class RocksDbSharedLogStorage implements LogStorage, Describer {
                 // LogEntry index
                 if (ks.length == 8) {
                     LogEntry entry = this.logEntryDecoder.decode(bs);
+                    LOG.warn(logFMT + " Recovered entry: {}", entry);
                     if (entry != null) {
                         if (entry.getType() == EnumOutter.EntryType.ENTRY_TYPE_CONFIGURATION) {
                             ConfigurationEntry confEntry = new ConfigurationEntry();
@@ -242,6 +258,7 @@ public class RocksDbSharedLogStorage implements LogStorage, Describer {
                 } else {
                     if (Arrays.equals(FIRST_LOG_IDX_KEY, ks)) {
                         setFirstLogIndex((long) LONG_ARRAY_HANDLE.get(bs, 0));
+                        LOG.warn(logFMT + " Recovered FirstLogIndex: {}", (long) LONG_ARRAY_HANDLE.get(bs, 0));
                         truncatePrefixInBackground(0L, this.firstLogIndex);
                     } else {
                         LOG.warn("Unknown entry in configuration storage key={}, value={}.", BytesUtil.toHex(ks),
@@ -250,6 +267,7 @@ public class RocksDbSharedLogStorage implements LogStorage, Describer {
                 }
                 it.next();
             }
+            LOG.warn(logFMT + "Recovered {} entries", nRecEntries);
         }
     }
 
@@ -258,6 +276,7 @@ public class RocksDbSharedLogStorage implements LogStorage, Describer {
     }
 
     private void setFirstLogIndex(long index) {
+        LOG.warn(logFMT + "Setting first log index: {}", index);
         this.firstLogIndex = index;
         this.hasLoadFirstLogIndex = true;
     }
@@ -365,6 +384,7 @@ public class RocksDbSharedLogStorage implements LogStorage, Describer {
 
             if (bs != null) {
                 LogEntry entry = this.logEntryDecoder.decode(bs);
+                LOG.warn(logFMT + "Retrieved data entry: {} {}", index, entry);
                 if (entry != null) {
                     return entry;
                 } else {
@@ -495,6 +515,7 @@ public class RocksDbSharedLogStorage implements LogStorage, Describer {
 
             if (writeBatch.count() > 0) {
                 db.write(this.writeOptions, writeBatch);
+                LOG.warn(logFMT + " Committed batch");
             }
         } catch (RocksDBException e) {
             LOG.error("Execute batch failed with rocksdb exception.", e);
@@ -580,6 +601,7 @@ public class RocksDbSharedLogStorage implements LogStorage, Describer {
     }
 
     private void addConfBatch(LogEntry entry, WriteBatch batch) throws RocksDBException {
+        LOG.warn(logFMT + "AddConfBatch: {}", entry);
         byte[] ks = createKey(entry.getId().getIndex());
         byte[] content = this.logEntryEncoder.encode(entry);
         batch.put(this.dataHandle, ks, content);
@@ -619,6 +641,7 @@ public class RocksDbSharedLogStorage implements LogStorage, Describer {
     }
 
     private void addDataBatch(LogEntry entry, WriteBatch batch) throws RocksDBException {
+        LOG.warn(logFMT + "AddDataBatch: {}", entry);
         long logIndex = entry.getId().getIndex();
         byte[] content = this.logEntryEncoder.encode(entry);
         batch.put(this.dataHandle, createKey(logIndex), onDataAppend(logIndex, content));
