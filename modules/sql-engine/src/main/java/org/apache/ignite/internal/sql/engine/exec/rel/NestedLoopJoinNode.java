@@ -93,6 +93,16 @@ public abstract class NestedLoopJoinNode<RowT> extends AbstractNode<RowT> {
         handler = ctx.rowHandler();
     }
 
+    private NestedLoopJoinNode(ExecutionContext<RowT> ctx, BiPredicate<RowT, RowT> cond, RexNode cond0,
+            RelDataType leftRowType) {
+        super(ctx);
+
+        this.cond = cond;
+        handler = ctx.rowHandler();
+
+        buildJoinPositions(cond0, joinCondPos, leftRowType);
+    }
+
     /** {@inheritDoc} */
     @Override
     public void request(int rowsCnt) throws Exception {
@@ -262,8 +272,8 @@ public abstract class NestedLoopJoinNode<RowT> extends AbstractNode<RowT> {
                 RowSchema rightRowSchema = rowSchemaFromRelTypes(RelOptUtil.getFieldTypeList(rightRowType));
                 RowHandler.RowFactory<RowT> rightRowFactory = ctx.rowHandler().factory(rightRowSchema);
 
-                return new LeftJoin<>(ctx, cond, rightRowFactory);
-                //return new LeftHashJoin<>(ctx, cond, rightRowFactory, cond0, leftRowType);
+                //return new LeftJoin<>(ctx, cond, rightRowFactory);
+                return new LeftHashJoin<>(ctx, cond, rightRowFactory, cond0, leftRowType);
             }
 
             case RIGHT: {
@@ -290,7 +300,6 @@ public abstract class NestedLoopJoinNode<RowT> extends AbstractNode<RowT> {
 
             case ANTI:
                 //return new AntiJoin<>(ctx, cond);
-                buildJoinPositions(cond0, joinCondPos, leftRowType);
                 return new AntiHashJoin<>(ctx, cond, cond0, leftRowType);
 
             default:
@@ -301,9 +310,7 @@ public abstract class NestedLoopJoinNode<RowT> extends AbstractNode<RowT> {
     private static class InnerHashJoin<RowT> extends NestedLoopJoinNode<RowT> {
         private InnerHashJoin(ExecutionContext<RowT> ctx, BiPredicate<RowT, RowT> cond, RexNode cond0,
                 RelDataType leftRowType) {
-            super(ctx, cond);
-
-            buildJoinPositions(cond0, joinCondPos, leftRowType);
+            super(ctx, cond, cond0, leftRowType);
         }
 
         /** {@inheritDoc} */
@@ -491,11 +498,9 @@ public abstract class NestedLoopJoinNode<RowT> extends AbstractNode<RowT> {
                 RexNode cond0,
                 RelDataType leftRowType
         ) {
-            super(ctx, cond);
+            super(ctx, cond, cond0, leftRowType);
 
             this.rightRowFactory = rightRowFactory;
-
-            buildJoinPositions(cond0, joinCondPos, leftRowType);
         }
 
         @Override
@@ -667,11 +672,9 @@ public abstract class NestedLoopJoinNode<RowT> extends AbstractNode<RowT> {
                 RexNode cond0,
                 RelDataType leftRowType
         ) {
-            super(ctx, cond);
+            super(ctx, cond, cond0, leftRowType);
 
             this.leftRowFactory = leftRowFactory;
-
-            buildJoinPositions(cond0, joinCondPos, leftRowType);
         }
 
         /** {@inheritDoc} */
@@ -880,12 +883,10 @@ public abstract class NestedLoopJoinNode<RowT> extends AbstractNode<RowT> {
                 RexNode cond0,
                 RelDataType leftRowType
         ) {
-            super(ctx, cond);
+            super(ctx, cond, cond0, leftRowType);
 
             this.leftRowFactory = leftRowFactory;
             this.rightRowFactory = rightRowFactory;
-
-            buildJoinPositions(cond0, joinCondPos, leftRowType);
         }
 
         /** {@inheritDoc} */
@@ -1116,9 +1117,7 @@ public abstract class NestedLoopJoinNode<RowT> extends AbstractNode<RowT> {
                 RexNode cond0,
                 RelDataType leftRowType
         ) {
-            super(ctx, cond);
-
-            buildJoinPositions(cond0, joinCondPos, leftRowType);
+            super(ctx, cond, cond0, leftRowType);
         }
 
         /** {@inheritDoc} */
@@ -1241,9 +1240,7 @@ public abstract class NestedLoopJoinNode<RowT> extends AbstractNode<RowT> {
                 BiPredicate<RowT, RowT> cond,
                 RexNode cond0,
                 RelDataType leftRowType) {
-            super(ctx, cond);
-
-            buildJoinPositions(cond0, joinCondPos, leftRowType);
+            super(ctx, cond, cond0, leftRowType);
         }
 
         @Override
