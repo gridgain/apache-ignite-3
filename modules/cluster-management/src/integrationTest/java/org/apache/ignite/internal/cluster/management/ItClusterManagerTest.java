@@ -26,6 +26,7 @@ import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.containsInAnyOrder;
 import static org.hamcrest.Matchers.hasItem;
 import static org.hamcrest.Matchers.hasSize;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -96,6 +97,8 @@ public class ItClusterManagerTest extends BaseItClusterManagementTest {
         assertThat(cluster.get(1).clusterManager().metaStorageNodes(), will(containsInAnyOrder(metaStorageNodes)));
 
         LogicalNode[] expectedTopology = toLogicalNodes(currentPhysicalTopology());
+
+        Thread.sleep(20_000);
 
         assertThat(cluster.get(0).logicalTopologyNodes(), will(containsInAnyOrder(expectedTopology)));
         assertThat(cluster.get(1).logicalTopologyNodes(), will(containsInAnyOrder(expectedTopology)));
@@ -197,6 +200,31 @@ public class ItClusterManagerTest extends BaseItClusterManagementTest {
 
     /** Test Init after init cancel with the same node. */
     @Test
+    void testInitCanceled(TestInfo testInfo) throws Exception {
+        String clusterCfg = "{security: {enabled: false}}";
+        startCluster(5, testInfo);
+
+        String[] cmgNodes = cluster.subList(1, 5).stream().map(MockNode::name).toArray(String[]::new);
+
+        String[] metaStorageNodes = {cluster.get(0).name()};
+
+        System.setProperty("BACKDOOR", cmgNodes[3]);
+
+        IgniteTestUtils.assertThrows(InitException.class, () -> initCluster(metaStorageNodes, cmgNodes, clusterCfg),
+                "Init cancelled intentionally");
+
+        Thread.sleep(10_000);
+
+        for (MockNode node : cluster) {
+            assertFalse(node.clusterManager().initialClusterConfigurationFuture().isDone(),
+                    String.format("Cluster Config %s should not have been set", node.name()));
+            assertFalse(node.clusterManager().onJoinReady().isDone(), String.format("Node %s should not have started", node.name()));
+        }
+    }
+
+
+    /** Test Init after init cancel with the same node. */
+    @Test
     void testInitAfterInitCancelled(TestInfo testInfo) throws Exception {
         String clusterCfg = "{security: {enabled: false}}";
         startCluster(5, testInfo);
@@ -212,6 +240,8 @@ public class ItClusterManagerTest extends BaseItClusterManagementTest {
 
         System.out.println("Finished init 1");
         System.setProperty("BACKDOOR", "false");
+
+        Thread.sleep(10_000);
 
         System.out.println("Started second init");
         initCluster(metaStorageNodes, cmgNodes, clusterCfg);
@@ -536,7 +566,7 @@ public class ItClusterManagerTest extends BaseItClusterManagementTest {
         initCluster(metaStorageNodes, cmgNodes, null);
     }
 
-    private void initCluster(
+    private void initClusterWithoutAssert(
             String[] metaStorageNodes,
             String[] cmgNodes,
             @Nullable String clusterConfiguration
@@ -547,6 +577,14 @@ public class ItClusterManagerTest extends BaseItClusterManagementTest {
                 "cluster",
                 clusterConfiguration
         );
+    }
+
+    private void initCluster(
+            String[] metaStorageNodes,
+            String[] cmgNodes,
+            @Nullable String clusterConfiguration
+    ) throws NodeStoppingException {
+        initClusterWithoutAssert(metaStorageNodes, cmgNodes, clusterConfiguration);
 
         for (MockNode node : cluster) {
             assertThat(node.startFuture(), willCompleteSuccessfully());

@@ -102,7 +102,7 @@ public class ClusterManagementGroupManager implements IgniteComponent {
     /**
      * Future that resolves after the node has been validated on the CMG leader.
      */
-    private final CompletableFuture<Void> joinFuture = new CompletableFuture<>();
+    private CompletableFuture<Void> joinFuture = new CompletableFuture<>();
 
     /** Message factory. */
     private final CmgMessagesFactory msgFactory = new CmgMessagesFactory();
@@ -211,18 +211,26 @@ public class ClusterManagementGroupManager implements IgniteComponent {
 
         var messageHandlerFactory = new CmgMessageHandlerFactory(busyLock, msgFactory, clusterService);
 
+        AtomicBoolean dropClusterStateMessage = new AtomicBoolean(false);
         clusterService.messagingService().addMessageHandler(
                 CmgMessageGroup.class,
                 messageHandlerFactory.wrapHandler((message, sender, correlationId) -> {
+                    LOG.info("Received message: {} {} {}", correlationId, sender.name(), message);
                     if (message instanceof ClusterStateMessage) {
                         assert correlationId != null;
-
-                        handleClusterState((ClusterStateMessage) message, sender, correlationId);
+                        boolean shouldBeDropped = dropClusterStateMessage.get();
+                        if (!shouldBeDropped) {
+                            handleClusterState((ClusterStateMessage) message, sender, correlationId);
+                        } else {
+                            LOG.warn("Dropped cluster state message because of previous cancel");
+                        }
                     } else if (message instanceof CancelInitMessage) {
+                        dropClusterStateMessage.set(true);
                         handleCancelInit((CancelInitMessage) message);
                     } else if (message instanceof CmgInitMessage) {
                         assert correlationId != null;
 
+                        dropClusterStateMessage.set(false);
                         handleInit((CmgInitMessage) message, sender, correlationId);
                     }
                 })
@@ -351,6 +359,7 @@ public class ClusterManagementGroupManager implements IgniteComponent {
      */
     private void onElectedAsLeader(long term) {
         LOG.info("CMG leader has been elected, executing onLeaderElected callback");
+        // This should only run if the cluster initialization process is finised successfully or it needs to be reverted otherwise.
 
         // The cluster state is broadcast via the messaging service; hence, the future must be completed here on the leader node.
         // TODO: This needs to be reworked following the implementation of IGNITE-18275.
@@ -429,6 +438,10 @@ public class ClusterManagementGroupManager implements IgniteComponent {
                     raftService = null;
                 }
 
+                joinFuture.completeExceptionally(new RuntimeException("Init canceled"));
+                joinFuture = new CompletableFuture<>();
+
+                // TODO: Assert if there are other nodes.
                 raftManager.stopRaftNodes(CmgGroupId.INSTANCE);
 
                 raftManager.stop();
