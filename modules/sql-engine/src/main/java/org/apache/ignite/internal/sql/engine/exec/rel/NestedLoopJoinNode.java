@@ -17,6 +17,7 @@
 
 package org.apache.ignite.internal.sql.engine.exec.rel;
 
+import static java.util.Collections.EMPTY_LIST;
 import static org.apache.ignite.internal.sql.engine.util.RexUtils.replaceInputRefs;
 import static org.apache.ignite.internal.sql.engine.util.TypeUtils.rowSchemaFromRelTypes;
 import static org.apache.ignite.internal.util.CollectionUtils.nullOrEmpty;
@@ -74,7 +75,7 @@ public abstract class NestedLoopJoinNode<RowT> extends AbstractNode<RowT> {
 
     protected boolean inLoop;
 
-    Map<Object, Map> hashMap = new HashMap<>();
+    Map<Object, Map> hashMap = new LinkedHashMap<>();
 
     Map<Integer, Integer> joinCondPos = new LinkedHashMap<>();
 
@@ -201,7 +202,7 @@ public abstract class NestedLoopJoinNode<RowT> extends AbstractNode<RowT> {
             filled++;
             Object ent = handler.get(entry.getValue(), row);
             if (filled == joinCondPos.size()) {
-                Map raw = next.computeIfAbsent(ent, k -> new HashMap<>());
+                Map raw = next.computeIfAbsent(ent, k -> new LinkedHashMap<>());
                 raw.put(row, null);
             } else {
                 next = next.computeIfAbsent(ent, k -> new HashMap<>());
@@ -260,14 +261,15 @@ public abstract class NestedLoopJoinNode<RowT> extends AbstractNode<RowT> {
                 RowSchema rightRowSchema = rowSchemaFromRelTypes(RelOptUtil.getFieldTypeList(rightRowType));
                 RowHandler.RowFactory<RowT> rightRowFactory = ctx.rowHandler().factory(rightRowSchema);
 
-                return new LeftJoin<>(ctx, cond, rightRowFactory, cond0, leftRowType);
+                //return new LeftJoin<>(ctx, cond, rightRowFactory);
+                return new LeftHashJoin<>(ctx, cond, rightRowFactory, cond0, leftRowType);
             }
 
             case RIGHT: {
                 RowSchema leftRowSchema = rowSchemaFromRelTypes(RelOptUtil.getFieldTypeList(leftRowType));
                 RowHandler.RowFactory<RowT> leftRowFactory = ctx.rowHandler().factory(leftRowSchema);
 
-                return new RightJoin<>(ctx, cond, leftRowFactory);
+                return new RightJoin<>(ctx, cond, leftRowFactory, cond0, leftRowType);
             }
 
             case FULL: {
@@ -382,6 +384,114 @@ public abstract class NestedLoopJoinNode<RowT> extends AbstractNode<RowT> {
         rexShuttle.apply(cond);
     }
 
+    private static <RowT> List<RowT> lookup(RowT row, RowHandler<RowT> handler, Map<Object, Map> hashMap, Map<Integer, Integer> joinCondPos) {
+        Map<Object, Map> next = hashMap;
+        for (Map.Entry <Integer, Integer> entry : joinCondPos.entrySet()) {
+            Object ent = handler.get(entry.getKey(), row);
+            System.err.println("lookup: " + ent);
+            next = next.get(ent);
+            if (next == null) {
+                return Collections.emptyList();
+            }
+        }
+
+        for (Map.Entry<Object, Map> ent : next.entrySet()) {
+            next.put(ent.getKey(), Collections.emptyMap()); // touched
+        }
+
+        return next.keySet().stream().map(k -> (RowT) k).collect(Collectors.toList());
+    }
+
+    private static <RowT> List<RowT> getUntouched(Map<Object, Map> entries, List<RowT> out) {
+        if (out == null) {
+            out = new ArrayList<>();
+        }
+
+        for (Map.Entry<Object, Map> ent : entries.entrySet()) {
+            if (ent.getValue() == null) {
+                out.add((RowT) ent.getKey());
+            } else {
+               getUntouched(ent.getValue(), out);
+            }
+        }
+        return out;
+    }
+
+    private static class LeftHashJoin<RowT> extends NestedLoopJoinNode<RowT> {
+        /** Right row factory. */
+        private final RowHandler.RowFactory<RowT> rightRowFactory;
+
+        // TODO : !!!
+        private LeftHashJoin(
+                ExecutionContext<RowT> ctx,
+                BiPredicate<RowT, RowT> cond,
+                RowHandler.RowFactory<RowT> rightRowFactory,
+                RexNode cond0,
+                RelDataType leftRowType
+        ) {
+            super(ctx, cond);
+
+            this.rightRowFactory = rightRowFactory;
+
+            buildJoinPositions(cond0, joinCondPos, leftRowType);
+        }
+
+        @Override
+        protected void rewindInternal() {
+            hashMap.clear();
+
+            super.rewindInternal();
+        }
+
+        /** {@inheritDoc} */
+        @Override
+        protected void join() throws Exception {
+            if (waitingRight == NOT_WAITING) {
+                inLoop = true;
+                try {
+                    while (requested > 0 && !leftInBuf.isEmpty()) {
+                        checkState();
+
+                        RowT left = leftInBuf.remove();
+
+                        List<RowT> rightRows = lookup(left, handler, hashMap, joinCondPos);
+
+                        if (rightRows.isEmpty()) {
+                            requested--;
+                            downstream().push(handler.concat(left, rightRowFactory.create()));
+                        } else {
+                            for (RowT r : rightRows) {
+                                if (requested == 0) {
+                                    break;
+                                }
+
+                                requested--;
+
+                                RowT row = handler.concat(left, r);
+                                downstream().push(row);
+                            }
+                        }
+                    }
+                } finally {
+                    inLoop = false;
+                }
+            }
+
+            if (waitingRight == 0) {
+                rightSource().request(waitingRight = inBufSize);
+            }
+
+            if (waitingLeft == 0 && leftInBuf.isEmpty()) {
+                leftSource().request(waitingLeft = inBufSize);
+            }
+
+            if (requested > 0 && waitingLeft == NOT_WAITING && waitingRight == NOT_WAITING && leftInBuf.isEmpty()) {
+                requested = 0;
+                downstream().end();
+            }
+        }
+    }
+
     private static class LeftJoin<RowT> extends NestedLoopJoinNode<RowT> {
         /** Right row factory. */
         private final RowHandler.RowFactory<RowT> rightRowFactory;
@@ -404,15 +514,11 @@ public abstract class NestedLoopJoinNode<RowT> extends AbstractNode<RowT> {
         private LeftJoin(
                 ExecutionContext<RowT> ctx,
                 BiPredicate<RowT, RowT> cond,
-                RowHandler.RowFactory<RowT> rightRowFactory,
-                RexNode cond0,
-                RelDataType leftRowType
+                RowHandler.RowFactory<RowT> rightRowFactory
         ) {
             super(ctx, cond);
 
             this.rightRowFactory = rightRowFactory;
-
-            buildJoinPositions(cond0, joinCondPos, leftRowType);
         }
 
         @Override
@@ -425,7 +531,7 @@ public abstract class NestedLoopJoinNode<RowT> extends AbstractNode<RowT> {
         }
 
         /** {@inheritDoc} */
-/*        @Override
+        @Override
         protected void join() throws Exception {
             if (waitingRight == NOT_WAITING) {
                 inLoop = true;
@@ -439,14 +545,6 @@ public abstract class NestedLoopJoinNode<RowT> extends AbstractNode<RowT> {
 
                         while (requested > 0 && rightIdx < rightMaterialized.size()) {
                             checkState();
-
-                            for (RowT right : rightMaterialized) {
-                                BinaryTuple btl = handler.toBinaryTuple(left);
-                                BinaryTuple btr = handler.toBinaryTuple(right);
-                                @Nullable Object ho = handler.get(0, right);
-                                int comp = btl.byteBuffer().compareTo(btr.byteBuffer());
-                                System.err.println(comp);
-                            }
 
                             if (!cond.test(left, rightMaterialized.get(rightIdx++))) {
                                 continue;
@@ -492,74 +590,6 @@ public abstract class NestedLoopJoinNode<RowT> extends AbstractNode<RowT> {
                 requested = 0;
                 downstream().end();
             }
-        }*/
-
-        /** {@inheritDoc} */
-        @Override
-        protected void join() throws Exception {
-            if (waitingRight == NOT_WAITING) {
-                inLoop = true;
-                try {
-                    while (requested > 0 && (left != null || !leftInBuf.isEmpty())) {
-
-                        System.err.println("!!!!join");
-                        if (left == null) {
-                            left = leftInBuf.remove();
-                        }
-
-                        List<RowT> rightRows = lookup(left, handler);
-
-                        if (rightRows.isEmpty()) {
-                            requested--;
-                            downstream().push(handler.concat(left, rightRowFactory.create()));
-                        } else {
-                            for (RowT r : rightRows) {
-                                if (requested == 0) {
-                                    break;
-                                }
-
-                                requested--;
-
-                                RowT row = handler.concat(left, r);
-                                downstream().push(row);
-                            }
-                        }
-
-                        left = null; // !!!!
-                    }
-                } finally {
-                    inLoop = false;
-                }
-            }
-
-            if (waitingRight == 0) {
-                rightSource().request(waitingRight = inBufSize);
-            }
-
-            if (waitingLeft == 0 && leftInBuf.isEmpty()) {
-                leftSource().request(waitingLeft = inBufSize);
-            }
-
-            System.err.println(requested + " " + waitingLeft + " " + waitingRight + " " + left + " " + leftInBuf.isEmpty());
-
-            if (requested > 0 && waitingLeft == NOT_WAITING && waitingRight == NOT_WAITING && left == null && leftInBuf.isEmpty()) {
-                requested = 0;
-                downstream().end();
-            }
-        }
-
-        private <RowT> List<RowT> lookup(RowT row, RowHandler<RowT> handler) {
-            Map<Object, Map> next = hashMap;
-            for (Map.Entry <Integer, Integer> entry : joinCondPos.entrySet()) {
-                Object ent = handler.get(entry.getKey(), row);
-                System.err.println("lookup: " + ent);
-                next = next.get(ent);
-                if (next == null) {
-                    return Collections.emptyList();
-                }
-            }
-
-            return next.keySet().stream().map(k -> (RowT) k).collect(Collectors.toList());
         }
     }
 
@@ -586,11 +616,15 @@ public abstract class NestedLoopJoinNode<RowT> extends AbstractNode<RowT> {
         private RightJoin(
                 ExecutionContext<RowT> ctx,
                 BiPredicate<RowT, RowT> cond,
-                RowHandler.RowFactory<RowT> leftRowFactory
+                RowHandler.RowFactory<RowT> leftRowFactory,
+                RexNode cond0,
+                RelDataType leftRowType
         ) {
             super(ctx, cond);
 
             this.leftRowFactory = leftRowFactory;
+
+            buildJoinPositions(cond0, joinCondPos, leftRowType);
         }
 
         /** {@inheritDoc} */
@@ -605,8 +639,8 @@ public abstract class NestedLoopJoinNode<RowT> extends AbstractNode<RowT> {
         }
 
         /** {@inheritDoc} */
-        @Override
-        protected void join() throws Exception {
+        //@Override
+        protected void join1() throws Exception {
             if (waitingRight == NOT_WAITING) {
                 if (rightNotMatchedIndexes == null) {
                     rightNotMatchedIndexes = new BitSet(rightMaterialized.size());
@@ -687,6 +721,69 @@ public abstract class NestedLoopJoinNode<RowT> extends AbstractNode<RowT> {
 
             if (requested > 0 && waitingLeft == NOT_WAITING && waitingRight == NOT_WAITING && left == null
                     && leftInBuf.isEmpty() && rightNotMatchedIndexes.isEmpty()) {
+                requested = 0;
+                downstream().end();
+            }
+        }
+
+        @Override
+        protected void join() throws Exception {
+            if (waitingRight == NOT_WAITING) {
+                if (rightNotMatchedIndexes == null) {
+                    rightNotMatchedIndexes = new BitSet(rightMaterialized.size());
+
+                    rightNotMatchedIndexes.set(0, rightMaterialized.size());
+                }
+
+                inLoop = true;
+                try {
+                    while (requested > 0 && (left != null || !leftInBuf.isEmpty())) {
+                        if (left == null) {
+                            left = leftInBuf.remove();
+                        }
+
+                        List<RowT> rightRows = lookup(left, handler, hashMap, joinCondPos);
+
+                        for (RowT right : rightRows) {
+                            checkState();
+
+                            requested--;
+
+                            RowT joined = handler.concat(left, right);
+                            downstream().push(joined);
+                        }
+
+                        left = null; // !!!!
+                    }
+                } finally {
+                    inLoop = false;
+                }
+            }
+
+            if (waitingRight == 0) {
+                rightSource().request(waitingRight = inBufSize);
+            }
+
+            if (waitingLeft == 0 && leftInBuf.isEmpty()) {
+                leftSource().request(waitingLeft = inBufSize);
+            }
+
+            if (leftInBuf.isEmpty() && waitingLeft == NOT_WAITING && requested > 0) {
+                List<RowT> res = getUntouched(hashMap, null);
+
+                for (RowT right : res) {
+                    RowT row = handler.concat(leftRowFactory.create(), right);
+                    requested--;
+                    downstream().push(row);
+
+                    if (requested == 0) {
+                        break;
+                    }
+                }
+            }
+
+            if (requested > 0 && waitingLeft == NOT_WAITING && waitingRight == NOT_WAITING && left == null
+                    && leftInBuf.isEmpty()) {
                 requested = 0;
                 downstream().end();
             }
