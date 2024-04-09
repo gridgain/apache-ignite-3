@@ -252,8 +252,8 @@ public class LogicalRelImplementor<RowT> implements IgniteRelVisitor<Node<RowT>>
         RelDataType rowType = combinedRowType(ctx.getTypeFactory(), leftType, rightType);
         BiPredicate<RowT, RowT> cond = expressionFactory.biPredicate(rel.getCondition(), rowType);
 
-        Node<RowT> node = NestedLoopJoinNode.create(ctx, outType, leftType, rightType, joinType, cond, rel.getCondition());
-        //Node<RowT> node = new HashJoinNode<>(ctx, outType, leftType, rightType, joinType, cond);
+        //Node<RowT> node = NestedLoopJoinNode.create(ctx, outType, leftType, rightType, joinType, cond, rel.getCondition());
+        Node<RowT> node = HashJoinNode.create(ctx, outType, leftType, rightType, joinType, rel.getCondition());
 
         Node<RowT> leftInput = visit(rel.getLeft());
         Node<RowT> rightInput = visit(rel.getRight());

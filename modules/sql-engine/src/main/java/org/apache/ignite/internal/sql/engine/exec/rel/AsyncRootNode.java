@@ -98,8 +98,6 @@ public class AsyncRootNode<InRowT, OutRowT> implements Downstream<InRowT>, Async
     public void end() throws Exception {
         assert waiting > 0 : waiting;
 
-        System.err.println("call root node end");
-
         waiting = -1;
 
         completePrefetchFuture(null);
