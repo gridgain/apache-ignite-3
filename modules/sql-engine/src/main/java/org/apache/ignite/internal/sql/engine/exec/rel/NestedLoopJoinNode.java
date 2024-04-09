@@ -256,20 +256,22 @@ public abstract class NestedLoopJoinNode<RowT> extends AbstractNode<RowT> {
         switch (joinType) {
             case INNER:
                 return new InnerJoin<>(ctx, cond);
+                //return new InnerHashJoin<>(ctx, cond, cond0, leftRowType);
 
             case LEFT: {
                 RowSchema rightRowSchema = rowSchemaFromRelTypes(RelOptUtil.getFieldTypeList(rightRowType));
                 RowHandler.RowFactory<RowT> rightRowFactory = ctx.rowHandler().factory(rightRowSchema);
 
-                //return new LeftJoin<>(ctx, cond, rightRowFactory);
-                return new LeftHashJoin<>(ctx, cond, rightRowFactory, cond0, leftRowType);
+                return new LeftJoin<>(ctx, cond, rightRowFactory);
+                //return new LeftHashJoin<>(ctx, cond, rightRowFactory, cond0, leftRowType);
             }
 
             case RIGHT: {
                 RowSchema leftRowSchema = rowSchemaFromRelTypes(RelOptUtil.getFieldTypeList(leftRowType));
                 RowHandler.RowFactory<RowT> leftRowFactory = ctx.rowHandler().factory(leftRowSchema);
 
-                return new RightJoin<>(ctx, cond, leftRowFactory, cond0, leftRowType);
+                return new RightJoin<>(ctx, cond, leftRowFactory);
+                //return new RightHashJoin<>(ctx, cond, leftRowFactory, cond0, leftRowType);
             }
 
             case FULL: {
@@ -278,22 +280,82 @@ public abstract class NestedLoopJoinNode<RowT> extends AbstractNode<RowT> {
                 RowHandler.RowFactory<RowT> leftRowFactory = ctx.rowHandler().factory(leftRowSchema);
                 RowHandler.RowFactory<RowT> rightRowFactory = ctx.rowHandler().factory(rightRowSchema);
 
-                return new FullOuterJoin<>(ctx, cond, leftRowFactory, rightRowFactory);
+                //return new FullOuterJoin<>(ctx, cond, leftRowFactory, rightRowFactory);
+                return new FullOuterHashJoin<>(ctx, cond, leftRowFactory, rightRowFactory, cond0, leftRowType);
             }
 
             case SEMI:
                 return new SemiJoin<>(ctx, cond);
+                //return new SemiHashJoin<>(ctx, cond, cond0, leftRowType);
 
             case ANTI:
-                return new AntiJoin<>(ctx, cond);
+                //return new AntiJoin<>(ctx, cond);
+                buildJoinPositions(cond0, joinCondPos, leftRowType);
+                return new AntiHashJoin<>(ctx, cond, cond0, leftRowType);
 
             default:
                 throw new IllegalStateException("Join type \"" + joinType + "\" is not supported yet");
         }
     }
 
+    private static class InnerHashJoin<RowT> extends NestedLoopJoinNode<RowT> {
+        private InnerHashJoin(ExecutionContext<RowT> ctx, BiPredicate<RowT, RowT> cond, RexNode cond0,
+                RelDataType leftRowType) {
+            super(ctx, cond);
+
+            buildJoinPositions(cond0, joinCondPos, leftRowType);
+        }
+
+        /** {@inheritDoc} */
+        @Override
+        protected void rewindInternal() {
+            hashMap.clear();
+
+            super.rewindInternal();
+        }
+
+        @Override
+        protected void join() throws Exception {
+            if (waitingRight == NOT_WAITING) {
+                inLoop = true;
+                try {
+                    while (requested > 0 && !leftInBuf.isEmpty()) {
+                        RowT left = leftInBuf.remove();
+
+                        List<RowT> rightRows = lookup(left, handler, hashMap, joinCondPos);
+
+                        if (!rightRows.isEmpty()) {
+                            for (RowT right : rightRows) {
+                                checkState();
+
+                                requested--;
+                                RowT row = handler.concat(left, right);
+                                downstream().push(row);
+                            }
+                        }
+                    }
+                } finally {
+                    inLoop = false;
+                }
+            }
+
+            if (waitingRight == 0) {
+                rightSource().request(waitingRight = inBufSize);
+            }
+
+            if (waitingLeft == 0 && leftInBuf.isEmpty()) {
+                leftSource().request(waitingLeft = inBufSize);
+            }
+
+            if (requested > 0 && waitingLeft == NOT_WAITING && waitingRight == NOT_WAITING && leftInBuf.isEmpty()) {
+                requested = 0;
+                downstream().end();
+            }
+        }
+    }
+
     private static class InnerJoin<RowT> extends NestedLoopJoinNode<RowT> {
-        private RowT left;
+        private @Nullable RowT left;
 
         private int rightIdx;
 
@@ -593,27 +655,12 @@ public abstract class NestedLoopJoinNode<RowT> extends AbstractNode<RowT> {
         }
     }
 
-    private static class RightJoin<RowT> extends NestedLoopJoinNode<RowT> {
-        /** Right row factory. */
+    private static class RightHashJoin<RowT> extends NestedLoopJoinNode<RowT> {
+        /** Left row factory. */
         private final RowHandler.RowFactory<RowT> leftRowFactory;
 
-        private @Nullable BitSet rightNotMatchedIndexes;
-
-        private int lastPushedInd;
-
-        private RowT left;
-
-        private int rightIdx;
-
-        /**
-         * Constructor.
-         * TODO Documentation https://issues.apache.org/jira/browse/IGNITE-15859
-         *
-         * @param ctx  Execution context.
-         * @param cond Join expression.
-         * @param leftRowFactory Left row factory.
-         */
-        private RightJoin(
+        // TODO !!!
+        private RightHashJoin(
                 ExecutionContext<RowT> ctx,
                 BiPredicate<RowT, RowT> cond,
                 RowHandler.RowFactory<RowT> leftRowFactory,
@@ -630,6 +677,97 @@ public abstract class NestedLoopJoinNode<RowT> extends AbstractNode<RowT> {
         /** {@inheritDoc} */
         @Override
         protected void rewindInternal() {
+            hashMap.clear();
+
+            super.rewindInternal();
+        }
+
+        @Override
+        protected void join() throws Exception {
+            if (waitingRight == NOT_WAITING) {
+                inLoop = true;
+                try {
+                    while (requested > 0 && !leftInBuf.isEmpty()) {
+                        RowT left = leftInBuf.remove();
+
+                        List<RowT> rightRows = lookup(left, handler, hashMap, joinCondPos);
+
+                        for (RowT right : rightRows) {
+                            checkState();
+
+                            requested--;
+
+                            RowT joined = handler.concat(left, right);
+                            downstream().push(joined);
+                        }
+                    }
+                } finally {
+                    inLoop = false;
+                }
+            }
+
+            if (waitingRight == 0) {
+                rightSource().request(waitingRight = inBufSize);
+            }
+
+            if (waitingLeft == 0 && leftInBuf.isEmpty()) {
+                leftSource().request(waitingLeft = inBufSize);
+            }
+
+            if (leftInBuf.isEmpty() && waitingLeft == NOT_WAITING && requested > 0) {
+                List<RowT> res = getUntouched(hashMap, null);
+
+                for (RowT right : res) {
+                    RowT row = handler.concat(leftRowFactory.create(), right);
+                    requested--;
+                    downstream().push(row);
+
+                    if (requested == 0) {
+                        break;
+                    }
+                }
+            }
+
+            if (requested > 0 && waitingLeft == NOT_WAITING && waitingRight == NOT_WAITING && leftInBuf.isEmpty()) {
+                requested = 0;
+                downstream().end();
+            }
+        }
+    }
+
+    private static class RightJoin<RowT> extends NestedLoopJoinNode<RowT> {
+        /** Left row factory. */
+        private final RowHandler.RowFactory<RowT> leftRowFactory;
+
+        private @Nullable BitSet rightNotMatchedIndexes;
+
+        private int lastPushedInd;
+
+        private @Nullable RowT left;
+
+        private int rightIdx;
+
+        /**
+         * Constructor.
+         * TODO Documentation https://issues.apache.org/jira/browse/IGNITE-15859
+         *
+         * @param ctx  Execution context.
+         * @param cond Join expression.
+         * @param leftRowFactory Left row factory.
+         */
+        private RightJoin(
+                ExecutionContext<RowT> ctx,
+                BiPredicate<RowT, RowT> cond,
+                RowHandler.RowFactory<RowT> leftRowFactory
+        ) {
+            super(ctx, cond);
+
+            this.leftRowFactory = leftRowFactory;
+        }
+
+        /** {@inheritDoc} */
+        @Override
+        protected void rewindInternal() {
             left = null;
             rightNotMatchedIndexes = null;
             lastPushedInd = 0;
@@ -639,8 +777,8 @@ public abstract class NestedLoopJoinNode<RowT> extends AbstractNode<RowT> {
         }
 
         /** {@inheritDoc} */
-        //@Override
-        protected void join1() throws Exception {
+        @Override
+        protected void join() throws Exception {
             if (waitingRight == NOT_WAITING) {
                 if (rightNotMatchedIndexes == null) {
                     rightNotMatchedIndexes = new BitSet(rightMaterialized.size());
@@ -725,35 +863,63 @@ public abstract class NestedLoopJoinNode<RowT> extends AbstractNode<RowT> {
                 downstream().end();
             }
         }
+    }
 
+    private static class FullOuterHashJoin<RowT> extends NestedLoopJoinNode<RowT> {
+        /** Left row factory. */
+        private final RowHandler.RowFactory<RowT> leftRowFactory;
+
+        /** Right row factory. */
+        private final RowHandler.RowFactory<RowT> rightRowFactory;
+
+        private FullOuterHashJoin(
+                ExecutionContext<RowT> ctx,
+                BiPredicate<RowT, RowT> cond,
+                RowHandler.RowFactory<RowT> leftRowFactory,
+                RowHandler.RowFactory<RowT> rightRowFactory,
+                RexNode cond0,
+                RelDataType leftRowType
+        ) {
+            super(ctx, cond);
+
+            this.leftRowFactory = leftRowFactory;
+            this.rightRowFactory = rightRowFactory;
+
+            buildJoinPositions(cond0, joinCondPos, leftRowType);
+        }
+
+        /** {@inheritDoc} */
+        @Override
+        protected void rewindInternal() {
+            hashMap.clear();
+
+            super.rewindInternal();
+        }
+
+        /** {@inheritDoc} */
         @Override
         protected void join() throws Exception {
             if (waitingRight == NOT_WAITING) {
-                if (rightNotMatchedIndexes == null) {
-                    rightNotMatchedIndexes = new BitSet(rightMaterialized.size());
-
-                    rightNotMatchedIndexes.set(0, rightMaterialized.size());
-                }
-
                 inLoop = true;
                 try {
-                    while (requested > 0 && (left != null || !leftInBuf.isEmpty())) {
-                        if (left == null) {
-                            left = leftInBuf.remove();
-                        }
+                    while (requested > 0 && !leftInBuf.isEmpty()) {
+                        checkState();
+
+                        RowT left = leftInBuf.remove();
 
                         List<RowT> rightRows = lookup(left, handler, hashMap, joinCondPos);
 
-                        for (RowT right : rightRows) {
-                            checkState();
-
+                        if (rightRows.isEmpty()) {
                             requested--;
+                            downstream().push(handler.concat(left, rightRowFactory.create()));
+                        } else {
+                            for (RowT right : rightRows) {
+                                requested--;
 
-                            RowT joined = handler.concat(left, right);
-                            downstream().push(joined);
+                                RowT joined = handler.concat(left, right);
+                                downstream().push(joined);
+                            }
                         }
-
-                        left = null; // !!!!
                     }
                 } finally {
                     inLoop = false;
@@ -782,8 +948,7 @@ public abstract class NestedLoopJoinNode<RowT> extends AbstractNode<RowT> {
                 }
             }
 
-            if (requested > 0 && waitingLeft == NOT_WAITING && waitingRight == NOT_WAITING && left == null
-                    && leftInBuf.isEmpty()) {
+            if (requested > 0 && waitingLeft == NOT_WAITING && waitingRight == NOT_WAITING && leftInBuf.isEmpty()) {
                 requested = 0;
                 downstream().end();
             }
@@ -944,6 +1109,59 @@ public abstract class NestedLoopJoinNode<RowT> extends AbstractNode<RowT> {
         }
     }
 
+    private static class SemiHashJoin<RowT> extends NestedLoopJoinNode<RowT> {
+        private SemiHashJoin(
+                ExecutionContext<RowT> ctx,
+                BiPredicate<RowT, RowT> cond,
+                RexNode cond0,
+                RelDataType leftRowType
+        ) {
+            super(ctx, cond);
+
+            buildJoinPositions(cond0, joinCondPos, leftRowType);
+        }
+
+        /** {@inheritDoc} */
+        @Override
+        protected void rewindInternal() {
+            hashMap.clear();
+
+            super.rewindInternal();
+        }
+
+        /** {@inheritDoc} */
+        @Override
+        protected void join() throws Exception {
+            if (waitingRight == NOT_WAITING) {
+                while (requested > 0 && !leftInBuf.isEmpty()) {
+                    checkState();
+
+                    RowT left = leftInBuf.remove();
+
+                    List<RowT> rightRows = lookup(left, handler, hashMap, joinCondPos);
+
+                    if (!rightRows.isEmpty()) {
+                        requested--;
+                        downstream().push(left);
+                    }
+                }
+            }
+
+            if (waitingRight == 0) {
+                rightSource().request(waitingRight = inBufSize);
+            }
+
+            if (waitingLeft == 0 && leftInBuf.isEmpty()) {
+                leftSource().request(waitingLeft = inBufSize);
+            }
+
+            if (requested > 0 && waitingLeft == NOT_WAITING && waitingRight == NOT_WAITING && leftInBuf.isEmpty()) {
+                downstream().end();
+                requested = 0;
+            }
+        }
+    }
+
     private static class SemiJoin<RowT> extends NestedLoopJoinNode<RowT> {
         private RowT left;
 
@@ -1010,6 +1228,58 @@ public abstract class NestedLoopJoinNode<RowT> extends AbstractNode<RowT> {
 
             if (requested > 0 && waitingLeft == NOT_WAITING && waitingRight == NOT_WAITING && left == null
                     && leftInBuf.isEmpty()) {
+                downstream().end();
+                requested = 0;
+            }
+        }
+    }
+
+    private static class AntiHashJoin<RowT> extends NestedLoopJoinNode<RowT> {
+        //TODO:!!
+        private AntiHashJoin(
+                ExecutionContext<RowT> ctx,
+                BiPredicate<RowT, RowT> cond,
+                RexNode cond0,
+                RelDataType leftRowType) {
+            super(ctx, cond);
+
+            buildJoinPositions(cond0, joinCondPos, leftRowType);
+        }
+
+        @Override
+        protected void rewindInternal() {
+            hashMap.clear();
+
+            super.rewindInternal();
+        }
+
+        /** {@inheritDoc} */
+        @Override
+        protected void join() throws Exception {
+            if (waitingRight == NOT_WAITING) {
+                while (requested > 0 && !leftInBuf.isEmpty()) {
+                    checkState();
+
+                    RowT left = leftInBuf.remove();
+
+                    List<RowT> rightRows = lookup(left, handler, hashMap, joinCondPos);
+
+                    if (rightRows.isEmpty()) {
+                        requested--;
+                        downstream().push(left);
+                    }
+                }
+            }
+
+            if (waitingRight == 0) {
+                rightSource().request(waitingRight = inBufSize);
+            }
+
+            if (waitingLeft == 0 && leftInBuf.isEmpty()) {
+                leftSource().request(waitingLeft = inBufSize);
+            }
+
+            if (requested > 0 && waitingLeft == NOT_WAITING && waitingRight == NOT_WAITING && leftInBuf.isEmpty()) {
                 downstream().end();
                 requested = 0;
             }
