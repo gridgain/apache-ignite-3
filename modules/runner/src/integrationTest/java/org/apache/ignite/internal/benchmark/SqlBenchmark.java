@@ -127,8 +127,8 @@ public class SqlBenchmark extends AbstractMultiNodeBenchmark {
     @OutputTimeUnit(TimeUnit.MICROSECONDS)
     public void selectLeftJoin(Blackhole bh) {
         try (var rs = sql.execute(null, ""
-                //+ "SELECT /*+ DISABLE_RULE('NestedLoopJoinConverter', 'MergeJoinConverter', 'CorrelatedNestedLoopJoin') */ t1.field1 FROM usertable t1 "
-                + "SELECT /*+ DISABLE_RULE('HashJoinConverter', 'MergeJoinConverter', 'CorrelatedNestedLoopJoin') */ t1.field1 FROM usertable t1 "
+                + "SELECT /*+ DISABLE_RULE('NestedLoopJoinConverter', 'MergeJoinConverter', 'CorrelatedNestedLoopJoin') */ t1.field1 FROM usertable t1 "
+                //+ "SELECT /*+ DISABLE_RULE('HashJoinConverter', 'MergeJoinConverter', 'CorrelatedNestedLoopJoin') */ t1.field1 FROM usertable t1 "
                 + "LEFT JOIN usertable t2 "
                 + "on t1.field2 = t2.field2")) {
             while (rs.hasNext()) {

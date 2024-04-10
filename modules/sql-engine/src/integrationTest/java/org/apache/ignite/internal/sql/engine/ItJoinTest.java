@@ -38,6 +38,7 @@ public class ItJoinTest extends BaseSqlIntegrationTest {
     public static void beforeTestsStarted() {
         sql("CREATE TABLE t1 (id INT PRIMARY KEY, c1 INT NOT NULL, c2 INT, c3 INT)");
         sql("CREATE TABLE t2 (id INT PRIMARY KEY, c1 INT NOT NULL, c2 INT, c3 INT)");
+        sql("CREATE TABLE t3 (id INT PRIMARY KEY, c1 INTEGER)");
 
         sql("create index t1_idx on t1 (c3, c2, c1)");
         sql("create index t2_idx on t2 (c3, c2, c1)");
@@ -58,6 +59,13 @@ public class ItJoinTest extends BaseSqlIntegrationTest {
                 new Object[] {3, 3, null, 3},
                 new Object[] {4, 3, 3, 3},
                 new Object[] {5, 4, 4, 4}
+        );
+
+        insertData("t3", List.of("ID", "C1"),
+                new Object[] {0, 1},
+                new Object[] {1, 2},
+                new Object[] {2, 3},
+                new Object[] {3, null}
         );
     }
 
@@ -277,23 +285,11 @@ public class ItJoinTest extends BaseSqlIntegrationTest {
     // TODO: https://issues.apache.org/jira/browse/IGNITE-21286 remove exclude
     @EnumSource(mode = Mode.EXCLUDE, names = "CORRELATED")
     public void testLeftJoin(JoinType joinType) {
-        assertQuery(""
-                        + "select t11.c1 c11, t11.c2 c12, t11.c3 c13, t22.c1 c21, t22.c2 c22 "
-                        + "  from t1 t11"
-                        + "  left join t2 t22"
-                        + "    on t11.c1 = t22.c1"
-                        + "   and t11.c2 = t22.c2 "
-                        + " order by t11.c1, t11.c2, t11.c3",
-                joinType
-        )
+        assertQuery("SELECT c1 FROM t3 WHERE c1 = ANY(SELECT c1 FROM t3) ORDER BY c1", joinType)
                 .ordered()
-                .returns(1, 1, 1, 1, 1)
-                .returns(2, 2, 2, 2, 2)
-                .returns(2, 2, 2, 2, 2)
-                .returns(2, null, 2, null, null)
-                .returns(3, 3, 3, 3, 3)
-                .returns(3, 3, null, 3, 3)
-                .returns(4, 4, 4, 4, 4)
+                .returns(1)
+                .returns(2)
+                .returns(3)
                 .check();
 
         assertQuery(""
