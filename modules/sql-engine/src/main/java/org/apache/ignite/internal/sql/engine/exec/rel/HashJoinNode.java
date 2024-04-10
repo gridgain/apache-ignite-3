@@ -2,13 +2,12 @@ package org.apache.ignite.internal.sql.engine.exec.rel;
 
 import static org.apache.ignite.internal.sql.engine.util.TypeUtils.rowSchemaFromRelTypes;
 
+import it.unimi.dsi.fastutil.objects.Object2ObjectOpenHashMap;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.stream.Collectors;
 import org.apache.calcite.plan.RelOptUtil;
 import org.apache.calcite.rel.core.JoinRelType;
 import org.apache.calcite.rel.type.RelDataType;
@@ -23,13 +22,19 @@ import org.apache.ignite.internal.sql.engine.exec.row.RowSchema;
 import org.jetbrains.annotations.Nullable;
 
 public abstract class HashJoinNode<RowT> extends NestedLoopJoinNode<RowT> {
-    Map<Object, Map> hashMap = new LinkedHashMap<>(); // hash map will be enough ?
+    Map<Object, Object> hashMap = new Object2ObjectOpenHashMap<>();
 
     Collection<Integer> leftJoinPositions = new ArrayList<>();
     Collection<Integer> rightJoinPositions = new ArrayList<>();
 
-    private HashJoinNode(ExecutionContext<RowT> ctx, RexNode cond, RelDataType leftRowType) {
+    boolean touchResults;
+
+    int rightSize;
+
+    private HashJoinNode(ExecutionContext<RowT> ctx, RexNode cond, RelDataType leftRowType, boolean touch) {
         super(ctx, (p1, p2) -> true); // TODO fix it
+
+        touchResults = touch;
 
         buildJoinPositions(cond, leftRowType, leftJoinPositions, rightJoinPositions);
     }
@@ -100,7 +105,7 @@ public abstract class HashJoinNode<RowT> extends NestedLoopJoinNode<RowT> {
     private static class InnerHashJoin<RowT> extends HashJoinNode<RowT> {
         private InnerHashJoin(ExecutionContext<RowT> ctx, RexNode cond0,
                 RelDataType leftRowType) {
-            super(ctx, cond0, leftRowType);
+            super(ctx, cond0, leftRowType, false);
         }
 
         @Override
@@ -111,7 +116,7 @@ public abstract class HashJoinNode<RowT> extends NestedLoopJoinNode<RowT> {
                     while (requested > 0 && !leftInBuf.isEmpty()) {
                         RowT left = leftInBuf.remove();
 
-                        List<RowT> rightRows = lookup(left, handler, hashMap, leftJoinPositions);
+                        Collection<RowT> rightRows = lookup(left, handler, hashMap, leftJoinPositions, touchResults);
 
                         if (!rightRows.isEmpty()) {
                             for (RowT right : rightRows) {
@@ -143,7 +148,7 @@ public abstract class HashJoinNode<RowT> extends NestedLoopJoinNode<RowT> {
                 RexNode cond0,
                 RelDataType leftRowType
         ) {
-            super(ctx, cond0, leftRowType);
+            super(ctx, cond0, leftRowType, false);
 
             this.rightRowFactory = rightRowFactory;
         }
@@ -159,7 +164,7 @@ public abstract class HashJoinNode<RowT> extends NestedLoopJoinNode<RowT> {
 
                         RowT left = leftInBuf.remove();
 
-                        List<RowT> rightRows = lookup(left, handler, hashMap, leftJoinPositions);
+                        Collection<RowT> rightRows = lookup(left, handler, hashMap, leftJoinPositions, touchResults);
 
                         if (rightRows.isEmpty()) {
                             requested--;
@@ -197,7 +202,7 @@ public abstract class HashJoinNode<RowT> extends NestedLoopJoinNode<RowT> {
                 RexNode cond0,
                 RelDataType leftRowType
         ) {
-            super(ctx, cond0, leftRowType);
+            super(ctx, cond0, leftRowType, true);
 
             this.leftRowFactory = leftRowFactory;
         }
@@ -210,7 +215,7 @@ public abstract class HashJoinNode<RowT> extends NestedLoopJoinNode<RowT> {
                     while (requested > 0 && !leftInBuf.isEmpty()) {
                         RowT left = leftInBuf.remove();
 
-                        List<RowT> rightRows = lookup(left, handler, hashMap, leftJoinPositions);
+                        Collection<RowT> rightRows = lookup(left, handler, hashMap, leftJoinPositions, touchResults);
 
                         for (RowT right : rightRows) {
                             checkState();
@@ -258,7 +263,7 @@ public abstract class HashJoinNode<RowT> extends NestedLoopJoinNode<RowT> {
                 RexNode cond0,
                 RelDataType leftRowType
         ) {
-            super(ctx, cond0, leftRowType);
+            super(ctx, cond0, leftRowType, true);
 
             this.leftRowFactory = leftRowFactory;
             this.rightRowFactory = rightRowFactory;
@@ -275,7 +280,7 @@ public abstract class HashJoinNode<RowT> extends NestedLoopJoinNode<RowT> {
 
                         RowT left = leftInBuf.remove();
 
-                        List<RowT> rightRows = lookup(left, handler, hashMap, leftJoinPositions);
+                        Collection<RowT> rightRows = lookup(left, handler, hashMap, leftJoinPositions, touchResults);
 
                         if (rightRows.isEmpty()) {
                             requested--;
@@ -318,7 +323,7 @@ public abstract class HashJoinNode<RowT> extends NestedLoopJoinNode<RowT> {
                 RexNode cond0,
                 RelDataType leftRowType
         ) {
-            super(ctx, cond0, leftRowType);
+            super(ctx, cond0, leftRowType, false);
         }
 
         /** {@inheritDoc} */
@@ -330,7 +335,7 @@ public abstract class HashJoinNode<RowT> extends NestedLoopJoinNode<RowT> {
 
                     RowT left = leftInBuf.remove();
 
-                    List<RowT> rightRows = lookup(left, handler, hashMap, leftJoinPositions);
+                    Collection<RowT> rightRows = lookup(left, handler, hashMap, leftJoinPositions, touchResults);
 
                     if (!rightRows.isEmpty()) {
                         requested--;
@@ -349,7 +354,7 @@ public abstract class HashJoinNode<RowT> extends NestedLoopJoinNode<RowT> {
                 ExecutionContext<RowT> ctx,
                 RexNode cond0,
                 RelDataType leftRowType) {
-            super(ctx, cond0, leftRowType);
+            super(ctx, cond0, leftRowType, false);
         }
 
         /** {@inheritDoc} */
@@ -361,7 +366,7 @@ public abstract class HashJoinNode<RowT> extends NestedLoopJoinNode<RowT> {
 
                     RowT left = leftInBuf.remove();
 
-                    List<RowT> rightRows = lookup(left, handler, hashMap, leftJoinPositions);
+                    Collection<RowT> rightRows = lookup(left, handler, hashMap, leftJoinPositions, touchResults);
 
                     if (rightRows.isEmpty()) {
                         requested--;
@@ -382,6 +387,12 @@ public abstract class HashJoinNode<RowT> extends NestedLoopJoinNode<RowT> {
                     List<RexNode> node = call.getOperands();
                     RexInputRef n1 = (RexInputRef) node.get(0);
                     RexInputRef n2 = (RexInputRef) node.get(1);
+
+                    if (n1.getIndex() > n2.getIndex()) { // hack
+                        n1 = (RexInputRef) node.get(1);
+                        n2 = (RexInputRef) node.get(0);
+                    }
+
                     leftJoinPositions.add(n1.getIndex());
                     rightJoinPositions.add(n2.getIndex() - leftRowType.getFieldCount());
                 }
@@ -392,33 +403,53 @@ public abstract class HashJoinNode<RowT> extends NestedLoopJoinNode<RowT> {
         rexShuttle.apply(cond);
     }
 
-    private static <RowT> List<RowT> lookup(RowT row, RowHandler<RowT> handler, Map<Object, Map> hashMap, Collection<Integer> leftJoinPositions) {
-        Map<Object, Map> next = hashMap;
+    private static <RowT> Collection<RowT> lookup(
+            RowT row,
+            RowHandler<RowT> handler,
+            Map<Object, Object> hashMap,
+            Collection<Integer> leftJoinPositions,
+            boolean processTouched
+    ) {
+        Map<Object, Object> next = hashMap;
+        int processed = 0;
+        Collection<RowT> coll = Collections.emptyList();
+
         for (Integer entry : leftJoinPositions) {
             Object ent = handler.get(entry, row);
-            next = next.get(ent);
-            if (next == null) {
+            Object next0 = next.get(ent);
+
+            if (next0 == null) {
                 return Collections.emptyList();
+            }
+
+            processed++;
+            if (processed == leftJoinPositions.size()) {
+                coll = (Collection<RowT>) next.get(ent);
+
+                if (processTouched) {
+                    ((TouchedList<RowT>) coll).touched = true;
+                }
+            } else {
+                next = (Map<Object, Object>) next0;
             }
         }
 
-        for (Map.Entry<Object, Map> ent : next.entrySet()) {
-            next.put(ent.getKey(), Collections.emptyMap()); // touched
-        }
-
-        return next.keySet().stream().map(k -> (RowT) k).collect(Collectors.toList());
+        return coll;
     }
 
-    private static <RowT> List<RowT> getUntouched(Map<Object, Map> entries, @Nullable List<RowT> out) {
+    private static <RowT> List<RowT> getUntouched(Map<Object, Object> entries, @Nullable List<RowT> out) {
         if (out == null) {
             out = new ArrayList<>();
         }
 
-        for (Map.Entry<Object, Map> ent : entries.entrySet()) {
-            if (ent.getValue() == null) {
-                out.add((RowT) ent.getKey());
+        for (Map.Entry<Object, Object> ent : entries.entrySet()) {
+            if (ent.getValue() instanceof Collection) {
+                TouchedList<RowT> coll = (TouchedList<RowT>) ent.getValue();
+                if (!coll.touched) {
+                    out.addAll(coll);
+                }
             } else {
-                getUntouched(ent.getValue(), out);
+                getUntouched((Map<Object, Object>) ent.getValue(), out);
             }
         }
         return out;
@@ -432,22 +463,30 @@ public abstract class HashJoinNode<RowT> extends NestedLoopJoinNode<RowT> {
         checkState();
 
         waitingRight--;
+        rightSize++;
 
-        Map<Object, Map> next = hashMap;
+        Map<Object, Object> next = hashMap;
         int processed = 0;
         for (Integer entry : rightJoinPositions) {
             processed++;
             Object ent = handler.get(entry, row);
             if (processed == rightJoinPositions.size()) {
-                Map raw = next.computeIfAbsent(ent, k -> new LinkedHashMap<>());
-                raw.put(row, null);
+                Collection<RowT> raw = touchResults
+                        ? (Collection<RowT>) next.computeIfAbsent(ent, k -> new TouchedList<>())
+                        : (Collection<RowT>) next.computeIfAbsent(ent, k -> new ArrayList<>());
+
+                raw.add(row);
             } else {
-                next = next.computeIfAbsent(ent, k -> new LinkedHashMap<>());
+                next = (Object2ObjectOpenHashMap<Object, Object>) next.computeIfAbsent(ent, k -> new Object2ObjectOpenHashMap<>());
             }
         }
 
         if (waitingRight == 0) {
             rightSource().request(waitingRight = inBufSize);
         }
+    }
+
+    private static class TouchedList<E> extends ArrayList<E> {
+        boolean touched = false;
     }
 }
