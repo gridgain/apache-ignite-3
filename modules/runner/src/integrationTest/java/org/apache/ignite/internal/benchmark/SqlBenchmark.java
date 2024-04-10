@@ -45,7 +45,7 @@ import org.openjdk.jmh.runner.options.OptionsBuilder;
 @Fork(1)
 @Threads(1)
 @Warmup(iterations = 10, time = 2)
-@Measurement(iterations = 20, time = 2)
+@Measurement(iterations = 10, time = 2)
 @BenchmarkMode(Mode.AverageTime)
 @OutputTimeUnit(TimeUnit.MILLISECONDS)
 @SuppressWarnings({"WeakerAccess", "unused"})
@@ -54,13 +54,13 @@ public class SqlBenchmark extends AbstractMultiNodeBenchmark {
 
     private IgniteSql sql;
 
-    @Param({"1", "2", "3"})
+    @Param({"1"/*, "2", "3"*/})
     private int clusterSize;
 
     /** Fills the table with data. */
     @Setup
     public void setUp() throws IOException {
-        populateTable(TABLE_NAME, TABLE_SIZE, 1_000);
+        populateTable(TABLE_NAME, 1030, 1_000);
 
         sql = clusterNode.sql();
     }
@@ -121,11 +121,28 @@ public class SqlBenchmark extends AbstractMultiNodeBenchmark {
     }
 
     /**
+     * Benchmark left join.
+     */
+    @Benchmark
+    @OutputTimeUnit(TimeUnit.MICROSECONDS)
+    public void selectLeftJoin(Blackhole bh) {
+        try (var rs = sql.execute(null, ""
+                //+ "SELECT /*+ DISABLE_RULE('NestedLoopJoinConverter', 'MergeJoinConverter', 'CorrelatedNestedLoopJoin') */ t1.field1 FROM usertable t1 "
+                + "SELECT /*+ DISABLE_RULE('HashJoinConverter', 'MergeJoinConverter', 'CorrelatedNestedLoopJoin') */ t1.field1 FROM usertable t1 "
+                + "LEFT JOIN usertable t2 "
+                + "on t1.field2 = t2.field2")) {
+            while (rs.hasNext()) {
+                bh.consume(rs.next());
+            }
+        }
+    }
+
+    /**
      * Benchmark's entry point.
      */
     public static void main(String[] args) throws RunnerException {
         Options opt = new OptionsBuilder()
-                .include(".*" + SqlBenchmark.class.getSimpleName() + ".*")
+                .include(".*" + SqlBenchmark.class.getSimpleName() + ".*selectLeftJoin")
                 .build();
 
         new Runner(opt).run();

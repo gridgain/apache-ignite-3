@@ -278,6 +278,25 @@ public class ItJoinTest extends BaseSqlIntegrationTest {
     @EnumSource(mode = Mode.EXCLUDE, names = "CORRELATED")
     public void testLeftJoin(JoinType joinType) {
         assertQuery(""
+                        + "select t11.c1 c11, t11.c2 c12, t11.c3 c13, t22.c1 c21, t22.c2 c22 "
+                        + "  from t1 t11"
+                        + "  left join t2 t22"
+                        + "    on t11.c1 = t22.c1"
+                        + "   and t11.c2 = t22.c2 "
+                        + " order by t11.c1, t11.c2, t11.c3",
+                joinType
+        )
+                .ordered()
+                .returns(1, 1, 1, 1, 1)
+                .returns(2, 2, 2, 2, 2)
+                .returns(2, 2, 2, 2, 2)
+                .returns(2, null, 2, null, null)
+                .returns(3, 3, 3, 3, 3)
+                .returns(3, 3, null, 3, 3)
+                .returns(4, 4, 4, 4, 4)
+                .check();
+
+        assertQuery(""
                 + "select t1.c1 c11, t1.c2 c12, t1.c3 c13, t2.c1 c21, t2.c2 c22 "
                 + "  from t1 "
                 + "  left join t2 "

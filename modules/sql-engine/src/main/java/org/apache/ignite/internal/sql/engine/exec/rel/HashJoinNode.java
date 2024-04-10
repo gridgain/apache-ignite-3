@@ -52,9 +52,12 @@ public abstract class HashJoinNode<RowT> extends NestedLoopJoinNode<RowT> {
             leftSource().request(waitingLeft = inBufSize);
         }
 
+        //System.err.println("requested: " + requested + " " + waitingLeft + " " + waitingRight + " " + leftInBuf.isEmpty() + " " + left);
+
         if (requested > 0 && waitingLeft == NOT_WAITING && waitingRight == NOT_WAITING && leftInBuf.isEmpty() && left == null) {
             requested = 0;
             downstream().end();
+            //System.err.println("end join");
         }
     }
 
@@ -178,7 +181,7 @@ public abstract class HashJoinNode<RowT> extends NestedLoopJoinNode<RowT> {
             super(ctx, cond0, finalCheckCond, leftRowType, false);
 
             this.rightRowFactory = rightRowFactory;
-            System.err.println("!!!call: LeftHashJoin");
+            //System.err.println("!!!call: LeftHashJoin");
         }
 
         /** {@inheritDoc} */
@@ -213,10 +216,12 @@ public abstract class HashJoinNode<RowT> extends NestedLoopJoinNode<RowT> {
                                     continue;
                                 }
 
+                                --requested;
+
                                 RowT row = handler.concat(left, right);
                                 downstream().push(row);
 
-                                if (--requested == 0) {
+                                if (requested == 0) {
                                     break;
                                 }
                             }
