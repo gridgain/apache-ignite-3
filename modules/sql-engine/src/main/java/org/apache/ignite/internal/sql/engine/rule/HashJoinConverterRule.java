@@ -52,6 +52,8 @@ public class HashJoinConverterRule extends AbstractIgniteConverterRule<LogicalJo
             return false;
         }
 
+        System.err.println("!!! cond: " + logicalJoin.getCondition());
+
         return !nullOrEmpty(logicalJoin.analyzeCondition().pairs())
                 && logicalJoin.analyzeCondition().isEqui();
     }

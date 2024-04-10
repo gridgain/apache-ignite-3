@@ -106,6 +106,7 @@ public abstract class HashJoinNode<RowT> extends NestedLoopJoinNode<RowT> {
         private InnerHashJoin(ExecutionContext<RowT> ctx, RexNode cond0,
                 RelDataType leftRowType) {
             super(ctx, cond0, leftRowType, false);
+            System.err.println("!!!call: InnerHashJoin");
         }
 
         @Override
@@ -151,6 +152,7 @@ public abstract class HashJoinNode<RowT> extends NestedLoopJoinNode<RowT> {
             super(ctx, cond0, leftRowType, false);
 
             this.rightRowFactory = rightRowFactory;
+            System.err.println("!!!call: LeftHashJoin");
         }
 
         /** {@inheritDoc} */
@@ -205,6 +207,14 @@ public abstract class HashJoinNode<RowT> extends NestedLoopJoinNode<RowT> {
             super(ctx, cond0, leftRowType, true);
 
             this.leftRowFactory = leftRowFactory;
+            System.err.println("!!!call: RightHashJoin");
+        }
+
+        @Override
+        protected void rewindInternal() {
+            HashJoinNode.resetTouched(hashMap, null);
+
+            super.rewindInternal();
         }
 
         @Override
@@ -231,7 +241,7 @@ public abstract class HashJoinNode<RowT> extends NestedLoopJoinNode<RowT> {
                 }
             }
 
-            if (leftInBuf.isEmpty() && waitingLeft == NOT_WAITING && requested > 0) {
+            if (leftInBuf.isEmpty() && waitingLeft == NOT_WAITING && waitingRight == NOT_WAITING && requested > 0) {
                 List<RowT> res = getUntouched(hashMap, null);
 
                 for (RowT right : res) {
@@ -267,6 +277,15 @@ public abstract class HashJoinNode<RowT> extends NestedLoopJoinNode<RowT> {
 
             this.leftRowFactory = leftRowFactory;
             this.rightRowFactory = rightRowFactory;
+
+            System.err.println("!!!call: FullOuterHashJoin");
+        }
+
+        @Override
+        protected void rewindInternal() {
+            HashJoinNode.resetTouched(hashMap, null);
+
+            super.rewindInternal();
         }
 
         /** {@inheritDoc} */
@@ -299,7 +318,7 @@ public abstract class HashJoinNode<RowT> extends NestedLoopJoinNode<RowT> {
                 }
             }
 
-            if (leftInBuf.isEmpty() && waitingLeft == NOT_WAITING && requested > 0) {
+            if (leftInBuf.isEmpty() && waitingLeft == NOT_WAITING && waitingRight == NOT_WAITING && requested > 0) {
                 List<RowT> res = getUntouched(hashMap, null);
 
                 for (RowT right : res) {
@@ -324,6 +343,8 @@ public abstract class HashJoinNode<RowT> extends NestedLoopJoinNode<RowT> {
                 RelDataType leftRowType
         ) {
             super(ctx, cond0, leftRowType, false);
+
+            System.err.println("!!!call: SemiHashJoin");
         }
 
         /** {@inheritDoc} */
@@ -355,6 +376,8 @@ public abstract class HashJoinNode<RowT> extends NestedLoopJoinNode<RowT> {
                 RexNode cond0,
                 RelDataType leftRowType) {
             super(ctx, cond0, leftRowType, false);
+
+            System.err.println("!!!call: AntiHashJoin");
         }
 
         /** {@inheritDoc} */
@@ -453,6 +476,23 @@ public abstract class HashJoinNode<RowT> extends NestedLoopJoinNode<RowT> {
             }
         }
         return out;
+    }
+
+    private static <RowT> void resetTouched(Map<Object, Object> entries, @Nullable List<RowT> out) {
+        if (out == null) {
+            out = new ArrayList<>();
+        }
+
+        for (Map.Entry<Object, Object> ent : entries.entrySet()) {
+            if (ent.getValue() instanceof Collection) {
+                TouchedList<RowT> coll = (TouchedList<RowT>) ent.getValue();
+                if (coll.touched) {
+                    coll.touched = false;
+                }
+            } else {
+                getUntouched((Map<Object, Object>) ent.getValue(), out);
+            }
+        }
     }
 
     @Override
