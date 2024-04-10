@@ -58,6 +58,8 @@ public abstract class NestedLoopJoinNode<RowT> extends AbstractNode<RowT> {
 
     protected boolean inLoop;
 
+    protected @Nullable RowT left;
+
     /**
      * Constructor.
      * TODO Documentation https://issues.apache.org/jira/browse/IGNITE-15859
@@ -257,8 +259,6 @@ public abstract class NestedLoopJoinNode<RowT> extends AbstractNode<RowT> {
     }
 
     private static class InnerJoin<RowT> extends NestedLoopJoinNode<RowT> {
-        private @Nullable RowT left;
-
         private int rightIdx;
 
         /**
@@ -334,8 +334,6 @@ public abstract class NestedLoopJoinNode<RowT> extends AbstractNode<RowT> {
 
         /** Whether current left row was matched or not. */
         private boolean matched;
-
-        private @Nullable RowT left;
 
         private int rightIdx;
 
@@ -436,8 +434,6 @@ public abstract class NestedLoopJoinNode<RowT> extends AbstractNode<RowT> {
         private @Nullable BitSet rightNotMatchedIndexes;
 
         private int lastPushedInd;
-
-        private @Nullable RowT left;
 
         private int rightIdx;
 
@@ -572,8 +568,6 @@ public abstract class NestedLoopJoinNode<RowT> extends AbstractNode<RowT> {
         private @Nullable BitSet rightNotMatchedIndexes;
 
         private int lastPushedInd;
-
-        private @Nullable RowT left;
 
         private int rightIdx;
 
@@ -714,8 +708,6 @@ public abstract class NestedLoopJoinNode<RowT> extends AbstractNode<RowT> {
     }
 
     private static class SemiJoin<RowT> extends NestedLoopJoinNode<RowT> {
-        private @Nullable RowT left;
-
         private int rightIdx;
 
         /**
@@ -786,8 +778,6 @@ public abstract class NestedLoopJoinNode<RowT> extends AbstractNode<RowT> {
     }
 
     private static class AntiJoin<RowT> extends NestedLoopJoinNode<RowT> {
-        private @Nullable RowT left;
-
         private int rightIdx;
 
         /**

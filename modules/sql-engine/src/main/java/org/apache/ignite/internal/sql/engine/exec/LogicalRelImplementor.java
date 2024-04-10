@@ -43,6 +43,7 @@ import org.apache.calcite.rex.RexLiteral;
 import org.apache.calcite.rex.RexNode;
 import org.apache.calcite.rex.RexShuttle;
 import org.apache.calcite.sql.SqlKind;
+import org.apache.calcite.sql.fun.SqlStdOperatorTable;
 import org.apache.calcite.util.ImmutableBitSet;
 import org.apache.ignite.internal.schema.BinaryTupleSchema;
 import org.apache.ignite.internal.schema.BinaryTupleSchema.Element;
@@ -254,7 +255,6 @@ public class LogicalRelImplementor<RowT> implements IgniteRelVisitor<Node<RowT>>
         BiPredicate<RowT, RowT> cond = expressionFactory.biPredicate(rel.getCondition(), rowType);
 
         Node<RowT> node = NestedLoopJoinNode.create(ctx, outType, leftType, rightType, joinType, cond);
-        //Node<RowT> node = HashJoinNode.create(ctx, outType, leftType, rightType, joinType, rel.getCondition());
 
         Node<RowT> leftInput = visit(rel.getLeft());
         Node<RowT> rightInput = visit(rel.getRight());
@@ -272,7 +272,10 @@ public class LogicalRelImplementor<RowT> implements IgniteRelVisitor<Node<RowT>>
         RelDataType rightType = rel.getRight().getRowType();
         JoinRelType joinType = rel.getJoinType();
 
-        Node<RowT> node = HashJoinNode.create(ctx, outType, leftType, rightType, joinType, rel.getCondition());
+        RelDataType rowType = combinedRowType(ctx.getTypeFactory(), leftType, rightType);
+        BiPredicate<RowT, RowT> cond = expressionFactory.biPredicate(rel.getCondition(), rowType);
+
+        Node<RowT> node = HashJoinNode.create(ctx, outType, leftType, rightType, joinType, rel.getCondition(), cond);
 
         Node<RowT> leftInput = visit(rel.getLeft());
         Node<RowT> rightInput = visit(rel.getRight());
