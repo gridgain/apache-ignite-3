@@ -283,7 +283,7 @@ public class ItJoinTest extends BaseSqlIntegrationTest {
      */
     @ParameterizedTest
     // TODO: https://issues.apache.org/jira/browse/IGNITE-21286 remove exclude
-    @EnumSource(mode = Mode.EXCLUDE, names = "CORRELATED")
+    @EnumSource(mode = Mode.EXCLUDE, names = {"CORRELATED"})
     public void testLeftJoin(JoinType joinType) {
         assertQuery("SELECT c1 FROM t3 WHERE c1 = ANY(SELECT c1 FROM t3) ORDER BY c1", joinType)
                 .ordered()
@@ -842,7 +842,6 @@ public class ItJoinTest extends BaseSqlIntegrationTest {
     @ParameterizedTest(name = "join algo : {0}, index present: {1}")
     @MethodSource("joinTypes")
     @WithSystemProperty(key = "IMPLICIT_PK_ENABLED", value = "true")
-    @EnumSource(mode = Mode.EXCLUDE, names = "HASHJOIN")
     public void testIsNotDistinctFrom(JoinType joinType, boolean indexScan) {
         try {
             sql("CREATE TABLE t11(i1 INTEGER, i2 INTEGER)");
@@ -892,6 +891,7 @@ public class ItJoinTest extends BaseSqlIntegrationTest {
         Stream<Arguments> types = Arrays.stream(JoinType.values())
                 // TODO: https://issues.apache.org/jira/browse/IGNITE-21286 remove filter below
                 .filter(type -> type != JoinType.CORRELATED)
+                .filter(type -> type != JoinType.HASHJOIN)
                 .flatMap(v -> Stream.of(Arguments.of(v, false), Arguments.of(v, true)));
 
         return types;

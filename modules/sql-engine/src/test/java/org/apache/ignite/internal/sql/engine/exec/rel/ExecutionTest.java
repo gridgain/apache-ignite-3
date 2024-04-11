@@ -38,8 +38,10 @@ import java.util.List;
 import java.util.Set;
 import java.util.stream.Stream;
 import org.apache.calcite.rel.core.CorrelationId;
+import org.apache.calcite.rel.core.JoinInfo;
 import org.apache.calcite.rel.core.JoinRelType;
 import org.apache.calcite.rel.type.RelDataType;
+import org.apache.calcite.util.ImmutableIntList;
 import org.apache.ignite.internal.sql.engine.exec.ExecutionContext;
 import org.apache.ignite.internal.sql.engine.exec.RowHandler;
 import org.apache.ignite.internal.sql.engine.exec.row.RowSchema;
@@ -98,6 +100,8 @@ public class ExecutionTest extends AbstractExecutionTest<Object[]> {
 
         NestedLoopJoinNode<Object[]> join = NestedLoopJoinNode.create(ctx, outType, leftType, rightType, INNER,
                 (r1, r2) -> getFieldFromBiRows(hnd, 0, r1, r2) == getFieldFromBiRows(hnd, 4, r1, r2));
+/*        HashJoinNode<Object[]> join = HashJoinNode.create(ctx, outType, leftType, rightType, INNER,
+                JoinInfo.of(ImmutableIntList.of(0), ImmutableIntList.of(1)));*/
         join.register(asList(persons, projects));
 
         ProjectNode<Object[]> project = new ProjectNode<>(ctx, r -> new Object[]{r[0], r[1], r[5]});

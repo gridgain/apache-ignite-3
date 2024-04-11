@@ -60,7 +60,7 @@ public class SqlBenchmark extends AbstractMultiNodeBenchmark {
     /** Fills the table with data. */
     @Setup
     public void setUp() throws IOException {
-        populateTable(TABLE_NAME, 10, 1_000);
+        populateTable(TABLE_NAME, 1030, 1_000);
 
         sql = clusterNode.sql();
     }
@@ -127,9 +127,9 @@ public class SqlBenchmark extends AbstractMultiNodeBenchmark {
     @OutputTimeUnit(TimeUnit.MICROSECONDS)
     public void selectLeftJoin(Blackhole bh) {
         try (var rs = sql.execute(null, ""
-                //+ "SELECT /*+ DISABLE_RULE('NestedLoopJoinConverter', 'MergeJoinConverter', 'CorrelatedNestedLoopJoin') */ t1.field1 FROM usertable t1 "
-                + "SELECT /*+ DISABLE_RULE('HashJoinConverter', 'MergeJoinConverter', 'CorrelatedNestedLoopJoin') */ t1.field1 FROM usertable t1 "
-                + "LEFT JOIN usertable t2 "
+                + "SELECT /*+ DISABLE_RULE('NestedLoopJoinConverter', 'MergeJoinConverter', 'CorrelatedNestedLoopJoin') */ t1.field1 FROM usertable t1 "
+                //+ "SELECT /*+ DISABLE_RULE('HashJoinConverter', 'MergeJoinConverter', 'CorrelatedNestedLoopJoin') */ t1.field1 FROM usertable t1 "
+                + "inner JOIN usertable t2 "
                 + "on t1.field2 = t2.field2")) {
             while (rs.hasNext()) {
                 bh.consume(rs.next());

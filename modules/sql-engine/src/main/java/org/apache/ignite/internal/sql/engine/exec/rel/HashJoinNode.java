@@ -9,38 +9,34 @@ import java.util.Collections;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
-import java.util.function.BiPredicate;
 import org.apache.calcite.plan.RelOptUtil;
+import org.apache.calcite.rel.core.JoinInfo;
 import org.apache.calcite.rel.core.JoinRelType;
 import org.apache.calcite.rel.type.RelDataType;
-import org.apache.calcite.rex.RexCall;
-import org.apache.calcite.rex.RexInputRef;
-import org.apache.calcite.rex.RexNode;
-import org.apache.calcite.rex.RexShuttle;
-import org.apache.calcite.sql.SqlKind;
 import org.apache.ignite.internal.sql.engine.exec.ExecutionContext;
 import org.apache.ignite.internal.sql.engine.exec.RowHandler;
 import org.apache.ignite.internal.sql.engine.exec.row.RowSchema;
 import org.jetbrains.annotations.Nullable;
 
-public abstract class HashJoinNode<RowT> extends NestedLoopJoinNode<RowT> {
-    Map<Object, Object> hashMap = new Object2ObjectOpenHashMap<>();
+public abstract class HashJoinNode<RowT> extends AbstractRightMaterializedJoinNode<RowT> {
+    Map<Object, Object> hashStore = new Object2ObjectOpenHashMap<>();
+    protected final RowHandler<RowT> handler;
 
-    Collection<Integer> leftJoinPositions = new ArrayList<>();
-    Collection<Integer> rightJoinPositions = new ArrayList<>();
+    final Collection<Integer> leftJoinPositions;
+    private final Collection<Integer> rightJoinPositions;
 
     boolean touchResults;
 
-    int rightSize;
-
     Iterator<RowT> rightIt = Collections.emptyIterator();
 
-    private HashJoinNode(ExecutionContext<RowT> ctx, RexNode cond0, RelDataType leftRowType, boolean touch) {
-        super(ctx, null); // TODO !!!
+    private HashJoinNode(ExecutionContext<RowT> ctx, JoinInfo joinInfo, boolean touch) {
+        super(ctx);
 
+        handler = ctx.rowHandler();
         touchResults = touch;
 
-        buildJoinPositions(cond0, leftRowType, leftJoinPositions, rightJoinPositions);
+        leftJoinPositions = joinInfo.leftKeys.toIntegerList();
+        rightJoinPositions = joinInfo.rightKeys.toIntegerList();
     }
 
     void getMoreOrEnd() throws Exception {
@@ -63,30 +59,30 @@ public abstract class HashJoinNode<RowT> extends NestedLoopJoinNode<RowT> {
 
     @Override
     protected void rewindInternal() {
-        hashMap.clear();
+        hashStore.clear();
 
         super.rewindInternal();
     }
 
-    public static <RowT> NestedLoopJoinNode<RowT> create(ExecutionContext<RowT> ctx, RelDataType outputRowType,
-            RelDataType leftRowType, RelDataType rightRowType, JoinRelType joinType, RexNode cond0) {
+    public static <RowT> HashJoinNode<RowT> create(ExecutionContext<RowT> ctx, RelDataType outputRowType,
+            RelDataType leftRowType, RelDataType rightRowType, JoinRelType joinType, JoinInfo joinInfo) {
 
         switch (joinType) {
             case INNER:
-                return new InnerHashJoin<>(ctx, cond0, leftRowType);
+                return new InnerHashJoin<>(ctx, joinInfo);
 
             case LEFT: {
                 RowSchema rightRowSchema = rowSchemaFromRelTypes(RelOptUtil.getFieldTypeList(rightRowType));
                 RowHandler.RowFactory<RowT> rightRowFactory = ctx.rowHandler().factory(rightRowSchema);
 
-                return new LeftHashJoin<>(ctx, rightRowFactory, cond0, leftRowType);
+                return new LeftHashJoin<>(ctx, rightRowFactory, joinInfo);
             }
 
             case RIGHT: {
                 RowSchema leftRowSchema = rowSchemaFromRelTypes(RelOptUtil.getFieldTypeList(leftRowType));
                 RowHandler.RowFactory<RowT> leftRowFactory = ctx.rowHandler().factory(leftRowSchema);
 
-                return new RightHashJoin<>(ctx, leftRowFactory, cond0, leftRowType);
+                return new RightHashJoin<>(ctx, leftRowFactory, joinInfo);
             }
 
             case FULL: {
@@ -95,14 +91,14 @@ public abstract class HashJoinNode<RowT> extends NestedLoopJoinNode<RowT> {
                 RowHandler.RowFactory<RowT> leftRowFactory = ctx.rowHandler().factory(leftRowSchema);
                 RowHandler.RowFactory<RowT> rightRowFactory = ctx.rowHandler().factory(rightRowSchema);
 
-                return new FullOuterHashJoin<>(ctx, leftRowFactory, rightRowFactory, cond0, leftRowType);
+                return new FullOuterHashJoin<>(ctx, leftRowFactory, rightRowFactory, joinInfo);
             }
 
             case SEMI:
-                return new SemiHashJoin<>(ctx, cond0, leftRowType);
+                return new SemiHashJoin<>(ctx, joinInfo);
 
             case ANTI:
-                return new AntiHashJoin<>(ctx, cond0, leftRowType);
+                return new AntiHashJoin<>(ctx, joinInfo);
 
             default:
                 throw new IllegalStateException("Join type \"" + joinType + "\" is not supported yet");
@@ -110,12 +106,8 @@ public abstract class HashJoinNode<RowT> extends NestedLoopJoinNode<RowT> {
     }
 
     private static class InnerHashJoin<RowT> extends HashJoinNode<RowT> {
-        private InnerHashJoin(
-                ExecutionContext<RowT> ctx,
-                RexNode cond0,
-                RelDataType leftRowType
-        ) {
-            super(ctx, cond0, leftRowType, false);
+        private InnerHashJoin(ExecutionContext<RowT> ctx, JoinInfo joinInfo) {
+            super(ctx, joinInfo, false);
             System.err.println("!!!call: InnerHashJoin");
         }
 
@@ -128,7 +120,7 @@ public abstract class HashJoinNode<RowT> extends NestedLoopJoinNode<RowT> {
                         if (!rightIt.hasNext()) {
                             left = leftInBuf.remove();
 
-                            Collection<RowT> rightRows = lookup(left, handler, hashMap, leftJoinPositions, touchResults);
+                            Collection<RowT> rightRows = lookup(left, handler, hashStore, leftJoinPositions, touchResults);
 
                             rightIt = rightRows.iterator();
                         }
@@ -171,10 +163,9 @@ public abstract class HashJoinNode<RowT> extends NestedLoopJoinNode<RowT> {
         private LeftHashJoin(
                 ExecutionContext<RowT> ctx,
                 RowHandler.RowFactory<RowT> rightRowFactory,
-                RexNode cond0,
-                RelDataType leftRowType
+                JoinInfo joinInfo
         ) {
-            super(ctx, cond0, leftRowType, false);
+            super(ctx, joinInfo, false);
 
             this.rightRowFactory = rightRowFactory;
             //System.err.println("!!!call: LeftHashJoin");
@@ -192,7 +183,7 @@ public abstract class HashJoinNode<RowT> extends NestedLoopJoinNode<RowT> {
                         if (!rightIt.hasNext()) {
                             left = leftInBuf.remove();
 
-                            Collection<RowT> rightRows = lookup(left, handler, hashMap, leftJoinPositions, touchResults);
+                            Collection<RowT> rightRows = lookup(left, handler, hashStore, leftJoinPositions, touchResults);
 
                             if (rightRows.isEmpty()) {
                                 requested--;
@@ -240,10 +231,9 @@ public abstract class HashJoinNode<RowT> extends NestedLoopJoinNode<RowT> {
         private RightHashJoin(
                 ExecutionContext<RowT> ctx,
                 RowHandler.RowFactory<RowT> leftRowFactory,
-                RexNode cond0,
-                RelDataType leftRowType
+                JoinInfo joinInfo
         ) {
-            super(ctx, cond0, leftRowType, true);
+            super(ctx, joinInfo, true);
 
             this.leftRowFactory = leftRowFactory;
             System.err.println("!!!call: RightHashJoin");
@@ -251,7 +241,7 @@ public abstract class HashJoinNode<RowT> extends NestedLoopJoinNode<RowT> {
 
         @Override
         protected void rewindInternal() {
-            HashJoinNode.resetTouched(hashMap, null);
+            HashJoinNode.resetTouched(hashStore);
 
             super.rewindInternal();
         }
@@ -267,7 +257,7 @@ public abstract class HashJoinNode<RowT> extends NestedLoopJoinNode<RowT> {
                         if (!rightIt.hasNext()) {
                             left = leftInBuf.remove();
 
-                            Collection<RowT> rightRows = lookup(left, handler, hashMap, leftJoinPositions, touchResults);
+                            Collection<RowT> rightRows = lookup(left, handler, hashStore, leftJoinPositions, touchResults);
 
                             rightIt = rightRows.iterator();
                         }
@@ -300,7 +290,7 @@ public abstract class HashJoinNode<RowT> extends NestedLoopJoinNode<RowT> {
 
             if (left == null && !rightIt.hasNext() && leftInBuf.isEmpty() && waitingLeft == NOT_WAITING
                     && waitingRight == NOT_WAITING && requested > 0) {
-                List<RowT> res = getUntouched(hashMap, null);
+                List<RowT> res = getUntouched(hashStore, null);
 
                 for (RowT right : res) {
                     RowT row = handler.concat(leftRowFactory.create(), right);
@@ -329,10 +319,9 @@ public abstract class HashJoinNode<RowT> extends NestedLoopJoinNode<RowT> {
                 ExecutionContext<RowT> ctx,
                 RowHandler.RowFactory<RowT> leftRowFactory,
                 RowHandler.RowFactory<RowT> rightRowFactory,
-                RexNode cond0,
-                RelDataType leftRowType
+                JoinInfo joinInfo
         ) {
-            super(ctx, cond0, leftRowType, true);
+            super(ctx, joinInfo, true);
 
             this.leftRowFactory = leftRowFactory;
             this.rightRowFactory = rightRowFactory;
@@ -342,7 +331,7 @@ public abstract class HashJoinNode<RowT> extends NestedLoopJoinNode<RowT> {
 
         @Override
         protected void rewindInternal() {
-            HashJoinNode.resetTouched(hashMap, null);
+            HashJoinNode.resetTouched(hashStore);
 
             super.rewindInternal();
         }
@@ -359,7 +348,7 @@ public abstract class HashJoinNode<RowT> extends NestedLoopJoinNode<RowT> {
                         if (!rightIt.hasNext()) {
                             left = leftInBuf.remove();
 
-                            Collection<RowT> rightRows = lookup(left, handler, hashMap, leftJoinPositions, touchResults);
+                            Collection<RowT> rightRows = lookup(left, handler, hashStore, leftJoinPositions, touchResults);
 
                             if (rightRows.isEmpty()) {
                                 requested--;
@@ -397,7 +386,7 @@ public abstract class HashJoinNode<RowT> extends NestedLoopJoinNode<RowT> {
 
             if (left == null && !rightIt.hasNext() && leftInBuf.isEmpty() && waitingLeft == NOT_WAITING
                     && waitingRight == NOT_WAITING && requested > 0) {
-                List<RowT> res = getUntouched(hashMap, null);
+                List<RowT> res = getUntouched(hashStore, null);
 
                 for (RowT right : res) {
                     RowT row = handler.concat(leftRowFactory.create(), right);
@@ -417,12 +406,8 @@ public abstract class HashJoinNode<RowT> extends NestedLoopJoinNode<RowT> {
     }
 
     private static class SemiHashJoin<RowT> extends HashJoinNode<RowT> {
-        private SemiHashJoin(
-                ExecutionContext<RowT> ctx,
-                RexNode cond0,
-                RelDataType leftRowType
-        ) {
-            super(ctx, cond0, leftRowType, false);
+        private SemiHashJoin(ExecutionContext<RowT> ctx, JoinInfo joinInfo) {
+            super(ctx, joinInfo, false);
 
             System.err.println("!!!call: SemiHashJoin");
         }
@@ -437,7 +422,7 @@ public abstract class HashJoinNode<RowT> extends NestedLoopJoinNode<RowT> {
                     if (!rightIt.hasNext()) {
                         left = leftInBuf.remove();
 
-                        Collection<RowT> rightRows = lookup(left, handler, hashMap, leftJoinPositions, touchResults);
+                        Collection<RowT> rightRows = lookup(left, handler, hashStore, leftJoinPositions, touchResults);
 
                         rightIt = rightRows.iterator();
                     }
@@ -466,11 +451,8 @@ public abstract class HashJoinNode<RowT> extends NestedLoopJoinNode<RowT> {
 
     private static class AntiHashJoin<RowT> extends HashJoinNode<RowT> {
         //TODO:!!
-        private AntiHashJoin(
-                ExecutionContext<RowT> ctx,
-                RexNode cond0,
-                RelDataType leftRowType) {
-            super(ctx, cond0, leftRowType, false);
+        private AntiHashJoin(ExecutionContext<RowT> ctx, JoinInfo joinInfo) {
+            super(ctx, joinInfo, false);
 
             System.err.println("!!!call: AntiHashJoin");
         }
@@ -485,30 +467,14 @@ public abstract class HashJoinNode<RowT> extends NestedLoopJoinNode<RowT> {
                     if (!rightIt.hasNext()) {
                         left = leftInBuf.remove();
 
-                        Collection<RowT> rightRows = lookup(left, handler, hashMap, leftJoinPositions, touchResults);
+                        Collection<RowT> rightRows = lookup(left, handler, hashStore, leftJoinPositions, touchResults);
 
                         rightIt = rightRows.iterator();
                     }
 
-                    boolean matched = false;
-
                     if (!rightIt.hasNext()) {
                         requested--;
                         downstream().push(left);
-                    } else {
-                        while (rightIt.hasNext()) {
-                            RowT right = rightIt.next();
-
-                            if (cond.test(left, right)) {
-                                matched = true;
-                                break;
-                            }
-                        }
-
-                        if (!matched) {
-                            requested--;
-                            downstream().push(left);
-                        }
                     }
 
                     left = null;
@@ -517,30 +483,6 @@ public abstract class HashJoinNode<RowT> extends NestedLoopJoinNode<RowT> {
 
             getMoreOrEnd();
         }
-    }
-
-    private static void buildJoinPositions(RexNode cond, RelDataType leftRowType, Collection<Integer> leftJoinPositions,
-            Collection<Integer> rightJoinPositions) {
-        RexShuttle rexShuttle = new RexShuttle() {
-            @Override public RexNode visitCall(RexCall call) {
-                if (call.getOperator().getKind() == SqlKind.EQUALS) {
-                    List<RexNode> node = call.getOperands();
-                    RexInputRef n1 = (RexInputRef) node.get(0);
-                    RexInputRef n2 = (RexInputRef) node.get(1);
-
-                    if (n1.getIndex() > n2.getIndex()) { // hack
-                        n1 = (RexInputRef) node.get(1);
-                        n2 = (RexInputRef) node.get(0);
-                    }
-
-                    leftJoinPositions.add(n1.getIndex());
-                    rightJoinPositions.add(n2.getIndex() - leftRowType.getFieldCount());
-                }
-                return super.visitCall(call);
-            }
-        };
-
-        rexShuttle.apply(cond);
     }
 
     private static <RowT> Collection<RowT> lookup(
@@ -600,11 +542,7 @@ public abstract class HashJoinNode<RowT> extends NestedLoopJoinNode<RowT> {
         return out;
     }
 
-    private static <RowT> void resetTouched(Map<Object, Object> entries, @Nullable List<RowT> out) {
-        if (out == null) {
-            out = new ArrayList<>();
-        }
-
+    private static <RowT> void resetTouched(Map<Object, Object> entries) {
         for (Map.Entry<Object, Object> ent : entries.entrySet()) {
             if (ent.getValue() instanceof Collection) {
                 TouchedList<RowT> coll = (TouchedList<RowT>) ent.getValue();
@@ -612,7 +550,7 @@ public abstract class HashJoinNode<RowT> extends NestedLoopJoinNode<RowT> {
                     coll.touched = false;
                 }
             } else {
-                getUntouched((Map<Object, Object>) ent.getValue(), out);
+                resetTouched((Map<Object, Object>) ent.getValue());
             }
         }
     }
@@ -625,9 +563,8 @@ public abstract class HashJoinNode<RowT> extends NestedLoopJoinNode<RowT> {
         checkState();
 
         waitingRight--;
-        rightSize++;
 
-        Map<Object, Object> next = hashMap;
+        Map<Object, Object> next = hashStore;
         int processed = 0;
         for (Integer entry : rightJoinPositions) {
             processed++;
