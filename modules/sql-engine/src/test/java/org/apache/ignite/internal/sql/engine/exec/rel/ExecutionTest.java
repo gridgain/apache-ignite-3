@@ -57,14 +57,16 @@ import org.junit.jupiter.api.condition.OS;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
+import org.junit.jupiter.params.provider.ValueSource;
 
 /**
  * ExecutionTest.
  * TODO Documentation https://issues.apache.org/jira/browse/IGNITE-15859
  */
 public class ExecutionTest extends AbstractExecutionTest<Object[]> {
-    @Test
-    public void testSimpleExecution() {
+    @ParameterizedTest(name = "join algo : {0}")
+    @ValueSource(strings = {"NLJoin", "HashJoin"})
+    public void testSimpleExecution(String joinImplementation) {
         // SELECT P.ID, P.NAME, PR.NAME AS PROJECT
         // FROM PERSON P
         // INNER JOIN PROJECT PR
@@ -98,10 +100,16 @@ public class ExecutionTest extends AbstractExecutionTest<Object[]> {
 
         RowHandler<Object[]> hnd = ctx.rowHandler();
 
-        NestedLoopJoinNode<Object[]> join = NestedLoopJoinNode.create(ctx, outType, leftType, rightType, INNER,
-                (r1, r2) -> getFieldFromBiRows(hnd, 0, r1, r2) == getFieldFromBiRows(hnd, 4, r1, r2));
-/*        HashJoinNode<Object[]> join = HashJoinNode.create(ctx, outType, leftType, rightType, INNER,
-                JoinInfo.of(ImmutableIntList.of(0), ImmutableIntList.of(1)));*/
+        AbstractRightMaterializedJoinNode<Object[]> join;
+
+        if ("NLJoin".equals(joinImplementation)) {
+            join = NestedLoopJoinNode.create(ctx, outType, leftType, rightType, INNER,
+                    (r1, r2) -> getFieldFromBiRows(hnd, 0, r1, r2) == getFieldFromBiRows(hnd, 4, r1, r2));
+        } else {
+            join = HashJoinNode.create(ctx, outType, leftType, rightType, INNER,
+                JoinInfo.of(ImmutableIntList.of(0), ImmutableIntList.of(1)));
+        }
+
         join.register(asList(persons, projects));
 
         ProjectNode<Object[]> project = new ProjectNode<>(ctx, r -> new Object[]{r[0], r[1], r[5]});
@@ -169,8 +177,9 @@ public class ExecutionTest extends AbstractExecutionTest<Object[]> {
         assertEquals(12, res.size());
     }
 
-    @Test
-    public void testLeftJoin() {
+    @ParameterizedTest(name = "join algo : {0}")
+    @ValueSource(strings = {"NLJoin", "HashJoin"})
+    public void testLeftJoin(String joinAlgo) {
         //    select e.id, e.name, d.name as dep_name
         //      from emp e
         // left join dep d
@@ -200,8 +209,16 @@ public class ExecutionTest extends AbstractExecutionTest<Object[]> {
 
         RowHandler<Object[]> hnd = ctx.rowHandler();
 
-        NestedLoopJoinNode<Object[]> join = NestedLoopJoinNode.create(ctx, outType, leftType, rightType, LEFT,
-                (r1, r2) -> getFieldFromBiRows(hnd, 2, r1, r2) == getFieldFromBiRows(hnd, 3, r1, r2));
+        AbstractRightMaterializedJoinNode<Object[]> join;
+
+        if ("NLJoin".equals(joinAlgo)) {
+            join = NestedLoopJoinNode.create(ctx, outType, leftType, rightType, LEFT,
+                    (r1, r2) -> getFieldFromBiRows(hnd, 2, r1, r2) == getFieldFromBiRows(hnd, 3, r1, r2));
+        } else {
+            join = HashJoinNode.create(ctx, outType, leftType, rightType, LEFT,
+                    JoinInfo.of(ImmutableIntList.of(2), ImmutableIntList.of(0)));
+        }
+
         join.register(asList(persons, deps));
 
         ProjectNode<Object[]> project = new ProjectNode<>(ctx, r -> new Object[]{r[0], r[1], r[4]});
@@ -226,11 +243,12 @@ public class ExecutionTest extends AbstractExecutionTest<Object[]> {
         assertArrayEquals(new Object[]{3, "Alexey", "Core"}, rows.get(3));
     }
 
-    @Test
-    public void testRightJoin() {
+    @ParameterizedTest(name = "join algo : {0}")
+    @ValueSource(strings = {"NLJoin", "HashJoin"})
+    public void testRightJoin(String joinAlgo) {
         //     select e.id, e.name, d.name as dep_name
         //       from dep d
-        // right join emp e
+        // [right|left] join emp e
         //         on e.depno = d.depno
 
         ExecutionContext<Object[]> ctx = executionContext(true);
@@ -258,8 +276,16 @@ public class ExecutionTest extends AbstractExecutionTest<Object[]> {
 
         RowHandler<Object[]> hnd = ctx.rowHandler();
 
-        NestedLoopJoinNode<Object[]> join = NestedLoopJoinNode.create(ctx, outType, leftType, rightType, RIGHT,
-                (r1, r2) -> getFieldFromBiRows(hnd, 0, r1, r2) == getFieldFromBiRows(hnd, 4, r1, r2));
+        AbstractRightMaterializedJoinNode<Object[]> join;
+
+        if ("NLJoin".equals(joinAlgo)) {
+            join = NestedLoopJoinNode.create(ctx, outType, leftType, rightType, RIGHT,
+                    (r1, r2) -> getFieldFromBiRows(hnd, 0, r1, r2) == getFieldFromBiRows(hnd, 4, r1, r2));
+        } else {
+            join = HashJoinNode.create(ctx, outType, leftType, rightType, RIGHT,
+                    JoinInfo.of(ImmutableIntList.of(0), ImmutableIntList.of(2)));
+        }
+
         join.register(asList(deps, persons));
 
         ProjectNode<Object[]> project = new ProjectNode<>(ctx, r -> new Object[]{r[2], r[3], r[1]});
@@ -278,10 +304,28 @@ public class ExecutionTest extends AbstractExecutionTest<Object[]> {
 
         assertEquals(4, rows.size());
 
-        assertArrayEquals(new Object[]{0, "Igor", "Core"}, rows.get(0));
-        assertArrayEquals(new Object[]{3, "Alexey", "Core"}, rows.get(1));
-        assertArrayEquals(new Object[]{1, "Roman", "SQL"}, rows.get(2));
-        assertArrayEquals(new Object[]{2, "Ivan", null}, rows.get(3));
+        Object[][] expected = {
+                {0, "Igor", "Core"},
+                {3, "Alexey", "Core"},
+                {1, "Roman", "SQL"},
+                {2, "Ivan", null}
+        };
+
+        assert2DimArrayEquals(expected, rows);
+    }
+
+    private static void assert2DimArrayEquals(Object[][] expected, ArrayList<Object[]> actual) {
+        assertEquals(expected.length, actual.size(), "expected length: " + expected.length + ", actual length: " + actual.size());
+
+        int length = expected.length;
+
+        for (int i = 0; i < length; ++i) {
+            Object[] exp = expected[i];
+            Object[] act = actual.get(i);
+
+            assertEquals(exp.length, act.length, "expected length: " + exp.length + ", actual length: " + act.length);
+            assertArrayEquals(exp, act);
+        }
     }
 
     @Test
@@ -343,8 +387,9 @@ public class ExecutionTest extends AbstractExecutionTest<Object[]> {
         assertArrayEquals(new Object[]{null, null, "QA"}, rows.get(4));
     }
 
-    @Test
-    public void testSemiJoin() {
+    @ParameterizedTest(name = "join algo : {0}")
+    @ValueSource(strings = {"NLJoin", "HashJoin"})
+    public void testSemiJoin(String joinAlgo) {
         //    select d.name as dep_name
         //      from dep d
         // semi join emp e
@@ -375,8 +420,16 @@ public class ExecutionTest extends AbstractExecutionTest<Object[]> {
 
         RowHandler<Object[]> hnd = ctx.rowHandler();
 
-        NestedLoopJoinNode<Object[]> join = NestedLoopJoinNode.create(ctx, outType, leftType, rightType, SEMI,
-                (r1, r2) -> getFieldFromBiRows(hnd, 0, r1, r2) == getFieldFromBiRows(hnd, 4, r1, r2));
+        AbstractRightMaterializedJoinNode<Object[]> join;
+
+        if ("NLJoin".equals(joinAlgo)) {
+            join = NestedLoopJoinNode.create(ctx, outType, leftType, rightType, SEMI,
+                    (r1, r2) -> getFieldFromBiRows(hnd, 0, r1, r2) == getFieldFromBiRows(hnd, 4, r1, r2));
+        } else {
+            join = HashJoinNode.create(ctx, outType, leftType, rightType, SEMI,
+                    JoinInfo.of(ImmutableIntList.of(0), ImmutableIntList.of(2)));
+        }
+
         join.register(asList(deps, persons));
 
         ProjectNode<Object[]> project = new ProjectNode<>(ctx, r -> new Object[]{r[1]});
@@ -399,8 +452,9 @@ public class ExecutionTest extends AbstractExecutionTest<Object[]> {
         assertArrayEquals(new Object[]{"SQL"}, rows.get(1));
     }
 
-    @Test
-    public void testAntiJoin() {
+    @ParameterizedTest(name = "join algo : {0}")
+    @ValueSource(strings = {"NLJoin", "HashJoin"})
+    public void testAntiJoin(String joinAlgo) {
         //    select d.name as dep_name
         //      from dep d
         // anti join emp e
@@ -431,8 +485,16 @@ public class ExecutionTest extends AbstractExecutionTest<Object[]> {
 
         RowHandler<Object[]> hnd = ctx.rowHandler();
 
-        NestedLoopJoinNode<Object[]> join = NestedLoopJoinNode.create(ctx, outType, leftType, rightType, ANTI,
-                (r1, r2) -> getFieldFromBiRows(hnd, 0, r1, r2) == getFieldFromBiRows(hnd, 4, r1, r2));
+        AbstractRightMaterializedJoinNode<Object[]> join;
+
+        if ("NLJoin".equals(joinAlgo)) {
+            join = NestedLoopJoinNode.create(ctx, outType, leftType, rightType, ANTI,
+                    (r1, r2) -> getFieldFromBiRows(hnd, 0, r1, r2) == getFieldFromBiRows(hnd, 4, r1, r2));
+        } else {
+            join = HashJoinNode.create(ctx, outType, leftType, rightType, ANTI,
+                    JoinInfo.of(ImmutableIntList.of(0), ImmutableIntList.of(2)));
+        }
+
         join.register(asList(deps, persons));
 
         ProjectNode<Object[]> project = new ProjectNode<>(ctx, r -> new Object[]{r[1]});

@@ -419,25 +419,17 @@ public abstract class HashJoinNode<RowT> extends AbstractRightMaterializedJoinNo
                 while (requested > 0 && (left != null || !leftInBuf.isEmpty())) {
                     checkState();
 
-                    if (!rightIt.hasNext()) {
-                        left = leftInBuf.remove();
+                    left = leftInBuf.remove();
 
-                        Collection<RowT> rightRows = lookup(left, handler, hashStore, leftJoinPositions, touchResults);
+                    Collection<RowT> rightRows = lookup(left, handler, hashStore, leftJoinPositions, touchResults);
 
-                        rightIt = rightRows.iterator();
-                    }
+                    if (!rightRows.isEmpty()) {
+                        requested--;
 
-                    if (rightIt.hasNext()) {
-                        while (rightIt.hasNext()) {
-                            RowT right = rightIt.next();
+                        downstream().push(left);
 
-                            requested--;
-
-                            downstream().push(left);
-
-                            if (requested == 0) {
-                                break;
-                            }
+                        if (requested == 0) {
+                            break;
                         }
                     }
 
@@ -464,17 +456,18 @@ public abstract class HashJoinNode<RowT> extends AbstractRightMaterializedJoinNo
                 while (requested > 0 && (left != null || !leftInBuf.isEmpty())) {
                     checkState();
 
-                    if (!rightIt.hasNext()) {
-                        left = leftInBuf.remove();
+                    left = leftInBuf.remove();
 
-                        Collection<RowT> rightRows = lookup(left, handler, hashStore, leftJoinPositions, touchResults);
+                    Collection<RowT> rightRows = lookup(left, handler, hashStore, leftJoinPositions, touchResults);
 
-                        rightIt = rightRows.iterator();
-                    }
-
-                    if (!rightIt.hasNext()) {
+                    if (rightRows.isEmpty()) {
                         requested--;
+
                         downstream().push(left);
+
+                        if (requested == 0) {
+                            break;
+                        }
                     }
 
                     left = null;
