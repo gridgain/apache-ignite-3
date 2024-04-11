@@ -35,8 +35,8 @@ public abstract class HashJoinNode<RowT> extends NestedLoopJoinNode<RowT> {
 
     Iterator<RowT> rightIt = Collections.emptyIterator();
 
-    private HashJoinNode(ExecutionContext<RowT> ctx, RexNode cond0, BiPredicate<RowT, RowT> cond, RelDataType leftRowType, boolean touch) {
-        super(ctx, cond);
+    private HashJoinNode(ExecutionContext<RowT> ctx, RexNode cond0, RelDataType leftRowType, boolean touch) {
+        super(ctx, null); // TODO !!!
 
         touchResults = touch;
 
@@ -69,24 +69,24 @@ public abstract class HashJoinNode<RowT> extends NestedLoopJoinNode<RowT> {
     }
 
     public static <RowT> NestedLoopJoinNode<RowT> create(ExecutionContext<RowT> ctx, RelDataType outputRowType,
-            RelDataType leftRowType, RelDataType rightRowType, JoinRelType joinType, RexNode cond0, BiPredicate<RowT, RowT> finalCheckCond) {
+            RelDataType leftRowType, RelDataType rightRowType, JoinRelType joinType, RexNode cond0) {
 
         switch (joinType) {
             case INNER:
-                return new InnerHashJoin<>(ctx, cond0, finalCheckCond, leftRowType);
+                return new InnerHashJoin<>(ctx, cond0, leftRowType);
 
             case LEFT: {
                 RowSchema rightRowSchema = rowSchemaFromRelTypes(RelOptUtil.getFieldTypeList(rightRowType));
                 RowHandler.RowFactory<RowT> rightRowFactory = ctx.rowHandler().factory(rightRowSchema);
 
-                return new LeftHashJoin<>(ctx, rightRowFactory, cond0, finalCheckCond, leftRowType);
+                return new LeftHashJoin<>(ctx, rightRowFactory, cond0, leftRowType);
             }
 
             case RIGHT: {
                 RowSchema leftRowSchema = rowSchemaFromRelTypes(RelOptUtil.getFieldTypeList(leftRowType));
                 RowHandler.RowFactory<RowT> leftRowFactory = ctx.rowHandler().factory(leftRowSchema);
 
-                return new RightHashJoin<>(ctx, leftRowFactory, cond0, finalCheckCond, leftRowType);
+                return new RightHashJoin<>(ctx, leftRowFactory, cond0, leftRowType);
             }
 
             case FULL: {
@@ -95,14 +95,14 @@ public abstract class HashJoinNode<RowT> extends NestedLoopJoinNode<RowT> {
                 RowHandler.RowFactory<RowT> leftRowFactory = ctx.rowHandler().factory(leftRowSchema);
                 RowHandler.RowFactory<RowT> rightRowFactory = ctx.rowHandler().factory(rightRowSchema);
 
-                return new FullOuterHashJoin<>(ctx, leftRowFactory, rightRowFactory, cond0, finalCheckCond, leftRowType);
+                return new FullOuterHashJoin<>(ctx, leftRowFactory, rightRowFactory, cond0, leftRowType);
             }
 
             case SEMI:
-                return new SemiHashJoin<>(ctx, cond0, finalCheckCond, leftRowType);
+                return new SemiHashJoin<>(ctx, cond0, leftRowType);
 
             case ANTI:
-                return new AntiHashJoin<>(ctx, cond0, finalCheckCond, leftRowType);
+                return new AntiHashJoin<>(ctx, cond0, leftRowType);
 
             default:
                 throw new IllegalStateException("Join type \"" + joinType + "\" is not supported yet");
@@ -113,10 +113,9 @@ public abstract class HashJoinNode<RowT> extends NestedLoopJoinNode<RowT> {
         private InnerHashJoin(
                 ExecutionContext<RowT> ctx,
                 RexNode cond0,
-                BiPredicate<RowT, RowT> finalCheckCond,
                 RelDataType leftRowType
         ) {
-            super(ctx, cond0, finalCheckCond, leftRowType, false);
+            super(ctx, cond0, leftRowType, false);
             System.err.println("!!!call: InnerHashJoin");
         }
 
@@ -140,14 +139,12 @@ public abstract class HashJoinNode<RowT> extends NestedLoopJoinNode<RowT> {
 
                                 RowT right = rightIt.next();
 
-                                if (!cond.test(left, right)) {
-                                    continue;
-                                }
+                                --requested;
 
                                 RowT row = handler.concat(left, right);
                                 downstream().push(row);
 
-                                if (--requested == 0) {
+                                if (requested == 0) {
                                     break;
                                 }
                             }
@@ -175,10 +172,9 @@ public abstract class HashJoinNode<RowT> extends NestedLoopJoinNode<RowT> {
                 ExecutionContext<RowT> ctx,
                 RowHandler.RowFactory<RowT> rightRowFactory,
                 RexNode cond0,
-                BiPredicate<RowT, RowT> finalCheckCond,
                 RelDataType leftRowType
         ) {
-            super(ctx, cond0, finalCheckCond, leftRowType, false);
+            super(ctx, cond0, leftRowType, false);
 
             this.rightRowFactory = rightRowFactory;
             //System.err.println("!!!call: LeftHashJoin");
@@ -211,10 +207,6 @@ public abstract class HashJoinNode<RowT> extends NestedLoopJoinNode<RowT> {
                                 checkState();
 
                                 RowT right = rightIt.next();
-
-                                if (!cond.test(left, right)) {
-                                    continue;
-                                }
 
                                 --requested;
 
@@ -249,10 +241,9 @@ public abstract class HashJoinNode<RowT> extends NestedLoopJoinNode<RowT> {
                 ExecutionContext<RowT> ctx,
                 RowHandler.RowFactory<RowT> leftRowFactory,
                 RexNode cond0,
-                BiPredicate<RowT, RowT> finalCheckCond,
                 RelDataType leftRowType
         ) {
-            super(ctx, cond0, finalCheckCond, leftRowType, true);
+            super(ctx, cond0, leftRowType, true);
 
             this.leftRowFactory = leftRowFactory;
             System.err.println("!!!call: RightHashJoin");
@@ -287,14 +278,12 @@ public abstract class HashJoinNode<RowT> extends NestedLoopJoinNode<RowT> {
 
                                 RowT right = rightIt.next();
 
-                                if (!cond.test(left, right)) {
-                                    continue;
-                                }
+                                --requested;
 
                                 RowT row = handler.concat(left, right);
                                 downstream().push(row);
 
-                                if (--requested == 0) {
+                                if (requested == 0) {
                                     break;
                                 }
                             }
@@ -315,9 +304,11 @@ public abstract class HashJoinNode<RowT> extends NestedLoopJoinNode<RowT> {
 
                 for (RowT right : res) {
                     RowT row = handler.concat(leftRowFactory.create(), right);
+                    --requested;
+
                     downstream().push(row);
 
-                    if (--requested == 0) {
+                    if (requested == 0) {
                         break;
                     }
                 }
@@ -339,10 +330,9 @@ public abstract class HashJoinNode<RowT> extends NestedLoopJoinNode<RowT> {
                 RowHandler.RowFactory<RowT> leftRowFactory,
                 RowHandler.RowFactory<RowT> rightRowFactory,
                 RexNode cond0,
-                BiPredicate<RowT, RowT> finalCheckCond,
                 RelDataType leftRowType
         ) {
-            super(ctx, cond0, finalCheckCond, leftRowType, true);
+            super(ctx, cond0, leftRowType, true);
 
             this.leftRowFactory = leftRowFactory;
             this.rightRowFactory = rightRowFactory;
@@ -385,14 +375,12 @@ public abstract class HashJoinNode<RowT> extends NestedLoopJoinNode<RowT> {
 
                                 RowT right = rightIt.next();
 
-                                if (!cond.test(left, right)) {
-                                    continue;
-                                }
+                                --requested;
 
                                 RowT row = handler.concat(left, right);
                                 downstream().push(row);
 
-                                if (--requested == 0) {
+                                if (requested == 0) {
                                     break;
                                 }
                             }
@@ -413,9 +401,12 @@ public abstract class HashJoinNode<RowT> extends NestedLoopJoinNode<RowT> {
 
                 for (RowT right : res) {
                     RowT row = handler.concat(leftRowFactory.create(), right);
+
+                    --requested;
+
                     downstream().push(row);
 
-                    if (--requested == 0) {
+                    if (requested == 0) {
                         break;
                     }
                 }
@@ -429,10 +420,9 @@ public abstract class HashJoinNode<RowT> extends NestedLoopJoinNode<RowT> {
         private SemiHashJoin(
                 ExecutionContext<RowT> ctx,
                 RexNode cond0,
-                BiPredicate<RowT, RowT> finalCheckCond,
                 RelDataType leftRowType
         ) {
-            super(ctx, cond0, finalCheckCond, leftRowType, false);
+            super(ctx, cond0, leftRowType, false);
 
             System.err.println("!!!call: SemiHashJoin");
         }
@@ -456,12 +446,13 @@ public abstract class HashJoinNode<RowT> extends NestedLoopJoinNode<RowT> {
                         while (rightIt.hasNext()) {
                             RowT right = rightIt.next();
 
-                            if (!cond.test(left, right)) {
-                                continue;
-                            }
-
                             requested--;
+
                             downstream().push(left);
+
+                            if (requested == 0) {
+                                break;
+                            }
                         }
                     }
 
@@ -478,9 +469,8 @@ public abstract class HashJoinNode<RowT> extends NestedLoopJoinNode<RowT> {
         private AntiHashJoin(
                 ExecutionContext<RowT> ctx,
                 RexNode cond0,
-                BiPredicate<RowT, RowT> finalCheckCond,
                 RelDataType leftRowType) {
-            super(ctx, cond0, finalCheckCond, leftRowType, false);
+            super(ctx, cond0, leftRowType, false);
 
             System.err.println("!!!call: AntiHashJoin");
         }
@@ -566,6 +556,11 @@ public abstract class HashJoinNode<RowT> extends NestedLoopJoinNode<RowT> {
 
         for (Integer entry : leftJoinPositions) {
             Object ent = handler.get(entry, row);
+
+            if (ent == null) {
+                return Collections.emptyList();
+            }
+
             Object next0 = next.get(ent);
 
             if (next0 == null) {

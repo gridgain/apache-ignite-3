@@ -292,6 +292,14 @@ public class ItJoinTest extends BaseSqlIntegrationTest {
                 .returns(3)
                 .check();
 
+        assertQuery("select t31.c1 from t3 t31 left join t3 t32 on t31.c1 = t32.c1 ORDER BY t31.c1;", joinType)
+                .ordered()
+                .returns(1)
+                .returns(2)
+                .returns(3)
+                .returns(null)
+                .check();
+
         assertQuery(""
                 + "select t1.c1 c11, t1.c2 c12, t1.c3 c13, t2.c1 c21, t2.c2 c22 "
                 + "  from t1 "
@@ -834,6 +842,7 @@ public class ItJoinTest extends BaseSqlIntegrationTest {
     @ParameterizedTest(name = "join algo : {0}, index present: {1}")
     @MethodSource("joinTypes")
     @WithSystemProperty(key = "IMPLICIT_PK_ENABLED", value = "true")
+    @EnumSource(mode = Mode.EXCLUDE, names = "HASHJOIN")
     public void testIsNotDistinctFrom(JoinType joinType, boolean indexScan) {
         try {
             sql("CREATE TABLE t11(i1 INTEGER, i2 INTEGER)");

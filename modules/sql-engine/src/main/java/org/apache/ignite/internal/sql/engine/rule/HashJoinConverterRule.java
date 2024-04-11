@@ -44,6 +44,8 @@ public class HashJoinConverterRule extends AbstractIgniteConverterRule<LogicalJo
                 }
                 return super.visitCall(call);
             }
+
+            //visitLiteral
         };
 
         try {
