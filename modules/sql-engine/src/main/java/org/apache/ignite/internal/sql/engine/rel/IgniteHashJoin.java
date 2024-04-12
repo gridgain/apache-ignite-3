@@ -8,11 +8,15 @@ import org.apache.calcite.plan.RelOptPlanner;
 import org.apache.calcite.plan.RelTraitSet;
 import org.apache.calcite.rel.RelInput;
 import org.apache.calcite.rel.RelNode;
+import org.apache.calcite.rel.RelNodes;
 import org.apache.calcite.rel.core.CorrelationId;
 import org.apache.calcite.rel.core.Join;
 import org.apache.calcite.rel.core.JoinRelType;
+import org.apache.calcite.rel.metadata.RelMdUtil;
 import org.apache.calcite.rel.metadata.RelMetadataQuery;
 import org.apache.calcite.rex.RexNode;
+import org.apache.calcite.util.Util;
+import org.apache.ignite.internal.sql.engine.metadata.cost.IgniteCost;
 import org.apache.ignite.internal.sql.engine.metadata.cost.IgniteCostFactory;
 import org.apache.ignite.internal.sql.engine.util.Commons;
 
@@ -38,7 +42,27 @@ public class IgniteHashJoin extends AbstractIgniteJoin {
     public RelOptCost computeSelfCost(RelOptPlanner planner, RelMetadataQuery mq) {
         IgniteCostFactory costFactory = (IgniteCostFactory) planner.getCostFactory();
 
-        return costFactory.makeTinyCost();
+        double rowCount = mq.getRowCount(this);
+        double leftRowCount = mq.getRowCount(getLeft());
+        double rightRowCount = mq.getRowCount(getRight());
+
+        if (Double.isInfinite(leftRowCount)) {
+            rowCount = leftRowCount;
+        } else {
+            rowCount += leftRowCount;
+        }
+
+        if (Double.isInfinite(rightRowCount)) {
+            rowCount = rightRowCount;
+        } else {
+            // believe in some kind of compaction
+            rowCount += Util.nLogN(rightRowCount);
+        }
+
+        double rightSize = rightRowCount * (getRight().getRowType().getFieldCount() * 4) * IgniteCost.AVERAGE_FIELD_SIZE;
+
+        return costFactory.makeCost(rowCount,
+                rowCount * (IgniteCost.ROW_COMPARISON_COST + IgniteCost.ROW_PASS_THROUGH_COST), 0, rightSize, 0);
     }
 
     /** {@inheritDoc} */

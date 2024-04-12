@@ -248,7 +248,7 @@ public class ExecutionTest extends AbstractExecutionTest<Object[]> {
     public void testRightJoin(String joinAlgo) {
         //     select e.id, e.name, d.name as dep_name
         //       from dep d
-        // [right|left] join emp e
+        // right join emp e
         //         on e.depno = d.depno
 
         ExecutionContext<Object[]> ctx = executionContext(true);
@@ -311,7 +311,14 @@ public class ExecutionTest extends AbstractExecutionTest<Object[]> {
                 {2, "Ivan", null}
         };
 
+        //******
+        // think about touched untouched !!!!
+
+        //******
+
         assert2DimArrayEquals(expected, rows);
+
+        join.rewindInternal();
     }
 
     private static void assert2DimArrayEquals(Object[][] expected, ArrayList<Object[]> actual) {
