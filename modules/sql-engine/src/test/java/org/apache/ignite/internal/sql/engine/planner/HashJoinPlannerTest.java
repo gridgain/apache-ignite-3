@@ -36,28 +36,34 @@ public class HashJoinPlannerTest extends AbstractPlannerTest {
     @ParameterizedTest()
     @MethodSource("joinConditions")
     @SuppressWarnings("ThrowableNotThrown")
-    public void hashJoinAppliedConditions(String sql, boolean canBePlanned) throws Exception {
+    public void hashJoinAppliedConditions(String[] joinTypes, String sql, boolean canBePlanned) throws Exception {
         IgniteTable tbl = createTestTable("ID", "C1");
 
         IgniteSchema schema = createSchema(tbl);
 
-        if (canBePlanned) {
-            assertPlan(sql, schema, nodeOrAnyChild(isInstanceOf(IgniteHashJoin.class)), disabledRules);
-        } else {
-            IgniteTestUtils.assertThrowsWithCause(() -> physicalPlan(sql, schema, disabledRules),
-                    CannotPlanException.class,
-                    "There are not enough rules");
+        for (String type : joinTypes) {
+            String sql0 = String.format(sql, type);
+
+            if (canBePlanned) {
+                assertPlan(sql0, schema, nodeOrAnyChild(isInstanceOf(IgniteHashJoin.class)), disabledRules);
+            } else {
+                IgniteTestUtils.assertThrowsWithCause(() -> physicalPlan(sql0, schema, disabledRules),
+                        CannotPlanException.class,
+                        "There are not enough rules");
+            }
         }
     }
 
     private static Stream<Arguments> joinConditions() {
+        String[] joinTypes = {"LEFT", "RIGHT", "INNER", "FULL OUTER"};
         return Stream.of(
-                Arguments.of("select t1.c1 from t1 full outer join t1 t2 on t1.c1 = t2.c1;", true),
-                Arguments.of("select t1.c1 from t1 full outer join t1 t2 on t1.c1 = ?;", false),
-                Arguments.of("select t1.c1 from t1 full outer join t1 t2 on t1.c1 = OCTET_LENGTH('TEST');", false),
-                Arguments.of("select t1.c1 from t1 full outer join t1 t2 on t1.c1 = t2.c1 and t1.ID > t2.ID;", false),
-                Arguments.of("select t1.c1 from t1 full outer join t1 t2 on t1.c1 = 1;", false),
-                Arguments.of("select t1.c1 from t1 full outer join t1 t2 on t1.c1 = t2.c1 and t1.c1 = 1;", false)
+                Arguments.of(joinTypes, "select t1.c1 from t1 %s join t1 t2 on t1.c1 = t2.c1;", true),
+                Arguments.of(joinTypes, "select t1.c1 from t1 %s join t1 t2 using(c1);", true),
+                Arguments.of(joinTypes, "select t1.c1 from t1 %s join t1 t2 on t1.c1 = ?;", false),
+                Arguments.of(joinTypes, "select t1.c1 from t1 %s join t1 t2 on t1.c1 = OCTET_LENGTH('TEST');", false),
+                Arguments.of(joinTypes, "select t1.c1 from t1 %s join t1 t2 on t1.c1 = t2.c1 and t1.ID > t2.ID;", false),
+                Arguments.of(joinTypes, "select t1.c1 from t1 %s join t1 t2 on t1.c1 = 1;", false),
+                Arguments.of(joinTypes, "select t1.c1 from t1 %s join t1 t2 on t1.c1 = 1 and t2.c1 = 1;", false)
         );
     }
 }
