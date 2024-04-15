@@ -39,22 +39,22 @@ import org.openjdk.jmh.runner.options.Options;
 import org.openjdk.jmh.runner.options.OptionsBuilder;
 
 /**
- * Benchmark that runs sql queries via embedded client on clusters of different size.
+ * Benchmark that runs join sql queries via embedded client on clusters of different size.
  */
 @State(Scope.Benchmark)
 @Fork(1)
 @Threads(1)
 @Warmup(iterations = 10, time = 2)
-@Measurement(iterations = 10, time = 2)
+@Measurement(iterations = 20, time = 2)
 @BenchmarkMode(Mode.AverageTime)
 @OutputTimeUnit(TimeUnit.MILLISECONDS)
 @SuppressWarnings({"WeakerAccess", "unused"})
-public class SqlBenchmark extends AbstractMultiNodeBenchmark {
+public class SqlJoinBenchmark extends AbstractMultiNodeBenchmark {
     private static final int TABLE_SIZE = 1030;
 
     private IgniteSql sql;
 
-    @Param({"1"/*, "2", "3"*/})
+    @Param({"1", "2"})
     private int clusterSize;
 
     /** Fills the table with data. */
@@ -65,63 +65,8 @@ public class SqlBenchmark extends AbstractMultiNodeBenchmark {
         sql = clusterNode.sql();
     }
 
-    /** Benchmark that measures performance of `SELECT count(*)` query over entire table. */
-    @Benchmark
-    public void countAll(Blackhole bh) {
-        try (var rs = sql.execute(null, "SELECT count(*) FROM usertable")) {
-            bh.consume(rs.next());
-        }
-    }
-
-    /** Benchmark that measures performance of `SELECT count(1)` query over entire table. */
-    @Benchmark
-    public void count1(Blackhole bh) {
-        try (var rs = sql.execute(null, "SELECT count(1) FROM usertable")) {
-            bh.consume(rs.next());
-        }
-    }
-
-    /** Benchmark that measures performance of `SELECT count(key)` query over entire table. */
-    @Benchmark
-    public void countKey(Blackhole bh) {
-        try (var rs = sql.execute(null, "SELECT count(ycsb_key) FROM usertable")) {
-            bh.consume(rs.next());
-        }
-    }
-
-    /** Benchmark that measures performance of `SELECT count(val)` query over entire table. */
-    @Benchmark
-    public void countVal(Blackhole bh) {
-        try (var rs = sql.execute(null, "SELECT count(field2) FROM usertable")) {
-            bh.consume(rs.next());
-        }
-    }
-
-    /** Benchmark that measures performance of `SELECT *` query over entire table. */
-    @Benchmark
-    public void selectAll(Blackhole bh) {
-        try (var rs = sql.execute(null, "SELECT * FROM usertable")) {
-            while (rs.hasNext()) {
-                bh.consume(rs.next());
-            }
-        }
-    }
-
     /**
-     * Benchmark to measure overhead of query initialisation.
-     */
-    @Benchmark
-    @OutputTimeUnit(TimeUnit.MICROSECONDS)
-    public void selectAllFromSystemRange(Blackhole bh) {
-        try (var rs = sql.execute(null, "SELECT * FROM TABLE(system_range(0, 1))")) {
-            while (rs.hasNext()) {
-                bh.consume(rs.next());
-            }
-        }
-    }
-
-    /**
-     * Benchmark left join.
+     * Benchmark left hash join.
      */
     @Benchmark
     @OutputTimeUnit(TimeUnit.MICROSECONDS)
@@ -137,7 +82,7 @@ public class SqlBenchmark extends AbstractMultiNodeBenchmark {
     }
 
     /**
-     * Benchmark left join.
+     * Benchmark left merge join.
      */
     @Benchmark
     @OutputTimeUnit(TimeUnit.MICROSECONDS)
@@ -153,11 +98,27 @@ public class SqlBenchmark extends AbstractMultiNodeBenchmark {
     }
 
     /**
+     * Benchmark left nl join.
+     */
+    @Benchmark
+    @OutputTimeUnit(TimeUnit.MICROSECONDS)
+    public void leftNestedJoin(Blackhole bh) {
+        try (var rs = sql.execute(null, ""
+                + "SELECT /*+ DISABLE_RULE('HashJoinConverter', 'MergeJoinConverter', 'CorrelatedNestedLoopJoin') */ t1.field1 FROM usertable t1 "
+                + "LEFT JOIN usertable t2 "
+                + "on t1.field2 = t2.field2")) {
+            while (rs.hasNext()) {
+                bh.consume(rs.next());
+            }
+        }
+    }
+
+    /**
      * Benchmark's entry point.
      */
     public static void main(String[] args) throws RunnerException {
         Options opt = new OptionsBuilder()
-                .include(".*" + SqlBenchmark.class.getSimpleName() + ".*Join")
+                .include(".*" + SqlJoinBenchmark.class.getSimpleName() + ".*Join")
                 .build();
 
         new Runner(opt).run();
@@ -168,5 +129,3 @@ public class SqlBenchmark extends AbstractMultiNodeBenchmark {
         return clusterSize;
     }
 }
-
-

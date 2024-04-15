@@ -19,7 +19,6 @@ package org.apache.ignite.internal.sql.engine.rule;
 
 import static org.apache.ignite.internal.util.CollectionUtils.nullOrEmpty;
 
-import java.util.List;
 import org.apache.calcite.plan.RelOptCluster;
 import org.apache.calcite.plan.RelOptPlanner;
 import org.apache.calcite.plan.RelOptRule;
@@ -27,15 +26,13 @@ import org.apache.calcite.plan.RelOptRuleCall;
 import org.apache.calcite.plan.RelTraitSet;
 import org.apache.calcite.rel.PhysicalNode;
 import org.apache.calcite.rel.RelNode;
-import org.apache.calcite.rel.core.JoinInfo;
 import org.apache.calcite.rel.logical.LogicalJoin;
 import org.apache.calcite.rel.metadata.RelMetadataQuery;
 import org.apache.calcite.rex.RexCall;
-import org.apache.calcite.rex.RexInputRef;
 import org.apache.calcite.rex.RexNode;
-import org.apache.calcite.rex.RexShuttle;
+import org.apache.calcite.rex.RexVisitor;
+import org.apache.calcite.rex.RexVisitorImpl;
 import org.apache.calcite.sql.SqlKind;
-import org.apache.calcite.util.ControlFlowException;
 import org.apache.calcite.util.Util;
 import org.apache.ignite.internal.sql.engine.rel.IgniteConvention;
 import org.apache.ignite.internal.sql.engine.rel.IgniteHashJoin;
@@ -58,25 +55,29 @@ public class HashJoinConverterRule extends AbstractIgniteConverterRule<LogicalJo
     public boolean matches(RelOptRuleCall call) {
         LogicalJoin logicalJoin = call.rel(0);
 
-        RexShuttle rexShuttle = new RexShuttle() {
-            @Override public RexNode visitCall(RexCall call) {
-                if (call.getOperator().getKind() != SqlKind.EQUALS && call.getOperator().getKind() != SqlKind.AND) {
+        return acceptableConditions(logicalJoin.getCondition()) && !nullOrEmpty(logicalJoin.analyzeCondition().pairs())
+                && logicalJoin.analyzeCondition().isEqui();
+    }
+
+    private static boolean acceptableConditions(RexNode node) {
+        RexVisitor<Void> v = new RexVisitorImpl<>(true) {
+            @Override
+            public Void visitCall(RexCall call) {
+                SqlKind opKind = call.getOperator().getKind();
+                if (opKind != SqlKind.EQUALS && opKind != SqlKind.AND) {
                     throw Util.FoundOne.NULL;
                 }
                 return super.visitCall(call);
             }
-
-            //visitLiteral
         };
 
         try {
-            rexShuttle.apply(logicalJoin.getCondition());
-        } catch (ControlFlowException ex) {
+            node.accept(v);
+
+            return true;
+        } catch (Util.FoundOne e) {
             return false;
         }
-
-        return !nullOrEmpty(logicalJoin.analyzeCondition().pairs())
-                && logicalJoin.analyzeCondition().isEqui();
     }
 
     /** {@inheritDoc} */

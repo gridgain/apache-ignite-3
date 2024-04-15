@@ -8,11 +8,9 @@ import org.apache.calcite.plan.RelOptPlanner;
 import org.apache.calcite.plan.RelTraitSet;
 import org.apache.calcite.rel.RelInput;
 import org.apache.calcite.rel.RelNode;
-import org.apache.calcite.rel.RelNodes;
 import org.apache.calcite.rel.core.CorrelationId;
 import org.apache.calcite.rel.core.Join;
 import org.apache.calcite.rel.core.JoinRelType;
-import org.apache.calcite.rel.metadata.RelMdUtil;
 import org.apache.calcite.rel.metadata.RelMetadataQuery;
 import org.apache.calcite.rex.RexNode;
 import org.apache.calcite.util.Util;
@@ -20,6 +18,9 @@ import org.apache.ignite.internal.sql.engine.metadata.cost.IgniteCost;
 import org.apache.ignite.internal.sql.engine.metadata.cost.IgniteCostFactory;
 import org.apache.ignite.internal.sql.engine.util.Commons;
 
+/**
+ * Relational operator that represent hash join algo.
+ */
 public class IgniteHashJoin extends AbstractIgniteJoin {
     private static final String REL_TYPE_NAME = "HashJoin";
 
@@ -38,11 +39,12 @@ public class IgniteHashJoin extends AbstractIgniteJoin {
                 input.getEnum("joinType", JoinRelType.class));
     }
 
+    /** {@inheritDoc} */
     @Override
     public RelOptCost computeSelfCost(RelOptPlanner planner, RelMetadataQuery mq) {
         IgniteCostFactory costFactory = (IgniteCostFactory) planner.getCostFactory();
 
-        double rowCount = mq.getRowCount(this);
+        double rowCount = 0;
         double leftRowCount = mq.getRowCount(getLeft());
         double rightRowCount = mq.getRowCount(getRight());
 
@@ -55,14 +57,13 @@ public class IgniteHashJoin extends AbstractIgniteJoin {
         if (Double.isInfinite(rightRowCount)) {
             rowCount = rightRowCount;
         } else {
-            // believe in some kind of compaction
+            // believe in some kind of keys equality
             rowCount += Util.nLogN(rightRowCount);
         }
 
-        double rightSize = rightRowCount * (getRight().getRowType().getFieldCount() * 4) * IgniteCost.AVERAGE_FIELD_SIZE;
+        double rightSize = rightRowCount * (getRight().getRowType().getFieldCount() * 8) * IgniteCost.AVERAGE_FIELD_SIZE;
 
-        return costFactory.makeCost(rowCount,
-                rowCount * (IgniteCost.ROW_COMPARISON_COST + IgniteCost.ROW_PASS_THROUGH_COST), 0, rightSize, 0);
+        return costFactory.makeCost(rowCount, rowCount * IgniteCost.ROW_PASS_THROUGH_COST, 0, rightSize, 0);
     }
 
     /** {@inheritDoc} */
@@ -72,11 +73,13 @@ public class IgniteHashJoin extends AbstractIgniteJoin {
         return new IgniteHashJoin(getCluster(), traitSet, left, right, condition, variablesSet, joinType);
     }
 
+    /** {@inheritDoc} */
     @Override
     public <T> T accept(IgniteRelVisitor<T> visitor) {
         return visitor.visit(this);
     }
 
+    /** {@inheritDoc} */
     @Override
     public IgniteRel clone(RelOptCluster cluster, List<IgniteRel> inputs) {
         return new IgniteHashJoin(cluster, getTraitSet(), inputs.get(0), inputs.get(1), getCondition(),
