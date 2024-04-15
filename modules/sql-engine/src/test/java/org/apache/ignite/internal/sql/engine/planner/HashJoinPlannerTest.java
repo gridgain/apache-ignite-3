@@ -30,13 +30,17 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
 
+/** HashJoin planner test. */
 public class HashJoinPlannerTest extends AbstractPlannerTest {
     private static final String[] disabledRules = {"NestedLoopJoinConverter", "CorrelatedNestedLoopJoin"};
 
+    private static final String[] joinTypes = {"LEFT", "RIGHT", "INNER", "FULL OUTER"};
+
+    /** Check that only appropriate conditions are acceptable for hash join. */
     @ParameterizedTest()
     @MethodSource("joinConditions")
     @SuppressWarnings("ThrowableNotThrown")
-    public void hashJoinAppliedConditions(String[] joinTypes, String sql, boolean canBePlanned) throws Exception {
+    public void hashJoinAppliedConditions(String sql, boolean canBePlanned) throws Exception {
         IgniteTable tbl = createTestTable("ID", "C1");
 
         IgniteSchema schema = createSchema(tbl);
@@ -55,15 +59,14 @@ public class HashJoinPlannerTest extends AbstractPlannerTest {
     }
 
     private static Stream<Arguments> joinConditions() {
-        String[] joinTypes = {"LEFT", "RIGHT", "INNER", "FULL OUTER"};
         return Stream.of(
-                Arguments.of(joinTypes, "select t1.c1 from t1 %s join t1 t2 on t1.c1 = t2.c1;", true),
-                Arguments.of(joinTypes, "select t1.c1 from t1 %s join t1 t2 using(c1);", true),
-                Arguments.of(joinTypes, "select t1.c1 from t1 %s join t1 t2 on t1.c1 = ?;", false),
-                Arguments.of(joinTypes, "select t1.c1 from t1 %s join t1 t2 on t1.c1 = OCTET_LENGTH('TEST');", false),
-                Arguments.of(joinTypes, "select t1.c1 from t1 %s join t1 t2 on t1.c1 = t2.c1 and t1.ID > t2.ID;", false),
-                Arguments.of(joinTypes, "select t1.c1 from t1 %s join t1 t2 on t1.c1 = 1;", false),
-                Arguments.of(joinTypes, "select t1.c1 from t1 %s join t1 t2 on t1.c1 = 1 and t2.c1 = 1;", false)
+                Arguments.of("select t1.c1 from t1 %s join t1 t2 on t1.c1 = t2.c1", true),
+                Arguments.of("select t1.c1 from t1 %s join t1 t2 using(c1)", true),
+                Arguments.of("select t1.c1 from t1 %s join t1 t2 on t1.c1 = ?", false),
+                Arguments.of("select t1.c1 from t1 %s join t1 t2 on t1.c1 = OCTET_LENGTH('TEST')", false),
+                Arguments.of("select t1.c1 from t1 %s join t1 t2 on t1.c1 = t2.c1 and t1.ID > t2.ID", false),
+                Arguments.of("select t1.c1 from t1 %s join t1 t2 on t1.c1 = 1", false),
+                Arguments.of("select t1.c1 from t1 %s join t1 t2 on t1.c1 = 1 and t2.c1 = 1", false)
         );
     }
 }
