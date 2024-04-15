@@ -17,6 +17,8 @@
 
 package org.apache.ignite.internal.benchmark;
 
+import static org.apache.ignite.internal.sql.engine.util.Commons.IN_BUFFER_SIZE;
+
 import java.io.IOException;
 import java.util.concurrent.TimeUnit;
 import org.apache.ignite.sql.IgniteSql;
@@ -50,7 +52,7 @@ import org.openjdk.jmh.runner.options.OptionsBuilder;
 @OutputTimeUnit(TimeUnit.MILLISECONDS)
 @SuppressWarnings({"WeakerAccess", "unused"})
 public class SqlJoinBenchmark extends AbstractMultiNodeBenchmark {
-    private static final int TABLE_SIZE = 1030;
+    private static final int TABLE_SIZE = 2 * IN_BUFFER_SIZE + 1;
 
     private IgniteSql sql;
 
