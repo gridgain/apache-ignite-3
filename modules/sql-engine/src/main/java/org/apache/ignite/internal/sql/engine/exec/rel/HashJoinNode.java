@@ -59,6 +59,8 @@ public abstract class HashJoinNode<RowT> extends AbstractRightMaterializedJoinNo
 
     @Override
     protected void rewindInternal() {
+        rightIt = Collections.emptyIterator();
+
         hashStore.clear();
 
         super.rewindInternal();
