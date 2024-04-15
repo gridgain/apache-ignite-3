@@ -104,7 +104,7 @@ public abstract class ClusterPerClassIntegrationTest extends IgniteIntegrationTe
      * @return Count of nodes.
      */
     protected int initialNodes() {
-        return 1;
+        return 3;
     }
 
     protected int[] cmgMetastoreNodes() {
