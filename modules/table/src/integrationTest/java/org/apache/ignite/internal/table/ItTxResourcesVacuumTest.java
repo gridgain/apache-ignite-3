@@ -430,7 +430,7 @@ public class ItTxResourcesVacuumTest extends ClusterPerTestIntegrationTest {
 
         Transaction roTxAfter = beginReadOnlyTx(anyNode());
 
-        waitForCondition(() -> volatileTxState(commitPartitionLeaseholder, txId) != null, 10_000);
+        assertTrue(waitForCondition(() -> volatileTxState(commitPartitionLeaseholder, txId) != null, 10_000));
 
         triggerVacuum();
         assertTxStateVacuumized(txId, commitPartId, true);
@@ -613,11 +613,11 @@ public class ItTxResourcesVacuumTest extends ClusterPerTestIntegrationTest {
 
         Transaction roTxAfter = beginReadOnlyTx(anyNode());
 
-        waitForCondition(() -> {
+        assertTrue(waitForCondition(() -> {
             TxStateMeta txStateMeta = (TxStateMeta) volatileTxState(commitPartitionLeaseholder, txId);
 
             return txStateMeta != null && txStateMeta.cleanupCompletionTimestamp() != null;
-        }, 10_000);
+        }, 10_000));
 
         log.info("Test: cleanup completed.");
 
