@@ -1,5 +1,5 @@
 # name: test/sql/order/test_top_n.test
-# description: Test Top N Optimization
+# description: SQL F861 (Top-level <result offset clause> in <query expression>)
 # group: [order]
 
 statement ok
