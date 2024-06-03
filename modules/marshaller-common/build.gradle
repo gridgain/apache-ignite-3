@@ -31,10 +31,13 @@ dependencies {
     testAnnotationProcessor libs.jmh.annotation.processor
 
     testImplementation project(':ignite-core')
+    testImplementation project(':ignite-client')
     testImplementation(testFixtures(project(':ignite-core')))
+    testImplementation(testFixtures(project(':ignite-runner')))
     testImplementation libs.junit5.params
     testImplementation libs.mockito.junit
     testImplementation libs.jmh.core
+    testImplementation libs.assertj.core
 
     testFixturesApi project(':ignite-api')
     testFixturesImplementation testFixtures(project(':ignite-core'))
