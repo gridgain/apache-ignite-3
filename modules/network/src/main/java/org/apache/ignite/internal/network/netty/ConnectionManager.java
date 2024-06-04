@@ -671,4 +671,12 @@ public class ConnectionManager implements ChannelCreationListener {
     public void setLocalNode(ClusterNode localNode) {
         localNodeFuture.complete(localNode);
     }
+
+    /**
+     * Returns bootstrap factory.
+     */
+    @TestOnly
+    public NettyBootstrapFactory bootstrapFactory() {
+        return bootstrapFactory;
+    }
 }

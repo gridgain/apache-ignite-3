@@ -121,7 +121,8 @@ public class ScaleCubeClusterServiceFactory {
                 staleIds,
                 userObjectSerialization.descriptorRegistry(),
                 userObjectSerialization.marshaller(),
-                criticalWorkerRegistry
+                criticalWorkerRegistry,
+                nettyBootstrapFactory.metricSource()
         );
 
         return new AbstractClusterService(consistentId, topologyService, messagingService, serializationRegistry) {

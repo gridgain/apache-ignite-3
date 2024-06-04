@@ -265,7 +265,7 @@ public class ClientHandlerModule implements IgniteComponent {
      * @return Channel future.
      */
     private CompletableFuture<Channel> startEndpoint(ClientConnectorView configuration) {
-        ServerBootstrap bootstrap = bootstrapFactory.createServerBootstrap();
+        ServerBootstrap bootstrap = bootstrapFactory.createServerBootstrap(true);
         CompletableFuture<ClusterTag> clusterTag = clusterTagSupplier.get();
         CompletableFuture<Channel> result = new CompletableFuture<>();
 

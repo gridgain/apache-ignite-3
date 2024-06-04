@@ -120,7 +120,7 @@ public class NettyServer {
                 throw new IgniteInternalException("Attempted to start an already started server");
             }
 
-            ServerBootstrap bootstrap = bootstrapFactory.createServerBootstrap();
+            ServerBootstrap bootstrap = bootstrapFactory.createServerBootstrap(false);
 
             bootstrap.childHandler(new ChannelInitializer<SocketChannel>() {
                         /** {@inheritDoc} */

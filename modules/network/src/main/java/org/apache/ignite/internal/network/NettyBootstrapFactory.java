@@ -23,17 +23,20 @@ import static org.apache.ignite.internal.util.CompletableFutures.nullCompletedFu
 
 import io.netty.bootstrap.Bootstrap;
 import io.netty.bootstrap.ServerBootstrap;
+import io.netty.channel.ChannelFactory;
 import io.netty.channel.ChannelOption;
 import io.netty.channel.EventLoop;
 import io.netty.channel.EventLoopGroup;
+import io.netty.channel.ReflectiveChannelFactory;
+import io.netty.channel.ServerChannel;
 import io.netty.channel.socket.nio.NioServerSocketChannel;
-import io.netty.channel.socket.nio.NioSocketChannel;
 import io.netty.util.concurrent.EventExecutor;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import org.apache.ignite.internal.manager.ComponentContext;
 import org.apache.ignite.internal.manager.IgniteComponent;
+import org.apache.ignite.internal.metrics.MetricManager;
 import org.apache.ignite.internal.network.configuration.InboundView;
 import org.apache.ignite.internal.network.configuration.NetworkConfiguration;
 import org.apache.ignite.internal.network.configuration.NetworkView;
@@ -41,6 +44,7 @@ import org.apache.ignite.internal.network.configuration.OutboundView;
 import org.apache.ignite.internal.network.netty.ChannelEventLoopsSource;
 import org.apache.ignite.internal.network.netty.NamedNioEventLoopGroup;
 import org.apache.ignite.internal.network.netty.NamedNioEventLoopGroup.NetworkThread;
+import org.jetbrains.annotations.Nullable;
 import org.jetbrains.annotations.TestOnly;
 
 /**
@@ -52,6 +56,10 @@ public class NettyBootstrapFactory implements IgniteComponent, ChannelEventLoops
 
     /** Prefix for event loop group names. */
     private final String eventLoopGroupNamePrefix;
+
+    private final MetricManager metricManager;
+
+    private final NetworkMetricSource metricSource = new NetworkMetricSource();
 
     /** Server boss socket channel handler event loop group. */
     private EventLoopGroup bossGroup;
@@ -71,12 +79,28 @@ public class NettyBootstrapFactory implements IgniteComponent, ChannelEventLoops
      * @param networkConfiguration Network configuration.
      * @param eventLoopGroupNamePrefix Prefix for event loop group names.
      */
+    @TestOnly
     public NettyBootstrapFactory(NetworkConfiguration networkConfiguration, String eventLoopGroupNamePrefix) {
+        this(networkConfiguration, eventLoopGroupNamePrefix, null);
+    }
+
+    /**
+     * Constructor.
+     *
+     * @param networkConfiguration Network configuration.
+     * @param eventLoopGroupNamePrefix Prefix for event loop group names.
+     */
+    public NettyBootstrapFactory(
+            NetworkConfiguration networkConfiguration,
+            String eventLoopGroupNamePrefix,
+            @Nullable MetricManager metricManager
+    ) {
         assert eventLoopGroupNamePrefix != null;
         assert networkConfiguration != null;
 
         this.networkConfiguration = networkConfiguration;
         this.eventLoopGroupNamePrefix = eventLoopGroupNamePrefix;
+        this.metricManager = metricManager;
     }
 
     /**
@@ -89,7 +113,7 @@ public class NettyBootstrapFactory implements IgniteComponent, ChannelEventLoops
         Bootstrap clientBootstrap = new Bootstrap();
 
         clientBootstrap.group(clientWorkerGroup)
-                .channel(NioSocketChannel.class)
+                .channelFactory(new NettySideMeteredChannelFactory(metricSource))
                 // See createServerBootstrap for netty configuration details.
                 .option(ChannelOption.SO_KEEPALIVE, clientConfiguration.soKeepAlive())
                 .option(ChannelOption.SO_LINGER, clientConfiguration.soLinger())
@@ -103,12 +127,19 @@ public class NettyBootstrapFactory implements IgniteComponent, ChannelEventLoops
      *
      * @return Bootstrap.
      */
-    public ServerBootstrap createServerBootstrap() {
+    public ServerBootstrap createServerBootstrap(boolean thinClientProtocol) {
         InboundView serverConfiguration = networkConfiguration.value().inbound();
         ServerBootstrap serverBootstrap = new ServerBootstrap();
 
+        ChannelFactory<ServerChannel> channelFactory;
+        if (thinClientProtocol) {
+            channelFactory = new ReflectiveChannelFactory<>(NioServerSocketChannel.class);
+        } else {
+            channelFactory = new NettySideMeteredServerChannelFactory(metricSource);
+        }
+
         serverBootstrap.group(bossGroup, workerGroup)
-                .channel(NioServerSocketChannel.class)
+                .channelFactory(channelFactory)
                 /*
                  * The maximum queue length for incoming connection indications (a request to connect) is set
                  * to the backlog parameter. If a connection indication arrives when the queue is full,
@@ -158,6 +189,11 @@ public class NettyBootstrapFactory implements IgniteComponent, ChannelEventLoops
         clientWorkerGroup = NamedNioEventLoopGroup.create(eventLoopGroupNamePrefix + "-client");
 
         this.channelEventLoops = List.copyOf(eventLoopsAt(workerGroup, clientWorkerGroup));
+
+        if (metricManager != null) {
+            metricManager.registerSource(metricSource);
+            metricManager.enable(metricSource);
+        }
 
         return nullCompletedFuture();
     }
@@ -215,5 +251,12 @@ public class NettyBootstrapFactory implements IgniteComponent, ChannelEventLoops
     @TestOnly
     public EventLoopGroup serverEventLoopGroup() {
         return workerGroup;
+    }
+
+    /**
+     * Returns the metric source.
+     */
+    public NetworkMetricSource metricSource() {
+        return metricSource;
     }
 }

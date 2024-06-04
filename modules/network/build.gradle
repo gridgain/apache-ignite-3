@@ -32,6 +32,7 @@ dependencies {
     implementation project(':ignite-vault')
     implementation project(':ignite-workers')
     implementation project(':ignite-failure-handler')
+    implementation project(':ignite-metrics')
     implementation libs.jetbrains.annotations
     implementation libs.scalecube.cluster
     implementation libs.fastutil.core
@@ -84,6 +85,7 @@ dependencies {
     integrationTestImplementation(testFixtures(project))
     integrationTestImplementation(testFixtures(project(':ignite-core')))
     integrationTestImplementation(testFixtures(project(':ignite-configuration')))
+    integrationTestImplementation project(':ignite-metrics')
     integrationTestImplementation libs.compileTesting
     integrationTestImplementation libs.netty.handler
     integrationTestImplementation libs.scalecube.cluster

@@ -473,7 +473,7 @@ public class IgniteImpl implements Ignite {
                 failureProcessor
         );
 
-        nettyBootstrapFactory = new NettyBootstrapFactory(networkConfiguration, name);
+        nettyBootstrapFactory = new NettyBootstrapFactory(networkConfiguration, name, metricManager);
         nettyWorkersRegistrar = new NettyWorkersRegistrar(
                 criticalWorkerRegistry,
                 threadPoolsManager.commonScheduler(),

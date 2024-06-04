@@ -95,6 +95,8 @@ public class DefaultMessagingService extends AbstractMessagingService {
 
     private final CriticalWorkerRegistry criticalWorkerRegistry;
 
+    private final NetworkMetricSource metricSource;
+
     /** Connection manager that provides access to {@link NettySender}. */
     private volatile ConnectionManager connectionManager;
 
@@ -132,12 +134,44 @@ public class DefaultMessagingService extends AbstractMessagingService {
             UserObjectMarshaller marshaller,
             CriticalWorkerRegistry criticalWorkerRegistry
     ) {
+        this(
+                nodeName,
+                factory,
+                topologyService,
+                staleIdDetector,
+                classDescriptorRegistry,
+                marshaller,
+                criticalWorkerRegistry,
+                new NetworkMetricSource()
+        );
+    }
+
+    /**
+     * Constructor.
+     *
+     * @param factory Network messages factory.
+     * @param topologyService Topology service.
+     * @param staleIdDetector Used to detect stale node IDs.
+     * @param classDescriptorRegistry Descriptor registry.
+     * @param marshaller Marshaller.
+     */
+    public DefaultMessagingService(
+            String nodeName,
+            NetworkMessagesFactory factory,
+            TopologyService topologyService,
+            StaleIdDetector staleIdDetector,
+            ClassDescriptorRegistry classDescriptorRegistry,
+            UserObjectMarshaller marshaller,
+            CriticalWorkerRegistry criticalWorkerRegistry,
+            NetworkMetricSource metricSource
+    ) {
         this.factory = factory;
         this.topologyService = topologyService;
         this.staleIdDetector = staleIdDetector;
         this.classDescriptorRegistry = classDescriptorRegistry;
         this.marshaller = marshaller;
         this.criticalWorkerRegistry = criticalWorkerRegistry;
+        this.metricSource = metricSource;
 
         outboundExecutor = new CriticalSingleThreadExecutor(
                 IgniteThreadFactory.create(nodeName, "MessagingService-outbound", LOG, NOTHING_ALLOWED)
@@ -324,10 +358,14 @@ public class DefaultMessagingService extends AbstractMessagingService {
         }
 
         return connectionManager.channel(consistentId, type, addr)
-                .thenComposeToCompletable(sender -> sender.send(
-                        new OutNetworkObject(message, descriptors),
-                        () -> triggerChannelCreation(consistentId, type, addr)
-                ));
+                .thenComposeToCompletable(sender -> {
+                    metricSource.sentMessages().increment();
+
+                    return sender.send(
+                            new OutNetworkObject(message, descriptors),
+                            () -> triggerChannelCreation(consistentId, type, addr)
+                    );
+                });
     }
 
     private void triggerChannelCreation(@Nullable String consistentId, ChannelType type, InetSocketAddress addr) {

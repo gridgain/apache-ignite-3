@@ -206,7 +206,7 @@ public class TestClientHandlerModule implements IgniteComponent {
         var requestCounter = new AtomicInteger();
         var connectionIdGen = new AtomicLong();
 
-        ServerBootstrap bootstrap = bootstrapFactory.createServerBootstrap();
+        ServerBootstrap bootstrap = bootstrapFactory.createServerBootstrap(true);
 
         bootstrap.childHandler(new ChannelInitializer<>() {
                     @Override
