@@ -51,6 +51,8 @@ namespace Apache.Ignite.Tests
 
         public const string GetDetailsJob = "get-details";
 
+        public const int OtherError = int.MaxValue;
+
         private const int ExistingTableId = 1001;
 
         private const int CompositeKeyTableId = 1002;
@@ -383,7 +385,7 @@ namespace Apache.Ignite.Tests
                 using var errWriter = new PooledArrayBuffer();
                 var w = new MsgPackWriter(errWriter);
                 w.Write(Guid.Empty);
-                w.Write(262150);
+                w.Write(OtherError);
                 w.Write("org.foo.bar.BazException");
                 w.Write(Err);
                 w.WriteNil(); // Stack trace.
