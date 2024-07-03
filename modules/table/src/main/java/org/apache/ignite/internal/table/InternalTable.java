@@ -33,7 +33,6 @@ import org.apache.ignite.internal.schema.BinaryTuple;
 import org.apache.ignite.internal.schema.BinaryTuplePrefix;
 import org.apache.ignite.internal.storage.engine.MvTableStorage;
 import org.apache.ignite.internal.tx.InternalTransaction;
-import org.apache.ignite.internal.tx.LockException;
 import org.apache.ignite.internal.tx.storage.state.TxStateTableStorage;
 import org.apache.ignite.internal.util.PendingComparableValuesTracker;
 import org.apache.ignite.internal.utils.PrimaryReplica;
@@ -89,7 +88,6 @@ public interface InternalTable extends ManuallyCloseable {
      * @param keyRow Row with key columns set.
      * @param tx     The transaction.
      * @return Future representing pending completion of the operation.
-     * @throws LockException If a lock can't be acquired by some reason.
      */
     CompletableFuture<BinaryRow> get(BinaryRowEx keyRow, @Nullable InternalTransaction tx);
 
@@ -100,7 +98,6 @@ public interface InternalTable extends ManuallyCloseable {
      * @param readTimestamp Read timestamp.
      * @param recipientNode Cluster node that will handle given get request.
      * @return Future representing pending completion of the operation.
-     * @throws LockException If a lock can't be acquired by some reason.
      */
     CompletableFuture<BinaryRow> get(
             BinaryRowEx keyRow,
@@ -494,4 +491,6 @@ public interface InternalTable extends ManuallyCloseable {
      * @return Cluster node with primary replica.
      */
     CompletableFuture<ClusterNode> partitionLocation(TablePartitionId partitionId);
+
+    CompletableFuture<Long> estimatedSize();
 }
