@@ -37,7 +37,7 @@ public class ZonePartitionRaftListener implements RaftGroupListener {
 
     @Override
     public void onWrite(Iterator<CommandClosure<WriteCommand>> iterator) {
-        // No-op
+        iterator.forEachRemaining((ignored) -> { });
     }
 
     @Override

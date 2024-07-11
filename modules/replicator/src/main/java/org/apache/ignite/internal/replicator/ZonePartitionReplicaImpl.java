@@ -81,7 +81,7 @@ public class ZonePartitionReplicaImpl implements Replica {
             // TODO: https://issues.apache.org/jira/browse/IGNITE-22620 implement ReplicaSafeTimeSyncRequest processing.
             // TODO: https://issues.apache.org/jira/browse/IGNITE-22621 implement zone-based transaction storage
             //  and txn messages processing
-            LOG.info("Non table request is not supported by the zone partition yet " + request);
+            LOG.debug("Non table request is not supported by the zone partition yet " + request);
 
             return nullCompletedFuture();
         } else {

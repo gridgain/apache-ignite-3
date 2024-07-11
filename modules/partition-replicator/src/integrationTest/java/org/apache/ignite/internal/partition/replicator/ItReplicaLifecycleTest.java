@@ -294,6 +294,7 @@ public class ItReplicaLifecycleTest extends BaseIgniteAbstractTest {
 
     @AfterEach
     void after() {
+        System.out.println("TEST STOP >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>");
         nodes.forEach(Node::stop);
     }
 
@@ -306,7 +307,7 @@ public class ItReplicaLifecycleTest extends BaseIgniteAbstractTest {
 
         placementDriver.setPrimary(node.clusterService.topologyService().localMember());
 
-        createZone(node, "test_zone", 1, 1);
+        createZone(node, "test_zone", 1, 3);
         int zoneId = DistributionZonesTestUtil.getZoneId(node.catalogManager, "test_zone", node.hybridClock.nowLong());
 
         {

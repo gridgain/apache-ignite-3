@@ -982,12 +982,12 @@ public class ReplicaManager extends AbstractEventProducer<LocalReplicaEvent, Loc
         messageGroupsToHandle.forEach(
                 mg -> clusterNetSvc.messagingService().addMessageHandler(mg, replicaMessagesExecutorChooser, handler)
         );
-        scheduledIdleSafeTimeSyncExecutor.scheduleAtFixedRate(
-                this::idleSafeTimeSync,
-                0,
-                idleSafeTimePropagationPeriodMsSupplier.getAsLong(),
-                TimeUnit.MILLISECONDS
-        );
+//        scheduledIdleSafeTimeSyncExecutor.scheduleAtFixedRate(
+//                this::idleSafeTimeSync,
+//                0,
+//                idleSafeTimePropagationPeriodMsSupplier.getAsLong(),
+//                TimeUnit.MILLISECONDS
+//        );
 
         cmgMgr.metaStorageNodes().whenComplete((nodes, e) -> {
             if (e != null) {

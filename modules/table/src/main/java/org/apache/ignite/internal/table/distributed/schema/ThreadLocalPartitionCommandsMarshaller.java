@@ -43,6 +43,7 @@ public class ThreadLocalPartitionCommandsMarshaller implements PartitionCommands
 
     @Override
     public byte[] marshall(Object o) {
+        System.out.println("KKK marshallinng " + o);
         return marshaller.get().marshall(o);
     }
 
