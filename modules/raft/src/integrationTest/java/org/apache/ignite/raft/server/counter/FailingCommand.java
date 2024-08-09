@@ -17,15 +17,14 @@
 
 package org.apache.ignite.raft.server.counter;
 
-import org.apache.ignite.internal.network.annotations.MessageGroup;
+import static org.apache.ignite.raft.server.counter.IntegrationTestMessageGroup.FAILING_COMMAND;
 
-@MessageGroup(groupType = 555, groupName = "IngtegrationTestRaftMessages")
-interface IntegrationTestMessageGroup {
-    /** Message type for {@link GetValueCommand}. */
-    short GET_VALUE_COMMAND = 1000;
+import org.apache.ignite.internal.network.annotations.Transferable;
+import org.apache.ignite.internal.raft.WriteCommand;
 
-    /** Message type for {@link IncrementAndGetCommand}. */
-    short INCREMENT_AND_GET_COMMAND = 1001;
-
-    short FAILING_COMMAND = 1002;
+@Transferable(FAILING_COMMAND)
+public interface FailingCommand extends WriteCommand {
+    static FailingCommand failingCommand() {
+        return new IngtegrationTestRaftMessagesFactory().failingCommand().build();
+    }
 }

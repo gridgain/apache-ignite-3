@@ -18,14 +18,19 @@
 package org.apache.ignite.raft.server;
 
 import static java.util.Comparator.comparing;
+import static java.util.concurrent.CompletableFuture.allOf;
+import static java.util.concurrent.CompletableFuture.completedFuture;
+import static java.util.stream.Collectors.collectingAndThen;
 import static java.util.stream.Collectors.toList;
 import static java.util.stream.Collectors.toSet;
 import static org.apache.ignite.internal.raft.server.RaftGroupOptions.defaults;
+import static org.apache.ignite.internal.testframework.IgniteTestUtils.testNodeName;
 import static org.apache.ignite.internal.testframework.matchers.CompletableFutureMatcher.willCompleteSuccessfully;
 import static org.apache.ignite.raft.jraft.core.State.STATE_ERROR;
 import static org.apache.ignite.raft.jraft.core.State.STATE_LEADER;
 import static org.apache.ignite.raft.jraft.test.TestUtils.waitForCondition;
 import static org.apache.ignite.raft.jraft.test.TestUtils.waitForTopology;
+import static org.apache.ignite.raft.server.counter.FailingCommand.failingCommand;
 import static org.apache.ignite.raft.server.counter.GetValueCommand.getValueCommand;
 import static org.apache.ignite.raft.server.counter.IncrementAndGetCommand.incrementAndGetCommand;
 import static org.hamcrest.MatcherAssert.assertThat;
@@ -43,6 +48,7 @@ import java.util.Arrays;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -51,10 +57,12 @@ import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
+import java.util.stream.IntStream;
 import java.util.stream.Stream;
 import org.apache.ignite.internal.lang.IgniteInternalException;
 import org.apache.ignite.internal.manager.ComponentContext;
 import org.apache.ignite.internal.raft.Peer;
+import org.apache.ignite.internal.raft.PeersAndLearners;
 import org.apache.ignite.internal.raft.RaftNodeId;
 import org.apache.ignite.internal.raft.ReadCommand;
 import org.apache.ignite.internal.raft.WriteCommand;
@@ -62,6 +70,7 @@ import org.apache.ignite.internal.raft.server.RaftGroupOptions;
 import org.apache.ignite.internal.raft.server.RaftServer;
 import org.apache.ignite.internal.raft.server.impl.JraftServerImpl;
 import org.apache.ignite.internal.raft.service.CommandClosure;
+import org.apache.ignite.internal.raft.service.LeaderWithTerm;
 import org.apache.ignite.internal.raft.service.RaftGroupService;
 import org.apache.ignite.internal.raft.util.ThreadLocalOptimizedMarshaller;
 import org.apache.ignite.internal.replicator.ReplicationGroupId;
@@ -70,6 +79,7 @@ import org.apache.ignite.internal.util.IgniteUtils;
 import org.apache.ignite.raft.jraft.core.NodeImpl;
 import org.apache.ignite.raft.jraft.core.StateMachineAdapter;
 import org.apache.ignite.raft.jraft.entity.RaftOutter.SnapshotMeta;
+import org.apache.ignite.raft.jraft.option.NodeOptions;
 import org.apache.ignite.raft.jraft.rpc.impl.RaftException;
 import org.apache.ignite.raft.jraft.util.ExecutorServiceHelper;
 import org.apache.ignite.raft.messages.TestRaftMessagesFactory;
@@ -111,7 +121,17 @@ class ItJraftCounterServerTest extends JraftAbstractTest {
      * @throws Exception If failed.
      */
     private void startCluster() throws Exception {
-        for (int i = 0; i < 3; i++) {
+        startCluster(3);
+    }
+
+    /**
+     * Starts a cluster for the test.
+     *
+     * @param nodesToStart Nodes to start.
+     * @throws Exception If failed.
+     */
+    private void startCluster(int nodesToStart) throws Exception {
+        for (int i = 0; i < nodesToStart; i++) {
             startServer(i, raftServer -> {
                 String localNodeName = raftServer.clusterService().topologyService().localMember().name();
 
@@ -192,6 +212,92 @@ class ItJraftCounterServerTest extends JraftAbstractTest {
                                 || t.getName().contains("JRaft-ReadOnlyService-Disruptor")
                                 || t.getName().contains("JRaft-LogManager-Disruptor"))
                 .collect(toSet());
+    }
+
+    @Test
+    public void test2NodesOf3Online() throws Exception {
+        var fullConf = initialMembersConf;
+        initialMembersConf = PeersAndLearners.fromConsistentIds(Set.of(testNodeName(testInfo, PORT)));
+
+        for (int i = 0; i < 2; i++) {
+            startServer(i, raftServer -> {
+                String localNodeName = raftServer.clusterService().topologyService().localMember().name();
+
+                Peer serverPeer = new Peer(localNodeName);
+
+                RaftGroupOptions groupOptions = groupOptions(raftServer);
+
+                raftServer.startRaftNode(
+                        new RaftNodeId(COUNTER_GROUP_0, serverPeer), initialMembersConf, listenerFactory.get(), groupOptions
+                );
+            }, opts -> {});
+        }
+
+        startClient(COUNTER_GROUP_0);
+
+        RaftGroupService client = clients.get(0);
+
+        assertThat(client.run(incrementAndGetCommand(2)), willCompleteSuccessfully());
+
+        CompletableFuture<Long> getValueFut = client.run(getValueCommand());
+
+        assertThat(getValueFut, willCompleteSuccessfully());
+
+        long v = getValueFut.join();
+
+        assertEquals(2L, v);
+
+        // Change cfg.
+        CompletableFuture<LeaderWithTerm> leaderWithTermFut = client.refreshAndGetLeaderWithTerm();
+        assertThat(leaderWithTermFut, willCompleteSuccessfully());
+        LeaderWithTerm leaderWithTerm = leaderWithTermFut.join();
+
+        CompletableFuture<Void> changePeersFut = client.changePeersAndLearners(fullConf, leaderWithTerm.term());
+        assertThat(changePeersFut, willCompleteSuccessfully());
+
+        assertThat(client.run(incrementAndGetCommand(1)), willCompleteSuccessfully());
+        getValueFut = client.run(getValueCommand());
+        assertThat(getValueFut, willCompleteSuccessfully());
+        v = getValueFut.join();
+        assertEquals(3L, v);
+    }
+
+    @Test
+    public void testCatchupFail() throws Exception {
+        startCluster(2);
+
+        RaftGroupService client = clients.get(0);
+
+        int catchupMargin = new NodeOptions().getCatchupMargin();
+
+        CompletableFuture<?> fut = completedFuture(null);
+
+        for (int i = 0; i < catchupMargin + 1; i++) {
+            CompletableFuture<?> f = client.run(failingCommand());
+
+            fut = allOf(fut, f);
+        }
+
+        assertThat(fut, willCompleteSuccessfully());
+
+        CounterListener.fail = true;
+
+        startServer(2, raftServer -> {
+            String localNodeName = raftServer.clusterService().topologyService().localMember().name();
+
+            Peer serverPeer = initialMembersConf.peer(localNodeName);
+
+            RaftGroupOptions groupOptions = groupOptions(raftServer);
+
+            raftServer.startRaftNode(
+                    new RaftNodeId(COUNTER_GROUP_0, serverPeer), initialMembersConf, listenerFactory.get(), groupOptions
+            );
+            raftServer.startRaftNode(
+                    new RaftNodeId(COUNTER_GROUP_1, serverPeer), initialMembersConf, listenerFactory.get(), groupOptions
+            );
+        }, opts -> {});
+
+        Thread.sleep(5000);
     }
 
     @Test

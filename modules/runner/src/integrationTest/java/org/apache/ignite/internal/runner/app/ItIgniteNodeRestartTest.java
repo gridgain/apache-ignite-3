@@ -1838,6 +1838,19 @@ public class ItIgniteNodeRestartTest extends BaseIgniteRestartTest {
         assertTrue(success);
     }
 
+    @Test
+    public void testCreateAndFillTableWhenOneNodeOffline() {
+        int nodes = 3;
+
+        List<IgniteImpl> ignites = startNodes(nodes);
+
+        stopNode(2);
+
+        createTableWithData(ignites, TABLE_NAME, nodes, 1);
+
+        checkTableWithData(ignites.get(0), TABLE_NAME);
+    }
+
     private int latestCatalogVersionInMs(MetaStorageManager metaStorageManager) {
         var e = metaStorageManager.getLocally(new ByteArray("catalog.version".getBytes(StandardCharsets.UTF_8)), 1000);
 

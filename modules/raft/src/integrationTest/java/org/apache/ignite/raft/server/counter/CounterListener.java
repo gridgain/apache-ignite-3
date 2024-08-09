@@ -38,6 +38,7 @@ import org.apache.ignite.raft.jraft.util.Utils;
  * The counter listener implementation.
  */
 public class CounterListener implements RaftGroupListener {
+    public static boolean fail;
     /**
      * The logger.
      */
@@ -71,9 +72,17 @@ public class CounterListener implements RaftGroupListener {
         while (iterator.hasNext()) {
             CommandClosure<WriteCommand> clo = iterator.next();
 
-            IncrementAndGetCommand cmd0 = (IncrementAndGetCommand) clo.command();
+            if (clo.command() instanceof IncrementAndGetCommand) {
+                IncrementAndGetCommand cmd0 = (IncrementAndGetCommand) clo.command();
 
-            clo.result(counter.addAndGet(cmd0.delta()));
+                clo.result(counter.addAndGet(cmd0.delta()));
+            } else if (clo.command() instanceof FailingCommand) {
+                if (fail) {
+                    throw new RuntimeException("test");
+                }
+
+                clo.result(counter.incrementAndGet());
+            }
         }
     }
 
