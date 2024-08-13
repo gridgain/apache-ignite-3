@@ -47,12 +47,20 @@ public class CounterListener implements RaftGroupListener {
     /**
      * The counter.
      */
-    private AtomicLong counter = new AtomicLong();
+    private AtomicLong counter;
 
     /**
      * Snapshot executor.
      */
     private ExecutorService executor = Executors.newSingleThreadExecutor();
+
+    public CounterListener() {
+        this(new AtomicLong());
+    }
+
+    public CounterListener(AtomicLong counter) {
+        this.counter = counter;
+    }
 
     /** {@inheritDoc} */
     @Override
@@ -78,7 +86,9 @@ public class CounterListener implements RaftGroupListener {
                 clo.result(counter.addAndGet(cmd0.delta()));
             } else if (clo.command() instanceof FailingCommand) {
                 if (fail) {
-                    throw new RuntimeException("test");
+                    LOG.error("qqq test error.");
+
+                    throw new RuntimeException("qqq test");
                 }
 
                 clo.result(counter.incrementAndGet());

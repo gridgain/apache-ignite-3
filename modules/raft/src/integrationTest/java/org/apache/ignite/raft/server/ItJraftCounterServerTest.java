@@ -45,8 +45,10 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
@@ -55,6 +57,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
 import java.util.stream.IntStream;
@@ -71,6 +74,7 @@ import org.apache.ignite.internal.raft.server.RaftServer;
 import org.apache.ignite.internal.raft.server.impl.JraftServerImpl;
 import org.apache.ignite.internal.raft.service.CommandClosure;
 import org.apache.ignite.internal.raft.service.LeaderWithTerm;
+import org.apache.ignite.internal.raft.service.RaftGroupListener;
 import org.apache.ignite.internal.raft.service.RaftGroupService;
 import org.apache.ignite.internal.raft.util.ThreadLocalOptimizedMarshaller;
 import org.apache.ignite.internal.replicator.ReplicationGroupId;
@@ -115,6 +119,8 @@ class ItJraftCounterServerTest extends JraftAbstractTest {
      */
     private Supplier<CounterListener> listenerFactory = CounterListener::new;
 
+    private Map<Integer, AtomicLong> counters = new HashMap<>();
+
     /**
      * Starts a cluster for the test.
      *
@@ -132,6 +138,8 @@ class ItJraftCounterServerTest extends JraftAbstractTest {
      */
     private void startCluster(int nodesToStart) throws Exception {
         for (int i = 0; i < nodesToStart; i++) {
+            int finalI = i;
+
             startServer(i, raftServer -> {
                 String localNodeName = raftServer.clusterService().topologyService().localMember().name();
 
@@ -140,10 +148,10 @@ class ItJraftCounterServerTest extends JraftAbstractTest {
                 RaftGroupOptions groupOptions = groupOptions(raftServer);
 
                 raftServer.startRaftNode(
-                        new RaftNodeId(COUNTER_GROUP_0, serverPeer), initialMembersConf, listenerFactory.get(), groupOptions
+                        new RaftNodeId(COUNTER_GROUP_0, serverPeer), initialMembersConf, createListener(finalI), groupOptions
                 );
                 raftServer.startRaftNode(
-                        new RaftNodeId(COUNTER_GROUP_1, serverPeer), initialMembersConf, listenerFactory.get(), groupOptions
+                        new RaftNodeId(COUNTER_GROUP_1, serverPeer), initialMembersConf, createListener(finalI), groupOptions
                 );
             }, opts -> {});
         }
@@ -280,9 +288,13 @@ class ItJraftCounterServerTest extends JraftAbstractTest {
 
         assertThat(fut, willCompleteSuccessfully());
 
+        waitForCondition(() -> counters.get(0).get() == catchupMargin && counters.get(1).get() == catchupMargin, 10_000);
+
         CounterListener.fail = true;
 
-        startServer(2, raftServer -> {
+        int index = 2;
+
+        startServer(index, raftServer -> {
             String localNodeName = raftServer.clusterService().topologyService().localMember().name();
 
             Peer serverPeer = initialMembersConf.peer(localNodeName);
@@ -290,14 +302,20 @@ class ItJraftCounterServerTest extends JraftAbstractTest {
             RaftGroupOptions groupOptions = groupOptions(raftServer);
 
             raftServer.startRaftNode(
-                    new RaftNodeId(COUNTER_GROUP_0, serverPeer), initialMembersConf, listenerFactory.get(), groupOptions
+                    new RaftNodeId(COUNTER_GROUP_0, serverPeer), initialMembersConf, createListener(index), groupOptions
             );
             raftServer.startRaftNode(
-                    new RaftNodeId(COUNTER_GROUP_1, serverPeer), initialMembersConf, listenerFactory.get(), groupOptions
+                    new RaftNodeId(COUNTER_GROUP_1, serverPeer), initialMembersConf, createListener(index), groupOptions
             );
         }, opts -> {});
 
         Thread.sleep(5000);
+    }
+
+    private RaftGroupListener createListener(int index) {
+        AtomicLong counter = new AtomicLong();
+        counters.put(index, counter);
+        return new CounterListener(counter);
     }
 
     @Test
