@@ -39,6 +39,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.function.BiConsumer;
 import java.util.function.BiPredicate;
 import java.util.stream.IntStream;
@@ -65,7 +66,9 @@ import org.apache.ignite.internal.raft.storage.LogStorageFactory;
 import org.apache.ignite.internal.raft.storage.impl.IgniteJraftServiceFactory;
 import org.apache.ignite.internal.raft.storage.impl.StripeAwareLogManager.Stripe;
 import org.apache.ignite.internal.replicator.ReplicationGroupId;
+import org.apache.ignite.internal.thread.IgniteThread;
 import org.apache.ignite.internal.thread.IgniteThreadFactory;
+import org.apache.ignite.internal.util.ThreadUtils;
 import org.apache.ignite.raft.jraft.Closure;
 import org.apache.ignite.raft.jraft.Iterator;
 import org.apache.ignite.raft.jraft.JRaftUtils;
@@ -270,7 +273,18 @@ public class JraftServerImpl implements RaftServer {
             opts.setSnapshotTimer(JRaftUtils.createTimer(opts, "JRaft-SnapshotTimer"));
         }
 
-        requestExecutor = JRaftUtils.createRequestExecutor(opts);
+//        requestExecutor = Executors.newFixedThreadPool(
+//                opts.getRaftRpcThreadPoolSize(),
+//                opts.isUseVirtualThreads() ?
+//                        //ThreadUtils.virtualWorkerFactory(IgniteThread.threadPrefix(opts.getServerName(), "JRaft-Request-Processor")) :
+//                        Executors.newVirtualThreadPerTaskExecutor() :
+//                        IgniteThreadFactory.create(opts.getServerName(), "JRaft-Request-Processor", LOG)
+//        );
+
+        requestExecutor = opts.isUseVirtualThreads() ? Executors.newVirtualThreadPerTaskExecutor() : Executors.newFixedThreadPool(
+                opts.getRaftRpcThreadPoolSize(),
+                IgniteThreadFactory.create(opts.getServerName(), "JRaft-Request-Processor", LOG)
+        );
 
         rpcServer = new IgniteRpcServer(
                 service,
@@ -291,7 +305,8 @@ public class JraftServerImpl implements RaftServer {
             opts.setfSMCallerExecutorDisruptor(new StripedDisruptor<>(
                     opts.getServerName(),
                     "JRaft-FSMCaller-Disruptor",
-                    (nodeName, stripeName) -> IgniteThreadFactory.create(nodeName, stripeName, true, LOG, STORAGE_READ, STORAGE_WRITE),
+                    (nodeName, stripeName) -> ThreadUtils.virtualWorkerFactory(IgniteThread.threadPrefix(nodeName, stripeName)),
+                    //(nodeName, stripeName) -> IgniteThreadFactory.create(nodeName, stripeName, true, LOG, STORAGE_READ, STORAGE_WRITE),
                     opts.getRaftOptions().getDisruptorBufferSize(),
                     ApplyTask::new,
                     opts.getStripes(),
@@ -305,6 +320,8 @@ public class JraftServerImpl implements RaftServer {
             opts.setNodeApplyDisruptor(new StripedDisruptor<>(
                     opts.getServerName(),
                     "JRaft-NodeImpl-Disruptor",
+                    (nodeName, stripeName) -> ThreadUtils.virtualWorkerFactory(IgniteThread.threadPrefix(nodeName, stripeName)),
+                    //(nodeName, stripeName) -> IgniteThreadFactory.create(nodeName, stripeName, true, LOG),
                     opts.getRaftOptions().getDisruptorBufferSize(),
                     LogEntryAndClosure::new,
                     opts.getStripes(),
@@ -331,6 +348,7 @@ public class JraftServerImpl implements RaftServer {
             opts.setLogManagerDisruptor(new StripedDisruptor<>(
                     opts.getServerName(),
                     "JRaft-LogManager-Disruptor",
+                    (nodeName, stripeName) -> ThreadUtils.virtualWorkerFactory(IgniteThread.threadPrefix(nodeName, stripeName)),
                     opts.getRaftOptions().getDisruptorBufferSize(),
                     StableClosureEvent::new,
                     opts.getLogStripesCount(),

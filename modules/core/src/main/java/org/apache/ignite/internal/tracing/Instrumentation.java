@@ -49,7 +49,7 @@ public class Instrumentation {
 
     private static volatile boolean jfr = false;
 
-    private static final Path file = Path.of("/opt/pubagent/poc/log/stats/dstat/trace.txt");
+    private static final Path file = Path.of("c://work/logs/trace.txt");
     // private static final Path file = Path.of("/temp/trace.txt");
 
     private static volatile ConcurrentLinkedQueue<Measurement> measurements = new ConcurrentLinkedQueue<>();
@@ -247,7 +247,7 @@ public class Instrumentation {
         private String message;
 
         public Measurement(String message) {
-            this.message = message + ":" + Thread.currentThread().getName();
+            this.message = message + ":" + Thread.currentThread().getName() + "[virt=" + Thread.currentThread().isVirtual() + "]";
         }
 
         public void start() {

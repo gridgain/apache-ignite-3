@@ -239,6 +239,26 @@ tasks.register("runnerPlatformBenchmark", JavaExec) {
     enableAssertions = true
 }
 
+tasks.register("runInsertBenchmark", JavaExec) {
+    mainClass = "org.apache.ignite.internal.benchmark.InsertBenchmark"
+
+    jvmArgs += defaultJvmArgs
+
+    classpath = sourceSets.integrationTest.runtimeClasspath
+
+    enableAssertions = false
+}
+
+tasks.register("runUpsertBenchmark", JavaExec) {
+    mainClass = "org.apache.ignite.internal.benchmark.UpsertKvBenchmark"
+
+    jvmArgs += defaultJvmArgs
+
+    classpath = sourceSets.integrationTest.runtimeClasspath
+
+    enableAssertions = false
+}
+
 jar {
     manifest {
         attributes(

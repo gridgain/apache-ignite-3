@@ -55,42 +55,44 @@ import org.openjdk.jmh.runner.options.OptionsBuilder;
  * Benchmark for insertion operation, comparing KV, JDBC and SQL APIs.
  */
 @State(Scope.Benchmark)
-@Fork(1)
+@Fork(0)
 @Threads(1)
 @Warmup(iterations = 10, time = 2)
 @Measurement(iterations = 20, time = 2)
 @BenchmarkMode(Mode.AverageTime)
 @OutputTimeUnit(TimeUnit.MICROSECONDS)
 public class InsertBenchmark extends AbstractMultiNodeBenchmark {
-    @Param({"1", "2", "3"})
+    //@Param({"1", "2", "3"})
+    @Param({"1"})
     private int clusterSize;
 
-    @Param({"1", "2", "4", "8", "16", "32"})
+    //@Param({"1", "2", "4", "8", "16", "32"})
+    @Param({"8"})
     private int partitionCount;
 
     /**
      * Benchmark for SQL insert via embedded client.
      */
-    @Benchmark
-    public void sqlInsert(SqlState state) {
-        state.executeQuery();
-    }
+//    @Benchmark
+//    public void sqlInsert(SqlState state) {
+//        state.executeQuery();
+//    }
 
     /**
      * Benchmark for SQL multiple rows insert via embedded client.
      */
-    @Benchmark
-    public void sqlInsertMulti(SqlStateMultiValues state) {
-        state.executeQuery();
-    }
+//    @Benchmark
+//    public void sqlInsertMulti(SqlStateMultiValues state) {
+//        state.executeQuery();
+//    }
 
     /**
      * Benchmark for SQL script insert via embedded client.
      */
-    @Benchmark
-    public void sqlInsertScript(SqlState state) {
-        state.executeScript();
-    }
+//    @Benchmark
+//    public void sqlInsertScript(SqlState state) {
+//        state.executeScript();
+//    }
 
     /**
      * Benchmark for KV insert via embedded client.
@@ -103,34 +105,34 @@ public class InsertBenchmark extends AbstractMultiNodeBenchmark {
     /**
      * Benchmark for JDBC insert.
      */
-    @Benchmark
-    public void jdbcInsert(JdbcState state) throws SQLException {
-        state.executeQuery();
-    }
+//    @Benchmark
+//    public void jdbcInsert(JdbcState state) throws SQLException {
+//        state.executeQuery();
+//    }
 
     /**
      * Benchmark for JDBC script insert.
      */
-    @Benchmark
-    public void jdbcInsertScript(JdbcState state) throws SQLException {
-        state.executeScript();
-    }
+//    @Benchmark
+//    public void jdbcInsertScript(JdbcState state) throws SQLException {
+//        state.executeScript();
+//    }
 
     /**
      * Benchmark for SQL insert via thin client.
      */
-    @Benchmark
-    public void sqlThinInsert(SqlThinState state) {
-        state.executeQuery();
-    }
+//    @Benchmark
+//    public void sqlThinInsert(SqlThinState state) {
+//        state.executeQuery();
+//    }
 
     /**
      * Benchmark for KV insert via thin client.
      */
-    @Benchmark
-    public void kvThinInsert(KvThinState state) {
-        state.executeQuery();
-    }
+//    @Benchmark
+//    public void kvThinInsert(KvThinState state) {
+//        state.executeQuery();
+//    }
 
     /**
      * Benchmark's entry point.

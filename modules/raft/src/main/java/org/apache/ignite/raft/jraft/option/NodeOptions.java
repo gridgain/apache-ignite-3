@@ -52,7 +52,7 @@ public class NodeOptions extends RpcOptions implements Copiable<NodeOptions> {
     private static final int DEFAULT_STRIPES = Utils.cpus();
 
     /** This value is used by default to determine the count of stripes for log manager. */
-    private static final int DEFAULT_LOG_STRIPES_COUNT = 4;
+    private static final int DEFAULT_LOG_STRIPES_COUNT = Math.min(4, DEFAULT_STRIPES);
 
     // A follower would become a candidate if it doesn't receive any message
     // from the leader in |election_timeout_ms| milliseconds
@@ -271,6 +271,9 @@ public class NodeOptions extends RpcOptions implements Copiable<NodeOptions> {
     private Marshaller commandsMarshaller;
 
     private RaftMetricSource raftMetrics;
+
+    /** Use virtual threads flag. */
+    private boolean useVirtualThreads;
 
     public NodeOptions() {
         raftOptions.setRaftMessagesFactory(getRaftMessagesFactory());
@@ -718,6 +721,7 @@ public class NodeOptions extends RpcOptions implements Copiable<NodeOptions> {
         nodeOptions.setStripes(this.getStripes());
         nodeOptions.setLogStripesCount(this.getLogStripesCount());
         nodeOptions.setLogYieldStrategy(this.isLogYieldStrategy());
+        nodeOptions.setUseVirtualThreads(this.isUseVirtualThreads());
 
         return nodeOptions;
     }
@@ -764,5 +768,13 @@ public class NodeOptions extends RpcOptions implements Copiable<NodeOptions> {
 
     public void setCommandsMarshaller(Marshaller commandsMarshaller) {
         this.commandsMarshaller = commandsMarshaller;
+    }
+
+    public boolean isUseVirtualThreads() {
+        return useVirtualThreads;
+    }
+
+    public void setUseVirtualThreads(boolean useVirtualThreads) {
+        this.useVirtualThreads = useVirtualThreads;
     }
 }
