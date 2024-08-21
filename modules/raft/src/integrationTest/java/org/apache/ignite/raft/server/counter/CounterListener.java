@@ -83,9 +83,15 @@ public class CounterListener implements RaftGroupListener {
             if (clo.command() instanceof IncrementAndGetCommand) {
                 IncrementAndGetCommand cmd0 = (IncrementAndGetCommand) clo.command();
 
+                if (fail()) {
+                    LOG.error("qqq test IncrementAndGetCommand error.");
+
+                    throw new RuntimeException("qqq IncrementAndGetCommand test");
+                }
+
                 clo.result(counter.addAndGet(cmd0.delta()));
             } else if (clo.command() instanceof FailingCommand) {
-                if (fail) {
+                if (fail()) {
                     LOG.error("qqq test error.");
 
                     throw new RuntimeException("qqq test");
@@ -94,6 +100,10 @@ public class CounterListener implements RaftGroupListener {
                 clo.result(counter.incrementAndGet());
             }
         }
+    }
+
+    protected boolean fail() {
+        return fail;
     }
 
     /** {@inheritDoc} */

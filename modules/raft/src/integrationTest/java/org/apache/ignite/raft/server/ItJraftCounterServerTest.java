@@ -87,6 +87,7 @@ import org.apache.ignite.raft.jraft.option.NodeOptions;
 import org.apache.ignite.raft.jraft.rpc.impl.RaftException;
 import org.apache.ignite.raft.jraft.util.ExecutorServiceHelper;
 import org.apache.ignite.raft.messages.TestRaftMessagesFactory;
+import org.apache.ignite.raft.server.counter.CounterFailingListener;
 import org.apache.ignite.raft.server.counter.CounterListener;
 import org.apache.ignite.raft.server.counter.GetValueCommand;
 import org.apache.ignite.raft.server.counter.IncrementAndGetCommand;
@@ -308,6 +309,71 @@ class ItJraftCounterServerTest extends JraftAbstractTest {
                     new RaftNodeId(COUNTER_GROUP_1, serverPeer), initialMembersConf, createListener(index), groupOptions
             );
         }, opts -> {});
+    }
+
+    @Test
+    public void testCatchupFailOnRebalance() throws Exception {
+        var fullConf = initialMembersConf;
+        initialMembersConf = PeersAndLearners.fromConsistentIds(Set.of(testNodeName(testInfo, PORT)));
+
+        for (int i = 0; i < 2; i++) {
+            startServer(i, raftServer -> {
+                String localNodeName = raftServer.clusterService().topologyService().localMember().name();
+
+                Peer serverPeer = new Peer(localNodeName);
+
+                RaftGroupOptions groupOptions = groupOptions(raftServer);
+
+                raftServer.startRaftNode(
+                        new RaftNodeId(COUNTER_GROUP_0, serverPeer), initialMembersConf, listenerFactory.get(), groupOptions
+                );
+            }, opts -> {});
+        }
+
+        // Start failing node.
+        int index = 2;
+        startServer(index, raftServer -> {
+            String localNodeName = raftServer.clusterService().topologyService().localMember().name();
+
+            Peer serverPeer = new Peer(localNodeName);
+
+            RaftGroupOptions groupOptions = groupOptions(raftServer);
+
+            raftServer.startRaftNode(
+                    new RaftNodeId(COUNTER_GROUP_0, serverPeer), initialMembersConf, new CounterFailingListener(), groupOptions
+            );
+        }, opts -> {});
+
+        // Start client.
+        startClient(COUNTER_GROUP_0);
+
+        RaftGroupService client = clients.get(0);
+
+        int catchupMargin = new NodeOptions().getCatchupMargin();
+
+        CompletableFuture<?> fut = completedFuture(null);
+
+        for (int i = 0; i < catchupMargin + 1; i++) {
+            CompletableFuture<?> f = client.run(incrementAndGetCommand(1));
+
+            fut = allOf(fut, f);
+        }
+
+        assertThat(fut, willCompleteSuccessfully());
+
+        // Change cfg.
+        CompletableFuture<LeaderWithTerm> leaderWithTermFut = client.refreshAndGetLeaderWithTerm();
+        assertThat(leaderWithTermFut, willCompleteSuccessfully());
+        LeaderWithTerm leaderWithTerm = leaderWithTermFut.join();
+
+        CompletableFuture<Void> changePeersFut = client.changePeersAndLearners(fullConf, leaderWithTerm.term());
+        assertThat(changePeersFut, willCompleteSuccessfully());
+
+        assertThat(client.run(incrementAndGetCommand(1)), willCompleteSuccessfully());
+        CompletableFuture<Long> getValueFut = client.run(getValueCommand());
+        assertThat(getValueFut, willCompleteSuccessfully());
+        Long v = getValueFut.join();
+        assertEquals(catchupMargin + 2, v);
 
         Thread.sleep(5000);
     }
