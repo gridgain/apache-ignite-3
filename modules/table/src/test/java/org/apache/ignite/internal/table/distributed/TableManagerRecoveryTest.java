@@ -38,6 +38,7 @@ import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.contains;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
@@ -67,6 +68,7 @@ import org.apache.ignite.internal.catalog.descriptors.CatalogZoneDescriptor;
 import org.apache.ignite.internal.components.LogSyncer;
 import org.apache.ignite.internal.components.LongJvmPauseDetector;
 import org.apache.ignite.internal.configuration.ConfigurationRegistry;
+import org.apache.ignite.internal.configuration.NodeConfiguration;
 import org.apache.ignite.internal.configuration.testframework.ConfigurationExtension;
 import org.apache.ignite.internal.configuration.testframework.InjectConfiguration;
 import org.apache.ignite.internal.distributionzones.DistributionZoneManager;
@@ -107,6 +109,7 @@ import org.apache.ignite.internal.storage.DataStorageModule;
 import org.apache.ignite.internal.storage.DataStorageModules;
 import org.apache.ignite.internal.storage.StorageException;
 import org.apache.ignite.internal.storage.configurations.StorageConfiguration;
+import org.apache.ignite.internal.storage.configurations.StorageExtensionConfiguration;
 import org.apache.ignite.internal.storage.engine.MvTableStorage;
 import org.apache.ignite.internal.storage.engine.StorageEngine;
 import org.apache.ignite.internal.storage.pagememory.PersistentPageMemoryDataStorageModule;
@@ -126,8 +129,6 @@ import org.apache.ignite.internal.tx.configuration.TransactionConfiguration;
 import org.apache.ignite.internal.tx.impl.RemotelyTriggeredResourceRegistry;
 import org.apache.ignite.internal.tx.impl.TransactionInflights;
 import org.apache.ignite.internal.tx.storage.state.TxStateTableStorage;
-import org.apache.ignite.internal.util.LazyPath;
-import org.apache.ignite.internal.util.PendingComparableValuesTracker;
 import org.apache.ignite.network.ClusterNode;
 import org.apache.ignite.network.NetworkAddress;
 import org.apache.ignite.sql.IgniteSql;
@@ -287,7 +288,7 @@ public class TableManagerRecoveryTest extends IgniteAbstractTest {
         when(topologyService.localMember()).thenReturn(node);
         when(distributionZoneManager.dataNodes(anyLong(), anyInt(), anyInt())).thenReturn(emptySetCompletedFuture());
 
-        when(replicaMgr.startReplica(any(), any(), any(), any(PendingComparableValuesTracker.class), any()))
+        when(replicaMgr.startReplica(any(), any(), anyBoolean(), any(), any(), any(), any(), any()))
                 .thenReturn(nullCompletedFuture());
         when(replicaMgr.stopReplica(any())).thenReturn(trueCompletedFuture());
         when(replicaMgr.weakStartReplica(any(), any(), any())).thenReturn(trueCompletedFuture());
@@ -322,9 +323,7 @@ public class TableManagerRecoveryTest extends IgniteAbstractTest {
 
         indexMetaStorage = new IndexMetaStorage(catalogManager, lowWatermark, metaStorageManager);
 
-        LazyPath storagePath = LazyPath.create(workDir);
-
-        dsm = createDataStorageManager(mock(ConfigurationRegistry.class), storagePath, storageConfiguration, dataStorageModule, clock);
+        dsm = createDataStorageManager(mock(ConfigurationRegistry.class), workDir, storageConfiguration, dataStorageModule, clock);
 
         tableManager = new TableManager(
                 NODE_NAME,
@@ -340,7 +339,7 @@ public class TableManagerRecoveryTest extends IgniteAbstractTest {
                 null,
                 tm,
                 dsm,
-                storagePath,
+                workDir,
                 metaStorageManager,
                 sm = new SchemaManager(revisionUpdater, catalogManager),
                 partitionOperationsExecutor,
@@ -426,12 +425,14 @@ public class TableManagerRecoveryTest extends IgniteAbstractTest {
 
     private static DataStorageManager createDataStorageManager(
             ConfigurationRegistry mockedRegistry,
-            LazyPath storagePath,
+            Path storagePath,
             StorageConfiguration config,
             DataStorageModule dataStorageModule,
             HybridClock clock
     ) {
-        when(mockedRegistry.getConfiguration(StorageConfiguration.KEY)).thenReturn(config);
+        StorageExtensionConfiguration mock = mock(StorageExtensionConfiguration.class);
+        when(mockedRegistry.getConfiguration(NodeConfiguration.KEY)).thenReturn(mock);
+        when(mock.storage()).thenReturn(config);
 
         DataStorageModules dataStorageModules = new DataStorageModules(List.of(dataStorageModule));
 
@@ -489,7 +490,7 @@ public class TableManagerRecoveryTest extends IgniteAbstractTest {
             public StorageEngine createEngine(
                     String igniteInstanceName,
                     ConfigurationRegistry configRegistry,
-                    LazyPath storagePath,
+                    Path storagePath,
                     @Nullable LongJvmPauseDetector longJvmPauseDetector,
                     FailureProcessor failureProcessor,
                     LogSyncer logSyncer,

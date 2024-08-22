@@ -20,6 +20,7 @@ package org.apache.ignite.internal.storage.rocksdb;
 import static org.apache.ignite.internal.storage.rocksdb.RocksDbStorageEngine.ENGINE_NAME;
 
 import com.google.auto.service.AutoService;
+import java.nio.file.Path;
 import org.apache.ignite.internal.components.LogSyncer;
 import org.apache.ignite.internal.components.LongJvmPauseDetector;
 import org.apache.ignite.internal.configuration.ConfigurationRegistry;
@@ -28,10 +29,10 @@ import org.apache.ignite.internal.hlc.HybridClock;
 import org.apache.ignite.internal.storage.DataStorageModule;
 import org.apache.ignite.internal.storage.StorageException;
 import org.apache.ignite.internal.storage.configurations.StorageConfiguration;
+import org.apache.ignite.internal.storage.configurations.StorageExtensionConfiguration;
 import org.apache.ignite.internal.storage.engine.StorageEngine;
 import org.apache.ignite.internal.storage.rocksdb.configuration.schema.RocksDbStorageEngineConfiguration;
 import org.apache.ignite.internal.storage.rocksdb.configuration.schema.RocksDbStorageEngineExtensionConfiguration;
-import org.apache.ignite.internal.util.LazyPath;
 import org.jetbrains.annotations.Nullable;
 
 /**
@@ -48,17 +49,14 @@ public class RocksDbDataStorageModule implements DataStorageModule {
     public StorageEngine createEngine(
             String igniteInstanceName,
             ConfigurationRegistry configRegistry,
-            LazyPath storagePath,
+            Path storagePath,
             @Nullable LongJvmPauseDetector longJvmPauseDetector,
             FailureProcessor failureProcessor,
             LogSyncer logSyncer,
             HybridClock clock
     ) throws StorageException {
-        RocksDbStorageEngineConfiguration engineConfig =
-                ((RocksDbStorageEngineExtensionConfiguration) configRegistry
-                        .getConfiguration(StorageConfiguration.KEY).engines()).rocksdb();
-
-        StorageConfiguration storageConfig = configRegistry.getConfiguration(StorageConfiguration.KEY);
+        StorageConfiguration storageConfig = configRegistry.getConfiguration(StorageExtensionConfiguration.KEY).storage();
+        RocksDbStorageEngineConfiguration engineConfig = ((RocksDbStorageEngineExtensionConfiguration) storageConfig.engines()).rocksdb();
 
         assert engineConfig != null;
 

@@ -20,6 +20,7 @@ package org.apache.ignite.internal.storage.pagememory;
 import static org.apache.ignite.internal.storage.pagememory.PersistentPageMemoryStorageEngine.ENGINE_NAME;
 
 import com.google.auto.service.AutoService;
+import java.nio.file.Path;
 import org.apache.ignite.internal.components.LogSyncer;
 import org.apache.ignite.internal.components.LongJvmPauseDetector;
 import org.apache.ignite.internal.configuration.ConfigurationRegistry;
@@ -29,10 +30,10 @@ import org.apache.ignite.internal.pagememory.io.PageIoRegistry;
 import org.apache.ignite.internal.storage.DataStorageModule;
 import org.apache.ignite.internal.storage.StorageException;
 import org.apache.ignite.internal.storage.configurations.StorageConfiguration;
+import org.apache.ignite.internal.storage.configurations.StorageExtensionConfiguration;
 import org.apache.ignite.internal.storage.engine.StorageEngine;
 import org.apache.ignite.internal.storage.pagememory.configuration.schema.PersistentPageMemoryStorageEngineConfiguration;
 import org.apache.ignite.internal.storage.pagememory.configuration.schema.PersistentPageMemoryStorageEngineExtensionConfiguration;
-import org.apache.ignite.internal.util.LazyPath;
 import org.jetbrains.annotations.Nullable;
 
 /**
@@ -49,13 +50,13 @@ public class PersistentPageMemoryDataStorageModule implements DataStorageModule 
     public StorageEngine createEngine(
             String igniteInstanceName,
             ConfigurationRegistry configRegistry,
-            LazyPath storagePath,
+            Path storagePath,
             @Nullable LongJvmPauseDetector longJvmPauseDetector,
             FailureProcessor failureProcessor,
             LogSyncer logSyncer,
             HybridClock clock
     ) throws StorageException {
-        StorageConfiguration storageConfig = configRegistry.getConfiguration(StorageConfiguration.KEY);
+        StorageConfiguration storageConfig = configRegistry.getConfiguration(StorageExtensionConfiguration.KEY).storage();
 
         PersistentPageMemoryStorageEngineConfiguration engineConfig =
                 ((PersistentPageMemoryStorageEngineExtensionConfiguration) storageConfig.engines()).aipersist();

@@ -17,14 +17,13 @@
 
 package org.apache.ignite.internal.configuration;
 
-import org.apache.ignite.configuration.annotation.ConfigurationRoot;
-import org.apache.ignite.configuration.annotation.ConfigurationType;
+import org.apache.ignite.configuration.annotation.Config;
 import org.apache.ignite.configuration.annotation.Value;
 
 /**
  * System Configuration schema.
  */
-@ConfigurationRoot(rootName = "system", type = ConfigurationType.LOCAL)
+@Config
 public class SystemLocalConfigurationSchema {
 
     /**
@@ -43,4 +42,30 @@ public class SystemLocalConfigurationSchema {
     /** Directory where log is stored. By default "log" subfolder of partition base path is used. */
     @Value(hasDefault = true)
     public String partitionsLogPath = "";
+
+    /**
+     * Directory where CMG data is stored. By default "cmg" subfolder of data storage path is used.
+     *
+     * <pre>
+     * The internal directory structure contains:
+     * - `log` directory - raft log directory.
+     * - `meta` directory - raft meta directory (raft log metadata and snapshots).
+     * - `db` directory - persistent storage directory.
+     * </pre>
+     */
+    @Value(hasDefault = true)
+    public String cmgPath = "";
+
+    /**
+     * Directory where Metastorage data is stored. By default "metastorage" subfolder of data storage path is used.
+     *
+     * <pre>
+     * The internal directory structure contains:
+     * - `log` directory - raft log directory.
+     * - `meta` directory - raft meta directory (raft log metadata and snapshots).
+     * - `db` directory - persistent storage directory.
+     * </pre>
+     */
+    @Value(hasDefault = true)
+    public String metastoragePath = "";
 }

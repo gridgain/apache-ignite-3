@@ -58,6 +58,7 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import java.nio.file.Path;
 import java.util.Collection;
 import java.util.List;
 import java.util.Set;
@@ -82,6 +83,7 @@ import org.apache.ignite.internal.catalog.descriptors.CatalogTableDescriptor;
 import org.apache.ignite.internal.catalog.descriptors.CatalogZoneDescriptor;
 import org.apache.ignite.internal.components.LogSyncer;
 import org.apache.ignite.internal.configuration.ConfigurationRegistry;
+import org.apache.ignite.internal.configuration.NodeConfiguration;
 import org.apache.ignite.internal.configuration.testframework.ConfigurationExtension;
 import org.apache.ignite.internal.configuration.testframework.InjectConfiguration;
 import org.apache.ignite.internal.distributionzones.DistributionZoneManager;
@@ -118,6 +120,7 @@ import org.apache.ignite.internal.storage.DataStorageModules;
 import org.apache.ignite.internal.storage.MvPartitionStorage;
 import org.apache.ignite.internal.storage.PartitionTimestampCursor;
 import org.apache.ignite.internal.storage.configurations.StorageConfiguration;
+import org.apache.ignite.internal.storage.configurations.StorageExtensionConfiguration;
 import org.apache.ignite.internal.storage.engine.MvTableStorage;
 import org.apache.ignite.internal.storage.pagememory.PersistentPageMemoryDataStorageModule;
 import org.apache.ignite.internal.table.StreamerReceiverRunner;
@@ -137,7 +140,6 @@ import org.apache.ignite.internal.tx.storage.state.TxStateStorage;
 import org.apache.ignite.internal.tx.storage.state.TxStateTableStorage;
 import org.apache.ignite.internal.util.CursorUtils;
 import org.apache.ignite.internal.util.IgniteUtils;
-import org.apache.ignite.internal.util.LazyPath;
 import org.apache.ignite.network.ClusterNode;
 import org.apache.ignite.network.NetworkAddress;
 import org.apache.ignite.sql.IgniteSql;
@@ -801,8 +803,6 @@ public class TableManagerTest extends IgniteAbstractTest {
             Consumer<MvTableStorage> tableStorageDecorator,
             Consumer<TxStateTableStorage> txStateTableStorageDecorator
     ) {
-        LazyPath storagePath = LazyPath.create(workDir);
-
         var tableManager = new TableManager(
                 NODE_NAME,
                 revisionUpdater,
@@ -816,8 +816,8 @@ public class TableManagerTest extends IgniteAbstractTest {
                 null,
                 null,
                 tm,
-                dsm = createDataStorageManager(configRegistry, storagePath),
-                storagePath,
+                dsm = createDataStorageManager(configRegistry, workDir),
+                workDir,
                 msm,
                 sm = new SchemaManager(revisionUpdater, catalogManager),
                 partitionOperationsExecutor,
@@ -873,9 +873,11 @@ public class TableManagerTest extends IgniteAbstractTest {
 
     private DataStorageManager createDataStorageManager(
             ConfigurationRegistry mockedRegistry,
-            LazyPath storagePath
+            Path storagePath
     ) {
-        when(mockedRegistry.getConfiguration(StorageConfiguration.KEY)).thenReturn(storageConfiguration);
+        StorageExtensionConfiguration mock = mock(StorageExtensionConfiguration.class);
+        when(mockedRegistry.getConfiguration(NodeConfiguration.KEY)).thenReturn(mock);
+        when(mock.storage()).thenReturn(storageConfiguration);
 
         DataStorageModules dataStorageModules = new DataStorageModules(
                 List.of(new PersistentPageMemoryDataStorageModule())
