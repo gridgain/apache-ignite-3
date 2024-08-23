@@ -241,7 +241,6 @@ public class PrepareServiceImpl implements PrepareService {
                 .query(parsedResult.originalQuery())
                 .plannerTimeout(plannerTimeout)
                 .parameters(Commons.arrayToMap(operationContext.parameters()))
-                .taskExecutor(operationContext.queryExecutor())
                 .build();
 
         result = prepareAsync0(parsedResult, planningContext);
