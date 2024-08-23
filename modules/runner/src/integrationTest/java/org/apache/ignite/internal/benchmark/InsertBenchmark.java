@@ -58,14 +58,14 @@ import org.openjdk.jmh.runner.options.OptionsBuilder;
 @Fork(1)
 @Threads(1)
 @Warmup(iterations = 10, time = 2)
-@Measurement(iterations = 20, time = 2)
+@Measurement(iterations = 50, time = 2)
 @BenchmarkMode(Mode.AverageTime)
 @OutputTimeUnit(TimeUnit.MICROSECONDS)
 public class InsertBenchmark extends AbstractMultiNodeBenchmark {
-    @Param({"1", "2", "3"})
+    @Param({"1"/*, "2", "3"*/})
     private int clusterSize;
 
-    @Param({"1", "2", "4", "8", "16", "32"})
+    @Param({"1"/*, "2", "4", "8", "16", "32"*/})
     private int partitionCount;
 
     /**
@@ -145,7 +145,7 @@ public class InsertBenchmark extends AbstractMultiNodeBenchmark {
      */
     public static void main(String[] args) throws RunnerException {
         Options opt = new OptionsBuilder()
-                .include(".*" + InsertBenchmark.class.getSimpleName() + ".*")
+                .include(".*" + InsertBenchmark.class.getSimpleName() + ".sqlInlinedInsert$")
                 .build();
 
         new Runner(opt).run();

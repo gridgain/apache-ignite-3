@@ -41,8 +41,13 @@ import org.apache.calcite.rel.type.RelDataTypeField;
 import org.apache.calcite.schema.SchemaPlus;
 import org.apache.calcite.sql.SqlDdl;
 import org.apache.calcite.sql.SqlExplain;
+import org.apache.calcite.sql.SqlInsert;
+import org.apache.calcite.sql.SqlKind;
 import org.apache.calcite.sql.SqlNode;
 import org.apache.calcite.sql.SqlNodeList;
+import org.apache.calcite.sql.SqlSelect;
+import org.apache.calcite.sql.SqlUtil;
+import org.apache.calcite.sql.SqlValuesOperator;
 import org.apache.calcite.tools.Frameworks;
 import org.apache.ignite.internal.lang.SqlExceptionMapperUtil;
 import org.apache.ignite.internal.logger.IgniteLogger;
@@ -178,7 +183,7 @@ public class PrepareServiceImpl implements PrepareService {
         this.schemaManager = schemaManager;
 
         sqlPlanCacheMetricSource = new SqlPlanCacheMetricSource();
-        cache = cacheFactory.create(cacheSize, sqlPlanCacheMetricSource);
+        cache = cacheFactory.create(10, sqlPlanCacheMetricSource);
     }
 
     /** {@inheritDoc} */
@@ -236,6 +241,7 @@ public class PrepareServiceImpl implements PrepareService {
                 .query(parsedResult.originalQuery())
                 .plannerTimeout(plannerTimeout)
                 .parameters(Commons.arrayToMap(operationContext.parameters()))
+                .taskExecutor(operationContext.queryExecutor())
                 .build();
 
         result = prepareAsync0(parsedResult, planningContext);
@@ -379,7 +385,7 @@ public class PrepareServiceImpl implements PrepareService {
                 return plan;
             }, planningPool));
 
-            return planFut.thenApply(Function.identity());
+            return planFut;
         });
     }
 
@@ -387,11 +393,85 @@ public class PrepareServiceImpl implements PrepareService {
         return new PlanId(prepareServiceId, planIdGen.getAndIncrement());
     }
 
+    private boolean canOptimize(SqlNode node) {
+        if (!(node instanceof SqlInsert)) {
+            return false;
+        }
+
+        SqlInsert insert = (SqlInsert) node;
+
+        if (insert.isUpsert()
+            || insert.getTargetColumnList().isEmpty()
+            || insert.getSource().getKind() != SqlKind.VALUES) {
+            return false;
+        }
+
+        return true;
+    }
+
+    private CompletableFuture<QueryPlan> prepareDmlOpt(ParsedResult parsedResult, PlanningContext ctx) {
+
+        IgnitePlanner planner0 = ctx.planner();
+
+        SqlNode sqlNode = parsedResult.parsedTree();
+
+        assert single(sqlNode);
+
+        // Validate
+        SqlNode validatedNode0 = planner0.validate(sqlNode);
+
+        // Get parameter metadata.
+        RelDataType parameterRowType = planner0.getParameterRowType();
+        ParameterMetadata parameterMetadata0 = createParameterMetadata(parameterRowType);
+
+        ValidStatement<SqlNode> stmt = new ValidStatement<>(parsedResult, validatedNode0, parameterMetadata0);
+
+        // Optimize
+
+        // Use parameter metadata to compute a cache key.
+        CacheKey key = createCacheKeyFromParameterMetadata(stmt.parsedResult, ctx, stmt.parameterMetadata);
+
+        IgnitePlanner planner = ctx.planner();
+
+        SqlNode validatedNode = stmt.value;
+        ParameterMetadata parameterMetadata = stmt.parameterMetadata;
+
+        IgniteRel optimizedRel = doOptimize(ctx, validatedNode, planner, key);
+
+        int catalogVersion = ctx.catalogVersion();
+
+        ExplainablePlan plan;
+        if (optimizedRel instanceof IgniteKeyValueModify) {
+            plan = new KeyValueModifyPlan(
+                    nextPlanId(), catalogVersion, (IgniteKeyValueModify) optimizedRel, DML_METADATA, parameterMetadata
+            );
+        } else {
+            assert false;
+            throw new RuntimeException();
+        }
+
+        if (LOG.isDebugEnabled()) {
+            LOG.debug("Plan prepared: \n{}\n\n{}", parsedResult.originalQuery(), plan.explain());
+        }
+
+        return CompletableFuture.completedFuture(plan);
+    }
+
     private CompletableFuture<QueryPlan> prepareDml(ParsedResult parsedResult, PlanningContext ctx) {
         // If a caller passes all the parameters, then get parameter types and check to see whether a plan future already exists.
         CompletableFuture<QueryPlan> f = getPlanIfParameterHaveValues(parsedResult, ctx);
         if (f != null) {
             return f;
+        }
+
+        // !!! dyn params !!!
+        boolean canOpt = true;//canOptimize(parsedResult.parsedTree());
+
+        if (canOpt) {
+            //System.err.println("!!! can Opt");
+            return prepareDmlOpt(parsedResult, ctx);
+        } else {
+            //System.err.println("!!! no Opt");
         }
 
         CompletableFuture<ValidStatement<SqlNode>> validFut = CompletableFuture.supplyAsync(() -> {
