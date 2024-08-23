@@ -243,10 +243,15 @@ class ItJraftCounterServerTest extends JraftAbstractTest {
 
     @Test
     public void test2NodesOf3Online() throws Exception {
-        var fullConf = initialMembersConf;
-        initialMembersConf = PeersAndLearners.fromConsistentIds(Set.of(testNodeName(testInfo, PORT)));
+        var fullConf = PeersAndLearners.fromConsistentIds(Set.of(
+                testNodeName(testInfo, PORT),
+                testNodeName(testInfo, PORT + 1),
+                testNodeName(testInfo, PORT + 2),
+                testNodeName(testInfo, PORT + 3),
+                testNodeName(testInfo, PORT + 4)
+        ));
 
-        for (int i = 0; i < 2; i++) {
+        for (int i = 0; i < 4; i++) {
             int finalI = i;
             startServer(i, raftServer -> {
                 String localNodeName = raftServer.clusterService().topologyService().localMember().name();
@@ -407,7 +412,14 @@ class ItJraftCounterServerTest extends JraftAbstractTest {
         Long v = getValueFut.join();
         assertEquals(catchupMargin + 2, v);
 
-        Thread.sleep(5000);
+        // Change cfg again (exclude old node)
+        var newConf = PeersAndLearners.fromConsistentIds(Set.of(testNodeName(testInfo, PORT + 1), testNodeName(testInfo, PORT + 2)));;
+        leaderWithTermFut = client.refreshAndGetLeaderWithTerm();
+        assertThat(leaderWithTermFut, willCompleteSuccessfully());
+        leaderWithTerm = leaderWithTermFut.join();
+
+        changePeersFut = client.changePeersAndLearners(newConf, leaderWithTerm.term());
+        assertThat(changePeersFut, willCompleteSuccessfully());
     }
 
     private RaftGroupListener createListener(int index) {
