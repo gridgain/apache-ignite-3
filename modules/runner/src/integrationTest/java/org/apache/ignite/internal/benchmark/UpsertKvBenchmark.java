@@ -42,7 +42,7 @@ import org.openjdk.jmh.runner.options.OptionsBuilder;
  * Benchmark for a single upsert operation via KV API with a possibility to disable updates via RAFT and to storage.
  */
 @State(Scope.Benchmark)
-@Fork(1)
+@Fork(0)
 @Threads(1)
 @Warmup(iterations = 10, time = 2)
 @Measurement(iterations = 20, time = 2)
@@ -83,6 +83,7 @@ public class UpsertKvBenchmark extends AbstractMultiNodeBenchmark {
      */
     @Benchmark
     public void upsert() {
+        System.out.println();
         kvView.put(null, Tuple.create().set("ycsb_key", id++), tuple);
     }
 
@@ -95,9 +96,9 @@ public class UpsertKvBenchmark extends AbstractMultiNodeBenchmark {
                 .jvmArgsAppend(
                         "-ea",
                         "-Djmh.executor=VIRTUAL",
-//                        "-Djdk.virtualThreadScheduler.parallelism=1",
-//                        "-Djdk.virtualThreadScheduler.maxPoolSize=1",
-//                        "-Djdk.virtualThreadScheduler.minRunnable=1",
+                        "-Djdk.virtualThreadScheduler.parallelism=1",
+                        "-Djdk.virtualThreadScheduler.maxPoolSize=1",
+                        "-Djdk.virtualThreadScheduler.minRunnable=1",
                         "--add-opens=java.base/java.lang=ALL-UNNAMED",
                         "--add-opens=java.base/java.lang.invoke=ALL-UNNAMED",
                         "--add-opens=java.base/java.lang.reflect=ALL-UNNAMED",

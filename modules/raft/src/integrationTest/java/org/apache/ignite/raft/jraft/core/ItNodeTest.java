@@ -85,6 +85,7 @@ import org.apache.ignite.internal.raft.storage.impl.IgniteJraftServiceFactory;
 import org.apache.ignite.internal.testframework.BaseIgniteAbstractTest;
 import org.apache.ignite.internal.testframework.WorkDirectory;
 import org.apache.ignite.internal.testframework.WorkDirectoryExtension;
+import org.apache.ignite.internal.tracing.Instrumentation;
 import org.apache.ignite.network.NetworkAddress;
 import org.apache.ignite.raft.jraft.Iterator;
 import org.apache.ignite.raft.jraft.JRaftUtils;
@@ -424,7 +425,12 @@ public class ItNodeTest extends BaseIgniteAbstractTest {
         while (!node.isLeader())
             ;
 
+        Instrumentation.start(false);
+
         sendTestTaskAndWait(node);
+
+        Instrumentation.end();
+
         assertEquals(10, fsm.getLogs().size());
         int i = 0;
         for (ByteBuffer data : fsm.getLogs()) {
@@ -3752,7 +3758,7 @@ public class ItNodeTest extends BaseIgniteAbstractTest {
         assertTrue(appendEntriesResponse.get());
     }
 
-    private NodeOptions createNodeOptions(int nodeIdx) {
+    protected NodeOptions createNodeOptions(int nodeIdx) {
         NodeOptions options = new NodeOptions();
 
         DefaultLogStorageFactory log = new DefaultLogStorageFactory(Path.of(dataPath, "node" + nodeIdx, "log"));
@@ -3882,6 +3888,10 @@ public class ItNodeTest extends BaseIgniteAbstractTest {
         this.sendTestTaskAndWait(node, 0, 10, RaftError.SUCCESS);
     }
 
+    private CountDownLatch sendTestTaskAsync(Node node) throws InterruptedException {
+        return this.sendTestTaskAsync(node, 0, 10, RaftError.SUCCESS);
+    }
+
     private void sendTestTaskAndWait(Node node, int amount) throws InterruptedException {
         this.sendTestTaskAndWait(node, 0, amount, RaftError.SUCCESS);
     }
@@ -3901,6 +3911,17 @@ public class ItNodeTest extends BaseIgniteAbstractTest {
             node.apply(task);
         }
         waitLatch(latch);
+    }
+
+    private CountDownLatch sendTestTaskAsync(Node node, int start, int amount,
+            RaftError err) throws InterruptedException {
+        CountDownLatch latch = new CountDownLatch(amount);
+        for (int i = start; i < start + amount; i++) {
+            ByteBuffer data = ByteBuffer.wrap(("hello" + i).getBytes(UTF_8));
+            Task task = new Task(data, new ExpectClosure(err, latch));
+            node.apply(task);
+        }
+        return latch;
     }
 
     private void sendTestTaskAndWait(Node node, int start,

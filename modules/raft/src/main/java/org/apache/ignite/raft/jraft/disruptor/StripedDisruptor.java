@@ -40,7 +40,7 @@ import org.apache.ignite.internal.logger.IgniteLogger;
 import org.apache.ignite.internal.logger.Loggers;
 import org.apache.ignite.internal.metrics.sources.RaftMetricSource.DisruptorMetrics;
 import org.apache.ignite.internal.thread.NamedThreadFactory;
-import org.apache.ignite.raft.jraft.entity.NodeId;
+import org.apache.ignite.internal.tracing.Instrumentation;import org.apache.ignite.raft.jraft.entity.NodeId;
 import org.jetbrains.annotations.Nullable;
 
 /**
@@ -49,7 +49,7 @@ import org.jetbrains.annotations.Nullable;
  *
  * @param <T> Event type. This event should implement {@link NodeIdAware} interface.
  */
-public class StripedDisruptor<T extends NodeIdAware> {
+public class StripedDisruptor<T extends INodeIdAware> {
     /**
      * It is an id that does not represent any node to batch events in one stripe although {@link NodeId} may vary.
      * This is a cached event in case the disruptor supports batching,
@@ -222,9 +222,9 @@ public class StripedDisruptor<T extends NodeIdAware> {
         queues[stripeId].publishEvent((event, sequence) -> {
             event.reset();
 
-            event.evtType = SUBSCRIBE;
-            event.nodeId = nodeId;
-            event.handler = (EventHandler<NodeIdAware>) handler;
+            event.setEvtType(SUBSCRIBE);
+            event.setNodeId(nodeId);
+            event.setHandler((EventHandler<INodeIdAware>) handler);
         });
 
         if (exceptionHandler != null) {
@@ -233,6 +233,29 @@ public class StripedDisruptor<T extends NodeIdAware> {
 
         return queues[stripeId];
     }
+
+    public RingBuffer<T> subscribe(NodeId nodeId, EventHandler<T> handler, DisruptorEventSourceType type, BiConsumer<T, Throwable> exceptionHandler) {
+            assert getStripe(nodeId) == -1 : "The double subscriber for the one replication group [nodeId=" + nodeId + "].";
+
+            int stripeId = nextStripeToSubscribe();
+
+            stripeMapper.put(nodeId, stripeId);
+
+            queues[stripeId].publishEvent((event, sequence) -> {
+                event.reset();
+
+                event.setEvtType(SUBSCRIBE);
+                                event.setSrcType(type);
+                                            event.setNodeId(nodeId);
+                                            event.setHandler((EventHandler<INodeIdAware>) handler);
+            });
+
+            if (exceptionHandler != null) {
+                exceptionHandlers.get(stripeId).subscribe(nodeId, exceptionHandler);
+            }
+
+            return queues[stripeId];
+        }
 
     /**
      * Unsubscribes group for the Striped disruptor.
@@ -249,9 +272,10 @@ public class StripedDisruptor<T extends NodeIdAware> {
         queues[stripeId].publishEvent((event, sequence) -> {
             event.reset();
 
-            event.evtType = SUBSCRIBE;
-            event.nodeId = nodeId;
-            event.handler = null;
+            event.setEvtType(SUBSCRIBE);
+            event.setSrcType(null);
+            event.setNodeId(nodeId);
+            event.setHandler(null);
         });
 
         exceptionHandlers.get(stripeId).unsubscribe(nodeId);
@@ -302,11 +326,13 @@ public class StripedDisruptor<T extends NodeIdAware> {
         /** {@inheritDoc} */
         @Override
         public void onEvent(T event, long sequence, boolean endOfBatch) throws Exception {
-            if (event.evtType == SUBSCRIBE) {
-                if (event.handler == null) {
+            //Instrumentation.mark("Striped event: " + event.getClass().getName() + ":" + sequence + ":" + event.getEvtType());
+
+            if (event.getEvtType() == SUBSCRIBE) {
+                if (event.getHandler() == null) {
                     subscribers.remove(event.nodeId());
                 } else {
-                    subscribers.put(event.nodeId(), (EventHandler<T>) event.handler);
+                    subscribers.put(event.nodeId(), (EventHandler<T>) event.getHandler());
                 }
             } else {
                 internalBatching(event, sequence);
