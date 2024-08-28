@@ -427,7 +427,7 @@ public class ItNodeTest extends BaseIgniteAbstractTest {
 
         Instrumentation.start(false);
 
-        sendTestTaskAndWait(node);
+        sendTestTaskAndWait(node, 10);
 
         Instrumentation.end();
 

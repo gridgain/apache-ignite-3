@@ -124,7 +124,7 @@ public void setShutdownLatch(CountDownLatch shutdownLatch);
         Status status;
         LeaderChangeContext leaderChangeCtx;
         Closure done;
-        public CountDownLatch shutdownLatch;
+        private CountDownLatch shutdownLatch;
 
 @Override public TaskType getType() {
     return type;
@@ -264,6 +264,7 @@ public void setShutdownLatch(CountDownLatch shutdownLatch);
             Utils.runInThread(this.node.getOptions().getCommonExecutor(), () -> this.taskQueue.publishEvent((task, sequence) -> {
                 task.reset();
 
+                task.setSrcType(DisruptorEventSourceType.FSM);
                 task.setNodeId(this.nodeId);
                 task.setType(TaskType.SHUTDOWN);
                 task.setShutdownLatch(latch);
@@ -296,6 +297,7 @@ public void setShutdownLatch(CountDownLatch shutdownLatch);
     public boolean onCommitted(final long committedIndex) {
         return enqueueTask((task, sequence) -> {
             task.reset();
+            task.setSrcType(DisruptorEventSourceType.FSM);
             task.setNodeId(this.nodeId);
             task.setType(TaskType.COMMITTED);
             task.setCommittedIndex(committedIndex);
@@ -310,6 +312,7 @@ public void setShutdownLatch(CountDownLatch shutdownLatch);
         final CountDownLatch latch = new CountDownLatch(1);
         enqueueTask((task, sequence) -> {
             task.reset();
+            task.setSrcType(DisruptorEventSourceType.FSM);
             task.setNodeId(this.nodeId);
             task.setType(TaskType.FLUSH);
             task.setShutdownLatch(latch);
@@ -321,6 +324,7 @@ public void setShutdownLatch(CountDownLatch shutdownLatch);
     public boolean onSnapshotLoad(final LoadSnapshotClosure done) {
         return enqueueTask((task, sequence) -> {
             task.reset();
+            task.setSrcType(DisruptorEventSourceType.FSM);
             task.setNodeId(this.nodeId);
             task.setType(TaskType.SNAPSHOT_LOAD);
             task.setDone(done);
@@ -331,6 +335,7 @@ public void setShutdownLatch(CountDownLatch shutdownLatch);
     public boolean onSnapshotSave(final SaveSnapshotClosure done) {
         return enqueueTask((task, sequence) -> {
             task.reset();
+            task.setSrcType(DisruptorEventSourceType.FSM);
             task.setNodeId(this.nodeId);
             task.setType(TaskType.SNAPSHOT_SAVE);
             task.setDone(done);
@@ -341,6 +346,7 @@ public void setShutdownLatch(CountDownLatch shutdownLatch);
     public boolean onLeaderStop(final Status status) {
         return enqueueTask((task, sequence) -> {
             task.reset();
+            task.setSrcType(DisruptorEventSourceType.FSM);
             task.setNodeId(this.nodeId);
             task.setType(TaskType.LEADER_STOP);
             task.setStatus(new Status(status));
@@ -351,6 +357,7 @@ public void setShutdownLatch(CountDownLatch shutdownLatch);
     public boolean onLeaderStart(final long term) {
         return enqueueTask((task, sequence) -> {
             task.reset();
+            task.setSrcType(DisruptorEventSourceType.FSM);
             task.setNodeId(this.nodeId);
             task.setType(TaskType.LEADER_START);
             task.setTerm(term);
@@ -361,6 +368,7 @@ public void setShutdownLatch(CountDownLatch shutdownLatch);
     public boolean onStartFollowing(final LeaderChangeContext ctx) {
         return enqueueTask((task, sequence) -> {
             task.reset();
+            task.setSrcType(DisruptorEventSourceType.FSM);
             task.setNodeId(this.nodeId);
             task.setType(TaskType.START_FOLLOWING);
             task.setLeaderChangeCtx(new LeaderChangeContext(ctx.getLeaderId(), ctx.getTerm(), ctx.getStatus()));
@@ -371,6 +379,7 @@ public void setShutdownLatch(CountDownLatch shutdownLatch);
     public boolean onStopFollowing(final LeaderChangeContext ctx) {
         return enqueueTask((task, sequence) -> {
             task.reset();
+            task.setSrcType(DisruptorEventSourceType.FSM);
             task.setNodeId(this.nodeId);
             task.setType(TaskType.STOP_FOLLOWING);
             task.setLeaderChangeCtx(new LeaderChangeContext(ctx.getLeaderId(), ctx.getTerm(), ctx.getStatus()));
@@ -410,6 +419,7 @@ public void setShutdownLatch(CountDownLatch shutdownLatch);
         final OnErrorClosure c = new OnErrorClosure(error);
         return enqueueTask((task, sequence) -> {
             task.reset();
+            task.setSrcType(DisruptorEventSourceType.FSM);
             task.setNodeId(this.nodeId);
             task.setType(TaskType.ERROR);
             task.setDone(c);
@@ -425,7 +435,7 @@ public void setShutdownLatch(CountDownLatch shutdownLatch);
     public synchronized void join() throws InterruptedException {
         if (this.shutdownLatch != null) {
             this.shutdownLatch.await();
-            this.disruptor.unsubscribe(this.nodeId);
+            this.disruptor.unsubscribe(this.nodeId, DisruptorEventSourceType.FSM);
             if (this.afterShutdown != null) {
                 this.afterShutdown.run(Status.OK());
                 this.afterShutdown = null;

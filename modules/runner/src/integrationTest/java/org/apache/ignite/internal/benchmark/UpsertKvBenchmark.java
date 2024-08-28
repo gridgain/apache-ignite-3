@@ -95,10 +95,10 @@ public class UpsertKvBenchmark extends AbstractMultiNodeBenchmark {
                 .include(".*" + UpsertKvBenchmark.class.getSimpleName() + ".*")
                 .jvmArgsAppend(
                         "-ea",
-                        "-Djmh.executor=VIRTUAL",
-                        "-Djdk.virtualThreadScheduler.parallelism=1",
-                        "-Djdk.virtualThreadScheduler.maxPoolSize=1",
-                        "-Djdk.virtualThreadScheduler.minRunnable=1",
+//                        "-Djmh.executor=VIRTUAL",
+//                        "-Djdk.virtualThreadScheduler.parallelism=1",
+//                        "-Djdk.virtualThreadScheduler.maxPoolSize=1",
+//                        "-Djdk.virtualThreadScheduler.minRunnable=1",
                         "--add-opens=java.base/java.lang=ALL-UNNAMED",
                         "--add-opens=java.base/java.lang.invoke=ALL-UNNAMED",
                         "--add-opens=java.base/java.lang.reflect=ALL-UNNAMED",

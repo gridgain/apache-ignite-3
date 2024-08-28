@@ -17,7 +17,6 @@
 package org.apache.ignite.raft.jraft.storage.impl;
 
 import static org.apache.ignite.internal.tracing.Instrumentation.measure;import com.lmax.disruptor.EventHandler;
-import com.lmax.disruptor.EventTranslator;
 import com.lmax.disruptor.RingBuffer;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -30,14 +29,15 @@ import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 import org.apache.ignite.internal.logger.IgniteLogger;
 import org.apache.ignite.internal.logger.Loggers;
-import org.apache.ignite.internal.tracing.Instrumentation;import org.apache.ignite.raft.jraft.FSMCaller;
+import org.apache.ignite.internal.tracing.Instrumentation;
+import org.apache.ignite.raft.jraft.Closure;
+import org.apache.ignite.raft.jraft.FSMCaller;
 import org.apache.ignite.raft.jraft.Status;
 import org.apache.ignite.raft.jraft.conf.Configuration;
 import org.apache.ignite.raft.jraft.conf.ConfigurationEntry;
 import org.apache.ignite.raft.jraft.conf.ConfigurationManager;
 import org.apache.ignite.raft.jraft.core.NodeMetrics;
 import org.apache.ignite.raft.jraft.disruptor.DisruptorEventSourceType;
-import org.apache.ignite.raft.jraft.disruptor.DisruptorEventType;
 import org.apache.ignite.raft.jraft.disruptor.INodeIdAware;
 import org.apache.ignite.raft.jraft.disruptor.NodeIdAware;
 import org.apache.ignite.raft.jraft.disruptor.StripedDisruptor;
@@ -61,7 +61,6 @@ import org.apache.ignite.raft.jraft.util.ArrayDeque;
 import org.apache.ignite.raft.jraft.util.DisruptorMetricSet;
 import org.apache.ignite.raft.jraft.util.Requires;
 import org.apache.ignite.raft.jraft.util.SegmentList;
-import org.apache.ignite.raft.jraft.util.ThreadHelper;
 import org.apache.ignite.raft.jraft.util.Utils;
 
 /**
@@ -97,7 +96,7 @@ public class LogManagerImpl implements LogManager {
     private final CopyOnWriteArrayList<LastLogIndexListener> lastLogIndexListeners = new CopyOnWriteArrayList<>();
     private NodeOptions nodeOptions;
 
-    private enum EventType {
+    public enum EventType {
         OTHER, // other event type.
         RESET, // reset
         TRUNCATE_PREFIX, // truncate log from prefix
@@ -107,26 +106,26 @@ public class LogManagerImpl implements LogManager {
     }
 
     public interface IStableClosureEvent extends INodeIdAware {
-        public StableClosure getDone();
-        public void setDone(StableClosure done);
-        public EventType getType();
-        public void setType(EventType type);
+        public Closure getDone();
+        public void setDone(Closure done);
+        public EventType getEventType();
+        public void setEventType(EventType type);
     }
 
     public static class StableClosureEvent extends NodeIdAware implements IStableClosureEvent {
-        StableClosure done;
+        Closure done;
         EventType type;
 
-        @Override public StableClosure getDone() {
+        @Override public Closure getDone() {
             return done;
         }
-        @Override public void setDone(StableClosure done) {
+        @Override public void setDone(Closure done) {
             this.done = done;
         }
-        @Override public EventType getType() {
+        @Override public EventType getEventType() {
             return type;
         }
-        @Override public void setType(EventType type) {
+        @Override public void setEventType(EventType type) {
             this.type = type;
         }
 
@@ -237,8 +236,9 @@ public class LogManagerImpl implements LogManager {
         Utils.runInThread(nodeOptions.getCommonExecutor(), () -> this.diskQueue.publishEvent((event, sequence) -> {
             event.reset();
 
+            event.setSrcType(DisruptorEventSourceType.LOG);
             event.setNodeId(this.nodeId);
-            event.setType(EventType.SHUTDOWN);
+            event.setEventType(EventType.SHUTDOWN);
         }));
     }
 
@@ -248,7 +248,7 @@ public class LogManagerImpl implements LogManager {
             return;
         }
         this.shutDownLatch.await();
-        this.disruptor.unsubscribe(this.nodeId);
+        this.disruptor.unsubscribe(this.nodeId, DisruptorEventSourceType.LOG);
     }
 
     @Override
@@ -355,8 +355,9 @@ public class LogManagerImpl implements LogManager {
             this.diskQueue.publishEvent((event, sequence) -> {
               event.reset();
 
+              event.setSrcType(DisruptorEventSourceType.LOG);
               event.setNodeId(this.nodeId);
-              event.setType(EventType.OTHER);
+              event.setEventType(EventType.OTHER);
               event.setDone(done);
             });
         }
@@ -382,8 +383,9 @@ public class LogManagerImpl implements LogManager {
         this.diskQueue.publishEvent((event, sequence) -> {
             event.reset();
 
+            event.setSrcType(DisruptorEventSourceType.LOG);
             event.setNodeId(this.nodeId);
-            event.setType(type);
+            event.setEventType(type);
             event.setDone(done);
         });
     }
@@ -526,15 +528,15 @@ public class LogManagerImpl implements LogManager {
             throws Exception {
             Instrumentation.mark("LogManagerOnEvent");
 
-            if (event.getType() == EventType.SHUTDOWN) {
+            if (event.getEventType() == EventType.SHUTDOWN) {
                 this.lastId = this.ab.flush();
                 setDiskId(this.lastId);
                 LogManagerImpl.this.shutDownLatch.countDown();
                 event.reset();
                 return;
             }
-            final StableClosure done = event.getDone();
-            final EventType eventType = event.getType();
+            final StableClosure done = (StableClosure) event.getDone();
+            final EventType eventType = event.getEventType();
 
             event.reset();
 

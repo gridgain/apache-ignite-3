@@ -40,7 +40,7 @@ import org.apache.ignite.internal.logger.IgniteLogger;
 import org.apache.ignite.internal.logger.Loggers;
 import org.apache.ignite.internal.metrics.sources.RaftMetricSource.DisruptorMetrics;
 import org.apache.ignite.internal.thread.NamedThreadFactory;
-import org.apache.ignite.internal.tracing.Instrumentation;import org.apache.ignite.raft.jraft.entity.NodeId;
+import org.apache.ignite.raft.jraft.entity.NodeId;
 import org.jetbrains.annotations.Nullable;
 
 /**
@@ -235,19 +235,22 @@ public class StripedDisruptor<T extends INodeIdAware> {
     }
 
     public RingBuffer<T> subscribe(NodeId nodeId, EventHandler<T> handler, DisruptorEventSourceType type, BiConsumer<T, Throwable> exceptionHandler) {
-            assert getStripe(nodeId) == -1 : "The double subscriber for the one replication group [nodeId=" + nodeId + "].";
+            // assert getStripe(nodeId) == -1 : "The double subscriber for the one replication group [nodeId=" + nodeId + "].";
 
-            int stripeId = nextStripeToSubscribe();
+            int stripeId = getStripe(nodeId);
 
-            stripeMapper.put(nodeId, stripeId);
+            if (stripeId == -1) {
+                stripeId = nextStripeToSubscribe();
+                stripeMapper.put(nodeId, stripeId);
+            }
 
             queues[stripeId].publishEvent((event, sequence) -> {
                 event.reset();
 
                 event.setEvtType(SUBSCRIBE);
-                                event.setSrcType(type);
-                                            event.setNodeId(nodeId);
-                                            event.setHandler((EventHandler<INodeIdAware>) handler);
+                event.setSrcType(type);
+                event.setNodeId(nodeId);
+                event.setHandler((EventHandler<INodeIdAware>) handler);
             });
 
             if (exceptionHandler != null) {
@@ -255,6 +258,25 @@ public class StripedDisruptor<T extends INodeIdAware> {
             }
 
             return queues[stripeId];
+        }
+
+        public void unsubscribe(NodeId nodeId, DisruptorEventSourceType type) {
+            int stripeId = getStripe(nodeId);
+
+                assert stripeId != -1 : "The replication group has not subscribed yet [nodeId=" + nodeId + "].";
+
+                //stripeMapper.remove(nodeId);
+
+                queues[stripeId].publishEvent((event, sequence) -> {
+                    event.reset();
+
+                    event.setEvtType(SUBSCRIBE);
+                    event.setSrcType(type);
+                    event.setNodeId(nodeId);
+                    event.setHandler(null);
+                });
+
+                exceptionHandlers.get(stripeId).unsubscribe(nodeId);
         }
 
     /**
@@ -305,7 +327,7 @@ public class StripedDisruptor<T extends INodeIdAware> {
      * Event handler for stripe of the Striped disruptor. It routes an event to the event handler for a group.
      */
     private class StripeEntryHandler implements EventHandler<T> {
-        private final Map<NodeId, EventHandler<T>> subscribers = new HashMap<>();
+        private final Map<NodeId, Map<DisruptorEventSourceType, EventHandler<T>>> subscribers = new HashMap<>();
 
         /** The cache is used to correct handling the disruptor batch. */
         private final Map<NodeId, T> eventCache = new HashMap<>();
@@ -326,36 +348,67 @@ public class StripedDisruptor<T extends INodeIdAware> {
         /** {@inheritDoc} */
         @Override
         public void onEvent(T event, long sequence, boolean endOfBatch) throws Exception {
-            //Instrumentation.mark("Striped event: " + event.getClass().getName() + ":" + sequence + ":" + event.getEvtType());
+            // Instrumentation.mark("Striped event: " + event.getClass().getName() + ":" + sequence + ":" + event.getEvtType() + " b=" + endOfBatch);
 
             if (event.getEvtType() == SUBSCRIBE) {
                 if (event.getHandler() == null) {
-                    subscribers.remove(event.nodeId());
-                } else {
-                    subscribers.put(event.nodeId(), (EventHandler<T>) event.getHandler());
-                }
-            } else {
-                internalBatching(event, sequence);
-            }
+                    subscribers.compute(event.nodeId(), (k, v) -> {
+                        v.remove(event.getSrcType());
 
-            if (endOfBatch) {
-                for (Map.Entry<NodeId, T> grpEvent : eventCache.entrySet()) {
-                    EventHandler<T> grpHandler = subscribers.get(grpEvent.getValue().nodeId());
-
-                    if (grpHandler != null) {
-                        if (metrics != null && metrics.enabled()) {
-                            metrics.hitToStripe(stripeId);
-
-                            metrics.addBatchSize(currentBatchSizes.getOrDefault(grpEvent.getKey(), 0) + 1);
+                        if (v.isEmpty()) {
+                            stripeMapper.remove(event.nodeId());
                         }
 
-                        grpHandler.onEvent(grpEvent.getValue(), sequence, true);
-                    }
-                }
+                        return v.isEmpty() ? null : v;
+                    });
+                } else {
+                    subscribers.compute(event.nodeId(), (k, v) -> {
+                        if (v == null) {
+                            v = new HashMap<>();
+                        }
 
-                currentBatchSizes.clear();
-                eventCache.clear();
+                        EventHandler<T> prev = v.put(event.getSrcType(), (EventHandler<T>) event.getHandler());
+
+                        assert prev == null;
+
+                        return v;
+                    });
+                }
+            } else {
+                //internalBatching(event, sequence);
+
+                EventHandler<T> grpHandler = subscribers.get(event.nodeId()).get(event.getSrcType());
+
+                                    if (grpHandler != null) {
+//                                        if (metrics != null && metrics.enabled()) {
+//                                            metrics.hitToStripe(stripeId);
+//
+//                                            metrics.addBatchSize(currentBatchSizes.getOrDefault(grpEvent.getKey(), 0) + 1);
+//                                        }
+
+                                        grpHandler.onEvent(event, sequence, true);
+                                    }
+
             }
+
+//            if (endOfBatch) {
+//                for (Map.Entry<NodeId, T> grpEvent : eventCache.entrySet()) {
+//                    EventHandler<T> grpHandler = subscribers.get(grpEvent.getValue().nodeId());
+//
+//                    if (grpHandler != null) {
+//                        if (metrics != null && metrics.enabled()) {
+//                            metrics.hitToStripe(stripeId);
+//
+//                            metrics.addBatchSize(currentBatchSizes.getOrDefault(grpEvent.getKey(), 0) + 1);
+//                        }
+//
+//                        grpHandler.onEvent(grpEvent.getValue(), sequence, true);
+//                    }
+//                }
+//
+//                currentBatchSizes.clear();
+//                eventCache.clear();
+//            }
         }
 
         /**
@@ -371,7 +424,7 @@ public class StripedDisruptor<T extends INodeIdAware> {
             T prevEvent = eventCache.put(pushNodeId, event);
 
             if (prevEvent != null) {
-                EventHandler<T> grpHandler = subscribers.get(prevEvent.nodeId());
+                EventHandler<T> grpHandler = subscribers.get(prevEvent.nodeId()).get(event.getSrcType());
 
                 if (grpHandler != null) {
                     if (metrics != null && metrics.enabled()) {
