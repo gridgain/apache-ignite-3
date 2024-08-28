@@ -425,12 +425,7 @@ public class ItNodeTest extends BaseIgniteAbstractTest {
         while (!node.isLeader())
             ;
 
-        Instrumentation.start(false);
-
-        sendTestTaskAndWait(node, 10);
-
-        Instrumentation.end();
-
+        sendTestTaskAndWait(node);
         assertEquals(10, fsm.getLogs().size());
         int i = 0;
         for (ByteBuffer data : fsm.getLogs()) {
@@ -3888,10 +3883,6 @@ public class ItNodeTest extends BaseIgniteAbstractTest {
         this.sendTestTaskAndWait(node, 0, 10, RaftError.SUCCESS);
     }
 
-    private CountDownLatch sendTestTaskAsync(Node node) throws InterruptedException {
-        return this.sendTestTaskAsync(node, 0, 10, RaftError.SUCCESS);
-    }
-
     private void sendTestTaskAndWait(Node node, int amount) throws InterruptedException {
         this.sendTestTaskAndWait(node, 0, amount, RaftError.SUCCESS);
     }
@@ -3911,17 +3902,6 @@ public class ItNodeTest extends BaseIgniteAbstractTest {
             node.apply(task);
         }
         waitLatch(latch);
-    }
-
-    private CountDownLatch sendTestTaskAsync(Node node, int start, int amount,
-            RaftError err) throws InterruptedException {
-        CountDownLatch latch = new CountDownLatch(amount);
-        for (int i = start; i < start + amount; i++) {
-            ByteBuffer data = ByteBuffer.wrap(("hello" + i).getBytes(UTF_8));
-            Task task = new Task(data, new ExpectClosure(err, latch));
-            node.apply(task);
-        }
-        return latch;
     }
 
     private void sendTestTaskAndWait(Node node, int start,

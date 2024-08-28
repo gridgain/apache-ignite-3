@@ -60,6 +60,8 @@ public class Instrumentation {
 
     private static final AtomicInteger opCnt = new AtomicInteger();
 
+    private static final int rate = 1000;
+
 
     /**
      * Starts instrumentation.
@@ -83,7 +85,7 @@ public class Instrumentation {
             LOG.info("Instrumentation was started.");
         }
 
-        if (!isStarted) {
+        if (opCnt.incrementAndGet() % rate == 0) {
             startTime = System.nanoTime();
             isStarted = true;
         }
