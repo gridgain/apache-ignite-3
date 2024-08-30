@@ -30,6 +30,7 @@ import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
@@ -216,6 +217,17 @@ public abstract class JraftAbstractTest extends RaftServerAbstractTest {
         return server;
     }
 
+    protected void stopServer(int index, RaftNodeId raftNodeId) {
+        JraftServerImpl server = servers.get(index);
+        server.stopRaftNode(raftNodeId);
+        CompletableFuture<Void> stopFut = server.stopAsync();
+        assertThat(stopFut, willCompleteSuccessfully());
+
+        ClusterService clusterService = serverServices.get(index);
+        CompletableFuture<Void> clusterStopFut = clusterService.stopAsync();
+        assertThat(clusterStopFut, willCompleteSuccessfully());
+    }
+
     /**
      * Starts client.
      *
@@ -224,9 +236,9 @@ public abstract class JraftAbstractTest extends RaftServerAbstractTest {
      * @throws Exception If failed.
      */
     protected RaftGroupService startClient(ReplicationGroupId groupId) throws Exception {
-        var addr = new NetworkAddress(getLocalAddress(), PORT);
+        var addr = new NetworkAddress(getLocalAddress(), PORT + 1);
 
-        String consistentId = testNodeName(testInfo, PORT);
+        String consistentId = testNodeName(testInfo, PORT + 1);
 
         PeersAndLearners configuration = PeersAndLearners.fromConsistentIds(Set.of(consistentId));
 

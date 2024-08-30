@@ -247,8 +247,7 @@ class ItJraftCounterServerTest extends JraftAbstractTest {
                 testNodeName(testInfo, PORT),
                 testNodeName(testInfo, PORT + 1),
                 testNodeName(testInfo, PORT + 2),
-                testNodeName(testInfo, PORT + 3),
-                testNodeName(testInfo, PORT + 4)
+                testNodeName(testInfo, PORT + 3)
         ));
 
         for (int i = 0; i < 4; i++) {
@@ -282,6 +281,9 @@ class ItJraftCounterServerTest extends JraftAbstractTest {
         long v = getValueFut.join();
 
         assertEquals(2L, v);
+
+        int nodeToStopIdx = 3;
+        stopServer(nodeToStopIdx, new RaftNodeId(COUNTER_GROUP_0, fullConf.peer(testNodeName(testInfo, PORT + nodeToStopIdx))));
 
         // Change cfg.
         CompletableFuture<LeaderWithTerm> leaderWithTermFut = client.refreshAndGetLeaderWithTerm();
