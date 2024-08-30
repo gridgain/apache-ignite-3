@@ -85,6 +85,7 @@ import org.apache.ignite.internal.raft.Peer;
 import org.apache.ignite.internal.raft.PeersAndLearners;
 import org.apache.ignite.internal.raft.RaftGroupOptionsConfigurer;
 import org.apache.ignite.internal.raft.RaftManager;
+import org.apache.ignite.internal.raft.RaftNodeDisruptorConfiguration;
 import org.apache.ignite.internal.raft.RaftNodeId;
 import org.apache.ignite.internal.raft.service.RaftGroupService;
 import org.apache.ignite.internal.thread.NamedThreadFactory;
@@ -785,6 +786,7 @@ public class ClusterManagementGroupManager extends AbstractEventProducer<Cluster
                             clusterIdStore
                     ),
                     this::onElectedAsLeader,
+                    new RaftNodeDisruptorConfiguration("cmg", 1),
                     raftGroupOptionsConfigurer
             );
 
