@@ -241,10 +241,10 @@ public class ReplicaService {
                         }, partitionOperationsExecutor);
                     } else {
                         if (retryExecutor != null && matchAny(unwrapCause(errResp.throwable()), ACQUIRE_LOCK_ERR, REPLICA_MISS_ERR)) {
-                            retryExecutor.schedule(
+                            /*retryExecutor.schedule(
                                     // Need to resubmit again to pool which is valid for synchronous IO execution.
                                     () -> partitionOperationsExecutor.execute(() -> res.completeExceptionally(errResp.throwable())),
-                                    RETRY_TIMEOUT_MILLIS, MILLISECONDS);
+                                    RETRY_TIMEOUT_MILLIS, MILLISECONDS);*/
                         } else {
                             res.completeExceptionally(errResp.throwable());
                         }
