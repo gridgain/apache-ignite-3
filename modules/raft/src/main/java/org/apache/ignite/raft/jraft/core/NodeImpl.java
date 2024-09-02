@@ -1435,7 +1435,9 @@ public class NodeImpl implements Node, RaftServerService {
                 postfix = ownFsmCallerExecutorDisruptorConfig.getThreadPostfix();
             }
 
-            StripedDisruptor<SharedEvent> sharedDisruptor = new StripedDisruptor<>(
+            // TODO use shared distuptor property.
+            StripedDisruptor<SharedEvent> sharedDisruptor =
+                opts.getfSMCallerExecutorDisruptor() == null || ownFsmCallerExecutorDisruptorConfig != null ? new StripedDisruptor<>(
                             opts.getServerName(),
                             "JRaft-Shared-Disruptor" + postfix,
                             clo,
@@ -1445,7 +1447,7 @@ public class NodeImpl implements Node, RaftServerService {
                             false,
                             false,
                             opts.getRaftMetrics().disruptorMetrics("raft.shared.disruptor")
-                        );
+                        ) : null; // Avoid creating useless disruptor.
 
             if (opts.getfSMCallerExecutorDisruptor() == null || ownFsmCallerExecutorDisruptorConfig != null) {
                 opts.setfSMCallerExecutorDisruptor((StripedDisruptor<IApplyTask>) (StripedDisruptor<? extends IApplyTask>) sharedDisruptor);
