@@ -42,7 +42,7 @@ import org.junit.jupiter.api.Test;
 public class TxRetryBenchmark extends ClusterPerTestIntegrationTest {
     @Override
     protected int initialNodes() {
-        return 1;
+        return 3;
     }
 
     private IgniteImpl anyNode() {
@@ -51,7 +51,7 @@ public class TxRetryBenchmark extends ClusterPerTestIntegrationTest {
 
     @Test
     public void test() throws ExecutionException, InterruptedException {
-        int keysUpperBound = 1000;
+        int keysUpperBound = 100;
 
         IgniteImpl ignite = anyNode();
 
@@ -93,6 +93,7 @@ public class TxRetryBenchmark extends ClusterPerTestIntegrationTest {
         List<AtomicLong> upsertCounts = new ArrayList<>();
         List<AtomicLong> getTimes = new ArrayList<>();
         List<AtomicLong> getCounts = new ArrayList<>();
+        List<AtomicLong> txTotalTimes = new ArrayList<>();
         List<AtomicInteger> rolledBackTxnsList = new ArrayList<>();
 
         for (int i = 0; i < cores; i++) {
@@ -101,6 +102,7 @@ public class TxRetryBenchmark extends ClusterPerTestIntegrationTest {
             upsertCounts.add(new AtomicLong());
             getTimes.add(new AtomicLong());
             getCounts.add(new AtomicLong());
+            txTotalTimes.add(new AtomicLong());
             rolledBackTxnsList.add(new AtomicInteger());
         }
 
@@ -114,6 +116,7 @@ public class TxRetryBenchmark extends ClusterPerTestIntegrationTest {
             AtomicLong upsertCount = upsertCounts.get(i);
             AtomicLong getTime = getTimes.get(i);
             AtomicLong getCount = getCounts.get(i);
+            AtomicLong txTotalTime = txTotalTimes.get(i);
             AtomicInteger rolledBackTxns = rolledBackTxnsList.get(i);
             futures.add(executor.submit(() -> doTxs(
                     view,
@@ -125,6 +128,7 @@ public class TxRetryBenchmark extends ClusterPerTestIntegrationTest {
                     upsertCount,
                     getTime,
                     getCount,
+                    txTotalTime,
                     rolledBackTxns
             )));
         }
@@ -146,15 +150,18 @@ public class TxRetryBenchmark extends ClusterPerTestIntegrationTest {
         long totalUpserts = upsertCounts.stream().mapToLong(AtomicLong::get).sum();
         long totalGetDuration = getTimes.stream().mapToLong(AtomicLong::get).sum();
         long totalGets = getCounts.stream().mapToLong(AtomicLong::get).sum();
+        long totalTxTime = txTotalTimes.stream().mapToLong(AtomicLong::get).sum();
         int rolledBackTxns = rolledBackTxnsList.stream().mapToInt(AtomicInteger::get).sum();
 
         double avgUpsertDuration = totalUpsertDuration / 1_000_000.0 / totalUpserts;
         double avgGetDuration = totalGetDuration / 1_000_000.0 / totalGets;
+        double avgTxDuration = totalTxTime / 1_000_000.0 / totalTxs;
 
         System.out.println("total txns: " + totalTxs);
         System.out.println("rolled back txns: " + rolledBackTxns);
         System.out.printf("avg get duration: %f\n", avgGetDuration);
         System.out.printf("avg upsert duration: %f\n", avgUpsertDuration);
+        System.out.printf("avg tx duration: %f\n", avgTxDuration);
     }
 
     private void doTxs(
@@ -167,12 +174,14 @@ public class TxRetryBenchmark extends ClusterPerTestIntegrationTest {
             AtomicLong upsertsCount,
             AtomicLong getsTime,
             AtomicLong getsCount,
+            AtomicLong txTotalTime,
             AtomicInteger rolledBackTxns
     ) {
         ThreadLocalRandom random = ThreadLocalRandom.current();
         long currentTime = System.currentTimeMillis();
 
         while (currentTime < untilTimeout) {
+            long txBeginTime = System.nanoTime();
             Transaction tx = transactions.begin();
 
             int from = random.nextInt(keyUpperBound);
@@ -210,7 +219,11 @@ public class TxRetryBenchmark extends ClusterPerTestIntegrationTest {
                 rolledBackTxns.incrementAndGet();
             }
 
-            currentTime = System.currentTimeMillis();
+            long currentTimeNanos = System.nanoTime();
+            long txDuration = currentTimeNanos - txBeginTime;
+            txTotalTime.addAndGet(txDuration);
+
+            currentTime = currentTimeNanos / 1_000_000;
 
             txCounter.incrementAndGet();
         }
