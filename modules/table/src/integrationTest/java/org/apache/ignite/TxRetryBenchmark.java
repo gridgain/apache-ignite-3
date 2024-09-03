@@ -42,7 +42,7 @@ import org.junit.jupiter.api.Test;
 public class TxRetryBenchmark extends ClusterPerTestIntegrationTest {
     @Override
     protected int initialNodes() {
-        return 3;
+        return 1;
     }
 
     private IgniteImpl anyNode() {
@@ -51,7 +51,7 @@ public class TxRetryBenchmark extends ClusterPerTestIntegrationTest {
 
     @Test
     public void test() throws ExecutionException, InterruptedException {
-        int keysUpperBound = 10;
+        int keysUpperBound = 1000;
 
         IgniteImpl ignite = anyNode();
 
@@ -63,13 +63,13 @@ public class TxRetryBenchmark extends ClusterPerTestIntegrationTest {
         sql.execute(null, String.format("CREATE ZONE IF NOT EXISTS %s WITH REPLICAS=%d, PARTITIONS=%d, STORAGE_PROFILES='%s'",
                 zoneName, initialNodes(), 10, DEFAULT_STORAGE_PROFILE));
         sql.execute(null, "CREATE TABLE IF NOT EXISTS " + tableName
-                + "(id INT PRIMARY KEY, name VARCHAR) WITH PRIMARY_ZONE='" + zoneName + "';");
+                + "(id INT PRIMARY KEY, amount FLOAT) WITH PRIMARY_ZONE='" + zoneName + "';");
 
         for (int i = 0; i < keysUpperBound; i++) {
-            sql.execute(null, "INSERT INTO " + tableName + "(id, name) VALUES (?, ?)", i, "val_" + i);
+            sql.execute(null, "INSERT INTO " + tableName + "(id, amount) VALUES (?, ?)", i, 1000.0);
         }
 
-        RecordView recordView = ignite.tables().table(tableName).recordView();
+        RecordView<Tuple> recordView = ignite.tables().table(tableName).recordView();
 
         measure(60_000, recordView, ignite.transactions(), keysUpperBound);
         measure(60_000, recordView, ignite.transactions(), keysUpperBound);
@@ -79,7 +79,7 @@ public class TxRetryBenchmark extends ClusterPerTestIntegrationTest {
 
     private void measure(
             long time,
-            RecordView view,
+            RecordView<Tuple> view,
             IgniteTransactions transactions,
             int keyUpperBound
     ) throws InterruptedException, ExecutionException {
@@ -89,12 +89,18 @@ public class TxRetryBenchmark extends ClusterPerTestIntegrationTest {
         long untilTime = startTime + time;
 
         List<AtomicLong> txCounters = new ArrayList<>();
-        List<AtomicLong> opsTimes = new ArrayList<>();
+        List<AtomicLong> upsertTimes = new ArrayList<>();
+        List<AtomicLong> upsertCounts = new ArrayList<>();
+        List<AtomicLong> getTimes = new ArrayList<>();
+        List<AtomicLong> getCounts = new ArrayList<>();
         List<AtomicInteger> rolledBackTxnsList = new ArrayList<>();
 
         for (int i = 0; i < cores; i++) {
             txCounters.add(new AtomicLong());
-            opsTimes.add(new AtomicLong());
+            upsertTimes.add(new AtomicLong());
+            upsertCounts.add(new AtomicLong());
+            getTimes.add(new AtomicLong());
+            getCounts.add(new AtomicLong());
             rolledBackTxnsList.add(new AtomicInteger());
         }
 
@@ -104,9 +110,23 @@ public class TxRetryBenchmark extends ClusterPerTestIntegrationTest {
 
         for (int i = 0; i < cores; i++) {
             AtomicLong txCounter = txCounters.get(i);
-            AtomicLong opsTime = opsTimes.get(i);
+            AtomicLong upsertTime = upsertTimes.get(i);
+            AtomicLong upsertCount = upsertCounts.get(i);
+            AtomicLong getTime = getTimes.get(i);
+            AtomicLong getCount = getCounts.get(i);
             AtomicInteger rolledBackTxns = rolledBackTxnsList.get(i);
-            futures.add(executor.submit(() -> doTxs(view, transactions, untilTime, keyUpperBound, txCounter, opsTime, rolledBackTxns)));
+            futures.add(executor.submit(() -> doTxs(
+                    view,
+                    transactions,
+                    untilTime,
+                    keyUpperBound,
+                    txCounter,
+                    upsertTime,
+                    upsertCount,
+                    getTime,
+                    getCount,
+                    rolledBackTxns
+            )));
         }
 
         try {
@@ -122,23 +142,31 @@ public class TxRetryBenchmark extends ClusterPerTestIntegrationTest {
         }
 
         long totalTxs = txCounters.stream().mapToLong(AtomicLong::get).sum();
-        long totalDuration = opsTimes.stream().mapToLong(AtomicLong::get).sum();
+        long totalUpsertDuration = upsertTimes.stream().mapToLong(AtomicLong::get).sum();
+        long totalUpserts = upsertCounts.stream().mapToLong(AtomicLong::get).sum();
+        long totalGetDuration = getTimes.stream().mapToLong(AtomicLong::get).sum();
+        long totalGets = getCounts.stream().mapToLong(AtomicLong::get).sum();
         int rolledBackTxns = rolledBackTxnsList.stream().mapToInt(AtomicInteger::get).sum();
 
-        double avgDuration = totalDuration / 1_000_000.0 / totalTxs;
+        double avgUpsertDuration = totalUpsertDuration / 1_000_000.0 / totalUpserts;
+        double avgGetDuration = totalGetDuration / 1_000_000.0 / totalGets;
 
         System.out.println("total txns: " + totalTxs);
         System.out.println("rolled back txns: " + rolledBackTxns);
-        System.out.printf("avg upsert duration: %f\n", avgDuration);
+        System.out.printf("avg get duration: %f\n", avgGetDuration);
+        System.out.printf("avg upsert duration: %f\n", avgUpsertDuration);
     }
 
     private void doTxs(
-            RecordView view,
+            RecordView<Tuple> view,
             IgniteTransactions transactions,
             long untilTimeout,
             int keyUpperBound,
             AtomicLong txCounter,
-            AtomicLong opsTime,
+            AtomicLong upsertsTime,
+            AtomicLong upsertsCount,
+            AtomicLong getsTime,
+            AtomicLong getsCount,
             AtomicInteger rolledBackTxns
     ) {
         ThreadLocalRandom random = ThreadLocalRandom.current();
@@ -147,13 +175,20 @@ public class TxRetryBenchmark extends ClusterPerTestIntegrationTest {
         while (currentTime < untilTimeout) {
             Transaction tx = transactions.begin();
 
-            int key = random.nextInt(keyUpperBound);
+            int from = random.nextInt(keyUpperBound);
+            int to = from;
+            while (to == from) {
+                to = random.nextInt(keyUpperBound);
+            }
 
             try {
-                long upsertStart = System.nanoTime();
-                view.upsert(tx, Tuple.create().set("id", key).set("name", "val_" + random.nextInt(keyUpperBound)));
-                long upsertDuration = System.nanoTime() - upsertStart;
-                opsTime.addAndGet(upsertDuration);
+                float amountFrom = doGet(view, tx, from, getsTime);
+                float amountTo = doGet(view, tx, to, getsTime);
+                getsCount.addAndGet(2);
+
+                doUpsert(view, tx, from, amountFrom - 10, upsertsTime);
+                doUpsert(view, tx, to, amountTo + 10, upsertsTime);
+                upsertsCount.addAndGet(2);
             } catch (Exception e) {
                 System.out.println("qqq " + e);
 
@@ -180,4 +215,21 @@ public class TxRetryBenchmark extends ClusterPerTestIntegrationTest {
             txCounter.incrementAndGet();
         }
     }
+
+    private void doUpsert(RecordView<Tuple> view, Transaction tx, int id, float amount, AtomicLong upsertsTime) {
+        long upsertStart = System.nanoTime();
+        view.upsert(tx, Tuple.create().set("id", id).set("amount", amount));
+        long upsertDuration = System.nanoTime() - upsertStart;
+        upsertsTime.addAndGet(upsertDuration);
+    }
+
+    private float doGet(RecordView<Tuple> view, Transaction tx, int id, AtomicLong getsTime) {
+        long getStart = System.nanoTime();
+        Tuple t = view.get(tx, Tuple.create().set("id", id));
+        long getDuration = System.nanoTime() - getStart;
+        getsTime.addAndGet(getDuration);
+
+        return t.value("amount");
+    }
 }
+
