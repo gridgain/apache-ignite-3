@@ -301,8 +301,8 @@ public class JraftServerImpl implements RaftServer {
                 opts.setfSMCallerExecutorDisruptor(new StripedDisruptor<>(
                         opts.getServerName(),
                         "JRaft-FSMCaller-Disruptor",
-                        (nodeName, stripeName) -> ThreadUtils.virtualWorkerFactory(IgniteThread.threadPrefix(nodeName, stripeName)),
-                        //(nodeName, stripeName) -> IgniteThreadFactory.create(nodeName, stripeName, true, LOG, STORAGE_READ, STORAGE_WRITE),
+                        //(nodeName, stripeName) -> ThreadUtils.virtualWorkerFactory(IgniteThread.threadPrefix(nodeName, stripeName)),
+                        (nodeName, stripeName) -> IgniteThreadFactory.create(nodeName, stripeName, true, LOG, STORAGE_READ, STORAGE_WRITE),
                         opts.getRaftOptions().getDisruptorBufferSize(),
                         ApplyTask::new,
                         opts.getStripes(),
@@ -316,8 +316,8 @@ public class JraftServerImpl implements RaftServer {
                 opts.setNodeApplyDisruptor(new StripedDisruptor<>(
                         opts.getServerName(),
                         "JRaft-NodeImpl-Disruptor",
-                        (nodeName, stripeName) -> ThreadUtils.virtualWorkerFactory(IgniteThread.threadPrefix(nodeName, stripeName)),
-                        //(nodeName, stripeName) -> IgniteThreadFactory.create(nodeName, stripeName, true, LOG),
+                        //(nodeName, stripeName) -> ThreadUtils.virtualWorkerFactory(IgniteThread.threadPrefix(nodeName, stripeName)),
+                        (nodeName, stripeName) -> IgniteThreadFactory.create(nodeName, stripeName, true, LOG),
                         opts.getRaftOptions().getDisruptorBufferSize(),
                         LogEntryAndClosure::new,
                         opts.getStripes(),
@@ -368,6 +368,8 @@ public class JraftServerImpl implements RaftServer {
                     false,
                     opts.getRaftMetrics().disruptorMetrics("raft.shared.disruptor")
             );
+
+            opts.setLogStripes(IntStream.range(0, opts.getStripes()).mapToObj(i -> new Stripe()).collect(toList()));
 
             if (opts.getfSMCallerExecutorDisruptor() == null) {
                 opts.setfSMCallerExecutorDisruptor((StripedDisruptor<IApplyTask>) (StripedDisruptor<? extends IApplyTask>) sharedDisruptor);
