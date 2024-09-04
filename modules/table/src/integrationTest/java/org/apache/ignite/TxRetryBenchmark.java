@@ -223,7 +223,7 @@ public class TxRetryBenchmark extends ClusterPerTestIntegrationTest {
             long txDuration = currentTimeNanos - txBeginTime;
             txTotalTime.addAndGet(txDuration);
 
-            currentTime = currentTimeNanos / 1_000_000;
+            currentTime = System.currentTimeMillis();
 
             txCounter.incrementAndGet();
         }
