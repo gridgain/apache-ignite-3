@@ -1366,6 +1366,10 @@ public class NodeImpl implements Node, RaftServerService {
 
         boolean useSharedDisruptor = IgniteSystemProperties.getBoolean(IgniteSystemProperties.IGNITE_USE_SHARED_EVENT_LOOP);
 
+        if (useSharedDisruptor) {
+            LOG.info("Node {} uses shared event loop", groupId);
+        }
+
         if (!useSharedDisruptor) {
             int stripes = opts.getStripes();
             String postfix = "";
@@ -1391,7 +1395,7 @@ public class NodeImpl implements Node, RaftServerService {
             if (opts.getNodeApplyDisruptor() == null || ownFsmCallerExecutorDisruptorConfig != null) {
                 opts.setNodeApplyDisruptor(new StripedDisruptor<>(
                         opts.getServerName(),
-                        "JRaft-NodeImpl-Disruptor",
+                        "JRaft-NodeImpl-Disruptor" + postfix,
                         (nodeName, stripeName) -> create(nodeName, stripeName, true, LOG),
                         opts.getRaftOptions().getDisruptorBufferSize(),
                         LogEntryAndClosure::new,
@@ -1405,7 +1409,7 @@ public class NodeImpl implements Node, RaftServerService {
             if (opts.getReadOnlyServiceDisruptor() == null || ownFsmCallerExecutorDisruptorConfig != null) {
                 opts.setReadOnlyServiceDisruptor(new StripedDisruptor<>(
                         opts.getServerName(),
-                        "JRaft-ReadOnlyService-Disruptor",
+                        "JRaft-ReadOnlyService-Disruptor" + postfix,
                         (nodeName, stripeName) -> create(nodeName, stripeName, true, LOG),
                         opts.getRaftOptions().getDisruptorBufferSize(),
                         ReadIndexEvent::new,
@@ -1419,7 +1423,7 @@ public class NodeImpl implements Node, RaftServerService {
             if (opts.getLogManagerDisruptor() == null || ownFsmCallerExecutorDisruptorConfig != null) {
                 opts.setLogManagerDisruptor(new StripedDisruptor<>(
                         opts.getServerName(),
-                        "JRaft-LogManager-Disruptor",
+                        "JRaft-LogManager-Disruptor" + postfix,
                         (nodeName, stripeName) -> create(nodeName, stripeName, true, LOG),
                         opts.getRaftOptions().getDisruptorBufferSize(),
                         StableClosureEvent::new,
@@ -1447,7 +1451,7 @@ public class NodeImpl implements Node, RaftServerService {
                             opts.getRaftOptions().getDisruptorBufferSize(),
                             SharedEvent::new,
                             stripes,
-                            false,
+                            logStorage instanceof RocksDbSharedLogStorage,
                             false,
                             opts.getRaftMetrics().disruptorMetrics("raft.shared.disruptor" + postfix)
                     ) : null;
@@ -1466,7 +1470,7 @@ public class NodeImpl implements Node, RaftServerService {
                         opts.getServerName(),
                         "JRaft-ReadOnlyService-Disruptor" + postfix,
                         opts.getRaftOptions().getDisruptorBufferSize(),
-                        () -> new ReadOnlyServiceImpl.ReadIndexEvent(),
+                        ReadIndexEvent::new,
                         opts.getStripes(),
                         false,
                         false,
