@@ -37,6 +37,7 @@ import static org.apache.ignite.internal.table.distributed.replicator.RemoteReso
 import static org.apache.ignite.internal.table.distributed.replicator.ReplicatorUtils.beginRwTxTs;
 import static org.apache.ignite.internal.table.distributed.replicator.ReplicatorUtils.latestIndexDescriptorInBuildingStatus;
 import static org.apache.ignite.internal.table.distributed.replicator.ReplicatorUtils.rwTxActiveCatalogVersion;
+import static org.apache.ignite.internal.tracing.Instrumentation.measure;
 import static org.apache.ignite.internal.tx.TransactionIds.beginTimestamp;
 import static org.apache.ignite.internal.tx.TxState.ABANDONED;
 import static org.apache.ignite.internal.tx.TxState.ABORTED;
@@ -466,7 +467,7 @@ public class PartitionReplicaListener implements ReplicaListener {
 
     @Override
     public CompletableFuture<ReplicaResult> invoke(ReplicaRequest request, String senderId) {
-        return ensureReplicaIsPrimary(request)
+        return measure(() -> ensureReplicaIsPrimary(request), "ensureReplicaIsPrimary")
                 .thenCompose(res -> processRequest(request, res.get1(), senderId, res.get2()))
                 .thenApply(res -> {
                     if (res instanceof ReplicaResult) {
@@ -520,9 +521,12 @@ public class PartitionReplicaListener implements ReplicaListener {
             return processGetEstimatedSizeRequest();
         }
 
-        @Nullable HybridTimestamp opTs = getTxOpTimestamp(request);
-        @Nullable HybridTimestamp opTsIfDirectRo = (request instanceof ReadOnlyDirectReplicaRequest) ? opTs : null;
-        @Nullable HybridTimestamp txTs = getTxStartTimestamp(request);
+        @Nullable HybridTimestamp opTs = measure(() -> getTxOpTimestamp(request), "getTxOpTimestamp");
+        @Nullable HybridTimestamp opTsIfDirectRo = measure(
+                () -> (request instanceof ReadOnlyDirectReplicaRequest) ? opTs : null,
+                "getOpTsIfDirectRo"
+        );
+        @Nullable HybridTimestamp txTs = measure(() -> getTxStartTimestamp(request), "getTxStartTimestamp");
         if (txTs == null) {
             txTs = opTsIfDirectRo;
         }
@@ -550,8 +554,12 @@ public class PartitionReplicaListener implements ReplicaListener {
             }
         };
 
-        return schemaSyncService.waitForMetadataCompleteness(opTs).thenRun(validateClo).thenCompose(ignored ->
-                processOperationRequestWithTxRwCounter(senderId, request, isPrimary, opTsIfDirectRo, leaseStartTime));
+        return measure(
+                () -> schemaSyncService.waitForMetadataCompleteness(opTs).thenRun(validateClo),
+                "waitForMetadataCompleteness"
+        ).thenCompose(ignored ->
+                processOperationRequestWithTxRwCounter(senderId, request, isPrimary, opTsIfDirectRo, leaseStartTime)
+        );
     }
 
     private CompletableFuture<Long> processGetEstimatedSizeRequest() {
@@ -2104,19 +2112,21 @@ public class PartitionReplicaListener implements ReplicaListener {
         // It means that there exists one and only one non-empty readResult for any read timestamp for the given key.
         // Which in turn means that if we have found non empty readResult during PK index iteration
         // we can proceed with readResult resolution and stop the iteration.
-        try (Cursor<RowId> cursor = getFromPkIndex(pk)) {
+        try (Cursor<RowId> cursor = measure(() -> getFromPkIndex(pk), "getFromPkIndex")) {
             // TODO https://issues.apache.org/jira/browse/IGNITE-18767 scan of multiple write intents should not be needed
             List<ReadResult> writeIntents = new ArrayList<>();
             List<ReadResult> regularEntries = new ArrayList<>();
 
             for (RowId rowId : cursor) {
-                ReadResult readResult = mvDataStorage.read(rowId, ts);
+                ReadResult readResult = measure(() -> mvDataStorage.read(rowId, ts), "readResultFromCursor");
 
-                if (readResult.isWriteIntent()) {
-                    writeIntents.add(readResult);
-                } else if (!readResult.isEmpty()) {
-                    regularEntries.add(readResult);
-                }
+                measure(() -> {
+                    if (readResult.isWriteIntent()) {
+                        writeIntents.add(readResult);
+                    } else if (!readResult.isEmpty()) {
+                        regularEntries.add(readResult);
+                    }
+                }, "checkReadResult");
             }
 
             // Nothing found in the storage, return null.
@@ -2126,7 +2136,9 @@ public class PartitionReplicaListener implements ReplicaListener {
 
             if (writeIntents.isEmpty()) {
                 // No write intents, then return the committed value. We already know that regularEntries is not empty.
-                return completedFuture(regularEntries.get(0).binaryRow());
+                var bo = measure(() -> regularEntries.get(0).binaryRow(), "readBinaryResult");
+
+                return completedFuture(bo);
             } else {
                 ReadResult writeIntent = writeIntents.get(0);
 
@@ -2950,7 +2962,7 @@ public class PartitionReplicaListener implements ReplicaListener {
             ReadOnlyDirectSingleRowReplicaRequest request,
             HybridTimestamp opStartTimestamp
     ) {
-        BinaryTuple primaryKey = resolvePk(request.primaryKey());
+        BinaryTuple primaryKey = measure(() -> resolvePk(request.primaryKey()), "resolvePk");
         HybridTimestamp readTimestamp = opStartTimestamp;
 
         if (request.requestType() != RO_GET) {

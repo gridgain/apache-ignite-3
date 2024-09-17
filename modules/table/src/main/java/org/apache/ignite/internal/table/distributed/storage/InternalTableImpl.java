@@ -43,6 +43,7 @@ import static org.apache.ignite.internal.partition.replicator.network.replicatio
 import static org.apache.ignite.internal.partition.replicator.network.replication.RequestType.RW_UPSERT_ALL;
 import static org.apache.ignite.internal.replicator.message.ReplicaMessageUtils.toTablePartitionIdMessage;
 import static org.apache.ignite.internal.table.distributed.storage.RowBatch.allResultFutures;
+import static org.apache.ignite.internal.tracing.Instrumentation.measure;
 import static org.apache.ignite.internal.util.CompletableFutures.completedOrFailedFuture;
 import static org.apache.ignite.internal.util.CompletableFutures.emptyListCompletedFuture;
 import static org.apache.ignite.internal.util.CompletableFutures.nullCompletedFuture;
@@ -750,18 +751,23 @@ public class InternalTableImpl implements InternalTable {
             BinaryRowEx row,
             BiFunction<TablePartitionId, Long, ReplicaRequest> op
     ) {
-        InternalTransaction tx = txManager.begin(observableTimestampTracker, true);
+        InternalTransaction tx = measure(() -> txManager.begin(observableTimestampTracker, true), "startImplicitTx");
 
         int partId = partitionId(row);
 
         TablePartitionId tablePartitionId = new TablePartitionId(tableId, partId);
 
-        CompletableFuture<R> fut = awaitPrimaryReplica(tablePartitionId, tx.startTimestamp())
+        CompletableFuture<R> fut = measure(() -> awaitPrimaryReplica(tablePartitionId, tx.startTimestamp()), "awaitPrimaryReplica")
                 .thenCompose(primaryReplica -> {
                     try {
                         ClusterNode node = getClusterNode(primaryReplica);
 
-                        return replicaSvc.invoke(node, op.apply(tablePartitionId, enlistmentConsistencyToken(primaryReplica)));
+                        ReplicaRequest request = measure(
+                                () -> op.apply(tablePartitionId, enlistmentConsistencyToken(primaryReplica)),
+                                "prepareRequest"
+                        );
+
+                        return replicaSvc.invoke(node, request);
                     } catch (Throwable e) {
                         throw new TransactionException(
                                 INTERNAL_ERR,
@@ -840,7 +846,7 @@ public class InternalTableImpl implements InternalTable {
                         }); // Preserve failed state.
             }
 
-            return tx.finish(true, clock.now()).thenApply(ignored -> r);
+            return measure(() -> tx.finish(true, clock.now()), "finishTx").thenApply(ignored -> r);
         }).thenCompose(identity());
     }
 

@@ -19,6 +19,7 @@ package org.apache.ignite.internal.replicator;
 
 import static java.util.concurrent.TimeUnit.MILLISECONDS;
 import static org.apache.ignite.internal.lang.IgniteStringFormatter.format;
+import static org.apache.ignite.internal.tracing.Instrumentation.mark;
 import static org.apache.ignite.internal.util.ExceptionUtils.matchAny;
 import static org.apache.ignite.internal.util.ExceptionUtils.unwrapCause;
 import static org.apache.ignite.internal.util.ExceptionUtils.withCause;
@@ -132,6 +133,8 @@ public class ReplicaService {
      * @see ReplicationTimeoutException If the response could not be received due to a timeout.
      */
     private <R> CompletableFuture<R> sendToReplica(String targetNodeConsistentId, ReplicaRequest req) {
+        mark("sendToReplica:" + targetNodeConsistentId);
+
         CompletableFuture<R> res = new CompletableFuture<>();
 
         messagingService.invoke(

@@ -43,6 +43,7 @@ import org.apache.ignite.internal.table.criteria.SqlSerializer.Builder;
 import org.apache.ignite.internal.table.distributed.replicator.IncompatibleSchemaVersionException;
 import org.apache.ignite.internal.table.distributed.replicator.InternalSchemaVersionMismatchException;
 import org.apache.ignite.internal.table.distributed.schema.SchemaVersions;
+import org.apache.ignite.internal.tracing.Instrumentation;
 import org.apache.ignite.internal.tx.InternalTransaction;
 import org.apache.ignite.lang.AsyncCursor;
 import org.apache.ignite.lang.Cursor;
@@ -138,7 +139,7 @@ abstract class AbstractTableView<R> implements CriteriaQuerySource<R> {
                 ? schemaVersions.schemaVersionAtNow(tbl.tableId())
                 : schemaVersions.schemaVersionAt(((InternalTransaction) tx).startTimestamp(), tbl.tableId());
 
-        return schemaVersionFuture
+        return Instrumentation.measure(() -> schemaVersionFuture,"readSchemaVersion")
                 .thenCompose(schemaVersion -> action.act(schemaVersion)
                         .handle((res, ex) -> {
                             if (ex == null) {

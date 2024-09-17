@@ -19,6 +19,7 @@ package org.apache.ignite.internal.table;
 
 import static java.util.concurrent.CompletableFuture.completedFuture;
 import static org.apache.ignite.internal.lang.IgniteExceptionMapperUtil.convertToPublicFuture;
+import static org.apache.ignite.internal.tracing.Instrumentation.measure;
 import static org.apache.ignite.internal.util.CompletableFutures.trueCompletedFuture;
 import static org.apache.ignite.internal.util.ViewUtils.checkKeysForNulls;
 import static org.apache.ignite.internal.util.ViewUtils.sync;
@@ -95,7 +96,8 @@ public class RecordBinaryViewImpl extends AbstractTableView<Tuple> implements Re
         Objects.requireNonNull(keyRec);
 
         return doOperation(tx, (schemaVersion) -> {
-            Row keyRow = marshal(keyRec, schemaVersion, true); // Convert to portable format to pass TX/storage layer.
+            // Convert to portable format to pass TX/storage layer.
+            Row keyRow = measure(() -> marshal(keyRec, schemaVersion, true), "marshal");
 
             return tbl.get(keyRow, (InternalTransaction) tx).thenApply(row -> wrap(row, schemaVersion));
         });

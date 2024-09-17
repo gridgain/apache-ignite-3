@@ -18,6 +18,7 @@
 package org.apache.ignite.internal.client;
 
 import static java.util.concurrent.CompletableFuture.completedFuture;
+import static org.apache.ignite.internal.tracing.Instrumentation.measure;
 import static org.apache.ignite.internal.util.CompletableFutures.nullCompletedFuture;
 import static org.apache.ignite.internal.util.IgniteUtils.shutdownAndAwaitTermination;
 import static org.apache.ignite.lang.ErrorGroups.Client.CLUSTER_ID_MISMATCH_ERR;
@@ -243,11 +244,11 @@ public final class ReliableChannel implements AutoCloseable {
             @Nullable RetryPolicy retryPolicyOverride,
             boolean expectNotifications
     ) {
-        return ClientFutureUtils.doWithRetryAsync(
-                () -> getChannelAsync(preferredNodeName)
+        return ClientFutureUtils.doWithRetryAsync(() -> measure(() -> getChannelAsync(preferredNodeName), "getChannelAsync")
                         .thenCompose(ch -> serviceAsyncInternal(opCode, payloadWriter, payloadReader, expectNotifications, ch)),
                 null,
-                ctx -> shouldRetry(opCode, ctx, retryPolicyOverride));
+                ctx -> shouldRetry(opCode, ctx, retryPolicyOverride)
+        );
     }
 
     /**

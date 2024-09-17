@@ -17,7 +17,10 @@
 
 package org.apache.ignite.client.handler;
 
+import static org.apache.ignite.internal.tracing.Instrumentation.mark;
+import static org.apache.ignite.internal.tracing.Instrumentation.measure;
 import static org.apache.ignite.internal.util.CompletableFutures.falseCompletedFuture;
+import static org.apache.ignite.internal.util.CompletableFutures.nullCompletedFuture;
 import static org.apache.ignite.internal.util.IgniteUtils.firstNotNull;
 import static org.apache.ignite.lang.ErrorGroups.Client.HANDSHAKE_HEADER_ERR;
 import static org.apache.ignite.lang.ErrorGroups.Client.PROTOCOL_COMPATIBILITY_ERR;
@@ -304,6 +307,8 @@ public class ClientInboundMessageHandler extends ChannelInboundHandlerAdapter im
     /** {@inheritDoc} */
     @Override
     public void channelRead(ChannelHandlerContext ctx, Object msg) {
+        mark("channelReadMark");
+
         ByteBuf byteBuf = (ByteBuf) msg;
 
         // Each inbound handler in a pipeline has to release the received messages.
@@ -311,7 +316,7 @@ public class ClientInboundMessageHandler extends ChannelInboundHandlerAdapter im
         metrics.bytesReceivedAdd(byteBuf.readableBytes() + ClientMessageCommon.HEADER_SIZE);
 
         // Packer buffer is released by Netty on send, or by inner exception handlers below.
-        var packer = getPacker(ctx.alloc());
+        var packer = measure(() -> getPacker(ctx.alloc()), "getPacker");
 
         switch (state) {
             case STATE_BEFORE_HANDSHAKE:
@@ -327,7 +332,9 @@ public class ClientInboundMessageHandler extends ChannelInboundHandlerAdapter im
 
             case STATE_HANDSHAKE_RESPONSE_SENT:
                 assert clientContext != null : "Client context != null";
-                processOperation(ctx, unpacker, packer);
+                processOperation(ctx, unpacker, packer).thenRun(() -> {
+                    mark("channelReadEndMark");
+                });
 
                 break;
 
@@ -582,14 +589,14 @@ public class ClientInboundMessageHandler extends ChannelInboundHandlerAdapter im
         return new ClientMessagePacker(alloc.buffer());
     }
 
-    private void processOperation(ChannelHandlerContext ctx, ClientMessageUnpacker in, ClientMessagePacker out) {
+    private CompletableFuture processOperation(ChannelHandlerContext ctx, ClientMessageUnpacker in, ClientMessagePacker out) {
         long requestId = -1;
         int opCode = -1;
         metrics.requestsActiveIncrement();
 
         try {
-            opCode = in.unpackInt();
-            requestId = in.unpackLong();
+            opCode = measure(() -> in.unpackInt(), "readOpId");
+            requestId = measure(() -> in.unpackLong(), "readReqId");
 
             if (LOG.isTraceEnabled()) {
                 LOG.trace("Client request started [id=" + requestId + ", op=" + opCode
@@ -617,12 +624,14 @@ public class ClientInboundMessageHandler extends ChannelInboundHandlerAdapter im
 
                 metrics.requestsProcessedIncrement();
                 metrics.requestsActiveDecrement();
+
+                return nullCompletedFuture();
             } else {
                 var reqId = requestId;
                 var op = opCode;
 
-                fut.whenComplete((Object res, Object err) -> {
-                    in.close();
+                return fut.whenComplete((Object res, Object err) -> {
+                    measure(() -> in.close(), "closeMsgIn");
                     metrics.requestsActiveDecrement();
 
                     if (err != null) {
@@ -631,8 +640,8 @@ public class ClientInboundMessageHandler extends ChannelInboundHandlerAdapter im
 
                         metrics.requestsFailedIncrement();
                     } else {
-                        out.setLong(observableTimestampIdx, observableTimestamp(out));
-                        write(out, ctx);
+                        measure(() -> out.setLong(observableTimestampIdx, observableTimestamp(out)), "writeObservableTimestamp");
+                        measure(() -> write(out, ctx), "writeCtx");
 
                         metrics.requestsProcessedIncrement();
 
@@ -650,6 +659,8 @@ public class ClientInboundMessageHandler extends ChannelInboundHandlerAdapter im
             writeError(requestId, opCode, t, ctx, false);
 
             metrics.requestsFailedIncrement();
+
+            return nullCompletedFuture();
         }
     }
 
@@ -659,6 +670,8 @@ public class ClientInboundMessageHandler extends ChannelInboundHandlerAdapter im
             int opCode,
             long requestId
     ) throws IgniteInternalCheckedException {
+        mark("processOperation:" + opCode);
+
         switch (opCode) {
             case ClientOp.HEARTBEAT:
                 return null;
