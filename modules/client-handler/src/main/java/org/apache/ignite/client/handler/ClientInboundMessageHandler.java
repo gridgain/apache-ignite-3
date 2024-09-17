@@ -337,7 +337,7 @@ public class ClientInboundMessageHandler extends ChannelInboundHandlerAdapter im
 
             case STATE_HANDSHAKE_RESPONSE_SENT:
                 assert clientContext != null : "Client context != null";
-                processOperation(ctx, unpacker, packer);
+                processOperation(ctx, unpacker);
 
                 break;
 
@@ -592,9 +592,11 @@ public class ClientInboundMessageHandler extends ChannelInboundHandlerAdapter im
         return new ClientMessagePacker(alloc.buffer());
     }
 
-    private void processOperation(ChannelHandlerContext ctx, ClientMessageUnpacker in, ClientMessagePacker out) {
+    private void processOperation(ChannelHandlerContext ctx, ClientMessageUnpacker in) {
         long requestId = -1;
         int opCode = -1;
+        ClientMessagePacker out = null;
+
         metrics.requestsActiveIncrement();
 
         try {
@@ -610,13 +612,33 @@ public class ClientInboundMessageHandler extends ChannelInboundHandlerAdapter im
                 long requestId0 = requestId;
                 int opCode0 = opCode;
 
-                partitionOperationsExecutor.execute(() -> processOperationInternal(ctx, in, out, requestId0, opCode0));
+                partitionOperationsExecutor.execute(() -> {
+                    // Packer buffer is released by Netty on send, or by inner exception handlers below.
+                    var outPacker = getPacker(ctx.alloc());
+
+                    try {
+                        processOperationInternal(ctx, in, outPacker, requestId0, opCode0);
+                    } catch (Throwable t) {
+                        in.close();
+                        outPacker.close();
+
+                        writeError(requestId0, opCode0, t, ctx, false);
+
+                        metrics.requestsFailedIncrement();
+                    }
+                });
             } else {
+                // Packer buffer is released by Netty on send, or by inner exception handlers below.
+                out = getPacker(ctx.alloc());
+
                 processOperationInternal(ctx, in, out, requestId, opCode);
             }
         } catch (Throwable t) {
             in.close();
-            out.close();
+
+            if (out != null) {
+                out.close();
+            }
 
             writeError(requestId, opCode, t, ctx, false);
 
