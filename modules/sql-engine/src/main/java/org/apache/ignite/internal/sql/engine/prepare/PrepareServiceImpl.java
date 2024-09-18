@@ -548,9 +548,9 @@ public class PrepareServiceImpl implements PrepareService {
                     );
                 }
 
-                if (LOG.isDebugEnabled()) {
-                    LOG.debug("Plan prepared: \n{}\n\n{}", parsedResult.originalQuery(), plan.explain());
-                }
+//                if (LOG.isDebugEnabled()) {
+                    LOG.info("Plan prepared: \n{}\n\n{}", parsedResult.originalQuery(), plan.explain());
+//                }
 
                 return plan;
             }, planningPool));
