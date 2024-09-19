@@ -62,13 +62,19 @@ public class Instrumentation {
 
     private static final ThreadLocal<Instrumentation> holder = new ThreadLocal<>();
 
+    private static final boolean ENABLED = false;
+
+    public static boolean isEnabled() {
+        return ENABLED;
+    }
+
     /**
      * Starts instrumentation.
      *
      * @param jfr True to write in jfr, false in file.
      */
     public static void start(boolean jfr) {
-        if (isStarted()) {
+        if (isStarted() || !isEnabled()) {
             return;
         }
 
