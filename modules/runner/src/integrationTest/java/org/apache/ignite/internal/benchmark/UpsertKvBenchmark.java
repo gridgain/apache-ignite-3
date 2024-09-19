@@ -50,15 +50,13 @@ import org.openjdk.jmh.runner.options.OptionsBuilder;
  */
 @State(Scope.Benchmark)
 @Fork(1)
-@Threads(1)
+@Threads(16)
 @Warmup(iterations = 10, time = 2)
 @Measurement(iterations = 20, time = 2)
 @BenchmarkMode(Mode.Throughput)
 @OutputTimeUnit(TimeUnit.SECONDS)
 public class UpsertKvBenchmark extends AbstractMultiNodeBenchmark {
     private final Tuple tuple = Tuple.create();
-
-    private final AtomicInteger id = new AtomicInteger();
 
     private static KeyValueView<Tuple, Tuple> kvView;
 
@@ -98,8 +96,10 @@ public class UpsertKvBenchmark extends AbstractMultiNodeBenchmark {
         System.out.println(stripes);
 
         super.nodeTearDown();
+    }
 
-        System.out.println("Inserted " + (id.get() * batch) + " tuples");
+    private int nextId() {
+        return ThreadLocalRandom.current().nextInt();
     }
 
     /**
@@ -110,7 +110,7 @@ public class UpsertKvBenchmark extends AbstractMultiNodeBenchmark {
         List<CompletableFuture<Void>> futs = new ArrayList<>();
 
         for (int i = 0; i < batch - 1; i++) {
-            CompletableFuture<Void> fut = kvView.putAsync(null, Tuple.create().set("ycsb_key", id.incrementAndGet()), tuple);
+            CompletableFuture<Void> fut = kvView.putAsync(null, Tuple.create().set("ycsb_key", nextId()), tuple);
             futs.add(fut);
         }
 
@@ -118,7 +118,7 @@ public class UpsertKvBenchmark extends AbstractMultiNodeBenchmark {
             fut.join();
         }
 
-        kvView.put(null, Tuple.create().set("ycsb_key", id.incrementAndGet()), tuple);
+        kvView.put(null, Tuple.create().set("ycsb_key", nextId()), tuple);
     }
 
     /**
