@@ -214,11 +214,9 @@ public class KeyValueBinaryViewImpl extends AbstractTableView<Entry<Tuple, Tuple
     @Override
     public void put(@Nullable Transaction tx, Tuple key, Tuple val) {
         start(false);
-        mark("kvPutMark");
 
         sync(putAsync(tx, key, val));
 
-        mark("kvPutEndMark");
         end();
     }
 

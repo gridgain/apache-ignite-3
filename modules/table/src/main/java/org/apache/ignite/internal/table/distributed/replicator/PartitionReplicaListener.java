@@ -1978,9 +1978,9 @@ public class PartitionReplicaListener implements ReplicaListener {
         };
 
         if (isCompletedSuccessfully(lockFut)) {
-            return measure(() -> sup.get(), "locksForLookupByKeySync");
+            return sup.get();
         } else {
-            return measure(() -> lockFut.thenCompose(ignored -> sup.get()), "locksForLookupByKeyAsync");
+            return lockFut.thenCompose(ignored -> sup.get());
         }
     }
 
