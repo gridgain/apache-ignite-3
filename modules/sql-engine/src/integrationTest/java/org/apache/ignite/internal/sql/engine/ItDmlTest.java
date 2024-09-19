@@ -489,7 +489,7 @@ public class ItDmlTest extends BaseSqlIntegrationTest {
     @Test
     public void testMergeWithSubqueryExpression() {
         sql("CREATE TABLE t0(ID INT PRIMARY KEY, A INT)");
-        sql("CREATE TABLE t1(ID INT PRIMARY KEY, B BIGINT)");
+        sql("CREATE TABLE t1(ID INT PRIMARY KEY, B INT)");
 
         String sql = "MERGE INTO t0 USING t1 ON t0.id = t1.id "
                 + "WHEN MATCHED THEN UPDATE SET A = (SELECT B FROM t1 WHERE id > ?)";

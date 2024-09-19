@@ -812,7 +812,6 @@ public class IgniteSqlValidator extends SqlValidatorImpl {
     private static void rewriteMergeAgain(SqlMerge call) {
         SqlNodeList selectList;
         SqlUpdate updateStmt = call.getUpdateCall();
-        // can be alias
         SqlIdentifier leftJoinTerm = (SqlIdentifier) SqlNode.clone(call.getSourceTableRef());
 
         SqlNode targetTable = call.getTargetTable();
@@ -845,13 +844,13 @@ public class IgniteSqlValidator extends SqlValidatorImpl {
                     throw new UnsupportedOperationException("blah");
                 }
 
-                nodeList.add(((SqlIdentifier) targetTable).plus(name, SqlParserPos.ZERO));
+                nodeList.add(leftJoinTerm.plus(name, SqlParserPos.ZERO));
             }
 
             SqlNodeList subSelectList = ((SqlSelect) sourceSelect.getFrom()).getSelectList();
 
-            leftJoinTerm1 = SqlValidatorUtil.addAlias(new SqlSelect(SqlParserPos.ZERO, null, subSelectList, targetTable,
-                    null, null, null, null, null, null, null, null, null), ((SqlIdentifier) targetTable).getSimple());
+            leftJoinTerm1 = SqlValidatorUtil.addAlias(new SqlSelect(SqlParserPos.ZERO, null, subSelectList, SqlValidatorUtil.addAlias(leftJoinTerm, "T0"),
+                    null, null, null, null, null, null, null, null, null), leftJoinTerm.getSimple()); ;
 
             selectList = nodeList;
         } else {
@@ -875,7 +874,7 @@ public class IgniteSqlValidator extends SqlValidatorImpl {
                         leftJoinTerm1 != null ? leftJoinTerm1 : leftJoinTerm,
                         SqlLiteral.createBoolean(false, SqlParserPos.ZERO),
                         joinType.symbol(SqlParserPos.ZERO),
-                        leftJoinTerm,
+                        targetTable,
                         JoinConditionType.ON.symbol(SqlParserPos.ZERO),
                         call.getCondition());
         SqlSelect select =
