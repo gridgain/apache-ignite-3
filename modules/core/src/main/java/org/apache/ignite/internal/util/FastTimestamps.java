@@ -24,7 +24,7 @@ public class FastTimestamps {
     private static volatile long coarseCurrentTimeMillis = System.currentTimeMillis();
 
     /** The interval in milliseconds for updating a timestamp cache. */
-    private static final long UPDATE_INTERVAL_MS = 10;
+    private static final long UPDATE_INTERVAL_MS = 1;
 
     static {
         startUpdater();
