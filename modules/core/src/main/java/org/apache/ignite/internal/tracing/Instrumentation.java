@@ -246,7 +246,9 @@ public class Instrumentation {
 
         return fut.thenApply(v -> {
             measure.stop();
-            holder.get().measurements.add(measure);
+            if (holder.get() != null) {
+                holder.get().measurements.add(measure);
+            }
             return v;
         });
     }
