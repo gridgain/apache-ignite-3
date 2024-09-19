@@ -812,19 +812,6 @@ public class IgniteSqlValidator extends SqlValidatorImpl {
     private static void rewriteMergeAgain(SqlMerge call) {
         SqlNodeList selectList;
         SqlUpdate updateStmt = call.getUpdateCall();
-        SqlIdentifier leftJoinTerm = (SqlIdentifier) SqlNode.clone(call.getSourceTableRef());
-
-        SqlNode targetTable = call.getTargetTable();
-        if (call.getAlias() != null) {
-            targetTable =
-                    SqlValidatorUtil.addAlias(
-                            targetTable,
-                            call.getAlias().getSimple());
-        }
-
-        SqlNode leftJoinTerm1 = null;
-        //SqlIdentifier someAlias = new SqlIdentifier(SqlUtil.deriveAliasFromOrdinal(111), SqlParserPos.ZERO);
-
         if (updateStmt != null) {
             // if we have an update statement, just clone the select list
             // from the update statement's source since it's the same as
@@ -832,33 +819,21 @@ public class IgniteSqlValidator extends SqlValidatorImpl {
             // followed by the update set expressions
             SqlSelect sourceSelect = SqlNonNullableAccessors.getSourceSelect(updateStmt);
 
-            SqlNodeList nodeList = new SqlNodeList(SqlParserPos.ZERO);
-
-            for (SqlNode node : sourceSelect.getSelectList()) {
-                String name;
-                if (node instanceof SqlIdentifier) {
-                    name = ((SqlIdentifier) node).getSimple();
-//                } else if (node instanceof SqlBasicCall) {
-//                    name = ((SqlIdentifier)((SqlBasicCall) node).operand(1)).getSimple();
-                } else {
-                    throw new UnsupportedOperationException("blah");
-                }
-
-                nodeList.add(leftJoinTerm.plus(name, SqlParserPos.ZERO));
-            }
-
-            SqlNodeList subSelectList = ((SqlSelect) sourceSelect.getFrom()).getSelectList();
-
-            leftJoinTerm1 = SqlValidatorUtil.addAlias(new SqlSelect(SqlParserPos.ZERO, null, subSelectList, SqlValidatorUtil.addAlias(leftJoinTerm, "T0"),
-                    null, null, null, null, null, null, null, null, null), leftJoinTerm.getSimple()); ;
-
-            selectList = nodeList;
+            selectList = SqlNode.clone(
+                    ((SqlSelect) sourceSelect.getFrom()).getSelectList()
+            );
         } else {
             // otherwise, just use select *
             selectList = new SqlNodeList(SqlParserPos.ZERO);
             selectList.add(SqlIdentifier.star(SqlParserPos.ZERO));
         }
-
+        SqlNode targetTable = call.getTargetTable();
+        if (call.getAlias() != null) {
+            targetTable =
+                    SqlValidatorUtil.addAlias(
+                            targetTable,
+                            call.getAlias().getSimple());
+        }
 
         // Provided there is an insert substatement, the source select for
         // the merge is a left outer join between the source in the USING
@@ -868,10 +843,10 @@ public class IgniteSqlValidator extends SqlValidatorImpl {
         SqlNode sourceTableRef = call.getSourceTableRef();
         SqlInsert insertCall = call.getInsertCall();
         JoinType joinType = (insertCall == null) ? JoinType.INNER : JoinType.LEFT;
-        // final SqlNode leftJoinTerm = SqlNode.clone(sourceTableRef);
+        final SqlNode leftJoinTerm = SqlNode.clone(sourceTableRef);
         SqlNode outerJoin =
                 new SqlJoin(SqlParserPos.ZERO,
-                        leftJoinTerm1 != null ? leftJoinTerm1 : leftJoinTerm,
+                        leftJoinTerm,
                         SqlLiteral.createBoolean(false, SqlParserPos.ZERO),
                         joinType.symbol(SqlParserPos.ZERO),
                         targetTable,
