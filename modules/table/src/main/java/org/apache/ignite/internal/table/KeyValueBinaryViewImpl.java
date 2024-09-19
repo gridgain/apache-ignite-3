@@ -21,6 +21,10 @@ import static org.apache.ignite.internal.lang.IgniteExceptionMapperUtil.convertT
 import static org.apache.ignite.internal.util.CompletableFutures.trueCompletedFuture;
 import static org.apache.ignite.internal.util.ViewUtils.checkKeysForNulls;
 import static org.apache.ignite.internal.util.ViewUtils.sync;
+import static org.apache.ignite.internal.tracing.Instrumentation.end;
+import static org.apache.ignite.internal.tracing.Instrumentation.mark;
+import static org.apache.ignite.internal.tracing.Instrumentation.measure;
+import static org.apache.ignite.internal.tracing.Instrumentation.start;
 
 import java.util.ArrayList;
 import java.util.BitSet;
@@ -209,7 +213,13 @@ public class KeyValueBinaryViewImpl extends AbstractTableView<Entry<Tuple, Tuple
     /** {@inheritDoc} */
     @Override
     public void put(@Nullable Transaction tx, Tuple key, Tuple val) {
+        start(false);
+        mark("kvPutMark");
+
         sync(putAsync(tx, key, val));
+
+        mark("kvPutEndMark");
+        end();
     }
 
     /** {@inheritDoc} */
@@ -219,7 +229,7 @@ public class KeyValueBinaryViewImpl extends AbstractTableView<Entry<Tuple, Tuple
         Objects.requireNonNull(val, "val");
 
         return doOperation(tx, (schemaVersion) -> {
-            Row row = marshal(key, val, schemaVersion);
+            Row row = measure(() -> marshal(key, val, schemaVersion), "kvMarshal");
 
             return tbl.upsert(row, (InternalTransaction) tx);
         });

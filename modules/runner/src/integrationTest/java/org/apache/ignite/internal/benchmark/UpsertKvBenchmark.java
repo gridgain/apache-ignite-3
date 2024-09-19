@@ -20,6 +20,7 @@ package org.apache.ignite.internal.benchmark;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.apache.ignite.internal.lang.IgniteSystemProperties;
@@ -72,7 +73,7 @@ public class UpsertKvBenchmark extends AbstractMultiNodeBenchmark {
 
     @Override
     public void nodeSetUp() throws Exception {
-        System.setProperty(IgniteSystemProperties.IGNITE_USE_SHARED_EVENT_LOOP, "true");
+        //System.setProperty(IgniteSystemProperties.IGNITE_USE_SHARED_EVENT_LOOP, "true");
         System.setProperty(IgniteSystemProperties.IGNITE_SKIP_REPLICATION_IN_BENCHMARK, "true");
         System.setProperty(IgniteSystemProperties.IGNITE_SKIP_STORAGE_UPDATE_IN_BENCHMARK, "true");
         super.nodeSetUp();
@@ -109,7 +110,7 @@ public class UpsertKvBenchmark extends AbstractMultiNodeBenchmark {
         List<CompletableFuture<Void>> futs = new ArrayList<>();
 
         for (int i = 0; i < batch - 1; i++) {
-            CompletableFuture<Void> fut = kvView.putAsync(null, Tuple.create().set("ycsb_key", id.getAndIncrement()), tuple);
+            CompletableFuture<Void> fut = kvView.putAsync(null, Tuple.create().set("ycsb_key", id.incrementAndGet()), tuple);
             futs.add(fut);
         }
 
@@ -117,7 +118,7 @@ public class UpsertKvBenchmark extends AbstractMultiNodeBenchmark {
             fut.join();
         }
 
-        kvView.put(null, Tuple.create().set("ycsb_key", id.getAndIncrement()), tuple);
+        kvView.put(null, Tuple.create().set("ycsb_key", id.incrementAndGet()), tuple);
     }
 
     /**
@@ -126,7 +127,7 @@ public class UpsertKvBenchmark extends AbstractMultiNodeBenchmark {
     public static void main(String[] args) throws RunnerException {
         Options opt = new OptionsBuilder()
                 .include(".*" + UpsertKvBenchmark.class.getSimpleName() + ".*")
-                .jvmArgsAppend("-Djmh.executor=VIRTUAL")
+                //.jvmArgsAppend("-Djmh.executor=VIRTUAL")
                 //.addProfiler(JavaFlightRecorderProfiler.class, "configName=profile.jfc")
                 .build();
 

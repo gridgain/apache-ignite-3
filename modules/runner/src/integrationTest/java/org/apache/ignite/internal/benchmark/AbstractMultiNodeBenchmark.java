@@ -95,6 +95,8 @@ public class AbstractMultiNodeBenchmark {
             );
 
             createTable(TABLE_NAME);
+
+            Thread.sleep(2000);
         } catch (Throwable th) {
             nodeTearDown();
 
