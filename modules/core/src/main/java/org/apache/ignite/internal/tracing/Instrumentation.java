@@ -78,7 +78,8 @@ public class Instrumentation {
 
         Instrumentation ins = new Instrumentation();
         ins.jfr = jfr;
-        Path file = Path.of("c://work/logs/trace-" + Thread.currentThread().getName() + ".txt");
+
+        Path file = Path.of("/root/asch/trace-" + Thread.currentThread().getName() + ".txt");
         ins.file = file;
 
         // TODO FIXME remove
@@ -246,7 +247,7 @@ public class Instrumentation {
 
         return fut.thenApply(v -> {
             measure.stop();
-            if (holder.get() != null) {
+            if (isStarted()) {
                 holder.get().measurements.add(measure);
             }
             return v;
