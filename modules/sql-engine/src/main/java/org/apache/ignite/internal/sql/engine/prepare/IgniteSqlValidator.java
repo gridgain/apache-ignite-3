@@ -263,7 +263,12 @@ public class IgniteSqlValidator extends SqlValidatorImpl {
 
             // Merge creates a source expression list which is not updated after type coercion adds CASTs
             // to source expressions in Update.
-            syncSelectList(select, update);
+            //syncSelectList(select, update);
+            // Merge creates a source expression list which is not updated after type coercion adds CASTs
+            // to source expressions in Update.
+//            for (int i = 0; i < update.getSourceSelect().getSelectList().size(); i++) {
+//                select.getSelectList().set(i, update.getSourceSelect().getSelectList().get(i));
+//            }
         }
     }
 

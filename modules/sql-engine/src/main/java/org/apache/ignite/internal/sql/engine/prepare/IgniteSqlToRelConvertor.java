@@ -25,6 +25,7 @@ import java.util.Deque;
 import java.util.List;
 import org.apache.calcite.plan.RelOptCluster;
 import org.apache.calcite.plan.RelOptTable;
+import org.apache.calcite.plan.RelOptUtil;
 import org.apache.calcite.prepare.Prepare;
 import org.apache.calcite.rel.RelNode;
 import org.apache.calcite.rel.RelRoot;
@@ -80,7 +81,13 @@ public class IgniteSqlToRelConvertor extends SqlToRelConverter implements Initia
     /** {@inheritDoc} */
     @Override protected RelRoot convertQueryRecursive(SqlNode qry, boolean top, @Nullable RelDataType targetRowType) {
         if (qry.getKind() == SqlKind.MERGE) {
-            return RelRoot.of(convertMerge((SqlMerge) qry), qry.getKind());
+            System.out.println(">xxx> src\n" + qry);
+
+            RelRoot res = RelRoot.of(convertMerge((SqlMerge) qry), qry.getKind());
+
+            System.out.println(">xxx> rel\n" + RelOptUtil.toString(res.rel));
+
+            return res;
         } else {
             return super.convertQueryRecursive(qry, top, targetRowType);
         }

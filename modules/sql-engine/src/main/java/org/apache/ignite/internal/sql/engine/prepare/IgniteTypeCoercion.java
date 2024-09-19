@@ -18,6 +18,7 @@
 package org.apache.ignite.internal.sql.engine.prepare;
 
 import static java.util.Objects.requireNonNull;
+import static org.apache.calcite.linq4j.Nullness.castNonNull;
 import static org.apache.calcite.rel.type.RelDataType.PRECISION_NOT_SPECIFIED;
 import static org.apache.calcite.sql.type.NonNullableAccessors.getCollation;
 import static org.apache.calcite.sql.type.SqlTypeName.CHAR_TYPES;
@@ -35,6 +36,7 @@ import org.apache.calcite.rel.type.DynamicRecordType;
 import org.apache.calcite.rel.type.RelDataType;
 import org.apache.calcite.rel.type.RelDataTypeFactory;
 import org.apache.calcite.rel.type.RelDataTypeFactoryImpl;
+import org.apache.calcite.rel.type.RelDataTypeField;
 import org.apache.calcite.sql.SqlCall;
 import org.apache.calcite.sql.SqlCallBinding;
 import org.apache.calcite.sql.SqlCollation;
@@ -53,6 +55,7 @@ import org.apache.calcite.sql.SqlUtil;
 import org.apache.calcite.sql.fun.SqlStdOperatorTable;
 import org.apache.calcite.sql.parser.SqlParserPos;
 import org.apache.calcite.sql.type.SqlTypeFamily;
+import org.apache.calcite.sql.type.SqlTypeMappingRule;
 import org.apache.calcite.sql.type.SqlTypeName;
 import org.apache.calcite.sql.type.SqlTypeUtil;
 import org.apache.calcite.sql.validate.SqlValidator;
@@ -275,9 +278,74 @@ public class IgniteTypeCoercion extends TypeCoercionImpl {
         try {
             validateDynamicParametersInModify(scope, targetRowType, query);
 
-            return super.querySourceCoercion(scope, sourceRowType, targetRowType, query);
+            return querySourceCoercion0(scope, sourceRowType, targetRowType, query);
         } finally {
             ctxStack.pop(ctx);
+        }
+    }
+
+    private boolean querySourceCoercion0(@org.checkerframework.checker.nullness.qual.Nullable SqlValidatorScope scope,
+            RelDataType sourceRowType, RelDataType targetRowType, SqlNode query) {
+        final List<RelDataTypeField> sourceFields = sourceRowType.getFieldList();
+        final List<RelDataTypeField> targetFields = targetRowType.getFieldList();
+        final int sourceCount = sourceFields.size();
+        SqlTypeMappingRule mappingRule = validator.getTypeMappingRule();
+        for (int i = 0; i < sourceCount; i++) {
+            RelDataType sourceType = sourceFields.get(i).getType();
+            RelDataType targetType = targetFields.get(i).getType();
+            if (!SqlTypeUtil.equalSansNullability(validator.getTypeFactory(), sourceType, targetType)
+                    && !SqlTypeUtil.canCastFrom(targetType, sourceType, mappingRule)) {
+                // Returns early if types not equals and can not do type coercion.
+                return false;
+            }
+        }
+        boolean coerced = false;
+        for (int i = 0; i < sourceFields.size(); i++) {
+            RelDataType targetType = targetFields.get(i).getType();
+            coerced = coerceSourceRowType(scope, query, i, targetType) || coerced;
+        }
+        return coerced;
+    }
+
+    private boolean coerceSourceRowType(
+            @org.checkerframework.checker.nullness.qual.Nullable SqlValidatorScope sourceScope,
+            SqlNode query,
+            int columnIndex,
+            RelDataType targetType) {
+        switch (query.getKind()) {
+            case INSERT:
+                SqlInsert insert = (SqlInsert) query;
+                return coerceSourceRowType(sourceScope,
+                        insert.getSource(),
+                        columnIndex,
+                        targetType);
+            case UPDATE:
+                SqlUpdate update = (SqlUpdate) query;
+                final SqlNodeList sourceExpressionList = update.getSourceExpressionList();
+                if (sourceExpressionList != null) {
+                    SqlSelect sourceSelect = update.getSourceSelect();
+
+                    assert sourceSelect != null;
+
+                    int exprOffset = sourceSelect.getSelectList().size() - sourceExpressionList.size();
+
+                    boolean coerced = coerceColumnType(sourceScope, sourceSelect.getSelectList(), exprOffset + columnIndex, targetType);
+
+                    if (coerced) {
+                        coerceColumnType(sourceScope, sourceExpressionList, columnIndex, targetType);
+                        //sourceExpressionList.set(columnIndex, sourceSelect.getSelectList().get(exprOffset + columnIndex));
+                    }
+
+                    return coerced;
+                } else {
+                    // Note: this is dead code since sourceExpressionList is always non-null
+                    return coerceSourceRowType(sourceScope,
+                            castNonNull(update.getSourceSelect()),
+                            columnIndex,
+                            targetType);
+                }
+            default:
+                return rowTypeCoercion(sourceScope, query, columnIndex, targetType);
         }
     }
 
