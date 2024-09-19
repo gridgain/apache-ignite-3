@@ -809,21 +809,13 @@ public class IgniteSqlValidator extends SqlValidatorImpl {
         return resNode;
     }
 
-    private static SqlIdentifier extractId(SqlNode node) {
-        if (node.getKind() == SqlKind.AS) {
-            return ((SqlBasicCall) node).operand(1);
-        }
-
-        return (SqlIdentifier) node;
-    }
-
     private static void rewriteMergeAgain(SqlMerge call) {
         SqlNodeList selectList;
         SqlUpdate updateStmt = call.getUpdateCall();
         // can be alias
-        SqlNode leftJoinTerm = SqlNode.clone(call.getSourceTableRef());
-        SqlNode targetTable = call.getTargetTable();
+        SqlIdentifier leftJoinTerm = (SqlIdentifier) SqlNode.clone(call.getSourceTableRef());
 
+        SqlNode targetTable = call.getTargetTable();
         if (call.getAlias() != null) {
             targetTable =
                     SqlValidatorUtil.addAlias(
@@ -831,9 +823,7 @@ public class IgniteSqlValidator extends SqlValidatorImpl {
                             call.getAlias().getSimple());
         }
 
-        SqlIdentifier targetTableId = extractId(targetTable);
-
-        SqlNode joinTerm = null;
+        SqlNode leftJoinTerm1 = null;
         //SqlIdentifier someAlias = new SqlIdentifier(SqlUtil.deriveAliasFromOrdinal(111), SqlParserPos.ZERO);
 
         if (updateStmt != null) {
@@ -846,19 +836,22 @@ public class IgniteSqlValidator extends SqlValidatorImpl {
             SqlNodeList nodeList = new SqlNodeList(SqlParserPos.ZERO);
 
             for (SqlNode node : sourceSelect.getSelectList()) {
-                assert node instanceof SqlIdentifier : node.getClass().getName();
+                String name;
+                if (node instanceof SqlIdentifier) {
+                    name = ((SqlIdentifier) node).getSimple();
+//                } else if (node instanceof SqlBasicCall) {
+//                    name = ((SqlIdentifier)((SqlBasicCall) node).operand(1)).getSimple();
+                } else {
+                    throw new UnsupportedOperationException("blah");
+                }
 
-                nodeList.add(targetTableId.plus(((SqlIdentifier) node).getSimple(), SqlParserPos.ZERO));
+                nodeList.add(((SqlIdentifier) targetTable).plus(name, SqlParserPos.ZERO));
             }
-
-            SqlNode fromSelect = sourceSelect.getFrom();
-
-            assert fromSelect instanceof SqlSelect : fromSelect == null ? "null" : fromSelect.getClass().getName();
 
             SqlNodeList subSelectList = ((SqlSelect) sourceSelect.getFrom()).getSelectList();
 
-            joinTerm = SqlValidatorUtil.addAlias(new SqlSelect(SqlParserPos.ZERO, null, subSelectList, targetTable, null,
-                    null, null, null, null, null, null, null, null), targetTableId.getSimple());
+            leftJoinTerm1 = SqlValidatorUtil.addAlias(new SqlSelect(SqlParserPos.ZERO, null, subSelectList, targetTable,
+                    null, null, null, null, null, null, null, null, null), ((SqlIdentifier) targetTable).getSimple());
 
             selectList = nodeList;
         } else {
@@ -879,10 +872,10 @@ public class IgniteSqlValidator extends SqlValidatorImpl {
         // final SqlNode leftJoinTerm = SqlNode.clone(sourceTableRef);
         SqlNode outerJoin =
                 new SqlJoin(SqlParserPos.ZERO,
-                        leftJoinTerm,
+                        leftJoinTerm1 != null ? leftJoinTerm1 : leftJoinTerm,
                         SqlLiteral.createBoolean(false, SqlParserPos.ZERO),
                         joinType.symbol(SqlParserPos.ZERO),
-                        joinTerm != null ? joinTerm : targetTable,
+                        leftJoinTerm,
                         JoinConditionType.ON.symbol(SqlParserPos.ZERO),
                         call.getCondition());
         SqlSelect select =
