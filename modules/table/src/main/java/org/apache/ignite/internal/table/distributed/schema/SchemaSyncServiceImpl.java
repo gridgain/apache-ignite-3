@@ -45,9 +45,11 @@ public class SchemaSyncServiceImpl implements SchemaSyncService {
     public CompletableFuture<Void> waitForMetadataCompleteness(HybridTimestamp ts) {
         // There a corner case for tests that are using {@code WatchListenerInhibitor#metastorageEventsInhibitor}
         // that leads to current time equals {@link HybridTimestamp#MIN_VALUE} and this method is waiting forever.
-        if (HybridTimestamp.MIN_VALUE.equals(clusterTime.currentSafeTime())) {
-            return nullCompletedFuture();
-        }
-        return clusterTime.waitFor(ts.subtractPhysicalTime(delayDurationMs.getAsLong()));
+//        if (HybridTimestamp.MIN_VALUE.equals(clusterTime.currentSafeTime())) {
+//            return nullCompletedFuture();
+//        }
+//        return clusterTime.waitFor(ts.subtractPhysicalTime(delayDurationMs.getAsLong()));
+
+        return nullCompletedFuture();
     }
 }
