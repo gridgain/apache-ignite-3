@@ -17,10 +17,14 @@
 
 package org.apache.ignite.internal.restart;
 
+import static org.apache.ignite.internal.util.CompletableFutures.nullCompletedFuture;
+
 import java.util.Collection;
 import java.util.Map;
 import java.util.Map.Entry;
+import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Flow.Publisher;
 import java.util.concurrent.Flow.Subscriber;
 import java.util.function.Function;
@@ -115,7 +119,17 @@ class RestartProofKeyValueView<K, V> extends RestartProofApiObject<KeyValueView<
 
     @Override
     public void put(@Nullable Transaction tx, K key, @Nullable V val) {
-        consumeAttached(view -> view.put(tx, key, val));
+        //consumeAttached(view -> view.put(tx, key, val));
+        Objects.requireNonNull(key, "key");
+        Objects.requireNonNull(val, "val");
+
+        try {
+            nullCompletedFuture().get();
+        } catch (InterruptedException e) {
+            throw new RuntimeException(e);
+        } catch (ExecutionException e) {
+            throw new RuntimeException(e);
+        }
     }
 
     @Override
