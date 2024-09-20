@@ -78,7 +78,7 @@ public class UpsertKvBenchmark extends AbstractMultiNodeBenchmark {
 
         //igniteImpl.metricManager().enable("raft");
 
-        kvView = publicIgnite.tables().table(TABLE_NAME).keyValueView();
+        kvView = igniteImpl.tables().table(TABLE_NAME).keyValueView();
         for (int i = 1; i < 11; i++) {
             tuple.set("field" + i, FIELD_VAL);
         }
