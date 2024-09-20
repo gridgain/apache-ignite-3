@@ -48,10 +48,6 @@ public class SchemaSyncServiceImpl implements SchemaSyncService {
 //        if (HybridTimestamp.MIN_VALUE.equals(clusterTime.currentSafeTime())) {
 //            return nullCompletedFuture();
 //        }
-//        return clusterTime.waitFor(ts.subtractPhysicalTime(delayDurationMs.getAsLong()));
-
-        ts.subtractPhysicalTime2(delayDurationMs.getAsLong());
-
-        return nullCompletedFuture();
+        return clusterTime.waitFor(ts.subtractPhysicalTime(delayDurationMs.getAsLong()));
     }
 }
