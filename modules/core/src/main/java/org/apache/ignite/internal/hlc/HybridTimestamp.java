@@ -227,10 +227,6 @@ public final class HybridTimestamp implements Comparable<HybridTimestamp>, Seria
         return new HybridTimestamp(time - (millis << LOGICAL_TIME_BITS_SIZE));
     }
 
-    public void subtractPhysicalTime2(long millis) {
-        time -= (millis << LOGICAL_TIME_BITS_SIZE);
-    }
-
     /**
      * Returns a result of rounding this timestamp up 'to its physical part': that is, if the logical part is zero, the timestamp is
      * returned as is; if it's non-zero, a new timestamp is returned that has physical part equal to the physical part of this
