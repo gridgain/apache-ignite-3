@@ -227,12 +227,14 @@ public class KeyValueBinaryViewImpl extends AbstractTableView<Entry<Tuple, Tuple
         Objects.requireNonNull(key, "key");
         Objects.requireNonNull(val, "val");
 
-        return doOperation(tx, (schemaVersion) -> {
-            Row row = measure(() -> marshal(key, val, schemaVersion), "kvMarshal");
+        return nullCompletedFuture();
 
-            return nullCompletedFuture();
-            //return tbl.upsert(row, (InternalTransaction) tx);
-        });
+//        return doOperation(tx, (schemaVersion) -> {
+//            Row row = measure(() -> marshal(key, val, schemaVersion), "kvMarshal");
+//
+//            return nullCompletedFuture();
+//            //return tbl.upsert(row, (InternalTransaction) tx);
+//        });
     }
 
     /** {@inheritDoc} */
