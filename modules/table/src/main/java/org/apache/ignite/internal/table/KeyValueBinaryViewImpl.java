@@ -18,6 +18,7 @@
 package org.apache.ignite.internal.table;
 
 import static org.apache.ignite.internal.lang.IgniteExceptionMapperUtil.convertToPublicFuture;
+import static org.apache.ignite.internal.util.CompletableFutures.nullCompletedFuture;
 import static org.apache.ignite.internal.util.CompletableFutures.trueCompletedFuture;
 import static org.apache.ignite.internal.util.ViewUtils.checkKeysForNulls;
 import static org.apache.ignite.internal.util.ViewUtils.sync;
@@ -229,7 +230,8 @@ public class KeyValueBinaryViewImpl extends AbstractTableView<Entry<Tuple, Tuple
         return doOperation(tx, (schemaVersion) -> {
             Row row = measure(() -> marshal(key, val, schemaVersion), "kvMarshal");
 
-            return tbl.upsert(row, (InternalTransaction) tx);
+            return nullCompletedFuture();
+            //return tbl.upsert(row, (InternalTransaction) tx);
         });
     }
 
