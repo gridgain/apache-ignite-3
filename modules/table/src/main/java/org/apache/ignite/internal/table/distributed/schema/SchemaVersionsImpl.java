@@ -58,7 +58,6 @@ public class SchemaVersionsImpl implements SchemaVersions {
 
         return schemaSyncService.waitForMetadataCompleteness(timestamp)
                 .thenApply(unused -> {
-
                     return 1;
                 });
     }
