@@ -48,7 +48,7 @@ public class SchemaSyncServiceImpl implements SchemaSyncService {
 //        }
 //        return clusterTime.waitFor(ts.subtractPhysicalTime(delayDurationMs.getAsLong()));
 
-        ts.subtractPhysicalTime(delayDurationMs.getAsLong());
+        ts.subtractPhysicalTime2(delayDurationMs.getAsLong());
 
         return nullCompletedFuture();
     }

@@ -54,7 +54,7 @@ public final class HybridTimestamp implements Comparable<HybridTimestamp>, Seria
     public static final HybridTimestamp MIN_VALUE = new HybridTimestamp(0L, 1);
 
     /** Long time value, that consists of physical time in higher 6 bytes and logical time in lower 2 bytes. */
-    private final long time;
+    private long time;
 
     /**
      * The constructor.
@@ -235,6 +235,10 @@ public final class HybridTimestamp implements Comparable<HybridTimestamp>, Seria
         }
 
         return new HybridTimestamp(time - (millis << LOGICAL_TIME_BITS_SIZE));
+    }
+
+    public void subtractPhysicalTime2(long millis) {
+        time -= (millis << LOGICAL_TIME_BITS_SIZE);
     }
 
     /**
