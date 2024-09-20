@@ -119,17 +119,7 @@ class RestartProofKeyValueView<K, V> extends RestartProofApiObject<KeyValueView<
 
     @Override
     public void put(@Nullable Transaction tx, K key, @Nullable V val) {
-        //consumeAttached(view -> view.put(tx, key, val));
-        Objects.requireNonNull(key, "key");
-        Objects.requireNonNull(val, "val");
-
-        try {
-            nullCompletedFuture().get();
-        } catch (InterruptedException e) {
-            throw new RuntimeException(e);
-        } catch (ExecutionException e) {
-            throw new RuntimeException(e);
-        }
+        consumeAttached(view -> view.put(tx, key, val));
     }
 
     @Override
