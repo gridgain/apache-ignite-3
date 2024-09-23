@@ -3044,12 +3044,14 @@ public class PartitionReplicaListener implements ReplicaListener {
                             ? measure(() -> takeLocksForInsert(searchRow, rowId0, txId), "takeLocksForInsert")
                             : measure(() -> takeLocksForUpdate(searchRow, rowId0, txId), "takeLocksForUpdate");
 
-                    return lockFut.thenApply(rowIdLock -> {
-                        // Release short term locks.
-                        rowIdLock.get2().forEach(lock -> lockManager.release(lock.txId(), lock.lockKey(), lock.lockMode()));
+                    return lockFut
+                            .thenCompose(rowIdLock -> validateWriteAgainstSchemaAfterTakingLocks(request.transactionId())
+                                    .thenApply(catalogVer -> {
+                                        // Release short term locks.
+                                        rowIdLock.get2().forEach(lock -> lockManager.release(lock.txId(), lock.lockKey(), lock.lockMode()));
 
-                        return new ReplicaResult(null, nullCompletedFuture());
-                    });
+                                        return new ReplicaResult(null, nullCompletedFuture());
+                                    }));
 
 //
 //                    return lockFut
