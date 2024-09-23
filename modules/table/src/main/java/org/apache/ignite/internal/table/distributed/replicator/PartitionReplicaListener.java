@@ -3035,8 +3035,10 @@ public class PartitionReplicaListener implements ReplicaListener {
                 });
             }
             case RW_UPSERT: {
-                return resolveRowByPk(measure(() -> extractPk(searchRow), "extractPk"), txId, (rowId, row, lastCommitTime) -> {
-                    return nullCompletedFuture();
+                return nullCompletedFuture();
+
+//                return resolveRowByPk(measure(() -> extractPk(searchRow), "extractPk"), txId, (rowId, row, lastCommitTime) -> {
+
 
 //                    boolean insert = rowId == null;
 //
@@ -3075,7 +3077,7 @@ public class PartitionReplicaListener implements ReplicaListener {
 //
 //                                return new ReplicaResult(null, tuple.get1());
 //                            });
-                });
+//                });
             }
             case RW_GET_AND_UPSERT: {
                 return resolveRowByPk(extractPk(searchRow), txId, (rowId, row, lastCommitTime) -> {
