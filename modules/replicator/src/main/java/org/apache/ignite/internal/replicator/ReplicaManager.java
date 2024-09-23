@@ -381,13 +381,13 @@ public class ReplicaManager extends AbstractEventProducer<LocalReplicaEvent, Loc
     }
 
     private void handleReplicaRequest(ReplicaRequest request, ClusterNode sender, @Nullable Long correlationId) {
-        if (!busyLock.enterBusy()) {
-            if (LOG.isInfoEnabled()) {
-                LOG.info("Failed to process replica request (the node is stopping) [request={}].", request);
-            }
-
-            return;
-        }
+//        if (!busyLock.enterBusy()) {
+//            if (LOG.isInfoEnabled()) {
+//                LOG.info("Failed to process replica request (the node is stopping) [request={}].", request);
+//            }
+//
+//            return;
+//        }
 
         ReplicationGroupId groupId = groupIdConverter.apply(request);
 
@@ -435,7 +435,7 @@ public class ReplicaManager extends AbstractEventProducer<LocalReplicaEvent, Loc
             }
 
             if (requestTimestamp != null) {
-                clockService.updateClock(requestTimestamp);
+                // clockService.updateClock(requestTimestamp);
             }
 
             boolean sendTimestamp = request instanceof TimestampAware || request instanceof ReadOnlyDirectReplicaRequest;
@@ -488,7 +488,7 @@ public class ReplicaManager extends AbstractEventProducer<LocalReplicaEvent, Loc
                 }
             });
         } finally {
-            busyLock.leaveBusy();
+            // busyLock.leaveBusy();
         }
     }
 
