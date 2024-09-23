@@ -26,7 +26,6 @@ import java.lang.invoke.VarHandle;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicLongFieldUpdater;
-import java.util.concurrent.atomic.LongAdder;
 import org.apache.ignite.internal.logger.IgniteLogger;
 import org.apache.ignite.internal.logger.Loggers;
 import org.apache.ignite.internal.tostring.S;
@@ -46,8 +45,6 @@ public class HybridClockImpl implements HybridClock {
     private volatile long latestTime;
 
     private final List<ClockUpdateListener> updateListeners = new CopyOnWriteArrayList<>();
-
-    private LongAdder logical = new LongAdder();
 
     /**
      * The constructor which initializes the latest time to current time by system clock.
@@ -75,8 +72,7 @@ public class HybridClockImpl implements HybridClock {
             long oldLatestTime = latestTime;
 
             if (oldLatestTime >= now) {
-                logical.increment();
-                return latestTime | logical.sum();
+                return LATEST_TIME.incrementAndGet(this);
             }
 
             long newLatestTime = max(oldLatestTime + 1, now);
