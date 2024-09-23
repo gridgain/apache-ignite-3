@@ -376,6 +376,14 @@ public class ReplicaManager extends AbstractEventProducer<LocalReplicaEvent, Loc
     }
 
     private void handleReplicaRequest(ReplicaRequest request, ClusterNode sender, @Nullable Long correlationId) {
+        if (request.getClass().getName().contains("ReadWriteSingleRowReplicaRequestImpl")) {
+            String senderConsistentId = sender.name();
+            NetworkMessage msg = prepareReplicaResponse(false, null);
+
+            clusterNetSvc.messagingService().respond(senderConsistentId, msg, correlationId);
+            return;
+        }
+
 //        if (!busyLock.enterBusy()) {
 //            if (LOG.isInfoEnabled()) {
 //                LOG.info("Failed to process replica request (the node is stopping) [request={}].", request);
