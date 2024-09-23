@@ -634,7 +634,7 @@ public class InternalTableImpl implements InternalTable {
                 || request instanceof SwapRowReplicaRequest;
 
         if (full) { // Full transaction retries are handled in postEnlist.
-            return nullCompletedFuture(); // replicaSvc.invoke(primaryReplicaAndConsistencyToken.get1(), request);
+            return replicaSvc.invoke(primaryReplicaAndConsistencyToken.get1(), request);
         } else {
             if (write) { // Track only write requests from explicit transactions.
                 if (!transactionInflights.addInflight(tx.id(), false)) {
