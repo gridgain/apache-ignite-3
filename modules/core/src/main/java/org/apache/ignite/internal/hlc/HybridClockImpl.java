@@ -26,6 +26,7 @@ import java.lang.invoke.VarHandle;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicLongFieldUpdater;
+import java.util.concurrent.atomic.LongAdder;
 import org.apache.ignite.internal.logger.IgniteLogger;
 import org.apache.ignite.internal.logger.Loggers;
 import org.apache.ignite.internal.tostring.S;
@@ -46,6 +47,8 @@ public class HybridClockImpl implements HybridClock {
 
     private final List<ClockUpdateListener> updateListeners = new CopyOnWriteArrayList<>();
 
+    private LongAdder logical = new LongAdder();
+
     /**
      * The constructor which initializes the latest time to current time by system clock.
      */
@@ -65,24 +68,23 @@ public class HybridClockImpl implements HybridClock {
 
     @Override
     public long nowLong() {
-        return currentTime();
+        while (true) {
+            long now = currentTime();
 
-//        while (true) {
-//            long now = currentTime();
-//
-//            // Read the latest time after accessing UTC time to reduce contention.
-//            long oldLatestTime = latestTime;
-//
-//            if (oldLatestTime >= now) {
-//                return LATEST_TIME.incrementAndGet(this);
-//            }
-//
-//            long newLatestTime = max(oldLatestTime + 1, now);
-//
-//            if (LATEST_TIME.compareAndSet(this, oldLatestTime, newLatestTime)) {
-//                return newLatestTime;
-//            }
-//        }
+            // Read the latest time after accessing UTC time to reduce contention.
+            long oldLatestTime = latestTime;
+
+            if (oldLatestTime >= now) {
+                logical.increment();
+                return latestTime | logical.sum();
+            }
+
+            long newLatestTime = max(oldLatestTime + 1, now);
+
+            if (LATEST_TIME.compareAndSet(this, oldLatestTime, newLatestTime)) {
+                return newLatestTime;
+            }
+        }
     }
 
     private void notifyUpdateListeners(long newTs) {
