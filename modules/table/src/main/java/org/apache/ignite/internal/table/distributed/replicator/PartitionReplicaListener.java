@@ -3036,14 +3036,21 @@ public class PartitionReplicaListener implements ReplicaListener {
             }
             case RW_UPSERT: {
                 return resolveRowByPk(measure(() -> extractPk(searchRow), "extractPk"), txId, (rowId, row, lastCommitTime) -> {
-                    return nullCompletedFuture();
-//                    boolean insert = rowId == null;
-//
-//                    RowId rowId0 = insert ? new RowId(partId(), RowIdGenerator.next()) : rowId;
-//
-//                    CompletableFuture<IgniteBiTuple<RowId, Collection<Lock>>> lockFut = insert
-//                            ? measure(() -> takeLocksForInsert(searchRow, rowId0, txId), "takeLocksForInsert")
-//                            : measure(() -> takeLocksForUpdate(searchRow, rowId0, txId), "takeLocksForUpdate");
+                    boolean insert = rowId == null;
+
+                    RowId rowId0 = insert ? new RowId(partId(), RowIdGenerator.next()) : rowId;
+
+                    CompletableFuture<IgniteBiTuple<RowId, Collection<Lock>>> lockFut = insert
+                            ? measure(() -> takeLocksForInsert(searchRow, rowId0, txId), "takeLocksForInsert")
+                            : measure(() -> takeLocksForUpdate(searchRow, rowId0, txId), "takeLocksForUpdate");
+
+                    return lockFut.thenApply(rowIdLock -> {
+                        // Release short term locks.
+                        rowIdLock.get2().forEach(lock -> lockManager.release(lock.txId(), lock.lockKey(), lock.lockMode()));
+
+                        return new ReplicaResult(null, nullCompletedFuture());
+                    });
+
 //
 //                    return lockFut
 //                            .thenCompose(rowIdLock -> validateWriteAgainstSchemaAfterTakingLocks(request.transactionId())
