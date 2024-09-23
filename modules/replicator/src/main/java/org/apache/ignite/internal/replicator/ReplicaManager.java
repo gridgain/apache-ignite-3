@@ -376,13 +376,34 @@ public class ReplicaManager extends AbstractEventProducer<LocalReplicaEvent, Loc
     }
 
     private void handleReplicaRequest(ReplicaRequest request, ClusterNode sender, @Nullable Long correlationId) {
-//        if (request.getClass().getName().contains("ReadWriteSingleRowReplicaRequestImpl")) {
+        if (request.getClass().getName().contains("ReadWriteSingleRowReplicaRequestImpl")) {
 //            String senderConsistentId = sender.name();
 //            NetworkMessage msg = prepareReplicaResponse(false, null);
 //
 //            clusterNetSvc.messagingService().respond(senderConsistentId, msg, correlationId);
 //            return;
-//        }
+
+            ReplicationGroupId groupId = request.groupId().asReplicationGroupId();
+
+            String senderConsistentId = sender.name();
+
+            CompletableFuture<Replica> replicaFut = replicas.get(groupId);
+
+            //boolean sendTimestamp = request instanceof TimestampAware || request instanceof ReadOnlyDirectReplicaRequest;
+
+            // replicaFut is always completed here.
+            Replica replica = replicaFut.join();
+
+            String senderId = sender.id();
+
+            CompletableFuture<ReplicaResult> resFut = replica.processRequest(request, senderId);
+
+            resFut.whenComplete((res, ex) -> {
+                NetworkMessage msg = prepareReplicaResponse(false, null);
+
+                clusterNetSvc.messagingService().respond(senderConsistentId, msg, correlationId);
+            });
+        }
 
 //        if (!busyLock.enterBusy()) {
 //            if (LOG.isInfoEnabled()) {
@@ -392,11 +413,11 @@ public class ReplicaManager extends AbstractEventProducer<LocalReplicaEvent, Loc
 //            return;
 //        }
 
-        ReplicationGroupId groupId = groupIdConverter.apply(request);
+        ReplicationGroupId groupId = request.groupId().asReplicationGroupId();
 
         String senderConsistentId = sender.name();
 
-        try {
+        //try {
             // Notify the sender that the Replica is created and ready to process requests.
             if (request instanceof AwaitReplicaRequest) {
                 replicas.compute(groupId, (replicationGroupId, replicaFut) -> {
@@ -438,7 +459,7 @@ public class ReplicaManager extends AbstractEventProducer<LocalReplicaEvent, Loc
             }
 
             if (requestTimestamp != null) {
-                // clockService.updateClock(requestTimestamp);
+                clockService.updateClock(requestTimestamp);
             }
 
             boolean sendTimestamp = request instanceof TimestampAware || request instanceof ReadOnlyDirectReplicaRequest;
@@ -448,9 +469,7 @@ public class ReplicaManager extends AbstractEventProducer<LocalReplicaEvent, Loc
 
             String senderId = sender.id();
 
-            boolean skip = request.getClass().getName().contains("ReadWriteSingleRowReplicaRequestImpl");
-
-            CompletableFuture<ReplicaResult> resFut = skip ? CompletableFuture.completedFuture(new ReplicaResult(null, null)) : replica.processRequest(request, senderId);
+            CompletableFuture<ReplicaResult> resFut = replica.processRequest(request, senderId);
 
             resFut.whenComplete((res, ex) -> {
                 NetworkMessage msg;
@@ -492,9 +511,9 @@ public class ReplicaManager extends AbstractEventProducer<LocalReplicaEvent, Loc
                     });
                 }
             });
-        } finally {
-            // busyLock.leaveBusy();
-        }
+//        } finally {
+//            // busyLock.leaveBusy();
+//        }
     }
 
     private static boolean indicatesUnexpectedProblem(Throwable ex) {
