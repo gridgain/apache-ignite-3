@@ -395,7 +395,7 @@ public class TxManagerImpl implements TxManager, NetworkMessageHandler {
         // startedTxs.add(1);
 
         if (!readOnly) {
-            txStateVolatileStorage.initialize(txId, localNodeId);
+            // txStateVolatileStorage.initialize(txId, localNodeId);
 
             return new ReadWriteTransactionImpl(this, timestampTracker, txId, localNodeId);
         }
@@ -472,13 +472,13 @@ public class TxManagerImpl implements TxManager, NetworkMessageHandler {
             finalState = ABORTED;
         }
 
-        updateTxMeta(txId, old ->
-                new TxStateMeta(
-                        finalState,
-                        old == null ? null : old.txCoordinatorId(),
-                        old == null ? null : old.commitPartitionId(),
-                        old == null ? null : old.commitTimestamp()
-                ));
+//        updateTxMeta(txId, old ->
+//                new TxStateMeta(
+//                        finalState,
+//                        old == null ? null : old.txCoordinatorId(),
+//                        old == null ? null : old.commitPartitionId(),
+//                        old == null ? null : old.commitTimestamp()
+//                ));
 
         // decrementRwTxCount(txId);
     }
