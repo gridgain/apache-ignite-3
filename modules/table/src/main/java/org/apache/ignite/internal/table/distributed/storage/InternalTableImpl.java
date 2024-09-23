@@ -1070,25 +1070,24 @@ public class InternalTableImpl implements InternalTable {
     /** {@inheritDoc} */
     @Override
     public CompletableFuture<Void> upsert(BinaryRowEx row, @Nullable InternalTransaction tx) {
-        return nullCompletedFuture();
-//        return enlistInTx(
-//                row,
-//                tx,
-//                (txo, groupId, enlistmentConsistencyToken) -> TABLE_MESSAGES_FACTORY.readWriteSingleRowReplicaRequest()
-//                        .groupId(serializeTablePartitionId(groupId))
-//                        .tableId(tableId)
-//                        .commitPartitionId(serializeTablePartitionId(txo.commitPartition()))
-//                        .schemaVersion(row.schemaVersion())
-//                        .binaryTuple(row.tupleSlice())
-//                        .transactionId(txo.id())
-//                        .enlistmentConsistencyToken(enlistmentConsistencyToken)
-//                        .requestType(RW_UPSERT)
-//                        .timestamp(clock.now())
-//                        .full(tx == null)
-//                        .coordinatorId(txo.coordinatorId())
-//                        .build(),
-//                (res, req) -> false
-//        );
+        return enlistInTx(
+                row,
+                tx,
+                (txo, groupId, enlistmentConsistencyToken) -> TABLE_MESSAGES_FACTORY.readWriteSingleRowReplicaRequest()
+                        .groupId(serializeTablePartitionId(groupId))
+                        .tableId(tableId)
+                        .commitPartitionId(serializeTablePartitionId(txo.commitPartition()))
+                        .schemaVersion(row.schemaVersion())
+                        .binaryTuple(row.tupleSlice())
+                        .transactionId(txo.id())
+                        .enlistmentConsistencyToken(enlistmentConsistencyToken)
+                        .requestType(RW_UPSERT)
+                        .timestamp(clock.now())
+                        .full(tx == null)
+                        .coordinatorId(txo.coordinatorId())
+                        .build(),
+                (res, req) -> false
+        );
     }
 
     /** {@inheritDoc} */

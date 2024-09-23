@@ -3036,13 +3036,15 @@ public class PartitionReplicaListener implements ReplicaListener {
             }
             case RW_UPSERT: {
                 return resolveRowByPk(measure(() -> extractPk(searchRow), "extractPk"), txId, (rowId, row, lastCommitTime) -> {
-                    boolean insert = rowId == null;
+                    return nullCompletedFuture();
 
-                    RowId rowId0 = insert ? new RowId(partId(), RowIdGenerator.next()) : rowId;
+//                    boolean insert = rowId == null;
+//
+//                    RowId rowId0 = insert ? new RowId(partId(), RowIdGenerator.next()) : rowId;
 
-                    CompletableFuture<IgniteBiTuple<RowId, Collection<Lock>>> lockFut = insert
-                            ? measure(() -> takeLocksForInsert(searchRow, rowId0, txId), "takeLocksForInsert")
-                            : measure(() -> takeLocksForUpdate(searchRow, rowId0, txId), "takeLocksForUpdate");
+//                    CompletableFuture<IgniteBiTuple<RowId, Collection<Lock>>> lockFut = insert
+//                            ? measure(() -> takeLocksForInsert(searchRow, rowId0, txId), "takeLocksForInsert")
+//                            : measure(() -> takeLocksForUpdate(searchRow, rowId0, txId), "takeLocksForUpdate");
 
 //                    return lockFut
 //                            .thenCompose(rowIdLock -> validateWriteAgainstSchemaAfterTakingLocks(request.transactionId())
@@ -3053,26 +3055,26 @@ public class PartitionReplicaListener implements ReplicaListener {
 //                                        return new ReplicaResult(null, nullCompletedFuture());
 //                                    }));
 
-                    return lockFut
-                            .thenCompose(rowIdLock -> validateWriteAgainstSchemaAfterTakingLocks(request.transactionId())
-                                    .thenCompose(catalogVersion -> measure(() -> awaitCleanup(rowId, catalogVersion), "awaitCleanup"))
-                                    .thenCompose(
-                                            catalogVersion -> applyUpdateCommand(
-                                                    request,
-                                                    rowId0.uuid(),
-                                                    searchRow,
-                                                    lastCommitTime,
-                                                    catalogVersion,
-                                                    leaseStartTime
-                                            )
-                                    )
-                                    .thenApply(res -> new IgniteBiTuple<>(res, rowIdLock)))
-                            .thenApply(tuple -> {
-                                // Release short term locks.
-                                tuple.get2().get2().forEach(lock -> lockManager.release(lock.txId(), lock.lockKey(), lock.lockMode()));
-
-                                return new ReplicaResult(null, tuple.get1());
-                            });
+//                    return lockFut
+//                            .thenCompose(rowIdLock -> validateWriteAgainstSchemaAfterTakingLocks(request.transactionId())
+//                                    .thenCompose(catalogVersion -> measure(() -> awaitCleanup(rowId, catalogVersion), "awaitCleanup"))
+//                                    .thenCompose(
+//                                            catalogVersion -> applyUpdateCommand(
+//                                                    request,
+//                                                    rowId0.uuid(),
+//                                                    searchRow,
+//                                                    lastCommitTime,
+//                                                    catalogVersion,
+//                                                    leaseStartTime
+//                                            )
+//                                    )
+//                                    .thenApply(res -> new IgniteBiTuple<>(res, rowIdLock)))
+//                            .thenApply(tuple -> {
+//                                // Release short term locks.
+//                                tuple.get2().get2().forEach(lock -> lockManager.release(lock.txId(), lock.lockKey(), lock.lockMode()));
+//
+//                                return new ReplicaResult(null, tuple.get1());
+//                            });
                 });
             }
             case RW_GET_AND_UPSERT: {
