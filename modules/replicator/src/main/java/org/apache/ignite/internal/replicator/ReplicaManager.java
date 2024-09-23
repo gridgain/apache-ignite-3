@@ -381,13 +381,13 @@ public class ReplicaManager extends AbstractEventProducer<LocalReplicaEvent, Loc
     }
 
     private void handleReplicaRequest(ReplicaRequest request, ClusterNode sender, @Nullable Long correlationId) {
-        if (request.getClass().getName().contains("ReadWriteSingleRowReplicaRequestImpl")) {
-            String senderConsistentId = sender.name();
-            NetworkMessage msg = prepareReplicaResponse(false, null);
-
-            clusterNetSvc.messagingService().respond(senderConsistentId, msg, correlationId);
-            return;
-        }
+//        if (request.getClass().getName().contains("ReadWriteSingleRowReplicaRequestImpl")) {
+//            String senderConsistentId = sender.name();
+//            NetworkMessage msg = prepareReplicaResponse(false, null);
+//
+//            clusterNetSvc.messagingService().respond(senderConsistentId, msg, correlationId);
+//            return;
+//        }
 
 //        if (!busyLock.enterBusy()) {
 //            if (LOG.isInfoEnabled()) {
@@ -451,7 +451,11 @@ public class ReplicaManager extends AbstractEventProducer<LocalReplicaEvent, Loc
             // replicaFut is always completed here.
             Replica replica = replicaFut.join();
 
-            CompletableFuture<ReplicaResult> resFut = replica.processRequest(request, sender.id());
+            String senderId = sender.id();
+
+            boolean skip = request.getClass().getName().contains("ReadWriteSingleRowReplicaRequestImpl");
+
+            CompletableFuture<ReplicaResult> resFut = skip ? CompletableFuture.completedFuture(new ReplicaResult(null, null)) : replica.processRequest(request, senderId);
 
             resFut.whenComplete((res, ex) -> {
                 NetworkMessage msg;
