@@ -3978,24 +3978,26 @@ public class PartitionReplicaListener implements ReplicaListener {
             @Nullable HybridTimestamp opStartTsIfDirectRo,
             @Nullable Long leaseStartTime
     ) {
-        if (request instanceof ReadWriteReplicaRequest) {
-            int rwTxActiveCatalogVersion = rwTxActiveCatalogVersion(catalogService, (ReadWriteReplicaRequest) request);
+        return processOperationRequest(senderId, request, isPrimary, opStartTsIfDirectRo, leaseStartTime);
 
-            // It is very important that the counter is increased only after the schema sync at the begin timestamp of RW transaction,
-            // otherwise there may be races/errors and the index will not be able to start building.
-            if (!txRwOperationTracker.incrementOperationCount(rwTxActiveCatalogVersion)) {
-                throw new StaleTransactionOperationException(((ReadWriteReplicaRequest) request).transactionId());
-            }
-        }
-
-        return processOperationRequest(senderId, request, isPrimary, opStartTsIfDirectRo, leaseStartTime)
-                .whenComplete((unused, throwable) -> {
-                    if (request instanceof ReadWriteReplicaRequest) {
-                        txRwOperationTracker.decrementOperationCount(
-                                rwTxActiveCatalogVersion(catalogService, (ReadWriteReplicaRequest) request)
-                        );
-                    }
-                });
+//        if (request instanceof ReadWriteReplicaRequest) {
+//            int rwTxActiveCatalogVersion = rwTxActiveCatalogVersion(catalogService, (ReadWriteReplicaRequest) request);
+//
+//            // It is very important that the counter is increased only after the schema sync at the begin timestamp of RW transaction,
+//            // otherwise there may be races/errors and the index will not be able to start building.
+//            if (!txRwOperationTracker.incrementOperationCount(rwTxActiveCatalogVersion)) {
+//                throw new StaleTransactionOperationException(((ReadWriteReplicaRequest) request).transactionId());
+//            }
+//        }
+//
+//        return processOperationRequest(senderId, request, isPrimary, opStartTsIfDirectRo, leaseStartTime)
+//                .whenComplete((unused, throwable) -> {
+//                    if (request instanceof ReadWriteReplicaRequest) {
+//                        txRwOperationTracker.decrementOperationCount(
+//                                rwTxActiveCatalogVersion(catalogService, (ReadWriteReplicaRequest) request)
+//                        );
+//                    }
+//                });
     }
 
     private void prepareIndexBuilderTxRwOperationTracker() {
