@@ -467,17 +467,16 @@ public class PartitionReplicaListener implements ReplicaListener {
 
     @Override
     public CompletableFuture<ReplicaResult> invoke(ReplicaRequest request, String senderId) {
-        return CompletableFuture.completedFuture(new ReplicaResult(null, null));
-
-//        return measure(() -> ensureReplicaIsPrimary(request), "ensureReplicaIsPrimary")
-//                .thenCompose(res -> processRequest(request, res.get1(), senderId, res.get2()))
-//                .thenApply(res -> {
-//                    if (res instanceof ReplicaResult) {
-//                        return (ReplicaResult) res;
-//                    } else {
-//                        return new ReplicaResult(res, null);
-//                    }
-//                });
+        return measure(() -> ensureReplicaIsPrimary(request), "ensureReplicaIsPrimary")
+                //.thenCompose(res -> processRequest(request, res.get1(), senderId, res.get2()))
+                .thenApply(res -> new ReplicaResult(null, null))
+                .thenApply(res -> {
+                    if (res instanceof ReplicaResult) {
+                        return (ReplicaResult) res;
+                    } else {
+                        return new ReplicaResult(res, null);
+                    }
+                });
     }
 
     /** Returns Raft-client. */
