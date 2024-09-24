@@ -2800,17 +2800,18 @@ public class PartitionReplicaListener implements ReplicaListener {
             int catalogVersion,
             Long leaseStartTime
     ) {
-        return applyUpdateCommand(
-                request.commitPartitionId().asTablePartitionId(),
-                rowUuid,
-                row,
-                lastCommitTimestamp,
-                request.transactionId(),
-                request.full(),
-                request.coordinatorId(),
-                catalogVersion,
-                leaseStartTime
-        );
+        return nullCompletedFuture();
+//        return applyUpdateCommand(
+//                request.commitPartitionId().asTablePartitionId(),
+//                rowUuid,
+//                row,
+//                lastCommitTimestamp,
+//                request.transactionId(),
+//                request.full(),
+//                request.coordinatorId(),
+//                catalogVersion,
+//                leaseStartTime
+//        );
     }
 
     /**
