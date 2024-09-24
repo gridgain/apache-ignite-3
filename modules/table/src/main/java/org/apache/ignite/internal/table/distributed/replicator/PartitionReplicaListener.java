@@ -2712,7 +2712,7 @@ public class PartitionReplicaListener implements ReplicaListener {
     ) {
         assert leaseStartTime != null : format("Lease start time is null for UpdateCommand [txId={}].", txId);
 
-        synchronized (commandProcessingLinearizationMutex) {
+        //synchronized (commandProcessingLinearizationMutex) {
             UpdateCommand cmd = measure(() -> updateCommand(
                     tablePartId,
                     rowUuid,
@@ -2778,7 +2778,7 @@ public class PartitionReplicaListener implements ReplicaListener {
                     }
                 });
             }
-        }
+        //}
     }
 
     /**
@@ -2800,18 +2800,17 @@ public class PartitionReplicaListener implements ReplicaListener {
             int catalogVersion,
             Long leaseStartTime
     ) {
-        return nullCompletedFuture();
-//        return applyUpdateCommand(
-//                request.commitPartitionId().asTablePartitionId(),
-//                rowUuid,
-//                row,
-//                lastCommitTimestamp,
-//                request.transactionId(),
-//                request.full(),
-//                request.coordinatorId(),
-//                catalogVersion,
-//                leaseStartTime
-//        );
+        return applyUpdateCommand(
+                request.commitPartitionId().asTablePartitionId(),
+                rowUuid,
+                row,
+                lastCommitTimestamp,
+                request.transactionId(),
+                request.full(),
+                request.coordinatorId(),
+                catalogVersion,
+                leaseStartTime
+        );
     }
 
     /**
