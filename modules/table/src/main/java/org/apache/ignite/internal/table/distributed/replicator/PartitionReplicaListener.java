@@ -466,9 +466,10 @@ public class PartitionReplicaListener implements ReplicaListener {
     }
 
     @Override
-    public CompletableFuture<ReplicaResult> invoke(ReplicaRequest request, UUID senderId) {
+    public CompletableFuture<ReplicaResult> invoke(ReplicaRequest request, String senderId) {
         return measure(() -> ensureReplicaIsPrimary(request), "ensureReplicaIsPrimary")
-                .thenCompose(res -> processRequest(request, res.get1(), senderId, res.get2()))
+                //.thenCompose(res -> processRequest(request, res.get1(), senderId, res.get2()))
+                .thenApply(res -> new ReplicaResult(null, null))
                 .thenApply(res -> {
                     if (res instanceof ReplicaResult) {
                         return (ReplicaResult) res;
