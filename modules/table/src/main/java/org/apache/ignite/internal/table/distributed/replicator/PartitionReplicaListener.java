@@ -3348,8 +3348,10 @@ public class PartitionReplicaListener implements ReplicaListener {
      * @return Future completes with tuple {@link RowId} and collection of {@link Lock}.
      */
     private CompletableFuture<IgniteBiTuple<RowId, Collection<Lock>>> takeLocksForInsert(BinaryRow binaryRow, RowId rowId, UUID txId) {
-        return lockManager.acquire(txId, new LockKey(tableId()), LockMode.IX) // IX lock on table
-                .thenCompose(ignored -> takePutLockOnIndexes(binaryRow, rowId, txId))
+//        return lockManager.acquire(txId, new LockKey(tableId()), LockMode.IX) // IX lock on table
+//                .thenCompose(ignored -> takePutLockOnIndexes(binaryRow, rowId, txId))
+//                .thenApply(shortTermLocks -> new IgniteBiTuple<>(rowId, shortTermLocks));
+        return takePutLockOnIndexes(binaryRow, rowId, txId)
                 .thenApply(shortTermLocks -> new IgniteBiTuple<>(rowId, shortTermLocks));
     }
 
