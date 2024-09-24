@@ -2800,17 +2800,18 @@ public class PartitionReplicaListener implements ReplicaListener {
             int catalogVersion,
             Long leaseStartTime
     ) {
-        return applyUpdateCommand(
-                request.commitPartitionId().asTablePartitionId(),
-                rowUuid,
-                row,
-                lastCommitTimestamp,
-                request.transactionId(),
-                request.full(),
-                request.coordinatorId(),
-                catalogVersion,
-                leaseStartTime
-        );
+        return nullCompletedFuture();
+//        return applyUpdateCommand(
+//                request.commitPartitionId().asTablePartitionId(),
+//                rowUuid,
+//                row,
+//                lastCommitTimestamp,
+//                request.transactionId(),
+//                request.full(),
+//                request.coordinatorId(),
+//                catalogVersion,
+//                leaseStartTime
+//        );
     }
 
     /**
@@ -3045,37 +3046,25 @@ public class PartitionReplicaListener implements ReplicaListener {
                             : measure(() -> takeLocksForUpdate(searchRow, rowId0, txId), "takeLocksForUpdate");
 
                     return lockFut
-                            .thenApply(res -> new ReplicaResult(null, null));
+                            .thenCompose(rowIdLock -> validateWriteAgainstSchemaAfterTakingLocks(request.transactionId())
+                                    .thenCompose(catalogVersion -> measure(() -> awaitCleanup(rowId, catalogVersion), "awaitCleanup"))
+                                    .thenCompose(
+                                            catalogVersion -> applyUpdateCommand(
+                                                    request,
+                                                    rowId0.uuid(),
+                                                    searchRow,
+                                                    lastCommitTime,
+                                                    catalogVersion,
+                                                    leaseStartTime
+                                            )
+                                    )
+                                    .thenApply(res -> new IgniteBiTuple<>(res, rowIdLock)))
+                            .thenApply(tuple -> {
+                                // Release short term locks.
+                                tuple.get2().get2().forEach(lock -> lockManager.release(lock.txId(), lock.lockKey(), lock.lockMode()));
 
-//                    return lockFut
-//                            .thenCompose(rowIdLock -> validateWriteAgainstSchemaAfterTakingLocks(request.transactionId())
-//                                    .thenApply(catalogVer -> {
-//                                        // Release short term locks.
-//                                        rowIdLock.get2().forEach(lock -> lockManager.release(lock.txId(), lock.lockKey(), lock.lockMode()));
-//
-//                                        return new ReplicaResult(null, null);
-//                                    }));
-
-//                    return lockFut
-//                            .thenCompose(rowIdLock -> validateWriteAgainstSchemaAfterTakingLocks(request.transactionId())
-//                                    .thenCompose(catalogVersion -> measure(() -> awaitCleanup(rowId, catalogVersion), "awaitCleanup"))
-//                                    .thenCompose(
-//                                            catalogVersion -> applyUpdateCommand(
-//                                                    request,
-//                                                    rowId0.uuid(),
-//                                                    searchRow,
-//                                                    lastCommitTime,
-//                                                    catalogVersion,
-//                                                    leaseStartTime
-//                                            )
-//                                    )
-//                                    .thenApply(res -> new IgniteBiTuple<>(res, rowIdLock)))
-//                            .thenApply(tuple -> {
-//                                // Release short term locks.
-//                                tuple.get2().get2().forEach(lock -> lockManager.release(lock.txId(), lock.lockKey(), lock.lockMode()));
-//
-//                                return new ReplicaResult(null, tuple.get1());
-//                            });
+                                return new ReplicaResult(null, tuple.get1());
+                            });
                 });
             }
             case RW_GET_AND_UPSERT: {
@@ -3351,6 +3340,7 @@ public class PartitionReplicaListener implements ReplicaListener {
 //        return lockManager.acquire(txId, new LockKey(tableId()), LockMode.IX) // IX lock on table
 //                .thenCompose(ignored -> takePutLockOnIndexes(binaryRow, rowId, txId))
 //                .thenApply(shortTermLocks -> new IgniteBiTuple<>(rowId, shortTermLocks));
+        // TODO FIXME coarse locks are slow.
         return takePutLockOnIndexes(binaryRow, rowId, txId)
                 .thenApply(shortTermLocks -> new IgniteBiTuple<>(rowId, shortTermLocks));
     }
