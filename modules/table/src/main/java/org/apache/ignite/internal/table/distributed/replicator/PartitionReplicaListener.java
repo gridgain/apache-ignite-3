@@ -3035,26 +3035,24 @@ public class PartitionReplicaListener implements ReplicaListener {
                 });
             }
             case RW_UPSERT: {
-                return nullCompletedFuture();
-
-//                return resolveRowByPk(measure(() -> extractPk(searchRow), "extractPk"), txId, (rowId, row, lastCommitTime) -> {
-
+                return resolveRowByPk(measure(() -> extractPk(searchRow), "extractPk"), txId, (rowId, row, lastCommitTime) -> {
+                    return CompletableFuture.completedFuture(new ReplicaResult(null, null));
 
 //                    boolean insert = rowId == null;
 //
 //                    RowId rowId0 = insert ? new RowId(partId(), RowIdGenerator.next()) : rowId;
-
+//
 //                    CompletableFuture<IgniteBiTuple<RowId, Collection<Lock>>> lockFut = insert
 //                            ? measure(() -> takeLocksForInsert(searchRow, rowId0, txId), "takeLocksForInsert")
 //                            : measure(() -> takeLocksForUpdate(searchRow, rowId0, txId), "takeLocksForUpdate");
-
+//
 //                    return lockFut
 //                            .thenCompose(rowIdLock -> validateWriteAgainstSchemaAfterTakingLocks(request.transactionId())
 //                                    .thenApply(catalogVer -> {
 //                                        // Release short term locks.
 //                                        rowIdLock.get2().forEach(lock -> lockManager.release(lock.txId(), lock.lockKey(), lock.lockMode()));
 //
-//                                        return new ReplicaResult(null, nullCompletedFuture());
+//                                        return new ReplicaResult(null, null);
 //                                    }));
 
 //                    return lockFut
@@ -3077,7 +3075,7 @@ public class PartitionReplicaListener implements ReplicaListener {
 //
 //                                return new ReplicaResult(null, tuple.get1());
 //                            });
-//                });
+                });
             }
             case RW_GET_AND_UPSERT: {
                 return resolveRowByPk(extractPk(searchRow), txId, (rowId, row, lastCommitTime) -> {
