@@ -3036,16 +3036,17 @@ public class PartitionReplicaListener implements ReplicaListener {
             }
             case RW_UPSERT: {
                 return resolveRowByPk(measure(() -> extractPk(searchRow), "extractPk"), txId, (rowId, row, lastCommitTime) -> {
-                    return CompletableFuture.completedFuture(new ReplicaResult(null, null));
+                    boolean insert = rowId == null;
 
-//                    boolean insert = rowId == null;
-//
-//                    RowId rowId0 = insert ? new RowId(partId(), RowIdGenerator.next()) : rowId;
-//
-//                    CompletableFuture<IgniteBiTuple<RowId, Collection<Lock>>> lockFut = insert
-//                            ? measure(() -> takeLocksForInsert(searchRow, rowId0, txId), "takeLocksForInsert")
-//                            : measure(() -> takeLocksForUpdate(searchRow, rowId0, txId), "takeLocksForUpdate");
-//
+                    RowId rowId0 = insert ? new RowId(partId(), RowIdGenerator.next()) : rowId;
+
+                    CompletableFuture<IgniteBiTuple<RowId, Collection<Lock>>> lockFut = insert
+                            ? measure(() -> takeLocksForInsert(searchRow, rowId0, txId), "takeLocksForInsert")
+                            : measure(() -> takeLocksForUpdate(searchRow, rowId0, txId), "takeLocksForUpdate");
+
+                    return lockFut
+                            .thenApply(res -> new ReplicaResult(null, null));
+
 //                    return lockFut
 //                            .thenCompose(rowIdLock -> validateWriteAgainstSchemaAfterTakingLocks(request.transactionId())
 //                                    .thenApply(catalogVer -> {
