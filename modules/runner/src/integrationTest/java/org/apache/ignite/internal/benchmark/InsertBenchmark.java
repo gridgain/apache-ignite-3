@@ -149,7 +149,7 @@ public class InsertBenchmark extends AbstractMultiNodeBenchmark {
     /**
      * Benchmark for KV insert via thin client.
      */
-    //@Benchmark
+    @Benchmark
     public void kvThinInsert(KvThinState state) {
         state.executeQuery();
     }
@@ -372,7 +372,9 @@ public class InsertBenchmark extends AbstractMultiNodeBenchmark {
                 tuple.set("field" + i, FIELD_VAL);
             }
 
-            client = IgniteClient.builder().addresses("127.0.0.1:10800").build();
+            client = IgniteClient.builder().addresses(
+                    "127.0.0.1:10800"
+            ).build();
             kvView = client.tables().table(TABLE_NAME).keyValueView();
         }
 
