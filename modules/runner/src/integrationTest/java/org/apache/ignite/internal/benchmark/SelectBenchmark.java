@@ -194,7 +194,7 @@ public class SelectBenchmark extends AbstractMultiNodeBenchmark {
     /**
      * Benchmark for KV get via embedded client.
      */
-    //@Benchmark
+    @Benchmark
     public void kvGet(Blackhole bh) {
         Tuple val = keyValueView.get(null, Tuple.create().set("ycsb_key", random.nextInt(TABLE_SIZE)));
         bh.consume(val);
@@ -203,7 +203,7 @@ public class SelectBenchmark extends AbstractMultiNodeBenchmark {
     /**
      * Benchmark for KV get via thin client.
      */
-    @Benchmark
+    //@Benchmark
     public void kvThinGet(KvThinState kvState, Blackhole bh) {
         Tuple val = kvState.kvView().get(null, Tuple.create().set("ycsb_key", random.nextInt(TABLE_SIZE)));
         bh.consume(val);
