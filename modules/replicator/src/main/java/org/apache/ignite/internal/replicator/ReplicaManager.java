@@ -144,7 +144,7 @@ public class ReplicaManager extends AbstractEventProducer<LocalReplicaEvent, Loc
     private static final PlacementDriverMessagesFactory PLACEMENT_DRIVER_MESSAGES_FACTORY = new PlacementDriverMessagesFactory();
 
     /** Busy lock to stop synchronously. */
-    private final StripedCompositeReadWriteLock busyLock = new StripedCompositeReadWriteLock(Runtime.getRuntime().availableProcessors());
+    private final StripedCompositeReadWriteLock busyLock = new StripedCompositeReadWriteLock(32);
 
     /** Prevents double stopping of the component. */
     private final AtomicBoolean stopGuard = new AtomicBoolean();
