@@ -66,7 +66,7 @@ public class PendingComparableValuesTracker<T extends Comparable<T>, R> implemen
     private volatile boolean closeGuard;
 
     /** Busy lock to close synchronously. */
-    private final ReentrantReadWriteLock busyLock = new ReentrantReadWriteLock();
+    private final StripedCompositeReadWriteLock busyLock = new StripedCompositeReadWriteLock(Runtime.getRuntime().availableProcessors());
 
     private final Comparator<Map.Entry<T, @Nullable R>> comparator;
 

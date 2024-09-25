@@ -121,6 +121,7 @@ import org.apache.ignite.internal.thread.NamedThreadFactory;
 import org.apache.ignite.internal.util.IgniteSpinBusyLock;
 import org.apache.ignite.internal.util.IgniteUtils;
 import org.apache.ignite.internal.util.PendingComparableValuesTracker;
+import org.apache.ignite.internal.util.StripedCompositeReadWriteLock;
 import org.apache.ignite.network.ClusterNode;
 import org.jetbrains.annotations.Nullable;
 import org.jetbrains.annotations.TestOnly;
@@ -143,7 +144,7 @@ public class ReplicaManager extends AbstractEventProducer<LocalReplicaEvent, Loc
     private static final PlacementDriverMessagesFactory PLACEMENT_DRIVER_MESSAGES_FACTORY = new PlacementDriverMessagesFactory();
 
     /** Busy lock to stop synchronously. */
-    private final ReentrantReadWriteLock busyLock = new ReentrantReadWriteLock();
+    private final StripedCompositeReadWriteLock busyLock = new StripedCompositeReadWriteLock(Runtime.getRuntime().availableProcessors());
 
     /** Prevents double stopping of the component. */
     private final AtomicBoolean stopGuard = new AtomicBoolean();
