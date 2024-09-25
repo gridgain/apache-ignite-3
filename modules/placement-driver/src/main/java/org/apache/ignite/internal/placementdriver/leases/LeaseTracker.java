@@ -261,6 +261,12 @@ public class LeaseTracker extends AbstractEventProducer<PrimaryReplicaEvent, Pri
             long timeout,
             TimeUnit unit
     ) {
+        ReplicaMeta meta = getCurrentPrimaryReplica(groupId, timestamp);
+
+        if (meta != null) {
+            return completedFuture(meta);
+        }
+
         CompletableFuture<ReplicaMeta> future = new CompletableFuture<>();
 
         awaitPrimaryReplica(groupId, timestamp, future);

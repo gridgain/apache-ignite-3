@@ -34,6 +34,7 @@ import org.apache.ignite.InitParameters;
 import org.apache.ignite.internal.app.IgniteImpl;
 import org.apache.ignite.internal.catalog.commands.CatalogUtils;
 import org.apache.ignite.internal.lang.IgniteStringFormatter;
+import org.apache.ignite.internal.lang.IgniteSystemProperties;
 import org.apache.ignite.internal.sql.engine.property.SqlPropertiesHelper;
 import org.apache.ignite.internal.testframework.TestIgnitionManager;
 import org.apache.ignite.internal.util.IgniteUtils;
@@ -71,7 +72,7 @@ public class AbstractMultiNodeBenchmark {
     protected static Ignite publicIgnite;
     protected static IgniteImpl igniteImpl;
 
-    @Param({"false", "true"})
+    @Param({"false"/*, "true"*/})
     private boolean fsync;
 
     /**
@@ -213,6 +214,9 @@ public class AbstractMultiNodeBenchmark {
         String metaStorageNodeName = nodeName(BASE_PORT);
 
         InitParameters initParameters = InitParameters.builder()
+                .clusterConfiguration(
+                        "ignite.schemaSync.delayDuration: " + IgniteSystemProperties.getInteger("IGNITE_DELAY_DURATION", 500)
+                )
                 .metaStorageNodeNames(metaStorageNodeName)
                 .clusterName("cluster")
                 .build();

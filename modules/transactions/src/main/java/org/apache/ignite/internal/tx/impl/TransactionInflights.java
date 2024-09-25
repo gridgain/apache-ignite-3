@@ -27,6 +27,7 @@ import static org.apache.ignite.internal.util.ExceptionUtils.unwrapCause;
 import static org.apache.ignite.lang.ErrorGroups.Transactions.TX_PRIMARY_REPLICA_EXPIRED_ERR;
 
 import java.util.Collection;
+import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.UUID;
@@ -36,6 +37,7 @@ import java.util.function.Function;
 import org.apache.ignite.internal.hlc.ClockService;
 import org.apache.ignite.internal.hlc.HybridTimestamp;
 import org.apache.ignite.internal.lang.IgniteBiTuple;
+import org.apache.ignite.internal.lang.IgniteSystemProperties;
 import org.apache.ignite.internal.placementdriver.PlacementDriver;
 import org.apache.ignite.internal.replicator.TablePartitionId;
 import org.apache.ignite.internal.tx.MismatchingTransactionOutcomeInternalException;
@@ -60,6 +62,8 @@ public class TransactionInflights {
 
     private final ClockService clockService;
 
+    private final boolean txInflightsEnable = IgniteSystemProperties.getBoolean("IGNITE_TX_INFLIGHTS_ENABLE");
+
     public TransactionInflights(PlacementDriver placementDriver, ClockService clockService) {
         this.placementDriver = placementDriver;
         this.clockService = clockService;
@@ -73,6 +77,10 @@ public class TransactionInflights {
      * @return {@code True} if the inflight was registered. The update must be failed on false.
      */
     public boolean addInflight(UUID txId, boolean readOnly) {
+        if (!txInflightsEnable) {
+            return true;
+        }
+
         boolean[] res = {true};
 
         txCtxMap.compute(txId, (uuid, ctx) -> {
@@ -94,6 +102,10 @@ public class TransactionInflights {
      * @param txId The transaction id.
      */
     public void removeInflight(UUID txId) {
+        if (!txInflightsEnable) {
+            return;
+        }
+
         // Can be null if tx was aborted and inflights were removed from the collection.
         TxContext tuple = txCtxMap.computeIfPresent(txId, (uuid, ctx) -> {
             ctx.removeInflight(txId);
@@ -108,6 +120,10 @@ public class TransactionInflights {
     }
 
     Collection<UUID> finishedReadOnlyTransactions() {
+        if (!txInflightsEnable) {
+            return List.of();
+        }
+
         return txCtxMap.entrySet().stream()
                 .filter(e -> e.getValue() instanceof ReadOnlyTxContext && e.getValue().isReadyToFinish())
                 .map(Entry::getKey)
@@ -115,14 +131,26 @@ public class TransactionInflights {
     }
 
     void removeTxContext(UUID txId) {
+        if (!txInflightsEnable) {
+            return;
+        }
+
         txCtxMap.remove(txId);
     }
 
     void removeTxContexts(Collection<UUID> txIds) {
+        if (!txInflightsEnable) {
+            return;
+        }
+
         txCtxMap.keySet().removeAll(txIds);
     }
 
     void cancelWaitingInflights(TablePartitionId groupId) {
+        if (!txInflightsEnable) {
+            return;
+        }
+
         for (Map.Entry<UUID, TxContext> ctxEntry : txCtxMap.entrySet()) {
             if (ctxEntry.getValue() instanceof ReadWriteTxContext) {
                 ReadWriteTxContext txContext = (ReadWriteTxContext) ctxEntry.getValue();
@@ -139,6 +167,10 @@ public class TransactionInflights {
     }
 
     void markReadOnlyTxFinished(UUID txId) {
+        if (!txInflightsEnable) {
+            return;
+        }
+
         txCtxMap.compute(txId, (k, ctx) -> {
             if (ctx == null) {
                 ctx = new ReadOnlyTxContext();
@@ -151,6 +183,10 @@ public class TransactionInflights {
     }
 
     ReadWriteTxContext lockTxForNewUpdates(UUID txId, Map<TablePartitionId, IgniteBiTuple<ClusterNode, Long>> enlistedGroups) {
+        if (!txInflightsEnable) {
+            return new ReadWriteTxContext(placementDriver, clockService);
+        }
+
         return (ReadWriteTxContext) txCtxMap.compute(txId, (uuid, tuple0) -> {
             if (tuple0 == null) {
                 tuple0 = new ReadWriteTxContext(placementDriver, clockService); // No writes enlisted.

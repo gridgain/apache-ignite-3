@@ -550,8 +550,10 @@ public class PartitionReplicaListener implements ReplicaListener {
             }
         };
 
-        return schemaSyncService.waitForMetadataCompleteness(opTs).thenRun(validateClo).thenCompose(ignored ->
-                processOperationRequestWithTxRwCounter(senderId, request, isPrimary, opTsIfDirectRo, leaseStartTime));
+        return schemaSyncService.waitForMetadataCompleteness(opTs)
+//                nullCompletedFuture()
+                .thenRun(validateClo).thenCompose(ignored ->
+                        processOperationRequestWithTxRwCounter(senderId, request, isPrimary, opTsIfDirectRo, leaseStartTime));
     }
 
     private CompletableFuture<Long> processGetEstimatedSizeRequest() {

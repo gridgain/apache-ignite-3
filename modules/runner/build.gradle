@@ -125,6 +125,12 @@ dependencies {
         //So, exclude asm-core transitive dependency to protect of jar-hell.
         exclude group: 'org.ow2.asm', module: 'asm'
     }
+
+    testImplementation(libs.jsonpath.core) {
+        //IDEA test runner doesn't apply Gradle dependency resolve strategy, this is just not implemented
+        //So, exclude asm-core transitive dependency to protect of jar-hell.
+        exclude group: 'org.ow2.asm', module: 'asm'
+    }
     testImplementation libs.auto.service.annotations
 
     integrationTestAnnotationProcessor project(':ignite-configuration-annotation-processor')
@@ -250,6 +256,16 @@ tasks.register("runnerPlatformBenchmark", JavaExec) {
 
 tasks.register("runUpsertBenchmark", JavaExec) {
     mainClass = "org.apache.ignite.internal.benchmark.UpsertKvBenchmark"
+
+    jvmArgs += defaultJvmArgs
+
+    classpath = sourceSets.integrationTest.runtimeClasspath
+
+    enableAssertions = true
+}
+
+tasks.register("runSelectBenchmark", JavaExec) {
+    mainClass = "org.apache.ignite.internal.benchmark.SelectBenchmark"
 
     jvmArgs += defaultJvmArgs
 

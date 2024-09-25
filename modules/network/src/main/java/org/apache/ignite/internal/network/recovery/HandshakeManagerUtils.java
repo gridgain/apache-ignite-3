@@ -38,11 +38,14 @@ import org.apache.ignite.internal.network.netty.NettyUtils;
 import org.apache.ignite.internal.network.recovery.message.HandshakeRejectedMessage;
 import org.apache.ignite.internal.network.recovery.message.HandshakeRejectionReason;
 import org.apache.ignite.network.ClusterNode;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 class HandshakeManagerUtils {
     private static final IgniteLogger LOG = Loggers.forClass(HandshakeManagerUtils.class);
 
     private static final NetworkMessagesFactory MESSAGE_FACTORY = new NetworkMessagesFactory();
+    private static final Logger log = LoggerFactory.getLogger(HandshakeManagerUtils.class);
 
     static void sendRejectionMessageAndFailHandshake(
             String message,
@@ -123,6 +126,8 @@ class HandshakeManagerUtils {
         List<EventLoop> eventLoops = eventLoopsSource.channelEventLoops();
 
         int index = safeAbs(channelKey.hashCode()) % eventLoops.size();
+
+        log.info("PVD:: idx={}, channelKey={}", index, channelKey);
 
         return eventLoops.get(index);
     }

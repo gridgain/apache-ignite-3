@@ -36,6 +36,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
@@ -111,6 +112,7 @@ import org.apache.ignite.internal.jdbc.proto.JdbcQueryCursorHandler;
 import org.apache.ignite.internal.jdbc.proto.JdbcQueryEventHandler;
 import org.apache.ignite.internal.lang.IgniteExceptionMapperUtil;
 import org.apache.ignite.internal.lang.IgniteInternalCheckedException;
+import org.apache.ignite.internal.lang.IgniteSystemProperties;
 import org.apache.ignite.internal.logger.IgniteLogger;
 import org.apache.ignite.internal.logger.Loggers;
 import org.apache.ignite.internal.network.ClusterService;
@@ -211,6 +213,8 @@ public class ClientInboundMessageHandler extends ChannelInboundHandlerAdapter im
 
     private final long connectionId;
 
+    private final ExecutorService partitionOperationsExecutor;
+
     /**
      * Constructor.
      *
@@ -239,7 +243,8 @@ public class ClientInboundMessageHandler extends ChannelInboundHandlerAdapter im
             SchemaSyncService schemaSyncService,
             CatalogService catalogService,
             long connectionId,
-            ClientPrimaryReplicaTracker primaryReplicaTracker
+            ClientPrimaryReplicaTracker primaryReplicaTracker,
+            ExecutorService partitionOperationsExecutor
     ) {
         assert igniteTables != null;
         assert igniteTransactions != null;
@@ -279,6 +284,7 @@ public class ClientInboundMessageHandler extends ChannelInboundHandlerAdapter im
         this.connectionId = connectionId;
 
         this.primaryReplicaMaxStartTime = new AtomicLong(HybridTimestamp.MIN_VALUE.longValue());
+        this.partitionOperationsExecutor = partitionOperationsExecutor;
     }
 
     @Override
@@ -301,9 +307,19 @@ public class ClientInboundMessageHandler extends ChannelInboundHandlerAdapter im
         }
     }
 
+    private final boolean fastSwitch = IgniteSystemProperties.getBoolean("IGNITE_FAST_SWITCH");
+
     /** {@inheritDoc} */
     @Override
     public void channelRead(ChannelHandlerContext ctx, Object msg) {
+        if (fastSwitch) {
+            partitionOperationsExecutor.submit(() -> channelReadInternal(ctx, msg));
+        } else {
+            channelReadInternal(ctx, msg);
+        }
+    }
+
+    private void channelReadInternal(ChannelHandlerContext ctx, Object msg) {
         ByteBuf byteBuf = (ByteBuf) msg;
 
         // Each inbound handler in a pipeline has to release the received messages.

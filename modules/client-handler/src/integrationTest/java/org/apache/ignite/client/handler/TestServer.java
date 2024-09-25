@@ -23,6 +23,7 @@ import static org.mockito.Answers.RETURNS_DEEP_STUBS;
 import static org.mockito.Mockito.mock;
 
 import java.util.List;
+import java.util.concurrent.Executors;
 import org.apache.ignite.client.handler.configuration.ClientConnectorConfiguration;
 import org.apache.ignite.internal.catalog.CatalogService;
 import org.apache.ignite.internal.cluster.management.ClusterTag;
@@ -137,7 +138,8 @@ public class TestServer {
                 mock(CatalogService.class),
                 mock(PlacementDriver.class),
                 clientConnectorConfiguration,
-                new TestLowWatermark()
+                new TestLowWatermark(),
+                Executors.newSingleThreadExecutor()
         );
 
         module.startAsync(componentContext).join();

@@ -44,6 +44,12 @@ class SameValueLongSupplier implements LongSupplier {
 
     @Override
     public long getAsLong() {
-        return previousValue.updateAndGet(assertingUpdate);
+        long rr = previousValue.get();
+
+        if (rr == NO_VALUE) {
+            return previousValue.updateAndGet(assertingUpdate);
+        }
+
+        return rr;
     }
 }

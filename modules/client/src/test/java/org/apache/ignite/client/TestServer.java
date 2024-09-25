@@ -34,6 +34,7 @@ import java.net.SocketAddress;
 import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
+import java.util.concurrent.Executors;
 import java.util.function.Function;
 import org.apache.ignite.Ignite;
 import org.apache.ignite.client.fakes.FakeIgnite;
@@ -260,7 +261,8 @@ public class TestServer implements AutoCloseable {
                         new FakeCatalogService(FakeInternalTable.PARTITIONS),
                         ignite.placementDriver(),
                         clientConnectorConfiguration,
-                        new TestLowWatermark()
+                        new TestLowWatermark(),
+                        Executors.newSingleThreadExecutor()
                 );
 
         module.startAsync(componentContext).join();

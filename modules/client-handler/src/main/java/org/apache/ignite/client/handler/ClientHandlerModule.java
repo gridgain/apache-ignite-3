@@ -36,6 +36,7 @@ import java.net.BindException;
 import java.net.InetSocketAddress;
 import java.nio.channels.UnresolvedAddressException;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
@@ -125,6 +126,8 @@ public class ClientHandlerModule implements IgniteComponent {
 
     private final ClientConnectorConfiguration clientConnectorConfiguration;
 
+    private final ExecutorService partitionOperationsExecutor;
+
     @TestOnly
     @SuppressWarnings("unused")
     private volatile ChannelHandler handler;
@@ -161,7 +164,8 @@ public class ClientHandlerModule implements IgniteComponent {
             CatalogService catalogService,
             PlacementDriver placementDriver,
             ClientConnectorConfiguration clientConnectorConfiguration,
-            LowWatermark lowWatermark
+            LowWatermark lowWatermark,
+            ExecutorService partitionOperationsExecutor
     ) {
         assert igniteTables != null;
         assert queryProcessor != null;
@@ -195,6 +199,7 @@ public class ClientHandlerModule implements IgniteComponent {
         this.primaryReplicaTracker = new ClientPrimaryReplicaTracker(placementDriver, catalogService, clockService, schemaSyncService,
                 lowWatermark);
         this.clientConnectorConfiguration = clientConnectorConfiguration;
+        this.partitionOperationsExecutor = partitionOperationsExecutor;
     }
 
     /** {@inheritDoc} */
@@ -384,7 +389,8 @@ public class ClientHandlerModule implements IgniteComponent {
                 schemaSyncService,
                 catalogService,
                 connectionId,
-                primaryReplicaTracker
+                primaryReplicaTracker,
+                partitionOperationsExecutor
         );
     }
 }

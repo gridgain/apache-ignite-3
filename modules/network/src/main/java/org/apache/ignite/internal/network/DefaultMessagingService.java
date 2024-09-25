@@ -130,7 +130,7 @@ public class DefaultMessagingService extends AbstractMessagingService {
      *
      * <p>Introduced for optimization - reducing the number of address resolving for the same nodes.</p>
      */
-    private final Map<String, InetSocketAddress> recipientInetAddrByNodeId = new ConcurrentHashMap<>();
+    private final Map<String, InetSocketAddress> recipientInetAddrByNodeId = new ConcurrentHashMap<>(1000, .5f, 50);
 
     /**
      * Constructor.

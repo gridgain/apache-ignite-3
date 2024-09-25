@@ -95,7 +95,7 @@ public class ConnectionManager implements ChannelCreationListener {
     private final NettyServer server;
 
     /** Channels map from consistentId to {@link NettySender}. */
-    private final Map<ConnectorKey<String>, NettySender> channels = new ConcurrentHashMap<>();
+    private final Map<ConnectorKey<String>, NettySender> channels = new ConcurrentHashMap<>(1000, .5f, 50);
 
     /** Clients. */
     private final Map<ConnectorKey<InetSocketAddress>, NettyClient> clients = new ConcurrentHashMap<>();

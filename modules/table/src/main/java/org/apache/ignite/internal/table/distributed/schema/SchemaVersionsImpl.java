@@ -26,6 +26,7 @@ import org.apache.ignite.internal.catalog.descriptors.CatalogTableDescriptor;
 import org.apache.ignite.internal.hlc.ClockService;
 import org.apache.ignite.internal.hlc.HybridTimestamp;
 import org.apache.ignite.internal.schema.SchemaSyncService;
+import org.apache.ignite.internal.util.CompletableFutures;
 import org.apache.ignite.lang.TableNotFoundException;
 
 /**
@@ -59,6 +60,7 @@ public class SchemaVersionsImpl implements SchemaVersions {
 
     private CompletableFuture<CatalogTableDescriptor> tableDescriptor(int tableId, HybridTimestamp timestamp) {
         return schemaSyncService.waitForMetadataCompleteness(timestamp)
+//        CompletableFutures.nullCompletedFuture()
                 .thenApply(unused -> {
                     CatalogTableDescriptor table = catalogService.table(tableId, timestamp.longValue());
 

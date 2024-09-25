@@ -31,6 +31,7 @@ import io.netty.util.ReferenceCounted;
 import java.net.BindException;
 import java.net.SocketAddress;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Function;
@@ -235,7 +236,8 @@ public class TestClientHandlerModule implements IgniteComponent {
                                                 clockService,
                                                 new AlwaysSyncedSchemaSyncService(),
                                                 new TestLowWatermark()
-                                        )
+                                        ),
+                                        Executors.newSingleThreadExecutor()
                                 )
                         );
                     }

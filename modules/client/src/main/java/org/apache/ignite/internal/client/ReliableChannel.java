@@ -532,6 +532,8 @@ public final class ReliableChannel implements AutoCloseable {
         // Establish secondary connections in the background.
         fut.thenAccept(unused -> ForkJoinPool.commonPool().submit(this::initAllChannelsAsync));
 
+        fut.thenRun(() -> log.info("PVD:: Client started!"));
+
         return fut;
     }
 

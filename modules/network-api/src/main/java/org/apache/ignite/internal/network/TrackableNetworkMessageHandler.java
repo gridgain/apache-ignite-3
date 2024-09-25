@@ -37,7 +37,7 @@ public class TrackableNetworkMessageHandler implements NetworkMessageHandler {
     /**
      * If message handling takes more time, than this constant, we will log warning message with some information.
      */
-    private static final int MESSAGING_PROCESSING_LOG_THRESHOLD_MILLIS = 5;
+    private static final int MESSAGING_PROCESSING_LOG_THRESHOLD_MILLIS = 500;
 
     private final NetworkMessageHandler targetHandler;
 
