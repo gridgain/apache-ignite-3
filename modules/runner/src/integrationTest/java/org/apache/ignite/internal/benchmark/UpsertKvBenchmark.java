@@ -73,7 +73,7 @@ public class UpsertKvBenchmark extends AbstractMultiNodeBenchmark {
     public void nodeSetUp() throws Exception {
         //System.setProperty(IgniteSystemProperties.IGNITE_USE_SHARED_EVENT_LOOP, "true");
         System.setProperty(IgniteSystemProperties.IGNITE_SKIP_REPLICATION_IN_BENCHMARK, "true");
-        System.setProperty(IgniteSystemProperties.IGNITE_SKIP_STORAGE_UPDATE_IN_BENCHMARK, "true");
+        //System.setProperty(IgniteSystemProperties.IGNITE_SKIP_STORAGE_UPDATE_IN_BENCHMARK, "true");
         super.nodeSetUp();
 
         //igniteImpl.metricManager().enable("raft");
