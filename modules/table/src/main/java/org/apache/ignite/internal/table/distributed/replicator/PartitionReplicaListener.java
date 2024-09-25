@@ -2712,7 +2712,7 @@ public class PartitionReplicaListener implements ReplicaListener {
     ) {
         assert leaseStartTime != null : format("Lease start time is null for UpdateCommand [txId={}].", txId);
 
-        //synchronized (commandProcessingLinearizationMutex) {
+        synchronized (commandProcessingLinearizationMutex) {
             UpdateCommand cmd = measure(() -> updateCommand(
                     tablePartId,
                     rowUuid,
@@ -2780,7 +2780,7 @@ public class PartitionReplicaListener implements ReplicaListener {
                     }
                 });
             }
-        //}
+        }
     }
 
     /**
