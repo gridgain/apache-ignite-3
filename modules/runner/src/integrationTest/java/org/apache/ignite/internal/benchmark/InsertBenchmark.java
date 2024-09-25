@@ -57,7 +57,7 @@ import org.openjdk.jmh.runner.options.OptionsBuilder;
  */
 @State(Scope.Benchmark)
 @Fork(1)
-@Threads(10)
+@Threads(50)
 @Warmup(iterations = 10, time = 2)
 @Measurement(iterations = 20, time = 2)
 @BenchmarkMode(Mode.AverageTime)
@@ -75,9 +75,13 @@ public class InsertBenchmark extends AbstractMultiNodeBenchmark {
     @Param({"true", "false"})
     private boolean txInflightsEnable;
 
+    @Param({"origin", "sync", "updater"})
+    private String hClockType;
+
     @Override
     public void nodeSetUp() throws Exception {
         System.setProperty("IGNITE_TX_INFLIGHTS_ENABLE", Boolean.toString(txInflightsEnable));
+        System.setProperty("IGNITE_CLOCK_TYPE", hClockType);
 
         super.nodeSetUp();
     }

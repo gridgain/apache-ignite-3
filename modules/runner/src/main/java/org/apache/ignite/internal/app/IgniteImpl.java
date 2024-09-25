@@ -554,7 +554,7 @@ public class IgniteImpl implements Ignite {
                 failureManager
         );
 
-        String clockType = IgniteSystemProperties.getString("IGNITE_CLOCK_TYPE");
+        String clockType = IgniteSystemProperties.getString("IGNITE_CLOCK_TYPE", "origin");
 
         switch (clockType) {
             case "sync": {
