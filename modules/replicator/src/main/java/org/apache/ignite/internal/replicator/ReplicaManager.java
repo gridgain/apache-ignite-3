@@ -377,32 +377,44 @@ public class ReplicaManager extends AbstractEventProducer<LocalReplicaEvent, Loc
 
     private void handleReplicaRequest(ReplicaRequest request, ClusterNode sender, @Nullable Long correlationId) {
         if (request.getClass().getName().contains("ReadWriteSingleRowReplicaRequestImpl")) {
+            if (!busyLock.enterBusy()) {
+                if (LOG.isInfoEnabled()) {
+                    LOG.info("Failed to process replica request (the node is stopping) [request={}].", request);
+                }
+
+                return;
+            }
+
+            try {
 //            String senderConsistentId = sender.name();
 //            NetworkMessage msg = prepareReplicaResponse(false, null);
 //
 //            clusterNetSvc.messagingService().respond(senderConsistentId, msg, correlationId);
 //            return;
 
-            ReplicationGroupId groupId = request.groupId().asReplicationGroupId();
+                ReplicationGroupId groupId = request.groupId().asReplicationGroupId();
 
-            String senderConsistentId = sender.name();
+                String senderConsistentId = sender.name();
 
-            CompletableFuture<Replica> replicaFut = replicas.get(groupId);
+                CompletableFuture<Replica> replicaFut = replicas.get(groupId);
 
-            //boolean sendTimestamp = request instanceof TimestampAware || request instanceof ReadOnlyDirectReplicaRequest;
+                //boolean sendTimestamp = request instanceof TimestampAware || request instanceof ReadOnlyDirectReplicaRequest;
 
-            // replicaFut is always completed here.
-            Replica replica = replicaFut.join();
+                // replicaFut is always completed here.
+                Replica replica = replicaFut.join();
 
-            String senderId = sender.id();
+                String senderId = sender.id();
 
-            CompletableFuture<ReplicaResult> resFut = replica.processRequest(request, senderId);
+                CompletableFuture<ReplicaResult> resFut = replica.processRequest(request, senderId);
 
-            resFut.whenComplete((res, ex) -> {
-                NetworkMessage msg = prepareReplicaResponse(false, res.result());
+                resFut.whenComplete((res, ex) -> {
+                    NetworkMessage msg = prepareReplicaResponse(false, res.result());
 
-                clusterNetSvc.messagingService().respond(senderConsistentId, msg, correlationId);
-            });
+                    clusterNetSvc.messagingService().respond(senderConsistentId, msg, correlationId);
+                });
+            } finally {
+                busyLock.leaveBusy();
+            }
 
             return;
         }
