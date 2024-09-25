@@ -389,7 +389,7 @@ public class TxManagerImpl implements TxManager, NetworkMessageHandler {
 
     @Override
     public InternalTransaction begin(HybridTimestampTracker timestampTracker, boolean readOnly, TxPriority priority) {
-        HybridTimestamp beginTimestamp = readOnly ? clockService.now() : clockService.now(); // createBeginTimestampWithIncrementRwTxCounter();
+        HybridTimestamp beginTimestamp = readOnly ? clockService.now() : createBeginTimestampWithIncrementRwTxCounter();
         UUID txId = transactionIdGenerator.transactionIdFor(beginTimestamp, priority);
 
         // startedTxs.add(1);
@@ -480,7 +480,7 @@ public class TxManagerImpl implements TxManager, NetworkMessageHandler {
                         old == null ? null : old.commitTimestamp()
                 ));
 
-        // decrementRwTxCount(txId);
+        decrementRwTxCount(txId);
     }
 
     private @Nullable HybridTimestamp commitTimestamp(boolean commit) {
