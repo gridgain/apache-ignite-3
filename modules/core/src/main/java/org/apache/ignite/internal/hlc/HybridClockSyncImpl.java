@@ -33,7 +33,7 @@ import org.apache.ignite.internal.tostring.S;
 public class HybridClockSyncImpl implements HybridClock {
     private final IgniteLogger log = Loggers.forClass(HybridClockSyncImpl.class);
 
-    private volatile long latestTime;
+    private long latestTime;
 
     private final List<ClockUpdateListener> updateListeners = new CopyOnWriteArrayList<>();
 
@@ -60,10 +60,12 @@ public class HybridClockSyncImpl implements HybridClock {
 
         synchronized (this) {
             // Read the latest time after accessing UTC time to reduce contention.
-            latestTime = max(latestTime + 1, now);
+            now = max(latestTime + 1, now);
+
+            latestTime = now;
         }
 
-        return latestTime;
+        return now;
     }
 
     private void notifyUpdateListeners(long newTs) {
