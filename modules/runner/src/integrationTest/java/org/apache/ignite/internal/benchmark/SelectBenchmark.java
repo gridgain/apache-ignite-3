@@ -89,10 +89,10 @@ public class SelectBenchmark extends AbstractMultiNodeBenchmark {
     @Param({"true"/*, "false"*/})
     private boolean fastSwitch;
 
-    @Param({"true"/*, "false"*/})
+    @Param({"true", "false"})
     private boolean txInflightsEnable;
 
-    @Param({"origin"/*, "sync", "updater"*/})
+    @Param({"origin", "sync", "updater"})
     private String hClockType;
 
     @Param({"500", "5000"})
