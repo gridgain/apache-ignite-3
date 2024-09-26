@@ -78,8 +78,7 @@ public class HybridClockImpl implements HybridClock {
                 long oldLatestTime = latestTime;
 
                 if (oldLatestTime >= now) {
-                    logical.increment();
-                    return latestTime | logical.sum();
+                    return LATEST_TIME.incrementAndGet(this);
                 }
 
                 long newLatestTime = max(oldLatestTime + 1, now);
