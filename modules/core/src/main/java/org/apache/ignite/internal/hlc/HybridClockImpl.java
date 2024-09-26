@@ -135,7 +135,7 @@ public class HybridClockImpl implements HybridClock {
         try {
             long now = currentTime();
 
-            long oldLatestTime = nowLong();
+            long oldLatestTime = now | logical.sum();
 
             long newLatestTime = max(requestTime.longValue() + 1, max(now, oldLatestTime + 1));
 
