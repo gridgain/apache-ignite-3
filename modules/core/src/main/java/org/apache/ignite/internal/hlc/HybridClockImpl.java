@@ -57,25 +57,26 @@ public class HybridClockImpl implements HybridClock {
 
     private static long currentTime() {
         // TODO https://issues.apache.org/jira/browse/IGNITE-23049 Benchmarks required.
-        return System.currentTimeMillis() << LOGICAL_TIME_BITS_SIZE;
+        return coarseCurrentTimeMillis << LOGICAL_TIME_BITS_SIZE;
     }
 
     @Override
     public long nowLong() {
-        lock.readLock().lock();
+        while (true) {
+            long now = currentTime();
 
-        try {
-            // TODO try stampedlock
-            //synchronized (HybridClockImpl.class) {
-            logical.increment();
+            // Read the latest time after accessing UTC time to reduce contention.
+            long oldLatestTime = latestTime;
 
-            long cur_logical = logical.sum();
-            //}
+            if (oldLatestTime >= now) {
+                return LATEST_TIME.incrementAndGet(this);
+            }
 
-            return currentTime() | cur_logical;
+            long newLatestTime = max(oldLatestTime + 1, now);
 
-        } finally {
-            lock.readLock().unlock();
+            if (LATEST_TIME.compareAndSet(this, oldLatestTime, newLatestTime)) {
+                return newLatestTime;
+            }
         }
     }
 
