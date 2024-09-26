@@ -76,7 +76,7 @@ public class HybridClockImpl implements HybridClock {
 
             long l = currentTime() | cur_logical;
 
-            log.info("DBG: get now " + l);
+            //log.info("DBG: get now " + l);
 
             return l;
 
