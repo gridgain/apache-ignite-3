@@ -37,7 +37,7 @@ import org.apache.ignite.internal.util.StripedCompositeReadWriteLock;
  * A Hybrid Logical Clock implementation.
  */
 public class HybridClockImpl implements HybridClock {
-    private final IgniteLogger log = Loggers.forClass(HybridClockImpl.class);
+    private static final IgniteLogger log = Loggers.forClass(HybridClockImpl.class);
 
     /**
      * Var handle for {@link #latestTime}.
@@ -62,41 +62,45 @@ public class HybridClockImpl implements HybridClock {
      * @return Current time in milliseconds shifted right on two bytes.
      */
     public static long currentTime() {
-        return FastTimestamps.coarseCurrentTimeMillis() << LOGICAL_TIME_BITS_SIZE;
+        return coarseCurrentTimeMillis << LOGICAL_TIME_BITS_SIZE;
     }
 
     @Override
     public long nowLong() {
-        lock.readLock().lock();
-
-        try {
-            // TODO try stampedlock
-            //synchronized (HybridClockImpl.class) {
-                logical.increment();
-
-            long cur_logical = logical.sum();
-            //}
-
-            return currentTime() | cur_logical;
-
-        } finally {
-            lock.readLock().unlock();
-        }
-
+//        lock.readLock().lock();
+//
 //        try {
-//            long cur_logical;
-//
 //            // TODO try stampedlock
-//            synchronized (HybridClockImpl.class) {
-//                logical.increment();
+//            //synchronized (HybridClockImpl.class) {
+//            logical.increment();
 //
-//                cur_logical = logical.sum();
-//            }
+//            long cur_logical = logical.sum();
+//            //}
 //
-//            return currentTime() | cur_logical;
+//            long cur = currentTime() | cur_logical;
+//
+//            log.info("nowLong: " + cur);
+//
 //        } finally {
 //            lock.readLock().unlock();
 //        }
+
+                while (true) {
+                    long now = currentTime();
+
+                    // Read the latest time after accessing UTC time to reduce contention.
+                    long oldLatestTime = latestTime;
+
+                    if (oldLatestTime >= now) {
+                        return LATEST_TIME.incrementAndGet(this);
+                    }
+
+                    long newLatestTime = max(oldLatestTime + 1, now);
+
+                    if (LATEST_TIME.compareAndSet(this, oldLatestTime, newLatestTime)) {
+                        return newLatestTime;
+                    }
+                }
     }
 
     private void notifyUpdateListeners(long newTs) {
@@ -164,7 +168,7 @@ public class HybridClockImpl implements HybridClock {
     private static volatile long coarseCurrentTimeMillis = System.currentTimeMillis();
 
     /** The interval in milliseconds for updating a timestamp cache. */
-    private static final long UPDATE_INTERVAL_MS = 2;
+    private static final long UPDATE_INTERVAL_MS = 1000;
 
     private static StripedCompositeReadWriteLock lock = new StripedCompositeReadWriteLock(8);
 
@@ -179,11 +183,17 @@ public class HybridClockImpl implements HybridClock {
             /** {@inheritDoc} */
             @Override
             public void run() {
+                log.info("DBG: HLC updater INIT");
+
                 while (true) {
                     long tmp = System.currentTimeMillis();
 
                     // Trigger write lock once per timer resolution.
                     if (tmp > coarseCurrentTimeMillis) {
+                        long zzz = logical.sum();
+
+                        log.info("HLC updater run " + ((tmp << LOGICAL_TIME_BITS_SIZE) | zzz));
+
                         lock.writeLock().lock();
 
                         try {
