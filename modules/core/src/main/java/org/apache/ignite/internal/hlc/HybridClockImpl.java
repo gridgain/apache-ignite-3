@@ -62,21 +62,27 @@ public class HybridClockImpl implements HybridClock {
 
     @Override
     public long nowLong() {
-        while (true) {
-            long now = currentTime();
+        lock.readLock().lock();
 
-            // Read the latest time after accessing UTC time to reduce contention.
-            long oldLatestTime = latestTime;
+        try {
+            while (true) {
+                long now = currentTime();
 
-            if (oldLatestTime >= now) {
-                return LATEST_TIME.incrementAndGet(this);
+                // Read the latest time after accessing UTC time to reduce contention.
+                long oldLatestTime = latestTime;
+
+                if (oldLatestTime >= now) {
+                    return LATEST_TIME.incrementAndGet(this);
+                }
+
+                long newLatestTime = max(oldLatestTime + 1, now);
+
+                if (LATEST_TIME.compareAndSet(this, oldLatestTime, newLatestTime)) {
+                    return newLatestTime;
+                }
             }
-
-            long newLatestTime = max(oldLatestTime + 1, now);
-
-            if (LATEST_TIME.compareAndSet(this, oldLatestTime, newLatestTime)) {
-                return newLatestTime;
-            }
+        } finally {
+            lock.readLock().unlock();
         }
     }
 
