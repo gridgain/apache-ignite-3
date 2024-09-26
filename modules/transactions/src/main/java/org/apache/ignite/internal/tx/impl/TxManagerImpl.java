@@ -868,17 +868,17 @@ public class TxManagerImpl implements TxManager, NetworkMessageHandler {
     CompletableFuture<Void> completeReadOnlyTransactionFuture(TxIdAndTimestamp txIdAndTimestamp) {
         finishedTxs.add(1);
 
-        CompletableFuture<Void> readOnlyTxFuture = readOnlyTxFutureById.remove(txIdAndTimestamp);
+//        CompletableFuture<Void> readOnlyTxFuture = readOnlyTxFutureById.remove(txIdAndTimestamp);
 
-        assert readOnlyTxFuture != null : txIdAndTimestamp;
+//        assert readOnlyTxFuture != null : txIdAndTimestamp;
 
-        readOnlyTxFuture.complete(null);
+//        readOnlyTxFuture.complete(null);
 
         UUID txId = txIdAndTimestamp.getTxId();
 
         transactionInflights.markReadOnlyTxFinished(txId);
 
-        return readOnlyTxFuture;
+        return nullCompletedFuture();
     }
 
     private CompletableFuture<Boolean> onLwnChanged(ChangeLowWatermarkEventParameters parameters) {
