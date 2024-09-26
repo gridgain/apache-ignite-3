@@ -137,10 +137,13 @@ import org.apache.ignite.internal.hlc.ClockServiceImpl;
 import org.apache.ignite.internal.hlc.ClockWaiter;
 import org.apache.ignite.internal.hlc.HybridClock;
 import org.apache.ignite.internal.hlc.HybridClockImpl;
+import org.apache.ignite.internal.hlc.HybridClockSyncImpl;
+import org.apache.ignite.internal.hlc.HybridClockUpdaterImpl;
 import org.apache.ignite.internal.index.IndexBuildingManager;
 import org.apache.ignite.internal.index.IndexManager;
 import org.apache.ignite.internal.index.IndexNodeFinishedRwTransactionsChecker;
 import org.apache.ignite.internal.lang.IgniteInternalException;
+import org.apache.ignite.internal.lang.IgniteSystemProperties;
 import org.apache.ignite.internal.lang.NodeStoppingException;
 import org.apache.ignite.internal.logger.IgniteLogger;
 import org.apache.ignite.internal.logger.Loggers;
@@ -551,7 +554,27 @@ public class IgniteImpl implements Ignite {
                 failureProcessor
         );
 
-        clock = new HybridClockImpl();
+        String clockType = IgniteSystemProperties.getString("IGNITE_CLOCK_TYPE", "origin");
+
+        switch (clockType) {
+            case "sync": {
+                LOG.info("Sync clock is used.");
+
+                clock = new HybridClockSyncImpl();
+                break;
+            }
+            case "updater": {
+                LOG.info("Updater clock is used.");
+
+                clock = new HybridClockUpdaterImpl();
+                break;
+            }
+            default: {
+                LOG.info("Origin clock is used.");
+
+                clock = new HybridClockImpl();
+            }
+        }
 
         clockWaiter = new ClockWaiter(name, clock);
 
