@@ -105,10 +105,6 @@ public class SelectBenchmark extends AbstractMultiNodeBenchmark {
         System.setProperty("IGNITE_TX_INFLIGHTS_ENABLE", Boolean.toString(txInflightsEnable));
         System.setProperty("IGNITE_DELAY_DURATION", Integer.toString(delayDuration));
         System.setProperty("IGNITE_CLOCK_TYPE", hClockType);
-
-        System.setProperty(IgniteSystemProperties.IGNITE_SKIP_REPLICATION_IN_BENCHMARK, "true");
-        System.setProperty(IgniteSystemProperties.IGNITE_SKIP_STORAGE_UPDATE_IN_BENCHMARK, "true");
-
         super.nodeSetUp();
     }
 

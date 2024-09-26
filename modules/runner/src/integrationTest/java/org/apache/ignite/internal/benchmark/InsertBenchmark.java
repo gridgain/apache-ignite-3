@@ -29,6 +29,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.IntStream;
 import org.apache.ignite.client.IgniteClient;
+import org.apache.ignite.internal.lang.IgniteSystemProperties;
 import org.apache.ignite.sql.IgniteSql;
 import org.apache.ignite.sql.ResultSet;
 import org.apache.ignite.sql.Statement;
@@ -82,6 +83,9 @@ public class InsertBenchmark extends AbstractMultiNodeBenchmark {
     public void nodeSetUp() throws Exception {
         System.setProperty("IGNITE_TX_INFLIGHTS_ENABLE", Boolean.toString(txInflightsEnable));
         System.setProperty("IGNITE_CLOCK_TYPE", hClockType);
+
+        System.setProperty(IgniteSystemProperties.IGNITE_SKIP_REPLICATION_IN_BENCHMARK, "true");
+        System.setProperty(IgniteSystemProperties.IGNITE_SKIP_STORAGE_UPDATE_IN_BENCHMARK, "true");
 
         super.nodeSetUp();
     }
