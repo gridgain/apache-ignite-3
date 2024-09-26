@@ -70,23 +70,16 @@ public class HybridClockImpl implements HybridClock {
         lock.readLock().lock();
 
         try {
+            long cur_logical;
 
-            while (true) {
-                long now = currentTime();
+            // TODO try stampedlock
+            //synchronized (HybridClockImpl.class) {
+                logical.increment();
 
-                // Read the latest time after accessing UTC time to reduce contention.
-                long oldLatestTime = latestTime;
+                cur_logical = logical.sum();
+            //}
 
-                if (oldLatestTime >= now) {
-                    return LATEST_TIME.incrementAndGet(this);
-                }
-
-                long newLatestTime = max(oldLatestTime + 1, now);
-
-                if (LATEST_TIME.compareAndSet(this, oldLatestTime, newLatestTime)) {
-                    return newLatestTime;
-                }
-            }
+            return currentTime() | cur_logical;
 
         } finally {
             lock.readLock().unlock();
@@ -174,13 +167,13 @@ public class HybridClockImpl implements HybridClock {
     /** The interval in milliseconds for updating a timestamp cache. */
     private static final long UPDATE_INTERVAL_MS = 2;
 
-    private static StripedCompositeReadWriteLock lock = new StripedCompositeReadWriteLock(32);
+    private static StripedCompositeReadWriteLock lock = new StripedCompositeReadWriteLock(8);
 
     private static LongAdder logical = new LongAdder();
 
-//    static {
-//        startUpdater();
-//    }
+    static {
+        startUpdater();
+    }
 
     private static void startUpdater() {
         Thread updater = new Thread("FastTimestamps updater") {
