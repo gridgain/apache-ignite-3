@@ -62,28 +62,46 @@ public class HybridClockImpl implements HybridClock {
 
     @Override
     public long nowLong() {
+        log.info("DBG: get now");
+
         lock.readLock().lock();
 
         try {
-            while (true) {
-                long now = currentTime();
+            // TODO try stampedlock
+            //synchronized (HybridClockImpl.class) {
+            logical.increment();
 
-                // Read the latest time after accessing UTC time to reduce contention.
-                long oldLatestTime = latestTime;
+            long cur_logical = logical.sum();
+            //}
 
-                if (oldLatestTime >= now) {
-                    return LATEST_TIME.incrementAndGet(this);
-                }
+            return currentTime() | cur_logical;
 
-                long newLatestTime = max(oldLatestTime + 1, now);
-
-                if (LATEST_TIME.compareAndSet(this, oldLatestTime, newLatestTime)) {
-                    return newLatestTime;
-                }
-            }
         } finally {
             lock.readLock().unlock();
         }
+
+//        lock.readLock().lock();
+//
+//        try {
+//            while (true) {
+//                long now = currentTime();
+//
+//                // Read the latest time after accessing UTC time to reduce contention.
+//                long oldLatestTime = latestTime;
+//
+//                if (oldLatestTime >= now) {
+//                    return LATEST_TIME.incrementAndGet(this);
+//                }
+//
+//                long newLatestTime = max(oldLatestTime + 1, now);
+//
+//                if (LATEST_TIME.compareAndSet(this, oldLatestTime, newLatestTime)) {
+//                    return newLatestTime;
+//                }
+//            }
+//        } finally {
+//            lock.readLock().unlock();
+//        }
     }
 
     private void notifyUpdateListeners(long newTs) {
