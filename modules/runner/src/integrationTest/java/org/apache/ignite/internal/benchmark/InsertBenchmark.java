@@ -26,7 +26,6 @@ import java.sql.DriverManager;
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.IntStream;
 import org.apache.ignite.client.IgniteClient;
 import org.apache.ignite.internal.lang.IgniteSystemProperties;
@@ -338,7 +337,7 @@ public class InsertBenchmark extends AbstractMultiNodeBenchmark {
     public static class KvState {
         private final Tuple tuple = Tuple.create();
 
-        private AtomicInteger id = new AtomicInteger();
+        private int id = 0;
 
         private final KeyValueView<Tuple, Tuple> kvView = publicIgnite.tables().table(TABLE_NAME).keyValueView();
 
@@ -353,7 +352,13 @@ public class InsertBenchmark extends AbstractMultiNodeBenchmark {
         }
 
         void executeQuery() {
-            kvView.put(null, Tuple.create().set("ycsb_key", id.getAndIncrement()), tuple);
+            int id1;
+
+            synchronized (this) {
+                id1 = id++;
+            }
+
+            kvView.put(null, Tuple.create().set("ycsb_key", id1), tuple);
         }
     }
 
@@ -392,7 +397,13 @@ public class InsertBenchmark extends AbstractMultiNodeBenchmark {
         }
 
         void executeQuery() {
-            kvView.put(null, Tuple.create().set("ycsb_key", id++), tuple);
+            int id1;
+
+            synchronized (this) {
+                id1 = id++;
+            }
+
+            kvView.put(null, Tuple.create().set("ycsb_key", id1), tuple);
         }
     }
 
