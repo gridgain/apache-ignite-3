@@ -406,12 +406,12 @@ public class TxManagerImpl implements TxManager, NetworkMessageHandler {
                 ? HybridTimestamp.max(observableTimestamp, currentReadTimestamp(beginTimestamp))
                 : currentReadTimestamp(beginTimestamp);
 
-        TxIdAndTimestamp txIdAndTimestamp = new TxIdAndTimestamp(readTimestamp, txId);
+//        TxIdAndTimestamp txIdAndTimestamp = new TxIdAndTimestamp(readTimestamp, txId);
 
-        CompletableFuture<Void> txFuture = new CompletableFuture<>();
+//        CompletableFuture<Void> txFuture = new CompletableFuture<>();
 
-        CompletableFuture<Void> oldFuture = readOnlyTxFutureById.put(txIdAndTimestamp, txFuture);
-        assert oldFuture == null : "previous transaction has not completed yet: " + txIdAndTimestamp;
+//        CompletableFuture<Void> oldFuture = readOnlyTxFutureById.put(txIdAndTimestamp, txFuture);
+//        assert oldFuture == null : "previous transaction has not completed yet: " + txIdAndTimestamp;
 
         HybridTimestamp lowWatermark = this.lowWatermarkValueReference.get();
 
@@ -420,10 +420,10 @@ public class TxManagerImpl implements TxManager, NetworkMessageHandler {
             // transactions to wait. In order for that code to work safely, we have to make sure that no "too old" transactions will be
             // created here in "begin" method after "this.lowWatermark" is already updated. The simplest way to achieve that is to check
             // LW after we add transaction to the map (adding transaction to the map before reading LW value, of course).
-            readOnlyTxFutureById.remove(txIdAndTimestamp);
+//            readOnlyTxFutureById.remove(txIdAndTimestamp);
 
             // Completing the future is necessary, because "updateLowWatermark" method may already wait for it if race condition happened.
-            txFuture.complete(null);
+//            txFuture.complete(null);
 
             throw new IgniteInternalException(
                     TX_READ_ONLY_TOO_OLD_ERR,
