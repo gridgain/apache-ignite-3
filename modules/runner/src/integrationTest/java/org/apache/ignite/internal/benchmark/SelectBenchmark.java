@@ -30,6 +30,7 @@ import java.util.Random;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import org.apache.ignite.client.IgniteClient;
+import org.apache.ignite.internal.lang.IgniteSystemProperties;
 import org.apache.ignite.internal.sql.engine.AsyncSqlCursor;
 import org.apache.ignite.internal.sql.engine.InternalSqlRow;
 import org.apache.ignite.internal.sql.engine.QueryProcessor;
@@ -104,6 +105,9 @@ public class SelectBenchmark extends AbstractMultiNodeBenchmark {
         System.setProperty("IGNITE_TX_INFLIGHTS_ENABLE", Boolean.toString(txInflightsEnable));
         System.setProperty("IGNITE_DELAY_DURATION", Integer.toString(delayDuration));
         System.setProperty("IGNITE_CLOCK_TYPE", hClockType);
+
+        System.setProperty(IgniteSystemProperties.IGNITE_SKIP_REPLICATION_IN_BENCHMARK, "true");
+        System.setProperty(IgniteSystemProperties.IGNITE_SKIP_STORAGE_UPDATE_IN_BENCHMARK, "true");
 
         super.nodeSetUp();
     }
