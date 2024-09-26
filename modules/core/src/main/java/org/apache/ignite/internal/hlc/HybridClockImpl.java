@@ -62,7 +62,7 @@ public class HybridClockImpl implements HybridClock {
 
     @Override
     public long nowLong() {
-        log.info("DBG: get now");
+
 
         lock.readLock().lock();
 
@@ -74,7 +74,11 @@ public class HybridClockImpl implements HybridClock {
             long cur_logical = logical.sum();
             //}
 
-            return currentTime() | cur_logical;
+            long l = currentTime() | cur_logical;
+
+            log.info("DBG: get now " + l);
+
+            return l;
 
         } finally {
             lock.readLock().unlock();
