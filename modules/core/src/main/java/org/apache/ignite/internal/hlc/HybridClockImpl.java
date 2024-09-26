@@ -26,10 +26,11 @@ import java.lang.invoke.VarHandle;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicLongFieldUpdater;
+import java.util.concurrent.atomic.LongAdder;
 import org.apache.ignite.internal.logger.IgniteLogger;
 import org.apache.ignite.internal.logger.Loggers;
 import org.apache.ignite.internal.tostring.S;
-import org.apache.ignite.internal.util.FastTimestamps;
+import org.apache.ignite.internal.util.StripedCompositeReadWriteLock;
 
 /**
  * A Hybrid Logical Clock implementation.
@@ -60,26 +61,26 @@ public class HybridClockImpl implements HybridClock {
      * @return Current time in milliseconds shifted right on two bytes.
      */
     public static long currentTime() {
-        return FastTimestamps.coarseCurrentTimeMillis() << LOGICAL_TIME_BITS_SIZE;
+        return coarseCurrentTimeMillis << LOGICAL_TIME_BITS_SIZE;
     }
 
     @Override
     public long nowLong() {
-        while (true) {
-            long now = currentTime();
+        lock.readLock().lock();
 
-            // Read the latest time after accessing UTC time to reduce contention.
-            long oldLatestTime = latestTime;
+        try {
+            long cur_logical;
 
-            if (oldLatestTime >= now) {
-                return LATEST_TIME.incrementAndGet(this);
+            // TODO try stampedlock
+            synchronized (HybridClockImpl.class) {
+                logical.increment();
+
+                cur_logical = logical.sum();
             }
 
-            long newLatestTime = max(oldLatestTime + 1, now);
-
-            if (LATEST_TIME.compareAndSet(this, oldLatestTime, newLatestTime)) {
-                return newLatestTime;
-            }
+            return currentTime() | cur_logical;
+        } finally {
+            lock.readLock().unlock();
         }
     }
 
@@ -112,19 +113,20 @@ public class HybridClockImpl implements HybridClock {
      */
     @Override
     public HybridTimestamp update(HybridTimestamp requestTime) {
-        while (true) {
+        lock.readLock().lock();
+
+        try {
             long now = currentTime();
 
-            // Read the latest time after accessing UTC time to reduce contention.
-            long oldLatestTime = this.latestTime;
+            long oldLatestTime = nowLong();
 
             long newLatestTime = max(requestTime.longValue() + 1, max(now, oldLatestTime + 1));
 
-            if (LATEST_TIME.compareAndSet(this, oldLatestTime, newLatestTime)) {
-                notifyUpdateListeners(newLatestTime);
+            notifyUpdateListeners(newLatestTime);
 
-                return hybridTimestamp(newLatestTime);
-            }
+            return hybridTimestamp(newLatestTime);
+        } finally {
+            lock.readLock().unlock();
         }
     }
 
@@ -141,5 +143,52 @@ public class HybridClockImpl implements HybridClock {
     @Override
     public String toString() {
         return S.toString(HybridClock.class, this);
+    }
+
+    private static volatile long coarseCurrentTimeMillis = System.currentTimeMillis();
+
+    /** The interval in milliseconds for updating a timestamp cache. */
+    private static final long UPDATE_INTERVAL_MS = 2;
+
+    private static StripedCompositeReadWriteLock lock = new StripedCompositeReadWriteLock(32);
+
+    private static LongAdder logical = new LongAdder();
+
+    static {
+        startUpdater();
+    }
+
+    private static void startUpdater() {
+        Thread updater = new Thread("FastTimestamps updater") {
+            /** {@inheritDoc} */
+            @Override
+            public void run() {
+                while (true) {
+                    long tmp = System.currentTimeMillis();
+
+                    // Trigger write lock once per timer resolution.
+                    if (tmp > coarseCurrentTimeMillis) {
+                        lock.writeLock().lock();
+
+                        try {
+                            coarseCurrentTimeMillis = tmp;
+
+                            logical.reset();
+                        } finally {
+                            lock.writeLock().unlock();
+                        }
+                    }
+
+                    try {
+                        Thread.sleep(UPDATE_INTERVAL_MS);
+                    } catch (InterruptedException e) {
+                        break;
+                    }
+                }
+            }
+        };
+
+        updater.setDaemon(true);
+        updater.start();
     }
 }
