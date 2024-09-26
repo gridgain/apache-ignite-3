@@ -30,6 +30,7 @@ import java.util.concurrent.atomic.LongAdder;
 import org.apache.ignite.internal.logger.IgniteLogger;
 import org.apache.ignite.internal.logger.Loggers;
 import org.apache.ignite.internal.tostring.S;
+import org.apache.ignite.internal.util.FastTimestamps;
 import org.apache.ignite.internal.util.StripedCompositeReadWriteLock;
 
 /**
@@ -61,7 +62,7 @@ public class HybridClockImpl implements HybridClock {
      * @return Current time in milliseconds shifted right on two bytes.
      */
     public static long currentTime() {
-        return coarseCurrentTimeMillis << LOGICAL_TIME_BITS_SIZE;
+        return FastTimestamps.coarseCurrentTimeMillis() << LOGICAL_TIME_BITS_SIZE;
     }
 
     @Override
@@ -69,19 +70,43 @@ public class HybridClockImpl implements HybridClock {
         lock.readLock().lock();
 
         try {
-            long cur_logical;
 
-            // TODO try stampedlock
-            synchronized (HybridClockImpl.class) {
-                logical.increment();
+            while (true) {
+                long now = currentTime();
 
-                cur_logical = logical.sum();
+                // Read the latest time after accessing UTC time to reduce contention.
+                long oldLatestTime = latestTime;
+
+                if (oldLatestTime >= now) {
+                    logical.increment();
+                    return latestTime | logical.sum();
+                }
+
+                long newLatestTime = max(oldLatestTime + 1, now);
+
+                if (LATEST_TIME.compareAndSet(this, oldLatestTime, newLatestTime)) {
+                    return newLatestTime;
+                }
             }
 
-            return currentTime() | cur_logical;
         } finally {
             lock.readLock().unlock();
         }
+
+//        try {
+//            long cur_logical;
+//
+//            // TODO try stampedlock
+//            synchronized (HybridClockImpl.class) {
+//                logical.increment();
+//
+//                cur_logical = logical.sum();
+//            }
+//
+//            return currentTime() | cur_logical;
+//        } finally {
+//            lock.readLock().unlock();
+//        }
     }
 
     private void notifyUpdateListeners(long newTs) {
@@ -154,9 +179,9 @@ public class HybridClockImpl implements HybridClock {
 
     private static LongAdder logical = new LongAdder();
 
-    static {
-        startUpdater();
-    }
+//    static {
+//        startUpdater();
+//    }
 
     private static void startUpdater() {
         Thread updater = new Thread("FastTimestamps updater") {
