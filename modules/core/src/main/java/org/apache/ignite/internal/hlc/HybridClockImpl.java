@@ -70,13 +70,11 @@ public class HybridClockImpl implements HybridClock {
         lock.readLock().lock();
 
         try {
-            long cur_logical;
-
             // TODO try stampedlock
             //synchronized (HybridClockImpl.class) {
                 logical.increment();
 
-                cur_logical = logical.sum();
+            long cur_logical = logical.sum();
             //}
 
             return currentTime() | cur_logical;
@@ -130,21 +128,22 @@ public class HybridClockImpl implements HybridClock {
      */
     @Override
     public HybridTimestamp update(HybridTimestamp requestTime) {
-        lock.readLock().lock();
-
-        try {
-            long now = currentTime();
-
-            long oldLatestTime = now | logical.sum();
-
-            long newLatestTime = max(requestTime.longValue() + 1, max(now, oldLatestTime + 1));
-
-            notifyUpdateListeners(newLatestTime);
-
-            return hybridTimestamp(newLatestTime);
-        } finally {
-            lock.readLock().unlock();
-        }
+//        lock.readLock().lock();
+//
+//        try {
+//            long now = currentTime();
+//
+//            long oldLatestTime = now | logical.sum();
+//
+//            long newLatestTime = max(requestTime.longValue() + 1, max(now, oldLatestTime + 1));
+//
+//            notifyUpdateListeners(newLatestTime);
+//
+//            return hybridTimestamp(newLatestTime);
+//        } finally {
+//            lock.readLock().unlock();
+//        }
+        return null;
     }
 
     @Override
@@ -176,7 +175,7 @@ public class HybridClockImpl implements HybridClock {
     }
 
     private static void startUpdater() {
-        Thread updater = new Thread("FastTimestamps updater") {
+        Thread updater = new Thread("HLC updater") {
             /** {@inheritDoc} */
             @Override
             public void run() {
