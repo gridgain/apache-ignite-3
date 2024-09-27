@@ -181,7 +181,7 @@ public abstract class StorageScanNode<RowT> extends AbstractNode<RowT> {
 
         Subscription subscription = this.activeSubscription;
         if (subscription != null) {
-            subscription.request(waiting);
+//            subscription.request(waiting);
         } else if (!dataRequested) {
             scan().subscribe(new SubscriberImpl());
 
@@ -212,7 +212,7 @@ public abstract class StorageScanNode<RowT> extends AbstractNode<RowT> {
             assert StorageScanNode.this.activeSubscription == null;
 
             StorageScanNode.this.activeSubscription = subscription;
-            subscription.request(waiting);
+//            subscription.request(waiting);
         }
 
         /** {@inheritDoc} */

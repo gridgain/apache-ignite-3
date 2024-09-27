@@ -54,6 +54,10 @@ public interface IgniteSql {
      */
     ResultSet<SqlRow> execute(@Nullable Transaction transaction, String query, @Nullable Object... arguments);
 
+    default ResultSet<SqlRow> execute(@Nullable Transaction transaction, @Nullable CancelHandle cancelHandle, String query, @Nullable Object... arguments) {
+        return execute(transaction, query, arguments);
+    }
+
     /**
      * Executes a single SQL statement.
      *

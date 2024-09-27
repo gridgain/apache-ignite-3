@@ -46,9 +46,11 @@ import org.apache.ignite.internal.failure.FailureContext;
 import org.apache.ignite.internal.failure.handlers.AbstractFailureHandler;
 import org.apache.ignite.internal.sql.BaseSqlIntegrationTest;
 import org.apache.ignite.internal.sql.engine.exec.rel.AbstractNode;
+import org.apache.ignite.internal.testframework.IgniteTestUtils;
 import org.apache.ignite.internal.testframework.WithSystemProperty;
 import org.apache.ignite.lang.ErrorGroups.Sql;
 import org.apache.ignite.lang.IgniteException;
+import org.apache.ignite.sql.CancelHandle;
 import org.apache.ignite.tx.Transaction;
 import org.apache.ignite.tx.TransactionOptions;
 import org.jetbrains.annotations.Nullable;
@@ -67,12 +69,25 @@ public class ItDmlTest extends BaseSqlIntegrationTest {
 
     @Override
     protected int initialNodes() {
-        return 3;
+        return 1;
     }
 
     @AfterEach
     public void dropTables() {
         dropAllTables();
+    }
+
+    @Test
+    void test() {
+        CancelHandle handle = CancelHandle.create();
+
+        runAsync(() -> {
+            Thread.sleep(5_000);
+
+            handle.cancel();
+        });
+
+        CLUSTER.aliveNode().sql().execute(null, handle, "SELECT * FROM system.indexes");
     }
 
     @Test

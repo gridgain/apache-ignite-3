@@ -64,6 +64,7 @@ import org.apache.ignite.internal.util.ExceptionUtils;
 import org.apache.ignite.internal.util.IgniteSpinBusyLock;
 import org.apache.ignite.lang.TraceableException;
 import org.apache.ignite.sql.BatchedArguments;
+import org.apache.ignite.sql.CancelHandle;
 import org.apache.ignite.sql.IgniteSql;
 import org.apache.ignite.sql.ResultSet;
 import org.apache.ignite.sql.SqlBatchException;
@@ -211,6 +212,18 @@ public class IgniteSqlImpl implements IgniteSql, IgniteComponent {
         }
     }
 
+    @Override
+    public ResultSet<SqlRow> execute(@Nullable Transaction transaction, @Nullable CancelHandle cancelHandle, String query,
+            @Nullable Object... arguments) {
+        Objects.requireNonNull(query);
+
+        try {
+            return new SyncResultSetAdapter<>(executeAsyncInternal(transaction, cancelHandle, createStatement(query), arguments).join());
+        } catch (CompletionException e) {
+            throw ExceptionUtils.sneakyThrow(ExceptionUtils.copyExceptionWithCause(e));
+        }
+    }
+
     /** {@inheritDoc} */
     @Override
     public ResultSet<SqlRow> execute(@Nullable Transaction transaction, Statement statement, @Nullable Object... arguments) {
@@ -294,7 +307,7 @@ public class IgniteSqlImpl implements IgniteSql, IgniteComponent {
             String query,
             @Nullable Object... arguments
     ) {
-        return executeAsyncInternal(transaction, createStatement(query), arguments);
+        return executeAsyncInternal(transaction, null, createStatement(query), arguments);
     }
 
     /** {@inheritDoc} */
@@ -304,7 +317,7 @@ public class IgniteSqlImpl implements IgniteSql, IgniteComponent {
             Statement statement,
             @Nullable Object... arguments
     ) {
-        return executeAsyncInternal(transaction, statement, arguments);
+        return executeAsyncInternal(transaction, null, statement, arguments);
     }
 
     /** {@inheritDoc} */
@@ -328,6 +341,7 @@ public class IgniteSqlImpl implements IgniteSql, IgniteComponent {
 
     private CompletableFuture<AsyncResultSet<SqlRow>> executeAsyncInternal(
             @Nullable Transaction transaction,
+            @Nullable CancelHandle cancelHandle,
             Statement statement,
             @Nullable Object... arguments
     ) {
@@ -356,6 +370,10 @@ public class IgniteSqlImpl implements IgniteSql, IgniteComponent {
                 }
 
                 try {
+                    if (cancelHandle != null) {
+                        cancelHandle.addListener(cur::closeAsync);
+                    }
+
                     int cursorId = registerCursor(cur);
 
                     cur.onClose().whenComplete((r, e) -> openedCursors.remove(cursorId));

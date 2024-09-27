@@ -26,6 +26,7 @@ import java.util.function.Supplier;
 import org.apache.ignite.internal.thread.PublicApiThreading;
 import org.apache.ignite.internal.wrapper.Wrapper;
 import org.apache.ignite.sql.BatchedArguments;
+import org.apache.ignite.sql.CancelHandle;
 import org.apache.ignite.sql.IgniteSql;
 import org.apache.ignite.sql.ResultSet;
 import org.apache.ignite.sql.SqlRow;
@@ -63,6 +64,12 @@ public class PublicApiThreadingIgniteSql implements IgniteSql, Wrapper {
     @Override
     public ResultSet<SqlRow> execute(@Nullable Transaction transaction, String query, @Nullable Object... arguments) {
         return execUserSyncOperation(() -> sql.execute(transaction, query, arguments));
+    }
+
+    @Override
+    public ResultSet<SqlRow> execute(@Nullable Transaction transaction, @Nullable CancelHandle cancelHandle, String query,
+            @Nullable Object... arguments) {
+        return execUserSyncOperation(() -> sql.execute(transaction, cancelHandle, query, arguments));
     }
 
     @Override

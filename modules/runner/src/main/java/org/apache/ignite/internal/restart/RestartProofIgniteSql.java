@@ -22,6 +22,7 @@ import org.apache.ignite.Ignite;
 import org.apache.ignite.internal.wrapper.Wrapper;
 import org.apache.ignite.internal.wrapper.Wrappers;
 import org.apache.ignite.sql.BatchedArguments;
+import org.apache.ignite.sql.CancelHandle;
 import org.apache.ignite.sql.IgniteSql;
 import org.apache.ignite.sql.ResultSet;
 import org.apache.ignite.sql.SqlRow;
@@ -60,6 +61,12 @@ class RestartProofIgniteSql implements IgniteSql, Wrapper {
     @Override
     public ResultSet<SqlRow> execute(@Nullable Transaction transaction, String query, @Nullable Object... arguments) {
         return attachmentLock.attached(ignite -> ignite.sql().execute(transaction, query, arguments));
+    }
+
+    @Override
+    public ResultSet<SqlRow> execute(@Nullable Transaction transaction, @Nullable CancelHandle cancelHandle, String query,
+            @Nullable Object... arguments) {
+        return attachmentLock.attached(ignite -> ignite.sql().execute(transaction, cancelHandle, query, arguments));
     }
 
     @Override
