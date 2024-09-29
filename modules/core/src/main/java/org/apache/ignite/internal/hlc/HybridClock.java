@@ -45,6 +45,10 @@ public interface HybridClock {
      */
     HybridTimestamp update(HybridTimestamp requestTime);
 
+    default void fastUpdate(HybridTimestamp requestTime) {
+        update(requestTime);
+    }
+
     /**
      * Adds an update listener to self.
      *

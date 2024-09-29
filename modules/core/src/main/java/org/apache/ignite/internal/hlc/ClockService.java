@@ -17,6 +17,8 @@
 
 package org.apache.ignite.internal.hlc;
 
+import static org.apache.ignite.internal.hlc.HybridTimestamp.LOGICAL_TIME_BITS_SIZE;
+
 import java.util.concurrent.CompletableFuture;
 
 /**
@@ -30,6 +32,10 @@ public interface ClockService {
      * @return The hybrid timestamp.
      */
     HybridTimestamp now();
+
+    static long currentTime() {
+        return System.currentTimeMillis() << LOGICAL_TIME_BITS_SIZE;
+    }
 
     /**
      * Creates a timestamp for new event.

@@ -21,8 +21,6 @@ import static java.lang.Math.max;
 import static org.apache.ignite.internal.hlc.HybridTimestamp.LOGICAL_TIME_BITS_SIZE;
 import static org.apache.ignite.internal.hlc.HybridTimestamp.hybridTimestamp;
 
-import java.lang.invoke.MethodHandles;
-import java.lang.invoke.VarHandle;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicLongFieldUpdater;
@@ -124,6 +122,32 @@ public class HybridClockImpl implements HybridClock {
                 notifyUpdateListeners(newLatestTime);
 
                 return hybridTimestamp(newLatestTime);
+            }
+        }
+    }
+
+    @Override
+    public void fastUpdate(HybridTimestamp requestTime) {
+        long requestTimeLong = requestTime.longValue();
+
+        while (true) {
+            long now = currentTime();
+
+            if (requestTimeLong <= now) {
+                return;
+            }
+
+            // Read the latest time after accessing UTC time to reduce contention.
+            long oldLatestTime = this.latestTime;
+
+            if (requestTimeLong <= oldLatestTime) {
+                return;
+            }
+
+            if (LATEST_TIME.compareAndSet(this, oldLatestTime, requestTimeLong)) {
+                notifyUpdateListeners(requestTimeLong);
+
+                return;
             }
         }
     }

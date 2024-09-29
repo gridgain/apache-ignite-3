@@ -86,7 +86,7 @@ public class SelectBenchmark extends AbstractMultiNodeBenchmark {
     @Param({/*"1", "2",*/ "1"})
     private int clusterSize;
 
-    @Param({"origin", "sync", "updater"})
+    @Param({"origin"/*, "sync", "updater"*/})
     private String hClockType;
 
     @Param({"500", "5000"})

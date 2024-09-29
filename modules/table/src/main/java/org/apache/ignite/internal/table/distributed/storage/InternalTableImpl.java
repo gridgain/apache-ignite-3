@@ -110,6 +110,7 @@ import org.apache.ignite.internal.replicator.exception.ReplicationTimeoutExcepti
 import org.apache.ignite.internal.replicator.message.ReplicaMessagesFactory;
 import org.apache.ignite.internal.replicator.message.ReplicaRequest;
 import org.apache.ignite.internal.replicator.message.TablePartitionIdMessage;
+import org.apache.ignite.internal.replicator.message.TimestampAwareReplicaResponse;
 import org.apache.ignite.internal.schema.BinaryRow;
 import org.apache.ignite.internal.schema.BinaryRowEx;
 import org.apache.ignite.internal.schema.BinaryTuple;
@@ -841,7 +842,10 @@ public class InternalTableImpl implements InternalTable {
                         }); // Preserve failed state.
             }
 
-            return tx.finish(true, clock.now()).thenApply(ignored -> r);
+            return tx.finish(
+                            true,
+                            r instanceof TimestampAwareReplicaResponse ? ((TimestampAwareReplicaResponse) r).timestamp() : clock.now())
+                    .thenApply(ignored -> r);
         }).thenCompose(identity());
     }
 

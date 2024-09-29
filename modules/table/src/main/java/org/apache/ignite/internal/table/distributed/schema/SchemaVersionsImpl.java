@@ -24,6 +24,7 @@ import java.util.concurrent.CompletableFuture;
 import org.apache.ignite.internal.catalog.CatalogService;
 import org.apache.ignite.internal.catalog.descriptors.CatalogTableDescriptor;
 import org.apache.ignite.internal.hlc.ClockService;
+import org.apache.ignite.internal.hlc.HybridClockSyncImpl;
 import org.apache.ignite.internal.hlc.HybridTimestamp;
 import org.apache.ignite.internal.schema.SchemaSyncService;
 import org.apache.ignite.lang.TableNotFoundException;
@@ -83,6 +84,6 @@ public class SchemaVersionsImpl implements SchemaVersions {
 
     @Override
     public CompletableFuture<Integer> schemaVersionAtNow(int tableId) {
-        return schemaVersionAt(clockService.now(), tableId);
+        return schemaVersionAt(HybridTimestamp.hybridTimestamp(HybridClockSyncImpl.currentTime()), tableId);
     }
 }
