@@ -38,10 +38,12 @@ import org.apache.ignite.internal.sql.engine.SqlQueryType;
 import org.apache.ignite.internal.sql.engine.property.SqlProperties;
 import org.apache.ignite.internal.sql.engine.property.SqlPropertiesHelper;
 import org.apache.ignite.internal.util.AsyncCursor.BatchedResult;
+import org.apache.ignite.internal.wrapper.Wrappers;
 import org.apache.ignite.sql.IgniteSql;
 import org.apache.ignite.sql.SqlRow;
 import org.apache.ignite.sql.Statement;
 import org.apache.ignite.table.KeyValueView;
+import org.apache.ignite.table.Table;
 import org.apache.ignite.table.Tuple;
 import org.openjdk.jmh.annotations.Benchmark;
 import org.openjdk.jmh.annotations.BenchmarkMode;
@@ -67,7 +69,7 @@ import org.openjdk.jmh.runner.options.OptionsBuilder;
  */
 @State(Scope.Benchmark)
 @Fork(1)
-@Threads(128)
+@Threads(16)
 @Warmup(iterations = 10, time = 2)
 @Measurement(iterations = 20, time = 2)
 //@BenchmarkMode(Mode.AverageTime)
@@ -107,7 +109,7 @@ public class SelectBenchmark extends AbstractMultiNodeBenchmark {
     public void setUp() throws IOException {
         int id = 0;
 
-        keyValueView = publicIgnite.tables().table(TABLE_NAME).keyValueView();
+        keyValueView = Wrappers.unwrap(publicIgnite.tables().table(TABLE_NAME), Table.class).keyValueView();
 
         for (int i = 0; i < TABLE_SIZE; i++) {
             Tuple t = Tuple.create();
