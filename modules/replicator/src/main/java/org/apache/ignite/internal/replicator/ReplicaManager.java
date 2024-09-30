@@ -56,7 +56,6 @@ import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.locks.ReentrantReadWriteLock;
 import java.util.function.Function;
 import java.util.function.LongSupplier;
 import java.util.function.Supplier;
@@ -410,7 +409,7 @@ public class ReplicaManager extends AbstractEventProducer<LocalReplicaEvent, Loc
                 CompletableFuture<ReplicaResult> resFut = replica.processRequest(request, senderId);
 
                 resFut.whenComplete((res, ex) -> {
-                    NetworkMessage msg = prepareReplicaResponse(false, res.result());
+                    NetworkMessage msg = prepareReplicaResponse(false, false, res.result());
 
                     clusterNetSvc.messagingService().respond(senderConsistentId, msg, correlationId);
                 });
@@ -475,10 +474,10 @@ public class ReplicaManager extends AbstractEventProducer<LocalReplicaEvent, Loc
             }
 
             if (requestTimestamp != null) {
-                clockService.updateClock(requestTimestamp);
+                clockService.fastUpdateClock(requestTimestamp);
             }
 
-            boolean sendTimestamp = request instanceof TimestampAware || request instanceof ReadOnlyDirectReplicaRequest;
+            boolean sendTimestamp = request instanceof TimestampAware/* || request instanceof ReadOnlyDirectReplicaRequest*/;
 
             // replicaFut is always completed here.
             Replica replica = replicaFut.join();
@@ -491,7 +490,7 @@ public class ReplicaManager extends AbstractEventProducer<LocalReplicaEvent, Loc
                 NetworkMessage msg;
 
                 if (ex == null) {
-                    msg = prepareReplicaResponse(sendTimestamp, res.result());
+                    msg = prepareReplicaResponse(sendTimestamp, request instanceof ReadOnlyDirectReplicaRequest, res.result());
                 } else {
                     if (indicatesUnexpectedProblem(ex)) {
                         LOG.warn("Failed to process replica request [request={}].", ex, request);
@@ -515,7 +514,7 @@ public class ReplicaManager extends AbstractEventProducer<LocalReplicaEvent, Loc
                         LOG.debug("Sending delayed response for replica request [request={}]", request);
 
                         if (ex0 == null) {
-                            msg0 = prepareReplicaResponse(sendTimestamp, res0);
+                            msg0 = prepareReplicaResponse(sendTimestamp, request instanceof ReadOnlyDirectReplicaRequest, res0);
                         } else {
                             LOG.warn("Failed to process delayed response [request={}]", ex0, request);
 
@@ -1106,12 +1105,18 @@ public class ReplicaManager extends AbstractEventProducer<LocalReplicaEvent, Loc
     /**
      * Prepares replica response.
      */
-    private NetworkMessage prepareReplicaResponse(boolean sendTimestamp, Object result) {
-        if (sendTimestamp) {
+    private NetworkMessage prepareReplicaResponse(boolean timestampAware, boolean readOnlyDirect, Object result) {
+        if (timestampAware) {
             return REPLICA_MESSAGES_FACTORY
                     .timestampAwareReplicaResponse()
                     .result(result)
                     .timestamp(clockService.now())
+                    .build();
+        } else if (readOnlyDirect) {
+            return REPLICA_MESSAGES_FACTORY
+                    .timestampAwareReplicaResponse()
+                    .result(result)
+                    .timestamp(clockService.nonUniqTimestampNow())
                     .build();
         } else {
             return REPLICA_MESSAGES_FACTORY

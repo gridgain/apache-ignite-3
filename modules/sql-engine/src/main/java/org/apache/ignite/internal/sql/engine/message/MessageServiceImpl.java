@@ -128,7 +128,7 @@ public class MessageServiceImpl implements MessageService {
 
             // TODO https://issues.apache.org/jira/browse/IGNITE-21709
             if (msg instanceof TimestampAware) {
-                clockService.updateClock(((TimestampAware) msg).timestamp());
+                clockService.fastUpdateClock(((TimestampAware) msg).timestamp());
             }
 
             onMessage(sender.name(), msg);

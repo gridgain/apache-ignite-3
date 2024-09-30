@@ -645,7 +645,7 @@ public class PartitionReplicaListener implements ReplicaListener {
         } else if (request instanceof ReadOnlyReplicaRequest) {
             opStartTs = ((ReadOnlyReplicaRequest) request).readTimestamp();
         } else if (request instanceof ReadOnlyDirectReplicaRequest) {
-            opStartTs = clockService.now();
+            opStartTs = clockService.nonUniqTimestampNow();
         } else {
             opStartTs = null;
         }

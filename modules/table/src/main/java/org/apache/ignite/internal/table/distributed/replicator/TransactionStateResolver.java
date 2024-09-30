@@ -297,7 +297,7 @@ public class TransactionStateResolver {
      * @return Future that should be completed with transaction state meta.
      */
     private CompletableFuture<@Nullable TransactionMeta> processTxStateRequest(TxStateCoordinatorRequest request) {
-        clockService.updateClock(request.readTimestamp());
+        clockService.fastUpdateClock(request.readTimestamp());
 
         UUID txId = request.txId();
 

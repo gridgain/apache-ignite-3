@@ -62,6 +62,16 @@ public class HybridClockImpl implements HybridClock {
     }
 
     @Override
+    public long nonUniqNow() {
+        return latestTime;
+    }
+
+    @Override
+    public HybridTimestamp nonUniqTimestampNow() {
+        return hybridTimestamp(latestTime);
+    }
+
+    @Override
     public long nowLong() {
         while (true) {
             long now = currentTime();

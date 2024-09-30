@@ -17,6 +17,8 @@
 
 package org.apache.ignite.internal.hlc;
 
+import static org.apache.ignite.internal.hlc.HybridTimestamp.hybridTimestamp;
+
 /**
  * A Hybrid Logical Clock.
  */
@@ -34,6 +36,14 @@ public interface HybridClock {
      * @return The hybrid timestamp.
      */
     HybridTimestamp now();
+
+    default long nonUniqNow() {
+        return nowLong();
+    }
+
+    default HybridTimestamp nonUniqTimestampNow() {
+        return hybridTimestamp(nonUniqNow());
+    }
 
     /**
      * Advances the clock in accordance with the request time. If the request time is ahead of the clock,

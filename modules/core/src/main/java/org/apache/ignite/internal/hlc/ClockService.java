@@ -18,6 +18,7 @@
 package org.apache.ignite.internal.hlc;
 
 import static org.apache.ignite.internal.hlc.HybridTimestamp.LOGICAL_TIME_BITS_SIZE;
+import static org.apache.ignite.internal.hlc.HybridTimestamp.hybridTimestamp;
 
 import java.util.concurrent.CompletableFuture;
 
@@ -43,6 +44,18 @@ public interface ClockService {
      * @return The hybrid timestamp as long.
      */
     long nowLong();
+
+    default long nonUniqNow() {
+        return nowLong();
+    }
+
+    default HybridTimestamp nonUniqTimestampNow() {
+        return hybridTimestamp(nonUniqNow());
+    }
+
+    default void fastUpdateClock(HybridTimestamp requestTime) {
+        updateClock(requestTime);
+    }
 
     /**
      * Advances the clock in accordance with the request time. If the request time is ahead of the clock,

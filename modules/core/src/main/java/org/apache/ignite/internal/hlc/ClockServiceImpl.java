@@ -49,8 +49,23 @@ public class ClockServiceImpl implements ClockService {
     }
 
     @Override
+    public long nonUniqNow() {
+        return clock.nonUniqNow();
+    }
+
+    @Override
+    public HybridTimestamp nonUniqTimestampNow() {
+        return clock.nonUniqTimestampNow();
+    }
+
+    @Override
     public HybridTimestamp updateClock(HybridTimestamp requestTime) {
         return clock.update(requestTime);
+    }
+
+    @Override
+    public void fastUpdateClock(HybridTimestamp requestTime) {
+        clock.fastUpdate(requestTime);
     }
 
     @Override

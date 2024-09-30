@@ -18,8 +18,10 @@
 package org.apache.ignite.internal.tx;
 
 import static org.apache.ignite.internal.hlc.HybridTimestamp.NULL_HYBRID_TIMESTAMP;
+import static org.apache.ignite.internal.hlc.HybridTimestamp.hybridTimestampToLong;
+import static org.apache.ignite.internal.hlc.HybridTimestamp.nullableHybridTimestamp;
 
-import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicLongFieldUpdater;
 import org.apache.ignite.internal.hlc.HybridTimestamp;
 import org.jetbrains.annotations.Nullable;
 
@@ -28,7 +30,15 @@ import org.jetbrains.annotations.Nullable;
  */
 public class HybridTimestampTracker {
     /** Timestamp. */
-    private final AtomicLong timestamp = new AtomicLong(NULL_HYBRID_TIMESTAMP);
+    private volatile long timestamp = NULL_HYBRID_TIMESTAMP;
+
+    /**
+     * Var handle for {@link #timestamp}.
+     */
+    private static final AtomicLongFieldUpdater<HybridTimestampTracker> LATEST_TIME = AtomicLongFieldUpdater.newUpdater(
+            HybridTimestampTracker.class,
+            "timestamp"
+    );
 
     /**
      * Get current tracked timestamp.
@@ -36,7 +46,7 @@ public class HybridTimestampTracker {
      * @return Timestamp or {@code null} if the tracker has never updated.
      */
     public @Nullable HybridTimestamp get() {
-        return HybridTimestamp.nullableHybridTimestamp(timestamp.get());
+        return nullableHybridTimestamp(timestamp);
     }
 
     /**
@@ -45,8 +55,18 @@ public class HybridTimestampTracker {
      * @param ts Timestamp to use for update.
      */
     public void update(@Nullable HybridTimestamp ts) {
-        long tsVal = HybridTimestamp.hybridTimestampToLong(ts);
+        long tsVal = hybridTimestampToLong(ts);
 
-        timestamp.updateAndGet(x -> Math.max(x, tsVal));
+        while (true) {
+            long oldTimestamp = this.timestamp;
+
+            if (tsVal <= oldTimestamp) {
+                return;
+            }
+
+            if (LATEST_TIME.compareAndSet(this, oldTimestamp, tsVal)) {
+                return;
+            }
+        }
     }
 }
