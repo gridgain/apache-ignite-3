@@ -366,6 +366,11 @@ public class SelectBenchmark extends AbstractMultiNodeBenchmark {
     }
 
     @Override
+    protected int partitionCount() {
+        return 64;
+    }
+
+    @Override
     protected int nodes() {
         return clusterSize;
     }
