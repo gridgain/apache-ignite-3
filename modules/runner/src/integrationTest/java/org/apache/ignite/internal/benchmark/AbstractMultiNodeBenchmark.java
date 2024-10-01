@@ -195,7 +195,7 @@ public class AbstractMultiNodeBenchmark {
                 + "  },\n"
                 + "  storage.profiles: {"
                 + "        " + DEFAULT_STORAGE_PROFILE + ".engine: aipersist, "
-                + "        " + DEFAULT_STORAGE_PROFILE + ".size: 2073741824 "
+                + "        " + DEFAULT_STORAGE_PROFILE + ".size: 20737418240 "
                 + "  },\n"
                 + "  clientConnector: { port:{} },\n"
                 + "  rest.port: {},\n"
