@@ -69,7 +69,7 @@ import org.openjdk.jmh.runner.options.OptionsBuilder;
  */
 @State(Scope.Benchmark)
 @Fork(1)
-@Threads(64)
+@Threads(16)
 @Warmup(iterations = 10, time = 2)
 @Measurement(iterations = 20, time = 2)
 //@BenchmarkMode(Mode.AverageTime)
@@ -109,7 +109,7 @@ public class SelectBenchmark extends AbstractMultiNodeBenchmark {
     public void setUp() throws IOException {
         int id = 0;
 
-        keyValueView = Wrappers.unwrap(publicIgnite.tables().table(TABLE_NAME), Table.class).keyValueView();
+        keyValueView = igniteImpl.tables().table(TABLE_NAME).keyValueView();
 
         for (int i = 0; i < TABLE_SIZE; i++) {
             Tuple t = Tuple.create();
