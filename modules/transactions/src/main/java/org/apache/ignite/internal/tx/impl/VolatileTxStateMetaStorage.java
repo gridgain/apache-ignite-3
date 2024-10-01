@@ -70,10 +70,10 @@ public class VolatileTxStateMetaStorage {
      * @param txId Transaction id.
      * @param txCrdId Transaction coordinator id.
      */
-    public TxStateMeta initialize(UUID txId, String txCrdId) {
-        return txStateMap.put(txId, new TxStateMeta(PENDING, txCrdId, null, null));
+    public void initialize(UUID txId, String txCrdId) {
+        TxStateMeta previous = txStateMap.put(txId, new TxStateMeta(PENDING, txCrdId, null, null));
 
-        //assert previous == null : "Transaction state has already defined [txId=" + txCrdId + ", state=" + previous.txState() + ']';
+        assert previous == null : "Transaction state has already defined [txId=" + txCrdId + ", state=" + previous.txState() + ']';
     }
 
     /**

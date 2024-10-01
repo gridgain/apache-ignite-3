@@ -389,29 +389,16 @@ public class TxManagerImpl implements TxManager, NetworkMessageHandler {
 
     @Override
     public InternalTransaction begin(HybridTimestampTracker timestampTracker, boolean readOnly, TxPriority priority) {
-
+        HybridTimestamp beginTimestamp = readOnly ? clockService.now() : clockService.now(); // createBeginTimestampWithIncrementRwTxCounter();
+        UUID txId = transactionIdGenerator.transactionIdFor(beginTimestamp, priority);
 
         // startedTxs.add(1);
 
         if (!readOnly) {
-            UUID txId;
-
-            while(true) {
-                HybridTimestamp beginTimestamp =
-                        readOnly ? clockService.now() : clockService.now(); // createBeginTimestampWithIncrementRwTxCounter();
-                txId = transactionIdGenerator.transactionIdFor(beginTimestamp, priority);
-
-                TxStateMeta prev = txStateVolatileStorage.initialize(txId, localNodeId);
-                if (prev == null) {
-                    break;
-                }
-            }
+            txStateVolatileStorage.initialize(txId, localNodeId);
 
             return new ReadWriteTransactionImpl(this, timestampTracker, txId, localNodeId);
         }
-
-        HybridTimestamp beginTimestamp = readOnly ? clockService.now() : clockService.now(); // createBeginTimestampWithIncrementRwTxCounter();
-        UUID txId = transactionIdGenerator.transactionIdFor(beginTimestamp, priority);
 
         HybridTimestamp observableTimestamp = timestampTracker.get();
 
