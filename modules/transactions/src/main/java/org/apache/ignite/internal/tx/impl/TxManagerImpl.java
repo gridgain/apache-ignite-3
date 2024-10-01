@@ -874,9 +874,9 @@ public class TxManagerImpl implements TxManager, NetworkMessageHandler {
 
 //        readOnlyTxFuture.complete(null);
 
-        UUID txId = txIdAndTimestamp.getTxId();
+//        UUID txId = txIdAndTimestamp.getTxId();
 
-        transactionInflights.markReadOnlyTxFinished(txId);
+//        transactionInflights.markReadOnlyTxFinished(txId);
 
         return nullCompletedFuture();
     }

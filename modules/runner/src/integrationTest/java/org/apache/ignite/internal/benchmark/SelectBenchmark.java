@@ -69,7 +69,7 @@ import org.openjdk.jmh.runner.options.OptionsBuilder;
  */
 @State(Scope.Benchmark)
 @Fork(1)
-@Threads(128)
+@Threads(8)
 @Warmup(iterations = 10, time = 2)
 @Measurement(iterations = 20, time = 2)
 //@BenchmarkMode(Mode.AverageTime)
