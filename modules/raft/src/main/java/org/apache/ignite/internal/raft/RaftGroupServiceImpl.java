@@ -587,7 +587,7 @@ public class RaftGroupServiceImpl implements RaftGroupService {
         try {
             if (currentTimeMillis() >= stopTime) {
                 fut.completeExceptionally(
-                        new TimeoutException(format("Send with retry timed out [retryCount = {}].", retryCount)));
+                        new TimeoutException(format("Send with retry timed out [retryCount = {}, groupId = {}].", retryCount, groupId)));
 
                 return;
             }
@@ -598,7 +598,8 @@ public class RaftGroupServiceImpl implements RaftGroupService {
                     .thenCompose(node -> cluster.messagingService().invoke(node, request, configuration.responseTimeout().value()))
                     .whenComplete((resp, err) -> {
                         if (LOG.isTraceEnabled()) {
-                            LOG.trace("sendWithRetry resp={} from={} to={} err={}",
+                            LOG.trace("sendWithRetry req={} resp={} from={} to={} err={}",
+                                    request,
                                     resp,
                                     cluster.topologyService().localMember().address(),
                                     peer.consistentId(),

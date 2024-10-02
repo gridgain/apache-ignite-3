@@ -466,7 +466,7 @@ public class PartitionReplicaListener implements ReplicaListener {
     }
 
     @Override
-    public CompletableFuture<ReplicaResult> invoke(ReplicaRequest request, String senderId) {
+    public CompletableFuture<ReplicaResult> invoke(ReplicaRequest request, UUID senderId) {
         return measure(() -> ensureReplicaIsPrimary(request), "ensureReplicaIsPrimary")
                 .thenCompose(res -> processRequest(request, res.get1(), senderId, res.get2()))
                 .thenApply(res -> {
@@ -487,7 +487,7 @@ public class PartitionReplicaListener implements ReplicaListener {
         return raftClient;
     }
 
-    private CompletableFuture<?> processRequest(ReplicaRequest request, @Nullable Boolean isPrimary, String senderId,
+    private CompletableFuture<?> processRequest(ReplicaRequest request, @Nullable Boolean isPrimary, UUID senderId,
             @Nullable Long leaseStartTime) {
         boolean hasSchemaVersion = request instanceof SchemaVersionAwareReplicaRequest;
 
@@ -571,7 +571,7 @@ public class PartitionReplicaListener implements ReplicaListener {
      * @param request Tx recovery request.
      * @return The future is complete when the transaction state is finalized.
      */
-    private CompletableFuture<Void> processTxRecoveryMessage(TxRecoveryMessage request, String senderId) {
+    private CompletableFuture<Void> processTxRecoveryMessage(TxRecoveryMessage request, UUID senderId) {
         UUID txId = request.txId();
 
         TxMeta txMeta = txStateStorage.get(txId);
@@ -594,7 +594,7 @@ public class PartitionReplicaListener implements ReplicaListener {
      * @param txId Transaction id.
      * @param nodeId Node id (inconsistent).
      */
-    private CompletableFuture<Void> runCleanupOnNode(TablePartitionId commitPartitionId, UUID txId, String nodeId) {
+    private CompletableFuture<Void> runCleanupOnNode(TablePartitionId commitPartitionId, UUID txId, UUID nodeId) {
         // Get node id of the sender to send back cleanup requests.
         String nodeConsistentId = clusterNodeResolver.getConsistentIdById(nodeId);
 
@@ -607,7 +607,7 @@ public class PartitionReplicaListener implements ReplicaListener {
      * @param txId Transaction id.
      * @param senderId Sender inconsistent id.
      */
-    private CompletableFuture<Void> triggerTxRecovery(UUID txId, String senderId) {
+    private CompletableFuture<Void> triggerTxRecovery(UUID txId, UUID senderId) {
         // If the transaction state is pending, then the transaction should be rolled back,
         // meaning that the state is changed to aborted and a corresponding cleanup request
         // is sent in a common durable manner to a partition that have initiated recovery.
@@ -683,7 +683,7 @@ public class PartitionReplicaListener implements ReplicaListener {
      * @return Future.
      */
     private CompletableFuture<?> processOperationRequest(
-            String senderId,
+            UUID senderId,
             ReplicaRequest request,
             @Nullable Boolean isPrimary,
             @Nullable HybridTimestamp opStartTsIfDirectRo,
@@ -947,7 +947,7 @@ public class PartitionReplicaListener implements ReplicaListener {
      */
     private CompletableFuture<List<BinaryRow>> retrieveExactEntriesUntilCursorEmpty(
             UUID txId,
-            String txCoordinatorId,
+            UUID txCoordinatorId,
             @Nullable HybridTimestamp readTimestamp,
             FullyQualifiedResourceId cursorId,
             int count
@@ -1012,7 +1012,7 @@ public class PartitionReplicaListener implements ReplicaListener {
      */
     private CompletableFuture<List<BinaryRow>> retrieveExactEntriesUntilCursorEmpty(
             UUID txId,
-            String txCoordinatorId,
+            UUID txCoordinatorId,
             FullyQualifiedResourceId cursorId,
             int count
     ) {
@@ -1256,7 +1256,7 @@ public class PartitionReplicaListener implements ReplicaListener {
     private CompletableFuture<List<BinaryRow>> lookupIndex(
             ReadWriteScanRetrieveBatchReplicaRequest request,
             IndexStorage indexStorage,
-            String txCoordinatorId
+            UUID txCoordinatorId
     ) {
         UUID txId = request.transactionId();
         int batchCount = request.batchSize();
@@ -2706,7 +2706,7 @@ public class PartitionReplicaListener implements ReplicaListener {
             @Nullable HybridTimestamp lastCommitTimestamp,
             UUID txId,
             boolean full,
-            String txCoordinatorId,
+            UUID txCoordinatorId,
             int catalogVersion,
             Long leaseStartTime
     ) {
@@ -2832,7 +2832,7 @@ public class PartitionReplicaListener implements ReplicaListener {
             TablePartitionIdMessage commitPartitionId,
             UUID txId,
             boolean full,
-            String txCoordinatorId,
+            UUID txCoordinatorId,
             int catalogVersion,
             boolean skipDelayedAck,
             Long leaseStartTime
@@ -3793,7 +3793,7 @@ public class PartitionReplicaListener implements ReplicaListener {
             @Nullable HybridTimestamp lastCommitTimestamp,
             UUID txId,
             boolean full,
-            String txCoordinatorId,
+            UUID txCoordinatorId,
             HybridTimestamp safeTimeTimestamp,
             int catalogVersion,
             @Nullable Long leaseStartTime
@@ -3838,7 +3838,7 @@ public class PartitionReplicaListener implements ReplicaListener {
             UUID transactionId,
             HybridTimestamp safeTimeTimestamp,
             boolean full,
-            String txCoordinatorId,
+            UUID txCoordinatorId,
             int catalogVersion,
             @Nullable Long leaseStartTime
     ) {
@@ -3905,7 +3905,7 @@ public class PartitionReplicaListener implements ReplicaListener {
         return replicationGroupId.tableId();
     }
 
-    private boolean isLocalPeer(String nodeId) {
+    private boolean isLocalPeer(UUID nodeId) {
         return localNode.id().equals(nodeId);
     }
 
@@ -3964,7 +3964,7 @@ public class PartitionReplicaListener implements ReplicaListener {
     }
 
     private CompletableFuture<?> processOperationRequestWithTxRwCounter(
-            String senderId,
+            UUID senderId,
             ReplicaRequest request,
             @Nullable Boolean isPrimary,
             @Nullable HybridTimestamp opStartTsIfDirectRo,
@@ -4102,7 +4102,7 @@ public class PartitionReplicaListener implements ReplicaListener {
      */
     private static class OperationId {
         /** Operation node initiator id. */
-        private String initiatorId;
+        private UUID initiatorId;
 
         /** Timestamp. */
         private long ts;
@@ -4113,7 +4113,7 @@ public class PartitionReplicaListener implements ReplicaListener {
          * @param initiatorId Sender node id.
          * @param ts Timestamp.
          */
-        public OperationId(String initiatorId, long ts) {
+        public OperationId(UUID initiatorId, long ts) {
             this.initiatorId = initiatorId;
             this.ts = ts;
         }

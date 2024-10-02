@@ -37,6 +37,7 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
@@ -47,6 +48,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.BiPredicate;
 import java.util.function.Function;
+import org.apache.ignite.internal.failure.FailureManager;
 import org.apache.ignite.internal.future.timeout.TimeoutObject;
 import org.apache.ignite.internal.future.timeout.TimeoutWorker;
 import org.apache.ignite.internal.lang.NodeStoppingException;
@@ -129,7 +131,7 @@ public class DefaultMessagingService extends AbstractMessagingService {
      *
      * <p>Introduced for optimization - reducing the number of address resolving for the same nodes.</p>
      */
-    private final Map<String, InetSocketAddress> recipientInetAddrByNodeId = new ConcurrentHashMap<>();
+    private final Map<UUID, InetSocketAddress> recipientInetAddrByNodeId = new ConcurrentHashMap<>();
 
     /**
      * Constructor.
@@ -141,6 +143,7 @@ public class DefaultMessagingService extends AbstractMessagingService {
      * @param classDescriptorRegistry Descriptor registry.
      * @param marshaller Marshaller.
      * @param criticalWorkerRegistry Used to register critical threads managed by the new service and its components.
+     * @param failureManager Failure processor.
      */
     public DefaultMessagingService(
             String nodeName,
@@ -149,7 +152,8 @@ public class DefaultMessagingService extends AbstractMessagingService {
             StaleIdDetector staleIdDetector,
             ClassDescriptorRegistry classDescriptorRegistry,
             UserObjectMarshaller marshaller,
-            CriticalWorkerRegistry criticalWorkerRegistry
+            CriticalWorkerRegistry criticalWorkerRegistry,
+            FailureManager failureManager
     ) {
         this.factory = factory;
         this.topologyService = topologyService;
@@ -164,7 +168,14 @@ public class DefaultMessagingService extends AbstractMessagingService {
 
         inboundExecutors = new CriticalLazyStripedExecutors(nodeName, "MessagingService-inbound", criticalWorkerRegistry);
 
-        timeoutWorker = new TimeoutWorker(LOG, nodeName, "MessagingService-timeout-worker", requestsMap, true);
+        timeoutWorker = new TimeoutWorker(
+                LOG,
+                nodeName,
+                "MessagingService-timeout-worker",
+                requestsMap,
+                true,
+                failureManager
+        );
     }
 
     /**

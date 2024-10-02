@@ -437,7 +437,7 @@ public class ItTransactionRecoveryTest extends ClusterPerTestIntegrationTest {
         assertThat(finishRequestCaptureFut, willCompleteSuccessfully());
 
         // Stop old coordinator.
-        String txCrdNodeId = txCrdNode.id();
+        UUID txCrdNodeId = txCrdNode.id();
 
         txCrdNode.stop();
 
@@ -506,7 +506,7 @@ public class ItTransactionRecoveryTest extends ClusterPerTestIntegrationTest {
         assertThat(finishRequestCaptureFut, willCompleteSuccessfully());
 
         // Stop old coordinator.
-        String txCrdNodeId = txCrdNode.id();
+        UUID txCrdNodeId = txCrdNode.id();
 
         txCrdNode.stop();
 
@@ -922,7 +922,7 @@ public class ItTransactionRecoveryTest extends ClusterPerTestIntegrationTest {
             throws Exception {
         scanSingleEntryAndLeaveCursorOpen(targetNode, unwrapTableImpl(txCrdNode.tables().table(TABLE_NAME)), tx);
 
-        String txCrdNodeId = txCrdNode.id();
+        UUID txCrdNodeId = txCrdNode.id();
 
         txCrdNode.stop();
 
@@ -1062,16 +1062,13 @@ public class ItTransactionRecoveryTest extends ClusterPerTestIntegrationTest {
         RecordView view = node.tables().table(TABLE_NAME).recordView();
 
         try {
-            // TODO: IGNITE-22980 We can use synchronous API here after Lock manager will be fixed.
-            view.upsertAsync(rwTx, Tuple.create().set("key", 42).set("val", "val2")).get();
+            view.upsert(rwTx, Tuple.create().set("key", 42).set("val", "val2"));
 
             fail("Lock conflict has to be detected.");
-        } catch (ExecutionException e) {
-            assertEquals(Transactions.ACQUIRE_LOCK_ERR, extractCodeFrom(e.getCause()));
+        } catch (Exception e) {
+            assertEquals(Transactions.ACQUIRE_LOCK_ERR, extractCodeFrom(e));
 
             log.info("Expected lock conflict.", e);
-        } catch (Exception e) {
-            fail("Unexpected exception [class=" + e.getClass().getSimpleName() + ']', e);
         }
     }
 
@@ -1116,7 +1113,7 @@ public class ItTransactionRecoveryTest extends ClusterPerTestIntegrationTest {
     private UUID startTransactionAndStopNode(IgniteImpl node) throws InterruptedException, ExecutionException {
         Transaction rwTx1 = createRwTransaction(node);
 
-        String txCrdNodeId = node.id();
+        UUID txCrdNodeId = node.id();
 
         node.stop();
 

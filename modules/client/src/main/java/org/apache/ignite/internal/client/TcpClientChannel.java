@@ -160,7 +160,8 @@ class TcpClientChannel implements ClientChannel, ClientMessageHandler, ClientCon
                 pendingReqs,
                 // Client-facing future will fail with a timeout, but internal ClientRequestFuture will stay in the map -
                 // otherwise we'll fail with "protocol breakdown" error when a late response arrives from the server.
-                false
+                false,
+                null
         );
 
         asyncContinuationExecutor = cfg.clientConfiguration().asyncContinuationExecutor() == null
@@ -657,7 +658,7 @@ class TcpClientChannel implements ClientChannel, ClientMessageHandler, ClientCon
             }
 
             var serverIdleTimeout = unpacker.unpackLong();
-            var clusterNodeId = unpacker.unpackString();
+            UUID clusterNodeId = unpacker.unpackUuid();
             var clusterNodeName = unpacker.unpackString();
             var addr = sock.remoteAddress();
             var clusterNode = new ClientClusterNode(clusterNodeId, clusterNodeName, new NetworkAddress(addr.getHostName(), addr.getPort()));

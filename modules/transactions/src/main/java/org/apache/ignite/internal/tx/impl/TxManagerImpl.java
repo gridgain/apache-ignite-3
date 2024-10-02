@@ -186,7 +186,7 @@ public class TxManagerImpl implements TxManager, NetworkMessageHandler {
     private final MessagingService messagingService;
 
     /** Local node network identity. This id is available only after the network has started. */
-    private volatile String localNodeId;
+    private volatile UUID localNodeId;
 
     /** Server cleanup processor. */
     private final TxCleanupRequestHandler txCleanupRequestHandler;
@@ -328,7 +328,13 @@ public class TxManagerImpl implements TxManager, NetworkMessageHandler {
                 IgniteThreadFactory.create(nodeName, "tx-async-write-intent", LOG, STORAGE_READ, STORAGE_WRITE)
         );
 
-        orphanDetector = new OrphanDetector(topologyService, replicaService, placementDriverHelper, lockManager);
+        orphanDetector = new OrphanDetector(
+                topologyService,
+                replicaService,
+                placementDriverHelper,
+                lockManager,
+                partitionOperationsExecutor
+        );
 
         txMessageSender = new TxMessageSender(messagingService, replicaService, clockService, txConfig);
 

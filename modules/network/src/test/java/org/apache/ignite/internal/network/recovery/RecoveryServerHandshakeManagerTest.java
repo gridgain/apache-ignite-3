@@ -46,7 +46,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionStage;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.BooleanSupplier;
-import org.apache.ignite.internal.failure.FailureProcessor;
+import org.apache.ignite.internal.failure.FailureManager;
 import org.apache.ignite.internal.lang.NodeStoppingException;
 import org.apache.ignite.internal.network.ClusterNodeImpl;
 import org.apache.ignite.internal.network.ConstantClusterIdSupplier;
@@ -87,7 +87,6 @@ class RecoveryServerHandshakeManagerTest extends BaseIgniteAbstractTest {
     private static final NetworkMessagesFactory MESSAGE_FACTORY = new NetworkMessagesFactory();
 
     private static final UUID CORRECT_CLUSTER_ID = new UUID(11, 12);
-    private static final UUID WRONG_CLUSTER_ID = new UUID(13, 14);
 
     @Mock
     private Channel channel;
@@ -115,7 +114,7 @@ class RecoveryServerHandshakeManagerTest extends BaseIgniteAbstractTest {
     private final AtomicBoolean serverHandshakeManagerStopping = new AtomicBoolean(false);
 
     @Mock
-    private FailureProcessor failureProcessor;
+    private FailureManager failureManager;
 
     @BeforeEach
     void initMocks() {
@@ -178,7 +177,7 @@ class RecoveryServerHandshakeManagerTest extends BaseIgniteAbstractTest {
 
     private RecoveryServerHandshakeManager serverHandshakeManager(UUID launchId, BooleanSupplier stopping) {
         RecoveryServerHandshakeManager manager = new RecoveryServerHandshakeManager(
-                new ClusterNodeImpl(launchId.toString(), SERVER_CONSISTENT_ID, new NetworkAddress(SERVER_HOST, PORT)),
+                new ClusterNodeImpl(launchId, SERVER_CONSISTENT_ID, new NetworkAddress(SERVER_HOST, PORT)),
                 MESSAGE_FACTORY,
                 recoveryDescriptorProvider,
                 () -> List.of(channel.eventLoop()),
@@ -186,7 +185,7 @@ class RecoveryServerHandshakeManagerTest extends BaseIgniteAbstractTest {
                 new ConstantClusterIdSupplier(CORRECT_CLUSTER_ID),
                 channelCreationListener,
                 stopping,
-                failureProcessor
+                failureManager
         );
 
         manager.onInit(context);
@@ -198,7 +197,7 @@ class RecoveryServerHandshakeManagerTest extends BaseIgniteAbstractTest {
         return MESSAGE_FACTORY.handshakeStartResponseMessage()
                 .clientNode(
                         MESSAGE_FACTORY.clusterNodeMessage()
-                                .id(clientLaunchId.toString())
+                                .id(clientLaunchId)
                                 .name(CLIENT_CONSISTENT_ID)
                                 .host(CLIENT_HOST)
                                 .port(PORT)

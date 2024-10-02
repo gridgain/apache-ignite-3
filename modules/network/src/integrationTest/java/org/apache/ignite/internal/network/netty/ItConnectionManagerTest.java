@@ -56,7 +56,7 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import org.apache.ignite.internal.configuration.testframework.ConfigurationExtension;
 import org.apache.ignite.internal.configuration.testframework.InjectConfiguration;
-import org.apache.ignite.internal.failure.FailureProcessor;
+import org.apache.ignite.internal.failure.FailureManager;
 import org.apache.ignite.internal.future.OrderingFuture;
 import org.apache.ignite.internal.lang.IgniteInternalException;
 import org.apache.ignite.internal.manager.ComponentContext;
@@ -533,12 +533,12 @@ public class ItConnectionManagerTest extends BaseIgniteAbstractTest {
                     bootstrapFactory,
                     new AllIdsAreFresh(),
                     withoutClusterId(),
-                    mock(FailureProcessor.class)
+                    mock(FailureManager.class)
             );
 
             manager.start();
             manager.setLocalNode(new ClusterNodeImpl(
-                    launchId.toString(),
+                    launchId,
                     consistentId,
                     new NetworkAddress(manager.localAddress().getHostName(), port)
             ));

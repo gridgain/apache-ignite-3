@@ -17,48 +17,43 @@
 
 package org.apache.ignite.internal.table;
 
-import static java.util.concurrent.CompletableFuture.completedFuture;
-import static java.util.concurrent.CompletableFuture.failedFuture;
-import static org.hamcrest.MatcherAssert.assertThat;
-import static org.hamcrest.Matchers.is;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.isNull;
-import static org.mockito.Mockito.doReturn;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.spy;
-import static org.mockito.Mockito.times;
-import static org.mockito.Mockito.verify;
 
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
-import org.apache.ignite.internal.marshaller.ReflectionMarshallersProvider;
-import org.apache.ignite.internal.schema.BinaryRow;
 import org.apache.ignite.internal.schema.Column;
 import org.apache.ignite.internal.schema.SchemaDescriptor;
-import org.apache.ignite.internal.schema.marshaller.TupleMarshallerImpl;
-import org.apache.ignite.internal.table.distributed.replicator.InternalSchemaVersionMismatchException;
-import org.apache.ignite.internal.table.impl.DummySchemaManagerImpl;
 import org.apache.ignite.internal.type.NativeTypes;
-import org.apache.ignite.sql.IgniteSql;
 import org.apache.ignite.table.KeyValueView;
 import org.apache.ignite.table.Tuple;
 import org.junit.jupiter.api.Test;
 
 /**
  * Basic table operations test.
+ *
+ *<p>For public API tests use ItTableViewApiUnifiedBaseTest.
  */
 public class KeyValueBinaryViewOperationsTest extends TableKvOperationsTestBase {
+    /**
+     * Get the view.
+     *
+     * @param schema Schema.
+     * @return View for schema.
+     */
+    private KeyValueView<Tuple, Tuple> view(SchemaDescriptor schema) {
+        return createTable(schema).keyValueView();
+    }
+
     @Test
     public void put() {
         SchemaDescriptor schema = schemaDescriptor();
 
-        KeyValueView<Tuple, Tuple> tbl = createTable(schema).keyValueView();
+        KeyValueView<Tuple, Tuple> tbl = view(schema);
 
         final Tuple key = Tuple.create().set("id", 1L);
         final Tuple val = Tuple.create().set("val", 11L);
@@ -93,7 +88,7 @@ public class KeyValueBinaryViewOperationsTest extends TableKvOperationsTestBase 
     public void putIfAbsent() {
         SchemaDescriptor schema = schemaDescriptor();
 
-        KeyValueView<Tuple, Tuple> tbl = createTable(schema).keyValueView();
+        KeyValueView<Tuple, Tuple> tbl = view(schema);
 
         final Tuple key = Tuple.create().set("id", 1L);
         final Tuple val = Tuple.create().set("val", 11L);
@@ -118,7 +113,7 @@ public class KeyValueBinaryViewOperationsTest extends TableKvOperationsTestBase 
     public void getAndPut() {
         SchemaDescriptor schema = schemaDescriptor();
 
-        KeyValueView<Tuple, Tuple> tbl = createTable(schema).keyValueView();
+        KeyValueView<Tuple, Tuple> tbl = view(schema);
 
         final Tuple key = Tuple.create().set("id", 1L);
         final Tuple val = Tuple.create().set("val", 11L);
@@ -141,33 +136,36 @@ public class KeyValueBinaryViewOperationsTest extends TableKvOperationsTestBase 
     }
 
     @Test
-    public void unsupportedOperations() {
+    public void nullables() {
         SchemaDescriptor schema = schemaDescriptor();
 
-        KeyValueView<Tuple, Tuple> tbl = createTable(schema).keyValueView();
+        KeyValueView<Tuple, Tuple> tbl = view(schema);
 
-        assertThrows(UnsupportedOperationException.class, () -> tbl.getNullable(null, Tuple.create(Map.of("id", 1L))));
-        assertThrows(UnsupportedOperationException.class, () -> tbl.getNullableAndPut(
-                null,
-                Tuple.create(Map.of("id", 1L)),
-                Tuple.create(Map.of("id", 1L)))
-        );
-        assertThrows(UnsupportedOperationException.class, () -> tbl.getNullableAndReplace(
-                null,
-                Tuple.create(Map.of("id", 1L)),
-                Tuple.create(Map.of("id", 1L)))
-        );
-        assertThrows(UnsupportedOperationException.class, () -> tbl.getNullableAndRemove(
-                null,
-                Tuple.create(Map.of("id", 1L)))
-        );
+        final Tuple key = Tuple.create().set("id", 1L);
+        final Tuple val = Tuple.create().set("val", 11L);
+        final Tuple val2 = Tuple.create().set("val", 22L);
+        final Tuple val3 = Tuple.create().set("val", 33L);
+
+        assertNull(tbl.getNullable(null, key));
+
+        tbl.put(null, key, val);
+
+        assertEqualsValues(schema, val, tbl.getNullable(null, key).get());
+
+        assertEqualsValues(schema, val, tbl.getNullableAndPut(null, key, val2).get());
+
+        assertEqualsValues(schema, val2, tbl.getNullableAndReplace(null, key, val3).get());
+
+        assertEqualsValues(schema, val3, tbl.getNullableAndRemove(null, key).get());
+
+        assertNull(tbl.getNullable(null, key));
     }
 
     @Test
     public void getOrDefault() {
         SchemaDescriptor schema = schemaDescriptor();
 
-        KeyValueView<Tuple, Tuple> tbl = createTable(schema).keyValueView();
+        KeyValueView<Tuple, Tuple> tbl = view(schema);
 
         final Tuple key = Tuple.create().set("id", 1L);
         final Tuple val = Tuple.create().set("val", 11L);
@@ -207,7 +205,7 @@ public class KeyValueBinaryViewOperationsTest extends TableKvOperationsTestBase 
     public void contains() {
         SchemaDescriptor schema = schemaDescriptor();
 
-        KeyValueView<Tuple, Tuple> tbl = createTable(schema).keyValueView();
+        KeyValueView<Tuple, Tuple> tbl = view(schema);
 
         final Tuple key = Tuple.create().set("id", 1L);
         final Tuple val = Tuple.create().set("val", 11L);
@@ -278,7 +276,7 @@ public class KeyValueBinaryViewOperationsTest extends TableKvOperationsTestBase 
     public void remove() {
         SchemaDescriptor schema = schemaDescriptor();
 
-        KeyValueView<Tuple, Tuple> tbl = createTable(schema).keyValueView();
+        KeyValueView<Tuple, Tuple> tbl = view(schema);
 
         final Tuple key = Tuple.create().set("id", 1L);
         final Tuple key2 = Tuple.create().set("id", 2L);
@@ -313,7 +311,7 @@ public class KeyValueBinaryViewOperationsTest extends TableKvOperationsTestBase 
     public void removeExact() {
         SchemaDescriptor schema = schemaDescriptor();
 
-        final KeyValueView<Tuple, Tuple> tbl = createTable(schema).keyValueView();
+        final KeyValueView<Tuple, Tuple> tbl = view(schema);
 
         final Tuple key = Tuple.create().set("id", 1L);
         final Tuple key2 = Tuple.create().set("id", 2L);
@@ -360,7 +358,7 @@ public class KeyValueBinaryViewOperationsTest extends TableKvOperationsTestBase 
     public void replace() {
         SchemaDescriptor schema = schemaDescriptor();
 
-        KeyValueView<Tuple, Tuple> tbl = createTable(schema).keyValueView();
+        KeyValueView<Tuple, Tuple> tbl = view(schema);
 
         final Tuple key = Tuple.create().set("id", 1L);
         final Tuple key2 = Tuple.create().set("id", 2L);
@@ -390,7 +388,7 @@ public class KeyValueBinaryViewOperationsTest extends TableKvOperationsTestBase 
     public void replaceExact() {
         SchemaDescriptor schema = schemaDescriptor();
 
-        KeyValueView<Tuple, Tuple> tbl = createTable(schema).keyValueView();
+        KeyValueView<Tuple, Tuple> tbl = view(schema);
 
         final Tuple key = Tuple.create().set("id", 1L);
         final Tuple key2 = Tuple.create().set("id", 2L);
@@ -412,7 +410,7 @@ public class KeyValueBinaryViewOperationsTest extends TableKvOperationsTestBase 
     public void getAll() {
         SchemaDescriptor schema = schemaDescriptor();
 
-        KeyValueView<Tuple, Tuple> tbl = createTable(schema).keyValueView();
+        KeyValueView<Tuple, Tuple> tbl = view(schema);
 
         Tuple key1 = Tuple.create().set("id", 1L);
         Tuple key2 = Tuple.create().set("id", 2L);
@@ -437,7 +435,7 @@ public class KeyValueBinaryViewOperationsTest extends TableKvOperationsTestBase 
     @Test
     public void nullKeyValidation() {
         SchemaDescriptor schema = schemaDescriptor();
-        KeyValueView<Tuple, Tuple> tbl = createTable(schema).keyValueView();
+        KeyValueView<Tuple, Tuple> tbl = view(schema);
 
         final Tuple val = Tuple.create().set("val", 11L);
         final Tuple val2 = Tuple.create().set("val", 22L);
@@ -470,7 +468,7 @@ public class KeyValueBinaryViewOperationsTest extends TableKvOperationsTestBase 
     @Test
     public void nonNullableValueColumn() {
         SchemaDescriptor schema = schemaDescriptor();
-        KeyValueView<Tuple, Tuple> tbl = createTable(schema).keyValueView();
+        KeyValueView<Tuple, Tuple> tbl = view(schema);
 
         final Tuple key = Tuple.create().set("id", 11L);
         final Tuple val = Tuple.create().set("val", 22L);
@@ -486,33 +484,6 @@ public class KeyValueBinaryViewOperationsTest extends TableKvOperationsTestBase 
         assertThrows(NullPointerException.class, () -> tbl.replace(null, key, val, null));
 
         assertThrows(NullPointerException.class, () -> tbl.putAll(null, Collections.singletonMap(key, null)));
-    }
-
-    @Test
-    void retriesOnInternalSchemaVersionMismatchException() throws Exception {
-        SchemaDescriptor schema = schemaDescriptor();
-        InternalTable internalTable = spy(createInternalTable(schema));
-        ReflectionMarshallersProvider marshallers = new ReflectionMarshallersProvider();
-
-        KeyValueView<Tuple, Tuple> view = new KeyValueBinaryViewImpl(
-                internalTable,
-                new DummySchemaManagerImpl(schema),
-                schemaVersions,
-                mock(IgniteSql.class),
-                marshallers
-        );
-
-        BinaryRow resultRow = new TupleMarshallerImpl(schema).marshal(Tuple.create().set("ID", 1L).set("VAL", 2L));
-
-        doReturn(failedFuture(new InternalSchemaVersionMismatchException()))
-                .doReturn(completedFuture(resultRow))
-                .when(internalTable).get(any(), any());
-
-        Tuple result = view.get(null, Tuple.create().set("ID", 1L));
-
-        assertThat(result.longValue("VAL"), is(2L));
-
-        verify(internalTable, times(2)).get(any(), isNull());
     }
 
     private SchemaDescriptor schemaDescriptor() {

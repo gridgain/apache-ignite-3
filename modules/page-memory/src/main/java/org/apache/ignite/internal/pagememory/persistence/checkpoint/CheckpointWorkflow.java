@@ -37,11 +37,11 @@ import static org.apache.ignite.internal.util.IgniteUtils.shutdownAndAwaitTermin
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Set;
-import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutionException;
@@ -57,6 +57,7 @@ import org.apache.ignite.internal.logger.Loggers;
 import org.apache.ignite.internal.pagememory.DataRegion;
 import org.apache.ignite.internal.pagememory.FullPageId;
 import org.apache.ignite.internal.pagememory.PageMemory;
+import org.apache.ignite.internal.pagememory.persistence.GroupPartitionId;
 import org.apache.ignite.internal.pagememory.persistence.PersistentPageMemory;
 import org.apache.ignite.internal.thread.NamedThreadFactory;
 import org.apache.ignite.internal.util.CollectionUtils;
@@ -256,7 +257,7 @@ class CheckpointWorkflow {
             tracker.onMarkCheckpointBeginEnd();
 
             // Page replacement is allowed only after sorting dirty pages.
-            dirtyPages = beginCheckpoint(dataRegions, curr.futureFor(PAGES_SORTED));
+            dirtyPages = beginCheckpoint(curr);
 
             curr.currentCheckpointPagesCount(dirtyPages.dirtyPageCount);
 
@@ -368,10 +369,7 @@ class CheckpointWorkflow {
                 .collect(toUnmodifiableList());
     }
 
-    private DataRegionsDirtyPages beginCheckpoint(
-            Collection<? extends DataRegion<PersistentPageMemory>> dataRegions,
-            CompletableFuture<?> allowToReplace
-    ) {
+    private DataRegionsDirtyPages beginCheckpoint(CheckpointProgressImpl checkpointProgress) {
         assert checkpointReadWriteLock.isWriteLockHeldByCurrentThread();
 
         Map<DataRegion<?>, Set<FullPageId>> dirtyPartitionsMap = this.dirtyPartitionsMap;
@@ -382,7 +380,7 @@ class CheckpointWorkflow {
 
         // First, we iterate all regions that have dirty pages.
         for (DataRegion<PersistentPageMemory> dataRegion : dataRegions) {
-            Collection<FullPageId> dirtyPages = dataRegion.pageMemory().beginCheckpoint(allowToReplace);
+            Collection<FullPageId> dirtyPages = dataRegion.pageMemory().beginCheckpoint(checkpointProgress);
 
             Set<FullPageId> dirtyMetaPageIds = dirtyPartitionsMap.remove(dataRegion);
 
@@ -409,13 +407,15 @@ class CheckpointWorkflow {
     CheckpointDirtyPages createAndSortCheckpointDirtyPages(
             DataRegionsDirtyPages dataRegionsDirtyPages
     ) throws IgniteInternalCheckedException {
-        List<DataRegionDirtyPages<FullPageId[]>> checkpointDirtyPages = new ArrayList<>();
+        var checkpointDirtyPages = new ArrayList<DirtyPagesAndPartitions>();
 
         int realPagesArrSize = 0;
 
-        // Collect arrays of dirty pages for sorting.
+        // Collects dirty pages into an array (then we will sort them) and collects dirty partitions.
         for (DataRegionDirtyPages<Collection<FullPageId>> dataRegionDirtyPages : dataRegionsDirtyPages.dirtyPages) {
-            FullPageId[] pageIds = new FullPageId[dataRegionDirtyPages.dirtyPages.size()];
+            var pageIds = new FullPageId[dataRegionDirtyPages.dirtyPages.size()];
+
+            var partitionIds = new HashSet<GroupPartitionId>();
 
             int pagePos = 0;
 
@@ -424,6 +424,7 @@ class CheckpointWorkflow {
                         "Incorrect estimated dirty pages number: " + dataRegionsDirtyPages.dirtyPageCount;
 
                 pageIds[pagePos++] = dirtyPage;
+                partitionIds.add(GroupPartitionId.convert(dirtyPage));
             }
 
             // Some pages may have been already replaced.
@@ -433,20 +434,20 @@ class CheckpointWorkflow {
                 pageIds = Arrays.copyOf(pageIds, pagePos);
             }
 
-            checkpointDirtyPages.add(new DataRegionDirtyPages<>(dataRegionDirtyPages.pageMemory, pageIds));
+            checkpointDirtyPages.add(new DirtyPagesAndPartitions(dataRegionDirtyPages.pageMemory, pageIds, partitionIds));
         }
 
         // Add tasks to sort arrays of dirty page IDs in parallel if their number is greater than or equal to PARALLEL_SORT_THRESHOLD.
         List<ForkJoinTask<?>> parallelSortTasks = checkpointDirtyPages.stream()
-                .map(dataRegionDirtyPages -> dataRegionDirtyPages.dirtyPages)
+                .map(dirtyPagesAndPartitions -> dirtyPagesAndPartitions.dirtyPages)
                 .filter(pageIds -> pageIds.length >= PARALLEL_SORT_THRESHOLD)
                 .map(pageIds -> parallelSortThreadPool.submit(() -> Arrays.parallelSort(pageIds, DIRTY_PAGE_COMPARATOR)))
                 .collect(toList());
 
         // Sort arrays of dirty page IDs if their number is less than PARALLEL_SORT_THRESHOLD.
-        for (DataRegionDirtyPages<FullPageId[]> dataRegionDirtyPages : checkpointDirtyPages) {
-            if (dataRegionDirtyPages.dirtyPages.length < PARALLEL_SORT_THRESHOLD) {
-                Arrays.sort(dataRegionDirtyPages.dirtyPages, DIRTY_PAGE_COMPARATOR);
+        for (DirtyPagesAndPartitions dirtyPagesAndPartitions : checkpointDirtyPages) {
+            if (dirtyPagesAndPartitions.dirtyPages.length < PARALLEL_SORT_THRESHOLD) {
+                Arrays.sort(dirtyPagesAndPartitions.dirtyPages, DIRTY_PAGE_COMPARATOR);
             }
         }
 

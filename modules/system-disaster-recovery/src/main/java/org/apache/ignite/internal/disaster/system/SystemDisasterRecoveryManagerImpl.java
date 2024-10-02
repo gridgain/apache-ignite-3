@@ -36,22 +36,26 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executor;
-import java.util.function.Supplier;
 import org.apache.ignite.internal.cluster.management.ClusterState;
 import org.apache.ignite.internal.cluster.management.network.messages.CmgMessagesFactory;
 import org.apache.ignite.internal.cluster.management.network.messages.SuccessResponseMessage;
+import org.apache.ignite.internal.disaster.system.exception.ClusterResetException;
+import org.apache.ignite.internal.disaster.system.exception.MigrateException;
+import org.apache.ignite.internal.disaster.system.message.BecomeMetastorageLeaderMessage;
 import org.apache.ignite.internal.disaster.system.message.MetastorageIndexTermRequestMessage;
 import org.apache.ignite.internal.disaster.system.message.MetastorageIndexTermResponseMessage;
 import org.apache.ignite.internal.disaster.system.message.ResetClusterMessage;
 import org.apache.ignite.internal.disaster.system.message.ResetClusterMessageBuilder;
 import org.apache.ignite.internal.disaster.system.message.SystemDisasterRecoveryMessageGroup;
 import org.apache.ignite.internal.disaster.system.message.SystemDisasterRecoveryMessagesFactory;
+import org.apache.ignite.internal.logger.IgniteLogger;
+import org.apache.ignite.internal.logger.Loggers;
 import org.apache.ignite.internal.manager.ComponentContext;
 import org.apache.ignite.internal.manager.IgniteComponent;
+import org.apache.ignite.internal.metastorage.impl.MetastorageGroupMaintenance;
 import org.apache.ignite.internal.network.MessagingService;
 import org.apache.ignite.internal.network.NetworkMessage;
 import org.apache.ignite.internal.network.TopologyService;
-import org.apache.ignite.internal.raft.IndexWithTerm;
 import org.apache.ignite.internal.util.CompletableFutures;
 import org.apache.ignite.internal.vault.VaultManager;
 import org.apache.ignite.network.ClusterNode;
@@ -61,11 +65,13 @@ import org.jetbrains.annotations.Nullable;
  * Implementation of {@link SystemDisasterRecoveryManager}.
  */
 public class SystemDisasterRecoveryManagerImpl implements SystemDisasterRecoveryManager, IgniteComponent {
+    private static final IgniteLogger LOG = Loggers.forClass(SystemDisasterRecoveryManagerImpl.class);
+
     private final String thisNodeName;
     private final TopologyService topologyService;
     private final MessagingService messagingService;
     private final ServerRestarter restarter;
-    private final Supplier<CompletableFuture<IndexWithTerm>> metastorageIndexWithTerm;
+    private final MetastorageGroupMaintenance metastorageGroupMaintenance;
 
     private final SystemDisasterRecoveryMessagesFactory messagesFactory = new SystemDisasterRecoveryMessagesFactory();
     private static final CmgMessagesFactory cmgMessagesFactory = new CmgMessagesFactory();
@@ -82,13 +88,13 @@ public class SystemDisasterRecoveryManagerImpl implements SystemDisasterRecovery
             MessagingService messagingService,
             VaultManager vaultManager,
             ServerRestarter restarter,
-            Supplier<CompletableFuture<IndexWithTerm>> metastorageIndexWithTerm
+            MetastorageGroupMaintenance metastorageGroupMaintenance
     ) {
         this.thisNodeName = thisNodeName;
         this.topologyService = topologyService;
         this.messagingService = messagingService;
         this.restarter = restarter;
-        this.metastorageIndexWithTerm = metastorageIndexWithTerm;
+        this.metastorageGroupMaintenance = metastorageGroupMaintenance;
 
         storage = new SystemDisasterRecoveryStorage(vaultManager);
         restartExecutor = new ThreadPerTaskExecutor(thisNodeName + "-restart-");
@@ -103,6 +109,9 @@ public class SystemDisasterRecoveryManagerImpl implements SystemDisasterRecovery
             } else if (message instanceof MetastorageIndexTermRequestMessage) {
                 assert correlationId != null;
                 handleMetastorageIndexTermRequest(sender, correlationId);
+            } else if (message instanceof BecomeMetastorageLeaderMessage) {
+                assert correlationId != null;
+                handleBecomeMetastorageLeaderMessage((BecomeMetastorageLeaderMessage) message, sender, correlationId);
             }
         });
 
@@ -118,12 +127,21 @@ public class SystemDisasterRecoveryManagerImpl implements SystemDisasterRecovery
                         if (!thisNodeName.equals(sender.name())) {
                             restarter.initiateRestart();
                         }
-                    }, restartExecutor);
+                    }, restartExecutor)
+                    .whenComplete((res, ex) -> {
+                        if (ex != null) {
+                            LOG.error("Error when handling a ResetClusterMessage", ex);
+                        }
+                    });
         });
     }
 
+    private static SuccessResponseMessage successResponseMessage() {
+        return cmgMessagesFactory.successResponseMessage().build();
+    }
+
     private void handleMetastorageIndexTermRequest(ClusterNode sender, long correlationId) {
-        metastorageIndexWithTerm.get()
+        metastorageGroupMaintenance.raftNodeIndex()
                 .thenAccept(indexWithTerm -> {
                     MetastorageIndexTermResponseMessage response = messagesFactory.metastorageIndexTermResponseMessage()
                             .raftIndex(indexWithTerm.index())
@@ -131,11 +149,22 @@ public class SystemDisasterRecoveryManagerImpl implements SystemDisasterRecovery
                             .build();
 
                     messagingService.respond(sender, response, correlationId);
+                })
+                .whenComplete((res, ex) -> {
+                    if (ex != null) {
+                        LOG.error("Error when handling a MetastorageIndexTermRequestMessage", ex);
+                    }
                 });
     }
 
-    private static SuccessResponseMessage successResponseMessage() {
-        return cmgMessagesFactory.successResponseMessage().build();
+    private void handleBecomeMetastorageLeaderMessage(BecomeMetastorageLeaderMessage message, ClusterNode sender, long correlationId) {
+        metastorageGroupMaintenance.becomeLonelyLeader(message.termBeforeChange(), message.targetVotingSet())
+                .thenRun(() -> messagingService.respond(sender, successResponseMessage(), correlationId))
+                .whenComplete((res, ex) -> {
+                    if (ex != null) {
+                        LOG.error("Error when handling a BecomeMetastorageLeaderMessage", ex);
+                    }
+                });
     }
 
     @Override
@@ -204,12 +233,14 @@ public class SystemDisasterRecoveryManagerImpl implements SystemDisasterRecovery
                     // We ignore upstream exceptions on purpose.
                     rethrowIfError(ex);
 
-                    if (isMajorityOfCmgAreSuccesses(proposedCmgNodeNames, responseFutures)) {
+                    boolean repairMg = metastorageReplicationFactor != null;
+
+                    if (enoughResponsesAreSuccesses(repairMg, proposedCmgNodeNames, responseFutures)) {
                         restarter.initiateRestart();
 
                         return null;
                     } else {
-                        throw new ClusterResetException("Did not get successful responses from new CMG majority, failing cluster reset.");
+                        throw new ClusterResetException(errorMessageForNotEnoughSuccesses(repairMg, responseFutures));
                     }
                 }, restartExecutor);
     }
@@ -314,6 +345,18 @@ public class SystemDisasterRecoveryManagerImpl implements SystemDisasterRecovery
         }
     }
 
+    private static boolean enoughResponsesAreSuccesses(
+            boolean repairMg,
+            List<String> proposedCmgNodeNames,
+            Map<String, CompletableFuture<NetworkMessage>> responseFutures
+    ) {
+        if (repairMg) {
+            return responseFutures.values().stream().allMatch(CompletableFutures::isCompletedSuccessfully);
+        } else {
+            return isMajorityOfCmgAreSuccesses(proposedCmgNodeNames, responseFutures);
+        }
+    }
+
     private static boolean isMajorityOfCmgAreSuccesses(
             List<String> proposedCmgNodeNames,
             Map<String, CompletableFuture<NetworkMessage>> responseFutures
@@ -332,6 +375,28 @@ public class SystemDisasterRecoveryManagerImpl implements SystemDisasterRecovery
                 .count();
 
         return successes >= (futuresFromNewCmg.size() + 1) / 2;
+    }
+
+    private static String errorMessageForNotEnoughSuccesses(
+            boolean repairMg,
+            Map<String, CompletableFuture<NetworkMessage>> responseFutures
+    ) {
+        if (repairMg) {
+            return String.format(
+                    "Did not get successful response from at least one node, failing cluster reset [failedNode=%s].",
+                    findAnyFailedNodeName(responseFutures)
+            );
+        } else {
+            return "Did not get successful responses from new CMG majority, failing cluster reset.";
+        }
+    }
+
+    private static String findAnyFailedNodeName(Map<String, CompletableFuture<NetworkMessage>> responseFutures) {
+        return responseFutures.entrySet().stream()
+                .filter(entry -> entry.getValue().isCompletedExceptionally())
+                .findAny()
+                .orElseThrow(() -> new AssertionError("At least one failed future must be present"))
+                .getKey();
     }
 
     @Override

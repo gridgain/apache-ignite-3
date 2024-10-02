@@ -18,6 +18,7 @@
 package org.apache.ignite.internal.placementdriver;
 
 import static java.util.Collections.emptyMap;
+import static java.util.UUID.randomUUID;
 import static java.util.concurrent.CompletableFuture.completedFuture;
 import static java.util.stream.Collectors.toSet;
 import static org.apache.ignite.internal.distributionzones.rebalance.RebalanceUtil.stablePartAssignmentsKey;
@@ -44,11 +45,11 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
-import org.apache.ignite.internal.affinity.Assignment;
-import org.apache.ignite.internal.affinity.Assignments;
 import org.apache.ignite.internal.cluster.management.topology.api.LogicalNode;
 import org.apache.ignite.internal.cluster.management.topology.api.LogicalTopologyService;
 import org.apache.ignite.internal.cluster.management.topology.api.LogicalTopologySnapshot;
+import org.apache.ignite.internal.configuration.testframework.ConfigurationExtension;
+import org.apache.ignite.internal.configuration.testframework.InjectConfiguration;
 import org.apache.ignite.internal.hlc.HybridClockImpl;
 import org.apache.ignite.internal.hlc.HybridTimestamp;
 import org.apache.ignite.internal.hlc.TestClockService;
@@ -61,12 +62,15 @@ import org.apache.ignite.internal.metastorage.dsl.OperationImpl;
 import org.apache.ignite.internal.metastorage.impl.EntryImpl;
 import org.apache.ignite.internal.network.ClusterService;
 import org.apache.ignite.internal.network.MessagingService;
+import org.apache.ignite.internal.partitiondistribution.Assignment;
+import org.apache.ignite.internal.partitiondistribution.Assignments;
 import org.apache.ignite.internal.placementdriver.leases.Lease;
 import org.apache.ignite.internal.placementdriver.leases.LeaseBatch;
 import org.apache.ignite.internal.placementdriver.leases.LeaseTracker;
 import org.apache.ignite.internal.placementdriver.leases.Leases;
 import org.apache.ignite.internal.replicator.ReplicationGroupId;
 import org.apache.ignite.internal.replicator.TablePartitionId;
+import org.apache.ignite.internal.replicator.configuration.ReplicationConfiguration;
 import org.apache.ignite.internal.testframework.BaseIgniteAbstractTest;
 import org.apache.ignite.internal.testframework.IgniteTestUtils;
 import org.apache.ignite.internal.util.Cursor;
@@ -83,12 +87,12 @@ import org.mockito.junit.jupiter.MockitoExtension;
  * TODO: IGNITE-20485 Configure the lease interval as less as possible to decrease the duration of tests.
  * The class contains unit tests for {@link LeaseUpdater}.
  */
-@ExtendWith({MockitoExtension.class})
+@ExtendWith({MockitoExtension.class, ConfigurationExtension.class})
 public class LeaseUpdaterTest extends BaseIgniteAbstractTest {
     /** Empty leases. */
     private final Leases leases = new Leases(emptyMap(), BYTE_EMPTY_ARRAY);
     /** Cluster node. */
-    private final LogicalNode node = new LogicalNode("123", "test-node", NetworkAddress.from("127.0.0.1:10000"));
+    private final LogicalNode node = new LogicalNode(randomUUID(), "test-node", NetworkAddress.from("127.0.0.1:10000"));
     @Mock
     private ClusterService clusterService;
     @Mock
@@ -99,6 +103,10 @@ public class LeaseUpdaterTest extends BaseIgniteAbstractTest {
     private LeaseTracker leaseTracker;
     @Mock
     private Cursor<Entry> mcEntriesCursor;
+
+    @InjectConfiguration
+    private ReplicationConfiguration replicationConfiguration;
+
     /** Lease updater for tests. */
     private LeaseUpdater leaseUpdater;
     /** Closure to get a lease that is passed in Meta storage. */
@@ -144,7 +152,8 @@ public class LeaseUpdaterTest extends BaseIgniteAbstractTest {
                 topologyService,
                 leaseTracker,
                 new TestClockService(new HybridClockImpl()),
-                new AssignmentsTracker(metaStorageManager)
+                new AssignmentsTracker(metaStorageManager),
+                replicationConfiguration
         );
 
         leaseUpdater.init();
