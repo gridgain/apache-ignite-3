@@ -167,7 +167,7 @@ public class ClusterTimeImpl implements ClusterTime, MetaStorageMetrics, Manuall
 
         // Since this method is called when a write command is being processed and safe time is also updated by write commands,
         // we need to re-schedule the idle time scheduler.
-        if (safeTimeScheduler != null) {
+        if (safeTimeScheduler != null) { // TODO only need to resched if clock is adjusted.
             safeTimeScheduler.schedule();
         }
     }

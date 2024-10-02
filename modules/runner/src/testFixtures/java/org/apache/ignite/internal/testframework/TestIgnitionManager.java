@@ -47,12 +47,12 @@ public class TestIgnitionManager {
     private static final int DEFAULT_SCALECUBE_METADATA_TIMEOUT = 10_000;
 
     /** Default DelayDuration in ms used for tests that is set on node init. */
-    public static final int DEFAULT_DELAY_DURATION_MS = 100;
+    public static final int DEFAULT_DELAY_DURATION_MS = 1000;
 
-    private static final int DEFAULT_METASTORAGE_IDLE_SYNC_TIME_INTERVAL_MS = 10;
+    private static final int DEFAULT_METASTORAGE_IDLE_SYNC_TIME_INTERVAL_MS = 300;
 
     /** Default partition idle SafeTime interval in ms used for tests that is set on node init. */
-    public static final int DEFAULT_PARTITION_IDLE_SYNC_TIME_INTERVAL_MS = 100;
+    public static final int DEFAULT_PARTITION_IDLE_SYNC_TIME_INTERVAL_MS = 300;
 
     public static final long DEFAULT_MAX_CLOCK_SKEW_MS = TestClockService.TEST_MAX_CLOCK_SKEW_MILLIS;
 
