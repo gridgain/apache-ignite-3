@@ -413,9 +413,7 @@ public class ReplicaManager extends AbstractEventProducer<LocalReplicaEvent, Loc
                 // replicaFut is always completed here.
                 Replica replica = replicaFut.join();
 
-                String senderId = sender.id();
-
-                CompletableFuture<ReplicaResult> resFut = replica.processRequest(request, senderId);
+                CompletableFuture<ReplicaResult> resFut = replica.processRequest(request, sender.id());
 
                 resFut.whenComplete((res, ex) -> {
                     NetworkMessage msg = prepareReplicaResponse(false, res.result());

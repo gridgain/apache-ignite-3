@@ -199,7 +199,8 @@ public class AbstractMultiNodeBenchmark {
                 + "  },\n"
                 + "  clientConnector: { port:{} },\n"
                 + "  rest.port: {},\n"
-                + "  raft.fsync = " + fsync()
+                + "  raft.fsync = " + fsync() + ",\n"
+                + "  system.partitionsLogPath = \"" + logPath() + "\""
                 + "}";
 
         for (int i = 0; i < nodes(); i++) {
@@ -237,6 +238,10 @@ public class AbstractMultiNodeBenchmark {
 
     protected Path workDir() throws Exception {
         return Files.createTempDirectory("tmpDirPrefix").toFile().toPath();
+    }
+
+    protected String logPath() {
+        return "";
     }
 
     protected boolean fsync() {
