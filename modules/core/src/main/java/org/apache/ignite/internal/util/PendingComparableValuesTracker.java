@@ -24,6 +24,7 @@ import java.lang.invoke.MethodHandles;
 import java.lang.invoke.VarHandle;
 import java.util.Comparator;
 import java.util.Map;
+import java.util.Map.Entry;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentNavigableMap;
 import java.util.concurrent.ConcurrentSkipListMap;
@@ -128,8 +129,10 @@ public class PendingComparableValuesTracker<T extends Comparable<T>, R> implemen
         }
 
         try {
-            if (current.getKey().compareTo(valueToWait) >= 0) {
-                return completedFuture(current.getValue());
+            Entry<T, @Nullable R> tmp = current;
+
+            if (tmp.getKey().compareTo(valueToWait) >= 0) {
+                return completedFuture(tmp.getValue());
             }
 
             LOG.warn("Wait for schema!");

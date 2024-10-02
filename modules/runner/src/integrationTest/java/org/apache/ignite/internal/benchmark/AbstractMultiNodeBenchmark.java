@@ -79,7 +79,7 @@ public class AbstractMultiNodeBenchmark {
      */
     @Setup
     public void nodeSetUp() throws Exception {
-        //System.setProperty("jraft.available_processors", "2");
+        System.setProperty("jraft.available_processors", "2");
         startCluster();
 
         try {
@@ -195,7 +195,7 @@ public class AbstractMultiNodeBenchmark {
                 + "  },\n"
                 + "  storage.profiles: {"
                 + "        " + DEFAULT_STORAGE_PROFILE + ".engine: aipersist, "
-                + "        " + DEFAULT_STORAGE_PROFILE + ".size: 107374182400 "
+                + "        " + DEFAULT_STORAGE_PROFILE + ".size: 20737418240 "
                 + "  },\n"
                 + "  clientConnector: { port:{} },\n"
                 + "  rest.port: {},\n"
