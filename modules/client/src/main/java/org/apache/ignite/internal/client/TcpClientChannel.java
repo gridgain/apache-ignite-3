@@ -65,7 +65,6 @@ import org.apache.ignite.internal.logger.IgniteLogger;
 import org.apache.ignite.internal.thread.IgniteThread;
 import org.apache.ignite.internal.thread.PublicApiThreading;
 import org.apache.ignite.internal.tostring.S;
-import org.apache.ignite.internal.tracing.Instrumentation;
 import org.apache.ignite.internal.util.ViewUtils;
 import org.apache.ignite.lang.ErrorGroups.Table;
 import org.apache.ignite.lang.IgniteException;
@@ -368,7 +367,7 @@ class TcpClientChannel implements ClientChannel, ClientMessageHandler, ClientCon
                 payloadWriter.accept(payloadCh);
             }
 
-            Instrumentation.measure(() -> write(req), "writeMessage").addListener(f -> {
+            write(req).addListener(f -> {
                 if (!f.isSuccess()) {
                     String msg = "Failed to send request [id=" + id + ", op=" + opCode + ", remoteAddress=" + cfg.getAddress() + "]";
                     IgniteClientConnectionException ex = new IgniteClientConnectionException(CONNECTION_ERR, msg, endpoint(), f.cause());
