@@ -55,7 +55,7 @@ import org.apache.ignite.internal.raft.storage.impl.RocksDbSharedLogStorage;
 import org.apache.ignite.internal.raft.storage.impl.StripeAwareLogManager;
 import org.apache.ignite.internal.raft.storage.impl.StripeAwareLogManager.Stripe;
 import org.apache.ignite.internal.thread.IgniteThreadFactory;
-import org.apache.ignite.raft.jraft.Closure;
+import org.apache.ignite.internal.tracing.Instrumentation;import org.apache.ignite.raft.jraft.Closure;
 import org.apache.ignite.internal.util.ThreadUtils;
 import org.apache.ignite.raft.jraft.Closure;
 import org.apache.ignite.raft.jraft.FSMCaller;
@@ -336,6 +336,8 @@ public class NodeImpl implements Node, RaftServerService {
 
         @Override
         public void onEvent(final ILogEntryAndClosure event, final long sequence, final boolean endOfBatch) throws Exception {
+            Instrumentation.mark("NodeImplOnEvent");
+
             if (event.getShutdownLatch() != null) {
                 if (!this.tasks.isEmpty()) {
                     executeApplyingTasks(this.tasks);
