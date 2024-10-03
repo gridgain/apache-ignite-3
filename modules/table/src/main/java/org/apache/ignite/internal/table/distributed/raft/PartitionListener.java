@@ -22,6 +22,7 @@ import static org.apache.ignite.internal.lang.IgniteStringFormatter.format;
 import static org.apache.ignite.internal.table.distributed.TableUtils.indexIdsAtRwTxBeginTs;
 import static org.apache.ignite.internal.table.distributed.index.MetaIndexStatus.BUILDING;
 import static org.apache.ignite.internal.table.distributed.index.MetaIndexStatus.REGISTERED;
+import static org.apache.ignite.internal.tracing.Instrumentation.measure;
 import static org.apache.ignite.internal.tx.TxState.ABORTED;
 import static org.apache.ignite.internal.tx.TxState.COMMITTED;
 import static org.apache.ignite.internal.tx.TxState.PENDING;
@@ -212,7 +213,10 @@ public class PartitionListener implements RaftGroupListener, BeforeApplyHandler 
 
             // We choose the minimum applied index, since we choose it (the minimum one) on local recovery so as not to lose the data for
             // one of the storages.
-            long storagesAppliedIndex = Math.min(storage.lastAppliedIndex(), txStateStorage.lastAppliedIndex());
+            long storagesAppliedIndex = measure(
+                    () -> Math.min(storage.lastAppliedIndex(), txStateStorage.lastAppliedIndex()),
+                    "getIndexFromStorage"
+            );
 
             assert commandIndex > storagesAppliedIndex :
                     "Write command must have an index greater than that of storages [commandIndex=" + commandIndex
@@ -230,7 +234,7 @@ public class PartitionListener implements RaftGroupListener, BeforeApplyHandler 
             // (because it's already truncated in the leader's log), so it will have to install a snapshot again, and then
             // repeat same thing over and over again.
 
-            storage.acquirePartitionSnapshotsReadLock();
+            measure(() -> storage.acquirePartitionSnapshotsReadLock(), "acquirePartitionSnapshotsReadLock");
 
             try {
                 if (command instanceof UpdateCommand) {
@@ -267,7 +271,7 @@ public class PartitionListener implements RaftGroupListener, BeforeApplyHandler 
 
                 throw t;
             } finally {
-                storage.releasePartitionSnapshotsReadLock();
+                measure(() -> storage.releasePartitionSnapshotsReadLock(), "releasePartitionSnapshotsReadLock");
             }
 
             // Adjust safe time before completing update to reduce waiting.
@@ -283,7 +287,10 @@ public class PartitionListener implements RaftGroupListener, BeforeApplyHandler 
             // trigger other actions taking same locks.
             clo.result(result);
 
-            updateTrackerIgnoringTrackerClosedException(storageIndexTracker, commandIndex);
+            measure(
+                    () -> updateTrackerIgnoringTrackerClosedException(storageIndexTracker, commandIndex),
+                    "updateStorageIndex"
+            );
         });
     }
 
