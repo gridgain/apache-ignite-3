@@ -1978,8 +1978,6 @@ public class NodeImpl implements Node, RaftServerService {
 
     @Override
     public void apply(final Task task) {
-        Instrumentation.mark("NodeImplApplyTask");
-
         if (this.shutdownLatch != null) {
             Utils.runClosureInThread(this.getOptions().getCommonExecutor(), task.getDone(), new Status(RaftError.ENODESHUTDOWN, "Node is shutting down."));
             throw new IllegalStateException("Node is shutting down");
@@ -2000,10 +1998,12 @@ public class NodeImpl implements Node, RaftServerService {
         };
         switch (this.options.getApplyTaskMode()) {
             case Blocking:
+                Instrumentation.mark("NodeImplApplyTaskBlocking");
                 this.applyQueue.publishEvent(translator);
                 break;
             case NonBlocking:
             default:
+                Instrumentation.mark("NodeImplApplyTaskNonBlocking");
                 if (!this.applyQueue.tryPublishEvent(translator)) {
                     String errorMsg = "Node is busy, has too many tasks, queue is full and bufferSize="+ this.applyQueue.getBufferSize();
                     Utils.runClosureInThread(this.getOptions().getCommonExecutor(), task.getDone(), new Status(RaftError.EBUSY, errorMsg));
