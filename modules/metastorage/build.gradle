@@ -29,12 +29,14 @@ dependencies {
     implementation project(':ignite-network-api')
     implementation project(':ignite-vault')
     implementation project(':ignite-raft-api')
+    implementation project(':ignite-raft')
     implementation project(':ignite-replicator')
     implementation project(':ignite-api')
     implementation project(':ignite-core')
     implementation project(':ignite-rocksdb-common')
     implementation project(':ignite-failure-handler')
     implementation project(':ignite-metrics')
+    implementation project(':ignite-system-disaster-recovery-api')
     implementation libs.jetbrains.annotations
     implementation libs.fastutil.core
 
@@ -62,6 +64,7 @@ dependencies {
     integrationTestImplementation project(":ignite-security")
     integrationTestImplementation project(':ignite-metrics')
     integrationTestImplementation project(':ignite-runner')
+    integrationTestImplementation project(':ignite-system-disaster-recovery')
     integrationTestImplementation testFixtures(project(':ignite-core'))
     integrationTestImplementation testFixtures(project(':ignite-network'))
     integrationTestImplementation testFixtures(project(':ignite-raft'))
@@ -79,6 +82,7 @@ dependencies {
     testFixturesImplementation project(':ignite-rocksdb-common')
     testFixturesImplementation project(':ignite-vault')
     testFixturesImplementation project(':ignite-failure-handler')
+    testFixturesImplementation project(':ignite-system-disaster-recovery-api')
     testFixturesImplementation testFixtures(project(':ignite-core'))
     testFixturesImplementation testFixtures(project(':ignite-failure-handler'))
     testFixturesImplementation testFixtures(project(':ignite-metrics'))

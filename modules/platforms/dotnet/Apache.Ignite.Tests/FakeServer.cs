@@ -30,6 +30,7 @@ namespace Apache.Ignite.Tests
     using Ignite.Sql;
     using Internal.Buffers;
     using Internal.Common;
+    using Internal.Compute;
     using Internal.Network;
     using Internal.Proto;
     using Internal.Proto.BinaryTuple;
@@ -84,8 +85,8 @@ namespace Apache.Ignite.Tests
         {
             _shouldDropConnection = shouldDropConnection ?? (_ => false);
 
-            Node = new ClusterNode("id-" + nodeName, nodeName, IPEndPoint.Parse("127.0.0.1:" + Port));
-            PartitionAssignment = new[] { Node.Id };
+            Node = new ClusterNode(Guid.NewGuid(), nodeName, IPEndPoint.Parse("127.0.0.1:" + Port));
+            PartitionAssignment = new[] { nodeName };
             ClusterNodes = new[] { Node };
 
             if (!disableOpsTracking)
@@ -174,6 +175,7 @@ namespace Apache.Ignite.Tests
             handshakeWriter.Write(Node.Id); // Node id.
             handshakeWriter.Write(Node.Name); // Node name (consistent id).
 
+            handshakeWriter.Write(1); // 1 cluster id.
             handshakeWriter.Write(ClusterId);
             handshakeWriter.Write(ClusterName);
 
@@ -398,7 +400,7 @@ namespace Apache.Ignite.Tests
 
                             writer.Write(index); // Partition id.
                             writer.Write(4); // Prop count.
-                            writer.Write(nodeId); // Id.
+                            writer.Write(Guid.NewGuid()); // Id.
                             writer.Write(nodeId); // Name.
                             writer.Write("localhost"); // Host.
                             writer.Write(10900 + index); // Port.
@@ -771,6 +773,7 @@ namespace Apache.Ignite.Tests
             var arrayBufferWriter = new PooledArrayBuffer();
             var writer = new MsgPackWriter(arrayBufferWriter);
 
+            writer.Write(ComputePacker.Native); // ComputePacker.Native
             writer.Write(builder.Build().Span);
 
             // Status

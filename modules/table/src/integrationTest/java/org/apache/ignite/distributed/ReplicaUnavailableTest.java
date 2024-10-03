@@ -44,6 +44,7 @@ import static org.mockito.Mockito.when;
 
 import java.util.List;
 import java.util.Set;
+import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -54,7 +55,7 @@ import java.util.function.Function;
 import org.apache.ignite.internal.cluster.management.ClusterManagementGroupManager;
 import org.apache.ignite.internal.configuration.testframework.ConfigurationExtension;
 import org.apache.ignite.internal.configuration.testframework.InjectConfiguration;
-import org.apache.ignite.internal.failure.NoOpFailureProcessor;
+import org.apache.ignite.internal.failure.NoOpFailureManager;
 import org.apache.ignite.internal.hlc.HybridClock;
 import org.apache.ignite.internal.hlc.HybridClockImpl;
 import org.apache.ignite.internal.hlc.TestClockService;
@@ -150,10 +151,10 @@ public class ReplicaUnavailableTest extends IgniteAbstractTest {
 
     private TopologyAwareRaftGroupService raftClient;
 
-    private final Function<BiFunction<ReplicaRequest, String, CompletableFuture<ReplicaResult>>, ReplicaListener> replicaListenerCreator =
+    private final Function<BiFunction<ReplicaRequest, UUID, CompletableFuture<ReplicaResult>>, ReplicaListener> replicaListenerCreator =
             (invokeImpl) -> new ReplicaListener() {
                 @Override
-                public CompletableFuture<ReplicaResult> invoke(ReplicaRequest request, String senderId) {
+                public CompletableFuture<ReplicaResult> invoke(ReplicaRequest request, UUID senderId) {
                     return invokeImpl.apply(request, senderId);
                 }
 
@@ -208,7 +209,7 @@ public class ReplicaUnavailableTest extends IgniteAbstractTest {
                 new TestPlacementDriver(clusterService.topologyService().localMember()),
                 requestsExecutor,
                 () -> DEFAULT_IDLE_SAFE_TIME_PROPAGATION_PERIOD_MILLISECONDS,
-                new NoOpFailureProcessor(),
+                new NoOpFailureManager(),
                 mock(ThreadLocalPartitionCommandsMarshaller.class),
                 mock(TopologyAwareRaftGroupServiceFactory.class),
                 raftManager,

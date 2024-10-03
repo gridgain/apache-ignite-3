@@ -43,19 +43,36 @@ import org.apache.ignite.internal.raft.ReadCommand;
 import org.apache.ignite.internal.raft.WriteCommand;
 import org.apache.ignite.internal.raft.service.BeforeApplyHandler;
 import org.apache.ignite.internal.raft.service.CommandClosure;
+import org.apache.ignite.internal.raft.service.CommittedConfiguration;
 import org.apache.ignite.internal.raft.service.RaftGroupListener;
 import org.apache.ignite.internal.util.Cursor;
+import org.apache.ignite.internal.util.IgniteSpinBusyLock;
 import org.jetbrains.annotations.Nullable;
+import org.jetbrains.annotations.TestOnly;
 
 /**
  * Meta storage listener.
  * TODO: IGNITE-14693 Implement Meta storage exception handling logic.
  */
 public class MetaStorageListener implements RaftGroupListener, BeforeApplyHandler {
+    private final IgniteSpinBusyLock busyLock = new IgniteSpinBusyLock();
+
     private final MetaStorageWriteHandler writeHandler;
 
     /** Storage. */
     private final KeyValueStorage storage;
+
+    private final Consumer<CommittedConfiguration> onConfigurationCommitted;
+
+    /**
+     * Constructor.
+     *
+     * @param storage Storage.
+     */
+    @TestOnly
+    public MetaStorageListener(KeyValueStorage storage, ClusterTimeImpl clusterTime) {
+        this(storage, clusterTime, newConfig -> {});
+    }
 
     /**
      * Constructor.
@@ -64,14 +81,29 @@ public class MetaStorageListener implements RaftGroupListener, BeforeApplyHandle
      */
     public MetaStorageListener(
             KeyValueStorage storage,
-            ClusterTimeImpl clusterTime
+            ClusterTimeImpl clusterTime,
+            Consumer<CommittedConfiguration> onConfigurationCommitted
     ) {
         this.storage = storage;
-        this.writeHandler = new MetaStorageWriteHandler(storage, clusterTime);
+        this.onConfigurationCommitted = onConfigurationCommitted;
+
+        writeHandler = new MetaStorageWriteHandler(storage, clusterTime);
     }
 
     @Override
     public void onRead(Iterator<CommandClosure<ReadCommand>> iter) {
+        if (!busyLock.enterBusy()) {
+            iter.forEachRemaining(clo -> clo.result(new ShutdownException()));
+        }
+
+        try {
+            onReadBusy(iter);
+        } finally {
+            busyLock.leaveBusy();
+        }
+    }
+
+    private void onReadBusy(Iterator<CommandClosure<ReadCommand>> iter) {
         while (iter.hasNext()) {
             CommandClosure<ReadCommand> clo = iter.next();
 
@@ -157,12 +189,27 @@ public class MetaStorageListener implements RaftGroupListener, BeforeApplyHandle
 
     @Override
     public void onWrite(Iterator<CommandClosure<WriteCommand>> iter) {
-        iter.forEachRemaining(writeHandler::handleWriteCommand);
+        if (!busyLock.enterBusy()) {
+            iter.forEachRemaining(clo -> clo.result(new ShutdownException()));
+        }
+
+        try {
+            iter.forEachRemaining(writeHandler::handleWriteCommand);
+        } finally {
+            busyLock.leaveBusy();
+        }
     }
 
     @Override
     public boolean onBeforeApply(Command command) {
         return writeHandler.beforeApply(command);
+    }
+
+    @Override
+    public void onConfigurationCommitted(CommittedConfiguration config) {
+        RaftGroupListener.super.onConfigurationCommitted(config);
+
+        onConfigurationCommitted.accept(config);
     }
 
     @Override
@@ -180,5 +227,6 @@ public class MetaStorageListener implements RaftGroupListener, BeforeApplyHandle
 
     @Override
     public void onShutdown() {
+        busyLock.block();
     }
 }

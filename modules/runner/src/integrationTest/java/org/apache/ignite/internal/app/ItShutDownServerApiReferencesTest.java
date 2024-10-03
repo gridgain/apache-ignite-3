@@ -22,6 +22,7 @@ import static org.apache.ignite.internal.testframework.matchers.CompletableFutur
 import static org.apache.ignite.internal.testframework.matchers.CompletableFutureMatcher.willCompleteSuccessfully;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.is;
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import org.apache.ignite.internal.ClusterPerClassIntegrationTest;
@@ -57,13 +58,17 @@ class ItShutDownServerApiReferencesTest extends ClusterPerClassIntegrationTest {
     @ParameterizedTest
     @EnumSource(SyncApiOperation.class)
     void syncOperationsThrowAfterShutdown(SyncApiOperation operation) {
-        IgniteException ex = assertThrows(IgniteException.class, () -> operation.execute(beforeShutdown));
-        assertThat(ex.getMessage(), is("The node is already shut down."));
+        if (operation.worksAfterShutdown()) {
+            assertDoesNotThrow(() -> operation.execute(beforeShutdown));
+        } else {
+            IgniteException ex = assertThrows(IgniteException.class, () -> operation.execute(beforeShutdown));
+            assertThat(ex.getMessage(), is("The node is already shut down."));
+        }
     }
 
     @ParameterizedTest
     @EnumSource(AsyncApiOperation.class)
-    void asyncOperationsWorkAfterRestart(AsyncApiOperation operation) {
+    void asyncOperationsThrowAfterShutdown(AsyncApiOperation operation) {
         assertThat(operation.execute(beforeShutdown), willThrow(IgniteException.class, 10, SECONDS, "The node is already shut down."));
     }
 }

@@ -18,6 +18,7 @@
 package org.apache.ignite.internal.distributionzones.causalitydatanodes;
 
 import static java.util.Collections.emptySet;
+import static java.util.UUID.randomUUID;
 import static java.util.concurrent.TimeUnit.MILLISECONDS;
 import static java.util.stream.Collectors.toSet;
 import static org.apache.ignite.internal.catalog.CatalogService.DEFAULT_STORAGE_PROFILE;
@@ -62,7 +63,6 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
-import java.util.stream.Stream;
 import org.apache.ignite.internal.catalog.descriptors.CatalogZoneDescriptor;
 import org.apache.ignite.internal.catalog.events.AlterZoneEventParameters;
 import org.apache.ignite.internal.catalog.events.CreateZoneEventParameters;
@@ -92,9 +92,6 @@ import org.jetbrains.annotations.Nullable;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.params.ParameterizedTest;
-import org.junit.jupiter.params.provider.Arguments;
-import org.junit.jupiter.params.provider.MethodSource;
 import org.mockito.stubbing.Answer;
 
 /**
@@ -108,21 +105,21 @@ public class DistributionZoneCausalityDataNodesTest extends BaseDistributionZone
     private static final String ZONE_NAME_4 = "zone4";
 
     private static final LogicalNode NODE_0 = new LogicalNode(
-            new ClusterNodeImpl("node_id_0", "node_name_0", new NetworkAddress("localhost", 123)),
+            new ClusterNodeImpl(randomUUID(), "node_name_0", new NetworkAddress("localhost", 123)),
             Map.of(),
             Map.of(),
             List.of(DEFAULT_STORAGE_PROFILE)
     );
 
     private static final LogicalNode NODE_1 = new LogicalNode(
-            new ClusterNodeImpl("node_id_1", "node_name_1", new NetworkAddress("localhost", 123)),
+            new ClusterNodeImpl(randomUUID(), "node_name_1", new NetworkAddress("localhost", 123)),
             Map.of(),
             Map.of(),
             List.of(DEFAULT_STORAGE_PROFILE)
     );
 
     private static final LogicalNode NODE_2 = new LogicalNode(
-            new ClusterNodeImpl("node_id_2", "node_name_2", new NetworkAddress("localhost", 123)),
+            new ClusterNodeImpl(randomUUID(), "node_name_2", new NetworkAddress("localhost", 123)),
             Map.of(),
             Map.of(),
             List.of(DEFAULT_STORAGE_PROFILE)
@@ -420,7 +417,7 @@ public class DistributionZoneCausalityDataNodesTest extends BaseDistributionZone
 
         int zoneId = getZoneId(ZONE_NAME);
 
-        // Check that data nodes value of the the zone is NODE_0.
+        // Check that data nodes value of the zone is NODE_0.
         Set<String> dataNodes1 = distributionZoneManager.dataNodes(topologyRevision1, catalogManager.latestCatalogVersion(), zoneId)
                 .get(TIMEOUT, MILLISECONDS);
         assertEquals(ONE_NODE_NAME, dataNodes1);
@@ -591,45 +588,6 @@ public class DistributionZoneCausalityDataNodesTest extends BaseDistributionZone
         ).get(TIMEOUT, MILLISECONDS);
 
         assertEquals(emptySet(), dataNodes);
-    }
-
-    /**
-     * Tests that data nodes for zones with different scale up/down configs are empty when creation of zones were before any
-     * topology event. In this test scenario we assume that initialisation of a zone was after the calling of the data nodes method.
-     */
-    @ParameterizedTest
-    @MethodSource("provideArgumentsOfDifferentTimersValue")
-    @Disabled("https://issues.apache.org/jira/browse/IGNITE-22833")
-    void testEmptyDataNodesOnZoneCreationBeforeTopologyEventAndZoneInitialisation(int scaleUp, int scaleDown) {
-        CountDownLatch latch = new CountDownLatch(1);
-
-        AtomicBoolean reached = new AtomicBoolean();
-
-        catalogManager.listen(ZONE_CREATE, parameters ->  {
-            CreateZoneEventParameters params = (CreateZoneEventParameters) parameters;
-
-            return CompletableFuture.runAsync(() -> {
-                try {
-                    Set<String> dataNodes = distributionZoneManager.dataNodes(
-                            params.causalityToken(),
-                            params.catalogVersion(),
-                            params.zoneDescriptor().id()
-                    ).get(TIMEOUT, MILLISECONDS);
-
-                    assertEquals(emptySet(), dataNodes);
-
-                    reached.set(true);
-                } catch (Exception e) {
-                    fail();
-                }
-            }).thenRun(latch::countDown).thenApply(ignored -> false);
-        });
-
-        blockDataNodesUpdatesInMetaStorage(latch);
-
-        createZone(ZONE_NAME, scaleUp, scaleDown, null);
-
-        assertTrue(reached.get());
     }
 
     /**
@@ -1581,15 +1539,6 @@ public class DistributionZoneCausalityDataNodesTest extends BaseDistributionZone
         if (revisionFuture != null) {
             revisionFuture.complete(revision);
         }
-    }
-
-    private static Stream<Arguments> provideArgumentsOfDifferentTimersValue() {
-        return Stream.of(
-                Arguments.of(1, 1),
-                Arguments.of(IMMEDIATE_TIMER_VALUE, 1),
-                Arguments.of(1, IMMEDIATE_TIMER_VALUE),
-                Arguments.of(IMMEDIATE_TIMER_VALUE, IMMEDIATE_TIMER_VALUE)
-        );
     }
 
     private void blockDataNodesUpdatesInMetaStorage(CountDownLatch latch) {

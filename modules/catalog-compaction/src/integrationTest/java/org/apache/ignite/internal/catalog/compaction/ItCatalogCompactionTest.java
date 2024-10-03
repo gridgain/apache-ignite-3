@@ -32,11 +32,11 @@ import static org.hamcrest.Matchers.lessThanOrEqualTo;
 import static org.hamcrest.Matchers.not;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 
+import java.util.ArrayList;
 import java.util.Collection;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Stream;
 import org.apache.ignite.internal.ClusterPerClassIntegrationTest;
 import org.apache.ignite.internal.app.IgniteImpl;
@@ -45,6 +45,7 @@ import org.apache.ignite.internal.catalog.CatalogManagerImpl;
 import org.apache.ignite.internal.catalog.compaction.CatalogCompactionRunner.TimeHolder;
 import org.apache.ignite.internal.catalog.descriptors.CatalogTableDescriptor;
 import org.apache.ignite.internal.hlc.HybridTimestamp;
+import org.apache.ignite.internal.placementdriver.ReplicaMeta;
 import org.apache.ignite.internal.raft.Loza;
 import org.apache.ignite.internal.raft.Peer;
 import org.apache.ignite.internal.raft.RaftNodeId;
@@ -54,6 +55,7 @@ import org.apache.ignite.internal.replicator.TablePartitionId;
 import org.apache.ignite.internal.table.distributed.raft.PartitionListener;
 import org.apache.ignite.internal.testframework.IgniteTestUtils;
 import org.apache.ignite.internal.tx.InternalTransaction;
+import org.apache.ignite.internal.util.CompletableFutures;
 import org.apache.ignite.network.ClusterNode;
 import org.apache.ignite.raft.jraft.RaftGroupService;
 import org.apache.ignite.tx.TransactionOptions;
@@ -79,35 +81,31 @@ class ItCatalogCompactionTest extends ClusterPerClassIntegrationTest {
         sql(format("create zone if not exists test with partitions={}, replicas={}, storage_profiles='default'",
                 partsCount, initialNodes()));
         sql("alter zone test set default");
+        sql("create table a(a int primary key)");
 
-        Map<Integer, Integer> expectedTablesWithPartitions = new HashMap<>();
+        Catalog minRequiredCatalog = catalogManager.catalog(catalogManager.latestCatalogVersion());
+        assertNotNull(minRequiredCatalog);
+
+        sql("create table b(a int primary key)");
+
+        List<TablePartitionId> expectedReplicationGroups = prepareExpectedGroups(catalogManager, partsCount);
+
+        // Raft groups update procedure is aborted if a primary
+        // for a replication group is not selected.
+        // Therefore, after creating the tables, before starting the
+        // procedure, we must wait for the selection of primary replicas.
+        waitPrimaryReplicas(expectedReplicationGroups);
 
         // Latest active catalog contains all required tables.
         {
-            sql("create table a(a int primary key)");
-
-            Catalog minRequiredCatalog = catalogManager.catalog(catalogManager.latestCatalogVersion());
-            assertNotNull(minRequiredCatalog);
-
-            sql("create table b(a int primary key)");
-
-            Catalog lastCatalog = catalogManager.catalog(
-                    catalogManager.activeCatalogVersion(ignite.clock().nowLong()));
-            assertNotNull(lastCatalog);
-
-            Collection<CatalogTableDescriptor> tables = lastCatalog.tables();
-            assertThat(tables, hasSize(2));
-
-            tables.forEach(t -> expectedTablesWithPartitions.put(t.id(), partsCount));
-
             HybridTimestamp expectedTime = HybridTimestamp.hybridTimestamp(minRequiredCatalog.time());
 
             CompletableFuture<Void> fut = ignite.catalogCompactionRunner()
-                    .propagateTimeToReplicas(expectedTime.longValue(), ignite.clusterNodes());
+                    .propagateTimeToNodes(expectedTime.longValue(), ignite.clusterNodes());
 
             assertThat(fut, willCompleteSuccessfully());
 
-            ensureTimestampStoredInAllReplicas(expectedTime, expectedTablesWithPartitions);
+            ensureTimestampStoredInAllReplicas(expectedTime, expectedReplicationGroups);
         }
 
         // Latest active catalog does not contain all required tables.
@@ -121,11 +119,11 @@ class ItCatalogCompactionTest extends ClusterPerClassIntegrationTest {
             HybridTimestamp expectedTime = HybridTimestamp.hybridTimestamp(requiredTime);
 
             CompletableFuture<Void> fut = ignite.catalogCompactionRunner()
-                    .propagateTimeToReplicas(expectedTime.longValue(), ignite.clusterNodes());
+                    .propagateTimeToNodes(expectedTime.longValue(), ignite.clusterNodes());
 
             assertThat(fut, willCompleteSuccessfully());
 
-            ensureTimestampStoredInAllReplicas(expectedTime, expectedTablesWithPartitions);
+            ensureTimestampStoredInAllReplicas(expectedTime, expectedReplicationGroups);
         }
     }
 
@@ -143,10 +141,14 @@ class ItCatalogCompactionTest extends ClusterPerClassIntegrationTest {
 
         Collection<ClusterNode> topologyNodes = node0.clusterNodes();
 
-        InternalTransaction tx1 = (InternalTransaction) node0.transactions().begin();
-        InternalTransaction tx2 = (InternalTransaction) node1.transactions().begin();
+        InternalTransaction tx1 = startRwTxWithStartTimeNotLessThan(node0, node0.clock().now());
+        InternalTransaction tx2 = startRwTxWithStartTimeNotLessThan(node1, tx1.startTimestamp());
         InternalTransaction readonlyTx = (InternalTransaction) node1.transactions().begin(new TransactionOptions().readOnly(true));
-        InternalTransaction tx3 = (InternalTransaction) node2.transactions().begin();
+        InternalTransaction tx3 = startRwTxWithStartTimeNotLessThan(node2, tx2.startTimestamp());
+
+        // make sure that transactions are ordered as expected
+        assertThat(tx2.startTimestamp().longValue(), greaterThan(tx1.startTimestamp().longValue()));
+        assertThat(tx3.startTimestamp().longValue(), greaterThan(tx2.startTimestamp().longValue()));
 
         compactors.forEach(compactor -> {
             TimeHolder timeHolder = await(compactor.determineGlobalMinimumRequiredTime(topologyNodes, 0L));
@@ -187,19 +189,50 @@ class ItCatalogCompactionTest extends ClusterPerClassIntegrationTest {
         readonlyTx.rollback();
     }
 
+    private static void waitPrimaryReplicas(List<TablePartitionId> groups) {
+        IgniteImpl node = unwrapIgniteImpl(CLUSTER.aliveNode());
+        List<CompletableFuture<?>> waitFutures = new ArrayList<>(groups.size());
+
+        for (TablePartitionId groupId : groups) {
+            CompletableFuture<ReplicaMeta> waitFut = node.placementDriver()
+                    .awaitPrimaryReplica(groupId, node.clock().now(), 10, TimeUnit.SECONDS);
+
+            waitFutures.add(waitFut);
+        }
+
+        await(CompletableFutures.allOf(waitFutures));
+    }
+
+    private static List<TablePartitionId> prepareExpectedGroups(CatalogManagerImpl catalogManager, int partsCount) {
+        IgniteImpl ignite = unwrapIgniteImpl(CLUSTER.aliveNode());
+
+        Catalog lastCatalog = catalogManager.catalog(
+                catalogManager.activeCatalogVersion(ignite.clock().nowLong()));
+        assertNotNull(lastCatalog);
+
+        Collection<CatalogTableDescriptor> tables = lastCatalog.tables();
+        assertThat(tables, hasSize(2));
+
+        List<TablePartitionId> expected = new ArrayList<>(partsCount * tables.size());
+
+        tables.forEach(tab -> {
+            for (int p = 0; p < partsCount; p++) {
+                expected.add(new TablePartitionId(tab.id(), p));
+            }
+        });
+
+        return expected;
+    }
+
     private static void ensureTimestampStoredInAllReplicas(
             HybridTimestamp expectedTimestamp,
-            Map<Integer, Integer> expectedTablesWithPartitions
+            List<TablePartitionId> expectedReplicationGroups
     ) throws InterruptedException {
-        Loza loza = unwrapIgniteImpl(CLUSTER.aliveNode()).raftManager();
-        JraftServerImpl server = (JraftServerImpl) loza.server();
+        for (int i = 0; i < CLUSTER_SIZE; i++) {
+            Loza loza = unwrapIgniteImpl(CLUSTER.node(i)).raftManager();
+            JraftServerImpl server = (JraftServerImpl) loza.server();
 
-        for (Map.Entry<Integer, Integer> tableWithPartition : expectedTablesWithPartitions.entrySet()) {
-            int tableId = tableWithPartition.getKey();
-            int partitionsCount = tableWithPartition.getValue();
-
-            for (int p = 0; p < partitionsCount; p++) {
-                TablePartitionId groupId = new TablePartitionId(tableId, p);
+            for (TablePartitionId groupId : expectedReplicationGroups) {
                 List<Peer> peers = server.localPeers(groupId);
 
                 assertThat(peers, is(not(empty())));
@@ -219,5 +252,15 @@ class ItCatalogCompactionTest extends ClusterPerClassIntegrationTest {
                 assertThat(grp.getGroupId(), listener.minimumActiveTxBeginTime(), equalTo(expectedTimestamp.longValue()));
             }
         }
+    }
+
+    private static InternalTransaction startRwTxWithStartTimeNotLessThan(IgniteImpl ignite, HybridTimestamp timestamp) {
+        ignite.clock().update(timestamp);
+
+        InternalTransaction tx = (InternalTransaction) ignite.transactions().begin();
+
+        assertThat(tx.startTimestamp().longValue(), greaterThan(timestamp.longValue()));
+
+        return tx; 
     }
 }

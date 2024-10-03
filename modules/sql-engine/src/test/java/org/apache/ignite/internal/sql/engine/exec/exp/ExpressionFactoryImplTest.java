@@ -18,10 +18,12 @@
 package org.apache.ignite.internal.sql.engine.exec.exp;
 
 import static java.util.Collections.singletonList;
+import static java.util.UUID.randomUUID;
 import static org.apache.ignite.internal.sql.engine.util.SqlTestUtils.assertThrowsSqlException;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -38,8 +40,6 @@ import java.util.Comparator;
 import java.util.EnumSet;
 import java.util.List;
 import java.util.Objects;
-import java.util.Random;
-import java.util.UUID;
 import java.util.function.BiFunction;
 import java.util.function.BiPredicate;
 import java.util.function.Function;
@@ -114,8 +114,8 @@ public class ExpressionFactoryImplTest extends BaseIgniteAbstractTest {
                 Long2ObjectMaps.emptyMap(), null, null, null);
 
         ExecutionContext<Object[]> ctx = TestBuilders.executionContext()
-                .queryId(UUID.randomUUID())
-                .localNode(new ClusterNodeImpl("1", "node-1", new NetworkAddress("localhost", 1234)))
+                .queryId(randomUUID())
+                .localNode(new ClusterNodeImpl(randomUUID(), "node-1", new NetworkAddress("localhost", 1234)))
                 .fragment(fragmentDescription)
                 .executor(Mockito.mock(QueryTaskExecutor.class))
                 .build();
@@ -723,17 +723,12 @@ public class ExpressionFactoryImplTest extends BaseIgniteAbstractTest {
     @ParameterizedTest(name = "type={0}, literals={1}")
     @MethodSource("rowSourceTestArgs")
     public void testRowSource(ColumnType columnType, boolean literalsOnly) {
-        long seed = System.nanoTime();
+        Object val = SqlTestUtils.generateValueByTypeWithMaxScalePrecisionForSql(columnType);
 
-        log.info("Seed: " + seed);
+        RexNode expr1 = SqlTestUtils.generateLiteralOrValueExpr(columnType, val);
+        assertInstanceOf(RexLiteral.class, expr1);
 
-        Random rnd = new Random(seed);
-
-        Object val1 = SqlTestUtils.generateValueByType(rnd.nextInt(), columnType);
-        RexNode expr1 = SqlTestUtils.generateLiteralOrValueExpr(columnType, val1);
-        assertTrue(expr1 instanceof RexLiteral);
-
-        Object val2 = literalsOnly ? 1 : UUID.randomUUID();
+        Object val2 = literalsOnly ? 1 : randomUUID();
         RexNode expr2 = SqlTestUtils.generateLiteralOrValueExpr(literalsOnly ? ColumnType.INT32 : ColumnType.UUID, val2);
         assertEquals(literalsOnly, expr2 instanceof RexLiteral);
 
@@ -748,7 +743,7 @@ public class ExpressionFactoryImplTest extends BaseIgniteAbstractTest {
         } else if (columnType == ColumnType.DOUBLE) {
             expected = ((BigDecimal) ((RexLiteral) expr1).getValue4()).doubleValue();
         } else {
-            expected = val1 == null ? null : TypeUtils.toInternal(val1, val1.getClass());
+            expected = val == null ? null : TypeUtils.toInternal(val, val.getClass());
         }
 
         assertEquals(Arrays.asList(expected, val2), Arrays.asList(actual));

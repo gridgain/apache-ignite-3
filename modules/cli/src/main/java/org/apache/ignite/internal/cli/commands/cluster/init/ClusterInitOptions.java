@@ -32,6 +32,7 @@ import static org.apache.ignite.internal.cli.commands.Options.Constants.META_STO
 import static org.apache.ignite.internal.cli.commands.Options.Constants.META_STORAGE_NODE_NAME_PARAM_LABEL;
 
 import com.typesafe.config.Config;
+import com.typesafe.config.ConfigException;
 import com.typesafe.config.ConfigFactory;
 import com.typesafe.config.ConfigRenderOptions;
 import java.io.File;
@@ -53,6 +54,10 @@ import picocli.CommandLine.Option;
  * Mixin class for cluster init command options.
  */
 public class ClusterInitOptions {
+    /** Name of the cluster. */
+    @Option(names = CLUSTER_NAME_OPTION, required = true, description = CLUSTER_NAME_OPTION_DESC, order = 0)
+    private String clusterName;
+
     /**
      * List of names of the nodes (each represented by a separate command line argument) that will host the Meta Storage. If the
      * "--cluster-management-group" parameter is omitted, the same nodes will also host the Cluster Management Group.
@@ -62,6 +67,7 @@ public class ClusterInitOptions {
             description = META_STORAGE_NODE_NAME_OPTION_DESC,
             split = ",",
             paramLabel = META_STORAGE_NODE_NAME_PARAM_LABEL,
+            order = 1,
             preprocessor = SingleOccurrenceMetastorageConsumer.class
     )
     private List<String> metaStorageNodes;
@@ -73,24 +79,22 @@ public class ClusterInitOptions {
             description = CMG_NODE_NAME_OPTION_DESC,
             split = ",",
             paramLabel = CMG_NODE_NAME_PARAM_LABEL,
+            order = 2,
             preprocessor = SingleOccurrenceClusterManagementConsumer.class
     )
     private List<String> cmgNodes = new ArrayList<>();
-
-    /** Name of the cluster. */
-    @Option(names = CLUSTER_NAME_OPTION, required = true, description = CLUSTER_NAME_OPTION_DESC)
-    private String clusterName;
 
     @ArgGroup
     private ClusterConfigOptions clusterConfigOptions;
 
     private static class ClusterConfigOptions {
-        @Option(names = CLUSTER_CONFIG_OPTION, description = CLUSTER_CONFIG_OPTION_DESC)
+        @Option(names = CLUSTER_CONFIG_OPTION, order = 3, description = CLUSTER_CONFIG_OPTION_DESC)
         private String config;
 
         @Option(names = CLUSTER_CONFIG_FILE_OPTION,
                 description = CLUSTER_CONFIG_FILE_OPTION_DESC,
                 split = ",",
+                order = 4,
                 paramLabel = CLUSTER_CONFIG_FILE_PARAM_LABEL
         )
         private List<File> files;
@@ -144,7 +148,9 @@ public class ClusterInitOptions {
 
                     config = config.withFallback(ConfigFactory.parseString(content));
                 } catch (IOException e) {
-                    throw new IgniteCliException("Couldn't read cluster configuration file: " + clusterConfigOptions.files, e);
+                    throw new IgniteCliException("Couldn't read cluster configuration file " + file, e);
+                } catch (ConfigException e) {
+                    throw new ConfigFileParseException("Couldn't parse cluster configuration file " + file, e);
                 }
             }
 

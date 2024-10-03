@@ -48,6 +48,7 @@ import org.apache.ignite.internal.configuration.testframework.InjectConfiguratio
 import org.apache.ignite.internal.hlc.ClockService;
 import org.apache.ignite.internal.hlc.HybridClock;
 import org.apache.ignite.internal.hlc.HybridClockImpl;
+import org.apache.ignite.internal.hlc.HybridTimestamp;
 import org.apache.ignite.internal.hlc.TestClockService;
 import org.apache.ignite.internal.lang.IgniteTriFunction;
 import org.apache.ignite.internal.manager.ComponentContext;
@@ -79,6 +80,7 @@ import org.apache.ignite.internal.raft.service.RaftGroupService;
 import org.apache.ignite.internal.raft.storage.LogStorageFactory;
 import org.apache.ignite.internal.raft.util.SharedLogStorageFactoryUtils;
 import org.apache.ignite.internal.replicator.TablePartitionId;
+import org.apache.ignite.internal.replicator.configuration.ReplicationConfiguration;
 import org.apache.ignite.internal.util.IgniteUtils;
 import org.apache.ignite.network.NetworkAddress;
 import org.apache.ignite.raft.jraft.rpc.impl.RaftGroupEventsClientListener;
@@ -103,6 +105,9 @@ public class MultiActorPlacementDriverTest extends BasePlacementDriverTest {
     @InjectConfiguration
     private MetaStorageConfiguration metaStorageConfiguration;
 
+    @InjectConfiguration
+    private ReplicationConfiguration replicationConfiguration;
+
     private List<String> placementDriverNodeNames;
 
     private List<String> nodeNames;
@@ -119,6 +124,8 @@ public class MultiActorPlacementDriverTest extends BasePlacementDriverTest {
     private IgniteTriFunction<LeaseGrantedMessage, String, String, LeaseGrantedMessageResponse> leaseGrantHandler;
 
     private final AtomicInteger nextTableId = new AtomicInteger(1);
+
+    private final long assignmentsTimestamp = new HybridTimestamp(0, 1).longValue();
 
     @BeforeEach
     public void beforeTest(TestInfo testInfo) {
@@ -302,7 +309,8 @@ public class MultiActorPlacementDriverTest extends BasePlacementDriverTest {
                     logicalTopologyService,
                     raftManager,
                     topologyAwareRaftGroupServiceFactory,
-                    clockService
+                    clockService,
+                    replicationConfiguration
             );
 
             res.add(new Node(
@@ -601,6 +609,6 @@ public class MultiActorPlacementDriverTest extends BasePlacementDriverTest {
      * @return Replication group id.
      */
     private TablePartitionId createTableAssignment() {
-        return createTableAssignment(metaStorageManager, nextTableId.get(), nodeNames);
+        return createTableAssignment(metaStorageManager, nextTableId.get(), nodeNames, assignmentsTimestamp);
     }
 }

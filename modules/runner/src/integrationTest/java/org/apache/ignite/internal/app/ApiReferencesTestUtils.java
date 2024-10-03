@@ -17,6 +17,9 @@
 
 package org.apache.ignite.internal.app;
 
+import org.apache.ignite.catalog.definitions.TableDefinition;
+import org.apache.ignite.catalog.definitions.ZoneDefinition;
+import org.apache.ignite.internal.catalog.CatalogService;
 import org.apache.ignite.table.Tuple;
 
 /**
@@ -27,4 +30,21 @@ class ApiReferencesTestUtils {
     static final Tuple KEY_TUPLE = Tuple.create().set("id", 1);
     static final Tuple VALUE_TUPLE = Tuple.create().set("val", "one");
     static final Tuple FULL_TUPLE = Tuple.create().set("id", 1).set("val", "one");
+
+    static final String SELECT_IDS_QUERY = "SELECT id FROM " + TEST_TABLE_NAME;
+    static final String UPDATE_QUERY = "UPDATE " + TEST_TABLE_NAME + " SET val = val WHERE id = ?";
+
+    static TableDefinition tableDefinition() {
+        return TableDefinition.builder("def_table")
+                .record(Pojo.class)
+                .ifNotExists()
+                .build();
+    }
+
+    static ZoneDefinition zoneDefinition() {
+        return ZoneDefinition.builder("zone")
+                .storageProfiles(CatalogService.DEFAULT_STORAGE_PROFILE)
+                .ifNotExists()
+                .build();
+    }
 }

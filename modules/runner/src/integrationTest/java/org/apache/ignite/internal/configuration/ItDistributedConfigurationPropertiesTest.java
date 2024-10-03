@@ -53,8 +53,9 @@ import org.apache.ignite.internal.configuration.storage.DistributedConfiguration
 import org.apache.ignite.internal.configuration.testframework.ConfigurationExtension;
 import org.apache.ignite.internal.configuration.testframework.InjectConfiguration;
 import org.apache.ignite.internal.configuration.validation.TestConfigurationValidator;
-import org.apache.ignite.internal.failure.FailureProcessor;
-import org.apache.ignite.internal.failure.NoOpFailureProcessor;
+import org.apache.ignite.internal.disaster.system.SystemDisasterRecoveryStorage;
+import org.apache.ignite.internal.failure.FailureManager;
+import org.apache.ignite.internal.failure.NoOpFailureManager;
 import org.apache.ignite.internal.hlc.HybridClock;
 import org.apache.ignite.internal.hlc.HybridClockImpl;
 import org.apache.ignite.internal.manager.ComponentContext;
@@ -141,7 +142,7 @@ public class ItDistributedConfigurationPropertiesTest extends BaseIgniteAbstract
         /** The future have to be complete after the node start and all Meta storage watches are deployd. */
         private final CompletableFuture<Void> deployWatchesFut;
 
-        private final FailureProcessor failureProcessor;
+        private final FailureManager failureManager;
 
         /** Flag that disables storage updates. */
         private volatile boolean receivesUpdates = true;
@@ -191,7 +192,7 @@ public class ItDistributedConfigurationPropertiesTest extends BaseIgniteAbstract
                     new TestConfigurationValidator()
             );
 
-            this.failureProcessor = new NoOpFailureProcessor();
+            this.failureManager = new NoOpFailureManager();
 
             ComponentWorkingDir cmgWorkDir = new ComponentWorkingDir(workDir.resolve("cmg"));
 
@@ -203,13 +204,14 @@ public class ItDistributedConfigurationPropertiesTest extends BaseIgniteAbstract
 
             cmgManager = new ClusterManagementGroupManager(
                     vaultManager,
+                    new SystemDisasterRecoveryStorage(vaultManager),
                     clusterService,
                     clusterInitializer,
                     raftManager,
                     clusterStateStorage,
                     logicalTopology,
                     new NodeAttributesCollector(nodeAttributes, storageConfiguration),
-                    failureProcessor,
+                    failureManager,
                     new ClusterIdHolder(),
                     cmgRaftConfigurer
             );
@@ -282,7 +284,7 @@ public class ItDistributedConfigurationPropertiesTest extends BaseIgniteAbstract
                             cmgLogStorageFactory,
                             msLogStorageFactory,
                             raftManager,
-                            failureProcessor,
+                            failureManager,
                             cmgManager,
                             metaStorageManager
                     ),
@@ -308,7 +310,7 @@ public class ItDistributedConfigurationPropertiesTest extends BaseIgniteAbstract
             var components = List.of(
                     distributedCfgManager,
                     cmgManager,
-                    failureProcessor,
+                    failureManager,
                     metaStorageManager,
                     raftManager,
                     partitionsLogStorageFactory,

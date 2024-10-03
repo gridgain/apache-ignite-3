@@ -30,6 +30,7 @@ import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.UUID;
 import org.apache.ignite.internal.lang.IgniteInternalException;
 import org.jetbrains.annotations.Nullable;
 
@@ -343,5 +344,34 @@ public class ByteUtils {
         }
 
         return unmodifiableList(result);
+    }
+
+    /**
+     * Converts a UUID to bytes.
+     */
+    public static byte[] uuidToBytes(UUID uuid) {
+        byte[] bytes = new byte[2 * Long.BYTES];
+
+        putLongToBytes(uuid.getMostSignificantBits(), bytes, 0);
+        putLongToBytes(uuid.getLeastSignificantBits(), bytes, Long.BYTES);
+
+        return bytes;
+    }
+
+    /**
+     * Converts a UUID back from bytes.
+     */
+    public static UUID bytesToUuid(byte[] bytes) {
+        return bytesToUuid(bytes, 0);
+    }
+
+    /**
+     * Converts a UUID back from bytes.
+     */
+    public static UUID bytesToUuid(byte[] bytes, int offset) {
+        long higher = bytesToLong(bytes, offset);
+        long lower = bytesToLong(bytes, offset + Long.BYTES);
+
+        return new UUID(higher, lower);
     }
 }

@@ -23,6 +23,7 @@ import static java.util.stream.Collectors.toList;
 import static java.util.stream.Collectors.toSet;
 import static org.apache.ignite.internal.network.utils.ClusterServiceTestUtils.findLocalAddresses;
 import static org.apache.ignite.internal.network.utils.ClusterServiceTestUtils.waitForTopology;
+import static org.apache.ignite.internal.partitiondistribution.PartitionDistributionUtils.calculateAssignments;
 import static org.apache.ignite.internal.replicator.ReplicatorConstants.DEFAULT_IDLE_SAFE_TIME_PROPAGATION_PERIOD_MILLISECONDS;
 import static org.apache.ignite.internal.testframework.matchers.CompletableFutureMatcher.willCompleteSuccessfully;
 import static org.apache.ignite.internal.util.CollectionUtils.first;
@@ -48,6 +49,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Set;
+import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -61,8 +63,6 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Function;
 import java.util.function.Supplier;
 import java.util.stream.IntStream;
-import org.apache.ignite.internal.affinity.AffinityUtils;
-import org.apache.ignite.internal.affinity.Assignment;
 import org.apache.ignite.internal.catalog.CatalogService;
 import org.apache.ignite.internal.catalog.descriptors.CatalogIndexDescriptor;
 import org.apache.ignite.internal.catalog.descriptors.CatalogTableDescriptor;
@@ -72,7 +72,7 @@ import org.apache.ignite.internal.cluster.management.topology.api.LogicalTopolog
 import org.apache.ignite.internal.cluster.management.topology.api.LogicalTopologyService;
 import org.apache.ignite.internal.cluster.management.topology.api.LogicalTopologySnapshot;
 import org.apache.ignite.internal.configuration.RaftGroupOptionsConfigHelper;
-import org.apache.ignite.internal.failure.NoOpFailureProcessor;
+import org.apache.ignite.internal.failure.NoOpFailureManager;
 import org.apache.ignite.internal.hlc.ClockService;
 import org.apache.ignite.internal.hlc.HybridClock;
 import org.apache.ignite.internal.hlc.HybridClockImpl;
@@ -90,7 +90,9 @@ import org.apache.ignite.internal.network.NodeFinder;
 import org.apache.ignite.internal.network.StaticNodeFinder;
 import org.apache.ignite.internal.network.utils.ClusterServiceTestUtils;
 import org.apache.ignite.internal.partition.replicator.network.PartitionReplicationMessageGroup;
+import org.apache.ignite.internal.partitiondistribution.Assignment;
 import org.apache.ignite.internal.placementdriver.PlacementDriver;
+import org.apache.ignite.internal.placementdriver.ReplicaMeta;
 import org.apache.ignite.internal.placementdriver.TestPlacementDriver;
 import org.apache.ignite.internal.raft.Loza;
 import org.apache.ignite.internal.raft.Peer;
@@ -111,10 +113,13 @@ import org.apache.ignite.internal.replicator.ReplicationGroupId;
 import org.apache.ignite.internal.replicator.TablePartitionId;
 import org.apache.ignite.internal.replicator.configuration.ReplicationConfiguration;
 import org.apache.ignite.internal.replicator.listener.ReplicaListener;
+import org.apache.ignite.internal.replicator.message.PrimaryReplicaChangeCommand;
+import org.apache.ignite.internal.replicator.message.ReplicaMessagesFactory;
 import org.apache.ignite.internal.schema.BinaryRowConverter;
 import org.apache.ignite.internal.schema.ColumnsExtractor;
 import org.apache.ignite.internal.schema.SchemaDescriptor;
 import org.apache.ignite.internal.schema.SchemaRegistry;
+import org.apache.ignite.internal.schema.SchemaSyncService;
 import org.apache.ignite.internal.schema.configuration.StorageUpdateConfiguration;
 import org.apache.ignite.internal.storage.MvPartitionStorage;
 import org.apache.ignite.internal.storage.engine.MvTableStorage;
@@ -137,7 +142,6 @@ import org.apache.ignite.internal.table.distributed.replicator.PartitionReplicaL
 import org.apache.ignite.internal.table.distributed.replicator.TransactionStateResolver;
 import org.apache.ignite.internal.table.distributed.schema.AlwaysSyncedSchemaSyncService;
 import org.apache.ignite.internal.table.distributed.schema.ConstantSchemaVersions;
-import org.apache.ignite.internal.table.distributed.schema.SchemaSyncService;
 import org.apache.ignite.internal.table.distributed.schema.ThreadLocalPartitionCommandsMarshaller;
 import org.apache.ignite.internal.table.distributed.schema.ValidationSchemasSource;
 import org.apache.ignite.internal.table.distributed.storage.InternalTableImpl;
@@ -179,6 +183,8 @@ import org.junit.jupiter.api.TestInfo;
 public class ItTxTestCluster {
     private static final int SCHEMA_VERSION = 1;
 
+    private static final ReplicaMessagesFactory REPLICA_MESSAGES_FACTORY = new ReplicaMessagesFactory();
+
     private final List<NetworkAddress> localAddresses;
 
     private final NodeFinder nodeFinder;
@@ -213,7 +219,7 @@ public class ItTxTestCluster {
 
     private ReplicaService clientReplicaSvc;
 
-    protected Map<String, Loza> raftServers;
+    protected Map<String, Loza> raftServers = new HashMap<>();
 
     protected Map<String, ReplicaManager> replicaManagers;
 
@@ -259,7 +265,7 @@ public class ItTxTestCluster {
 
     private final ClusterNodeResolver nodeResolver = new ClusterNodeResolver() {
         @Override
-        public @Nullable ClusterNode getById(String id) {
+        public @Nullable ClusterNode getById(UUID id) {
             for (ClusterService service : cluster) {
                 ClusterNode clusterNode = service.topologyService().localMember();
 
@@ -341,7 +347,7 @@ public class ItTxTestCluster {
 
         clusterServices = new ConcurrentHashMap<>(nodes);
 
-        nodeFinder.findNodes().parallelStream()
+        localAddresses.parallelStream()
                 .forEach(addr -> {
                     ClusterService svc = startNode(testInfo, addr.toString(), addr.port(), nodeFinder);
                     cluster.add(svc);
@@ -402,8 +408,10 @@ public class ItTxTestCluster {
             Path partitionsWorkDir = workDir.resolve("node" + i);
 
             LogStorageFactory partitionsLogStorageFactory = SharedLogStorageFactoryUtils.create(
+                    "test",
                     clusterService.nodeName(),
-                    partitionsWorkDir.resolve("log")
+                    partitionsWorkDir.resolve("log"),
+                    raftConfig.fsync().value()
             );
 
             logStorageFactories.put(nodeName, partitionsLogStorageFactory);
@@ -449,7 +457,7 @@ public class ItTxTestCluster {
                     placementDriver,
                     partitionOperationsExecutor,
                     () -> DEFAULT_IDLE_SAFE_TIME_PROPAGATION_PERIOD_MILLISECONDS,
-                    new NoOpFailureProcessor(),
+                    new NoOpFailureManager(),
                     commandMarshaller,
                     raftClientFactory,
                     raftSrv,
@@ -571,7 +579,7 @@ public class ItTxTestCluster {
      *
      * @param tableName Table name.
      * @param schemaDescriptor Schema descriptor.
-     * @return Groups map.
+     * @return Started instance.
      */
     public TableViewInternal startTable(String tableName, SchemaDescriptor schemaDescriptor) throws Exception {
         int tableId = globalCatalogId.getAndIncrement();
@@ -583,7 +591,7 @@ public class ItTxTestCluster {
         lenient().when(catalogService.table(eq(tableId), anyLong())).thenReturn(tableDescriptor);
         lenient().when(catalogService.table(eq(tableId), anyInt())).thenReturn(tableDescriptor);
 
-        List<Set<Assignment>> calculatedAssignments = AffinityUtils.calculateAssignments(
+        List<Set<Assignment>> calculatedAssignments = calculateAssignments(
                 cluster.stream().map(ItTxTestCluster::extractConsistentId).collect(toList()),
                 1,
                 replicas
@@ -669,7 +677,6 @@ public class ItTxTestCluster {
                 ColumnsExtractor row2Tuple = BinaryRowConverter.keyExtractor(schemaDescriptor);
 
                 StorageHashIndexDescriptor pkIndexDescriptor = mock(StorageHashIndexDescriptor.class);
-                when(pkIndexDescriptor.isPk()).thenReturn(true);
 
                 when(pkIndexDescriptor.columns()).then(invocation -> Collections.nCopies(
                         schemaDescriptor.keyColumns().size(),
@@ -713,7 +720,9 @@ public class ItTxTestCluster {
                         catalogService,
                         schemaManager,
                         clockServices.get(assignment),
-                        mock(IndexMetaStorage.class)
+                        mock(IndexMetaStorage.class),
+                        // TODO use proper index.
+                        clusterServices.get(assignment).topologyService().getByConsistentId(assignment).id()
                 );
 
                 Function<RaftGroupService, ReplicaListener> createReplicaListener = raftClient -> newReplicaListener(
@@ -754,6 +763,35 @@ public class ItTxTestCluster {
 
                 partitionReadyFutures.add(partitionReadyFuture);
             }
+        }
+
+        allOf(partitionReadyFutures.toArray(new CompletableFuture[0])).join();
+
+        for (int p = 0; p < assignments.size(); p++) {
+            TablePartitionId grpId = grpIds.get(p);
+            CompletableFuture<ReplicaMeta> primaryFuture = placementDriver.getPrimaryReplica(grpId,
+                    clockServices.values().iterator().next().now());
+
+            // TestPlacementDriver always returns completed futures.
+            assert primaryFuture.isDone();
+
+            ReplicaMeta primary = primaryFuture.join();
+
+            assert primary.getLeaseholderId() != null;
+
+            PrimaryReplicaChangeCommand cmd = REPLICA_MESSAGES_FACTORY.primaryReplicaChangeCommand()
+                    .leaseStartTime(primary.getStartTime().longValue())
+                    .primaryReplicaNodeId(primary.getLeaseholderId())
+                    .primaryReplicaNodeName(primary.getLeaseholder())
+                    .build();
+
+            CompletableFuture<RaftGroupService> raftClientFuture = getRaftClientForGroup(grpId);
+
+            assertThat(raftClientFuture, willCompleteSuccessfully());
+
+            CompletableFuture<?> primaryReplicaChangePropagationFuture = raftClientFuture.join().run(cmd);
+
+            partitionReadyFutures.add(primaryReplicaChangePropagationFuture);
         }
 
         allOf(partitionReadyFutures.toArray(new CompletableFuture[0])).join();
@@ -817,8 +855,10 @@ public class ItTxTestCluster {
         );
     }
 
-    private LogicalTopologyService logicalTopologyService(ClusterService clusterService) {
+    private static LogicalTopologyService logicalTopologyService(ClusterService clusterService) {
         return new LogicalTopologyService() {
+            private final UUID clusterId = UUID.randomUUID();
+
             @Override
             public void addEventListener(LogicalTopologyEventListener listener) {
 
@@ -833,14 +873,18 @@ public class ItTxTestCluster {
             public CompletableFuture<LogicalTopologySnapshot> logicalTopologyOnLeader() {
                 return completedFuture(new LogicalTopologySnapshot(
                         1,
-                        clusterService.topologyService().allMembers().stream().map(LogicalNode::new).collect(toSet())));
+                        clusterService.topologyService().allMembers().stream().map(LogicalNode::new).collect(toSet()),
+                        clusterId
+                ));
             }
 
             @Override
             public LogicalTopologySnapshot localLogicalTopology() {
                 return new LogicalTopologySnapshot(
                         1,
-                        clusterService.topologyService().allMembers().stream().map(LogicalNode::new).collect(toSet()));
+                        clusterService.topologyService().allMembers().stream().map(LogicalNode::new).collect(toSet()),
+                        clusterId
+                );
             }
 
             @Override
@@ -869,7 +913,6 @@ public class ItTxTestCluster {
 
     /**
      * Shutdowns all cluster nodes after each test.
-     *
      */
     public void shutdownCluster() {
         assertThat(stopAsync(new ComponentContext(), cluster), willCompleteSuccessfully());
@@ -886,35 +929,33 @@ public class ItTxTestCluster {
             IgniteUtils.shutdownAndAwaitTermination(partitionOperationsExecutor, 10, TimeUnit.SECONDS);
         }
 
-        if (raftServers != null) {
-            for (Entry<String, Loza> entry : raftServers.entrySet()) {
-                Loza rs = entry.getValue();
+        for (Entry<String, Loza> entry : raftServers.entrySet()) {
+            Loza rs = entry.getValue();
 
-                ReplicaManager replicaMgr = replicaManagers.get(entry.getKey());
+            ReplicaManager replicaMgr = replicaManagers.get(entry.getKey());
 
-                CompletableFuture<?>[] replicaStopFutures = replicaMgr.startedGroups().stream()
-                        .map(grp -> {
-                            try {
-                                return replicaMgr.stopReplica(grp);
-                            } catch (NodeStoppingException e) {
-                                throw new AssertionError(e);
-                            }
-                        })
-                        .toArray(CompletableFuture[]::new);
+            CompletableFuture<?>[] replicaStopFutures = replicaMgr.startedGroups().stream()
+                    .map(grp -> {
+                        try {
+                            return replicaMgr.stopReplica(grp);
+                        } catch (NodeStoppingException e) {
+                            throw new AssertionError(e);
+                        }
+                    })
+                    .toArray(CompletableFuture[]::new);
 
-                assertThat(allOf(replicaStopFutures), willCompleteSuccessfully());
+            assertThat(allOf(replicaStopFutures), willCompleteSuccessfully());
 
-                rs.localNodes().parallelStream().forEach(nodeId -> {
-                    try {
-                        rs.stopRaftNode(nodeId);
-                    } catch (NodeStoppingException e) {
-                        throw new AssertionError(e);
-                    }
-                });
+            rs.localNodes().parallelStream().forEach(nodeId -> {
+                try {
+                    rs.stopRaftNode(nodeId);
+                } catch (NodeStoppingException e) {
+                    throw new AssertionError(e);
+                }
+            });
 
-                assertThat(replicaMgr.stopAsync(new ComponentContext()), willCompleteSuccessfully());
-                assertThat(rs.stopAsync(new ComponentContext()), willCompleteSuccessfully());
-            }
+            assertThat(replicaMgr.stopAsync(new ComponentContext()), willCompleteSuccessfully());
+            assertThat(rs.stopAsync(new ComponentContext()), willCompleteSuccessfully());
         }
 
         if (logStorageFactories != null) {

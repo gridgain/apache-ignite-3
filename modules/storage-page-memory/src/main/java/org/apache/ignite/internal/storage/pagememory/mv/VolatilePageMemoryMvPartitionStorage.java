@@ -25,6 +25,7 @@ import static org.apache.ignite.internal.util.CompletableFutures.nullCompletedFu
 
 import java.util.Arrays;
 import java.util.List;
+import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.atomic.AtomicLongFieldUpdater;
@@ -67,6 +68,12 @@ public class VolatilePageMemoryMvPartitionStorage extends AbstractPageMemoryMvPa
 
     /** Lease start time. */
     private volatile long leaseStartTime;
+
+    /** Primary replica node id. */
+    private volatile UUID primaryReplicaNodeId;
+
+    /** Primary replica node name. */
+    private volatile String primaryReplicaNodeName;
 
     /** Last group configuration. */
     private volatile byte @Nullable [] groupConfig;
@@ -197,7 +204,11 @@ public class VolatilePageMemoryMvPartitionStorage extends AbstractPageMemoryMvPa
     }
 
     @Override
-    public void updateLease(long leaseStartTime) {
+    public void updateLease(
+            long leaseStartTime,
+            UUID primaryReplicaNodeId,
+            String primaryReplicaNodeName
+    ) {
         busy(() -> {
             throwExceptionIfStorageNotInRunnableState();
 
@@ -206,6 +217,8 @@ public class VolatilePageMemoryMvPartitionStorage extends AbstractPageMemoryMvPa
             }
 
             this.leaseStartTime = leaseStartTime;
+            this.primaryReplicaNodeId = primaryReplicaNodeId;
+            this.primaryReplicaNodeName = primaryReplicaNodeName;
 
             return null;
         });
@@ -217,6 +230,24 @@ public class VolatilePageMemoryMvPartitionStorage extends AbstractPageMemoryMvPa
             throwExceptionIfStorageNotInRunnableState();
 
             return leaseStartTime;
+        });
+    }
+
+    @Override
+    public @Nullable UUID primaryReplicaNodeId() {
+        return busy(() -> {
+            throwExceptionIfStorageNotInRunnableState();
+
+            return primaryReplicaNodeId;
+        });
+    }
+
+    @Override
+    public @Nullable String primaryReplicaNodeName() {
+        return busy(() -> {
+            throwExceptionIfStorageNotInRunnableState();
+
+            return primaryReplicaNodeName;
         });
     }
 

@@ -229,6 +229,9 @@ namespace Apache.Ignite
 
             /// <summary> OpExecutionTimeout error. </summary>
             public const int OpExecutionTimeout = (GroupCode << 16) | (5 & 0xFFFF);
+
+            /// <summary> Compacted error. </summary>
+            public const int Compacted = (GroupCode << 16) | (6 & 0xFFFF);
         }
 
         /// <summary> Index errors. </summary>
@@ -639,6 +642,9 @@ namespace Apache.Ignite
 
             /// <summary> UnsupportedObjectType error. </summary>
             public const int UnsupportedObjectType = (GroupCode << 16) | (2 & 0xFFFF);
+
+            /// <summary> Unmarshalling error. </summary>
+            public const int Unmarshalling = (GroupCode << 16) | (3 & 0xFFFF);
         }
     }
 }

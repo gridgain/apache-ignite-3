@@ -33,16 +33,24 @@ public class SharedLogStorageFactoryUtils {
      */
     public static final String LOGIT_STORAGE_ENABLED_PROPERTY = "LOGIT_STORAGE_ENABLED";
 
-    /** Creates a LogStorageFactory with the {@link DefaultLogStorageFactory} implementation. */
+    private static final boolean LOGIT_STORAGE_ENABLED_PROPERTY_DEFAULT = false;
+
+    /**
+     * Creates a LogStorageFactory with {@link DefaultLogStorageFactory} or {@link LogitLogStorageFactory} implementation depending on
+     * LOGIT_STORAGE_ENABLED_PROPERTY and fsync set to true.
+     */
     @TestOnly
     public static LogStorageFactory create(String nodeName, Path logStoragePath) {
-        return create("test", nodeName, logStoragePath);
+        return create("test", nodeName, logStoragePath, true);
     }
 
-    /** Creates a LogStorageFactory with the {@link DefaultLogStorageFactory} implementation. */
-    public static LogStorageFactory create(String factoryName, String nodeName, Path logStoragePath) {
-        return IgniteSystemProperties.getBoolean(LOGIT_STORAGE_ENABLED_PROPERTY, false)
+    /**
+     * Creates a LogStorageFactory with {@link DefaultLogStorageFactory} or {@link LogitLogStorageFactory} implementation depending on
+     * LOGIT_STORAGE_ENABLED_PROPERTY.
+     */
+    public static LogStorageFactory create(String factoryName, String nodeName, Path logStoragePath, boolean fsync) {
+        return IgniteSystemProperties.getBoolean(LOGIT_STORAGE_ENABLED_PROPERTY, LOGIT_STORAGE_ENABLED_PROPERTY_DEFAULT)
                 ? new LogitLogStorageFactory(nodeName, new StoreOptions(), logStoragePath)
-                : new DefaultLogStorageFactory(factoryName, nodeName, logStoragePath);
+                : new DefaultLogStorageFactory(factoryName, nodeName, logStoragePath, fsync);
     }
 }

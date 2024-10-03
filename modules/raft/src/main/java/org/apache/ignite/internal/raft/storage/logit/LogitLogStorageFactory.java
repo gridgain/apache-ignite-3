@@ -28,8 +28,10 @@ import org.apache.ignite.internal.logger.IgniteLogger;
 import org.apache.ignite.internal.logger.Loggers;
 import org.apache.ignite.internal.manager.ComponentContext;
 import org.apache.ignite.internal.raft.storage.LogStorageFactory;
+import org.apache.ignite.internal.raft.storage.impl.LogStorageException;
 import org.apache.ignite.internal.thread.NamedThreadFactory;
 import org.apache.ignite.internal.util.FeatureChecker;
+import org.apache.ignite.internal.util.IgniteUtils;
 import org.apache.ignite.raft.jraft.option.RaftOptions;
 import org.apache.ignite.raft.jraft.storage.LogStorage;
 import org.apache.ignite.raft.jraft.storage.logit.option.StoreOptions;
@@ -75,7 +77,7 @@ public class LogitLogStorageFactory implements LogStorageFactory {
         try {
             Class.forName(DirectBuffer.class.getName());
         } catch (Throwable e) {
-            throw new IgniteInternalException("sun.nio.ch.DirectBuffer is unavailable." + FeatureChecker.JAVA_VER_SPECIFIC_WARN, e);
+            throw new IgniteInternalException("sun.nio.ch.DirectBuffer is unavailable." + FeatureChecker.JAVA_STARTUP_PARAMS_WARN, e);
         }
     }
 
@@ -100,9 +102,19 @@ public class LogitLogStorageFactory implements LogStorageFactory {
     }
 
     @Override
+    public void destroyLogStorage(String uri) {
+        Requires.requireTrue(StringUtils.isNotBlank(uri), "Blank log storage uri.");
+
+        Path storagePath = resolveLogStoragePath(uri);
+
+        if (!IgniteUtils.deleteIfExists(storagePath)) {
+            throw new LogStorageException("Cannot delete directory " + storagePath);
+        }
+    }
+
+    @Override
     public void sync() {
         // TODO: https://issues.apache.org/jira/browse/IGNITE-21955
-        throw new UnsupportedOperationException("Not implemented yet");
     }
 
     /** Returns path to log storage by group ID. */

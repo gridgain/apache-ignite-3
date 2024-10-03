@@ -31,13 +31,17 @@ import org.apache.ignite.tx.IgniteTransactions;
 /**
  * Reference to a swappable {@link Ignite} instance. When a restart happens, this switches to the new Ignite instance.
  *
- * <p>API operations on this are linearized wrt node restarts. Normally (except for situations when timeouts trigger), user
+ * <p>API operations on this are linearized with respect to node restarts. Normally (except for situations when timeouts trigger), user
  * operations will not interact with detached objects.
  */
 public class RestartProofIgnite implements Ignite, Wrapper {
     private final IgniteAttachmentLock attachmentLock;
 
     private final IgniteTables tables;
+    private final IgniteTransactions transactions;
+    private final IgniteSql sql;
+    private final IgniteCompute compute;
+    private final IgniteCatalog catalog;
 
     /**
      * Constructor.
@@ -46,6 +50,10 @@ public class RestartProofIgnite implements Ignite, Wrapper {
         this.attachmentLock = attachmentLock;
 
         tables = new RestartProofIgniteTables(attachmentLock);
+        transactions = new RestartProofIgniteTransactions(attachmentLock);
+        sql = new RestartProofIgniteSql(attachmentLock);
+        compute = new RestartProofIgniteCompute(attachmentLock);
+        catalog = new RestartProofIgniteCatalog(attachmentLock);
     }
 
     @Override
@@ -55,25 +63,22 @@ public class RestartProofIgnite implements Ignite, Wrapper {
 
     @Override
     public IgniteTables tables() {
-        return attachmentLock.attached(ignite -> tables);
+        return tables;
     }
 
     @Override
     public IgniteTransactions transactions() {
-        // TODO: IGNITE-23012 - add a wrapper.
-        return attachmentLock.attached(Ignite::transactions);
+        return transactions;
     }
 
     @Override
     public IgniteSql sql() {
-        // TODO: IGNITE-23013 - add a wrapper.
-        return attachmentLock.attached(Ignite::sql);
+        return sql;
     }
 
     @Override
     public IgniteCompute compute() {
-        // TODO: IGNITE-23014 - add a wrapper.
-        return attachmentLock.attached(Ignite::compute);
+        return compute;
     }
 
     @Override
@@ -88,8 +93,7 @@ public class RestartProofIgnite implements Ignite, Wrapper {
 
     @Override
     public IgniteCatalog catalog() {
-        // TODO: IGNITE-23015 - add a wrapper.
-        return attachmentLock.attached(Ignite::catalog);
+        return catalog;
     }
 
     @Override

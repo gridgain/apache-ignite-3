@@ -17,6 +17,7 @@
 
 package org.apache.ignite.internal.sql.engine.prepare.pruning;
 
+import static java.util.UUID.randomUUID;
 import static org.apache.ignite.internal.sql.engine.util.SqlTestUtils.generateLiteralOrValueExpr;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
@@ -27,8 +28,6 @@ import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Random;
-import java.util.UUID;
 import java.util.stream.Collectors;
 import org.apache.calcite.rel.type.RelDataType;
 import org.apache.calcite.rex.RexBuilder;
@@ -122,6 +121,17 @@ public class PartitionPruningPredicateSelfTest extends BaseIgniteAbstractTest {
         int precision = IgniteTypeSystem.INSTANCE.getMaxPrecision(sqlTypeName);
         int scale = IgniteTypeSystem.INSTANCE.getMaxScale(sqlTypeName);
 
+        // TODO https://issues.apache.org/jira/browse/IGNITE-19162 Ignite doesn't support precision more than 3 for temporal types.
+        if (columnType == ColumnType.TIME || columnType == ColumnType.TIMESTAMP || columnType == ColumnType.DATETIME) {
+            precision = 3;
+        }
+
+        // To prevent generate too big values.
+        if (columnType == ColumnType.BYTE_ARRAY || columnType == ColumnType.DECIMAL) {
+            precision = 7_000;
+            scale = precision / 2;
+        }
+
         return TypeUtils.columnType2NativeType(columnType, precision, scale, precision);
     }
 
@@ -193,8 +203,8 @@ public class PartitionPruningPredicateSelfTest extends BaseIgniteAbstractTest {
 
         for (String nodeName : group.nodeNames()) {
             ExecutionContext<Object[]> ctx = TestBuilders.executionContext()
-                    .queryId(UUID.randomUUID())
-                    .localNode(new ClusterNodeImpl(nodeName, nodeName, new NetworkAddress("localhost", 123)))
+                    .queryId(randomUUID())
+                    .localNode(new ClusterNodeImpl(randomUUID(), nodeName, new NetworkAddress("localhost", 123)))
                     .executor(Mockito.mock(QueryTaskExecutor.class))
                     .dynamicParameters(dynamicParameters)
                     .build();
@@ -239,12 +249,9 @@ public class PartitionPruningPredicateSelfTest extends BaseIgniteAbstractTest {
     }
 
     private Object generateFieldValue(IgniteTable table, int index) {
-        ColumnType columnType = table.descriptor().columnDescriptor(index).physicalType().spec().asColumnType();
+        NativeType type = table.descriptor().columnDescriptor(index).physicalType();
 
-        Random current = new Random();
-        current.setSeed(seed);
-
-        Object val = SqlTestUtils.generateValueByType(current.nextInt(100), columnType);
+        Object val = SqlTestUtils.generateValueByType(type);
         assert val != null;
 
         return val;

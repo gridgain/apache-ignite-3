@@ -43,6 +43,10 @@ public class StoragePartitionMeta extends PartitionMeta {
 
     private volatile long leaseStartTime;
 
+    private volatile @Nullable UUID primaryReplicaNodeId;
+
+    private volatile long primaryReplicaNodeNameFirstPageId;
+
     private volatile long freeListRootPageId;
 
     private volatile long versionChainTreeRootPageId;
@@ -59,8 +63,11 @@ public class StoragePartitionMeta extends PartitionMeta {
      * @param pageCount Count of pages in the partition.
      * @param lastAppliedIndex Last applied index value.
      * @param lastAppliedTerm Last applied term value.
-     * @param lastReplicationProtocolGroupConfigFirstPageId ID of the first page in a chain storing a blob representing.
+     * @param lastReplicationProtocolGroupConfigFirstPageId ID of the first page in a chain storing a blob representing last replication
+     *     protocol group config.
      * @param leaseStartTime Lease start time.
+     * @param primaryReplicaNodeId Primary replica node id.
+     * @param primaryReplicaNodeNameFirstPageId ID of the first page in a chain storing a blob representing a primary replica node name.
      * @param freeListRootPageId Free list root page ID.
      * @param versionChainTreeRootPageId Version chain tree root page ID.
      * @param indexTreeMetaPageId Index tree meta page ID.
@@ -73,6 +80,8 @@ public class StoragePartitionMeta extends PartitionMeta {
             long lastAppliedTerm,
             long lastReplicationProtocolGroupConfigFirstPageId,
             long leaseStartTime,
+            @Nullable UUID primaryReplicaNodeId,
+            long primaryReplicaNodeNameFirstPageId,
             long freeListRootPageId,
             long versionChainTreeRootPageId,
             long indexTreeMetaPageId,
@@ -84,6 +93,8 @@ public class StoragePartitionMeta extends PartitionMeta {
         this.lastAppliedTerm = lastAppliedTerm;
         this.lastReplicationProtocolGroupConfigFirstPageId = lastReplicationProtocolGroupConfigFirstPageId;
         this.leaseStartTime = leaseStartTime;
+        this.primaryReplicaNodeId = primaryReplicaNodeId;
+        this.primaryReplicaNodeNameFirstPageId = primaryReplicaNodeNameFirstPageId;
         this.freeListRootPageId = freeListRootPageId;
         this.versionChainTreeRootPageId = versionChainTreeRootPageId;
         this.indexTreeMetaPageId = indexTreeMetaPageId;
@@ -264,6 +275,8 @@ public class StoragePartitionMeta extends PartitionMeta {
                 gcQueueMetaPageId,
                 pageCount(),
                 leaseStartTime,
+                primaryReplicaNodeId,
+                primaryReplicaNodeNameFirstPageId,
                 estimatedSize
         );
     }
@@ -287,10 +300,6 @@ public class StoragePartitionMeta extends PartitionMeta {
     public void updateLease(@Nullable UUID checkpointId, long leaseStartTime) {
         updateSnapshot(checkpointId);
 
-        if (leaseStartTime <= this.leaseStartTime) {
-            return;
-        }
-
         this.leaseStartTime = leaseStartTime;
     }
 
@@ -301,6 +310,44 @@ public class StoragePartitionMeta extends PartitionMeta {
      */
     public long leaseStartTime() {
         return leaseStartTime;
+    }
+
+    /**
+     * Returns primary replica node id (might be {@code null} if not saved yet).
+     */
+    public @Nullable UUID primaryReplicaNodeId() {
+        return primaryReplicaNodeId;
+    }
+
+    /**
+     * Sets primary replica node id.
+     *
+     * @param checkpointId Checkpoint ID.
+     * @param nodeId Node ID.
+     */
+    public void primaryReplicaNodeId(@Nullable UUID checkpointId, UUID nodeId) {
+        updateSnapshot(checkpointId);
+
+        this.primaryReplicaNodeId = nodeId;
+    }
+
+    /**
+     * Returns ID of the first page in a chain storing a blob representing primary replica node name.
+     */
+    public long primaryReplicaNodeNameFirstPageId() {
+        return primaryReplicaNodeNameFirstPageId;
+    }
+
+    /**
+     * Sets ID of the first page in a chain storing a blob representing primary replica node name.
+     *
+     * @param checkpointId Checkpoint ID.
+     * @param pageId PageId.
+     */
+    public void primaryReplicaNodeNameFirstPageId(@Nullable UUID checkpointId, long pageId) {
+        updateSnapshot(checkpointId);
+
+        this.primaryReplicaNodeNameFirstPageId = pageId;
     }
 
     /**
@@ -327,6 +374,10 @@ public class StoragePartitionMeta extends PartitionMeta {
 
         private final long leaseStartTime;
 
+        private final @Nullable UUID primaryReplicaNodeId;
+
+        private final long primaryReplicaNodeNameFirstPageId;
+
         private final long estimatedSize;
 
         private StoragePartitionMetaSnapshot(
@@ -340,6 +391,8 @@ public class StoragePartitionMeta extends PartitionMeta {
                 long gcQueueMetaPageId,
                 int pageCount,
                 long leaseStartTime,
+                @Nullable UUID primaryReplicaNodeId,
+                long primaryReplicaNodeNameFistPageId,
                 long estimatedSize
         ) {
             this.checkpointId = checkpointId;
@@ -352,6 +405,8 @@ public class StoragePartitionMeta extends PartitionMeta {
             this.gcQueueMetaPageId = gcQueueMetaPageId;
             this.pageCount = pageCount;
             this.leaseStartTime = leaseStartTime;
+            this.primaryReplicaNodeId = primaryReplicaNodeId;
+            this.primaryReplicaNodeNameFirstPageId = primaryReplicaNodeNameFistPageId;
             this.estimatedSize = estimatedSize;
         }
 
@@ -443,6 +498,8 @@ public class StoragePartitionMeta extends PartitionMeta {
             storageMetaIo.setGcQueueMetaPageId(pageAddr, gcQueueMetaPageId);
             storageMetaIo.setPageCount(pageAddr, pageCount);
             storageMetaIo.setLeaseStartTime(pageAddr, leaseStartTime);
+            storageMetaIo.setPrimaryReplicaNodeId(pageAddr, primaryReplicaNodeId);
+            storageMetaIo.setPrimaryReplicaNodeNameFirstPageId(pageAddr, primaryReplicaNodeNameFirstPageId);
             storageMetaIo.setEstimatedSize(pageAddr, estimatedSize);
         }
 

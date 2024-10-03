@@ -38,8 +38,9 @@ import org.apache.ignite.internal.cluster.management.topology.api.LogicalNode;
 import org.apache.ignite.internal.cluster.management.topology.api.LogicalTopologySnapshot;
 import org.apache.ignite.internal.configuration.RaftGroupOptionsConfigHelper;
 import org.apache.ignite.internal.configuration.validation.TestConfigurationValidator;
-import org.apache.ignite.internal.failure.FailureProcessor;
-import org.apache.ignite.internal.failure.NoOpFailureProcessor;
+import org.apache.ignite.internal.disaster.system.SystemDisasterRecoveryStorage;
+import org.apache.ignite.internal.failure.FailureManager;
+import org.apache.ignite.internal.failure.NoOpFailureManager;
 import org.apache.ignite.internal.hlc.HybridClockImpl;
 import org.apache.ignite.internal.manager.ComponentContext;
 import org.apache.ignite.internal.manager.IgniteComponent;
@@ -113,7 +114,7 @@ public class MockNode {
         var clusterStateStorage =
                 new RocksDbClusterStateStorage(this.workDir.resolve("cmg/data"), clusterService.nodeName());
 
-        FailureProcessor failureProcessor = new NoOpFailureProcessor();
+        FailureManager failureManager = new NoOpFailureManager();
 
         LogStorageFactory cmgLogStorageFactory =
                 SharedLogStorageFactoryUtils.create(
@@ -126,13 +127,14 @@ public class MockNode {
 
         this.clusterManager = new ClusterManagementGroupManager(
                 vaultManager,
+                new SystemDisasterRecoveryStorage(vaultManager),
                 clusterService,
                 new ClusterInitializer(clusterService, hocon -> hocon, new TestConfigurationValidator()),
                 raftManager,
                 clusterStateStorage,
                 new LogicalTopologyImpl(clusterStateStorage),
                 new NodeAttributesCollector(nodeAttributes, storageProfilesConfiguration),
-                failureProcessor,
+                failureManager,
                 clusterIdHolder,
                 cmgRaftConfigurer
         );
@@ -144,7 +146,7 @@ public class MockNode {
                 cmgLogStorageFactory,
                 raftManager,
                 clusterStateStorage,
-                failureProcessor,
+                failureManager,
                 clusterManager
         );
     }

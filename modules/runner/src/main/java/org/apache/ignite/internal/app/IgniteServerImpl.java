@@ -18,8 +18,13 @@
 package org.apache.ignite.internal.app;
 
 import static java.lang.System.lineSeparator;
+import static java.util.concurrent.CompletableFuture.completedFuture;
+import static java.util.concurrent.CompletableFuture.failedFuture;
+import static java.util.function.Function.identity;
 import static org.apache.ignite.internal.util.CompletableFutures.nullCompletedFuture;
-import static org.apache.ignite.internal.util.ExceptionUtils.unwrapCause;
+import static org.apache.ignite.internal.util.ExceptionUtils.copyExceptionWithCause;
+import static org.apache.ignite.internal.util.ExceptionUtils.sneakyThrow;
+import static org.apache.ignite.lang.ErrorGroups.Common.INTERNAL_ERR;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -30,6 +35,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executor;
 import java.util.concurrent.ForkJoinPool;
+import java.util.function.Supplier;
 import org.apache.ignite.Ignite;
 import org.apache.ignite.IgniteServer;
 import org.apache.ignite.InitParameters;
@@ -40,7 +46,6 @@ import org.apache.ignite.internal.logger.Loggers;
 import org.apache.ignite.internal.properties.IgniteProductVersion;
 import org.apache.ignite.internal.restart.IgniteAttachmentLock;
 import org.apache.ignite.internal.restart.RestartProofIgnite;
-import org.apache.ignite.internal.util.ExceptionUtils;
 import org.apache.ignite.lang.ClusterInitFailureException;
 import org.apache.ignite.lang.ClusterNotInitializedException;
 import org.apache.ignite.lang.ErrorGroups;
@@ -48,7 +53,9 @@ import org.apache.ignite.lang.ErrorGroups.Common;
 import org.apache.ignite.lang.IgniteException;
 import org.apache.ignite.lang.NodeNotStartedException;
 import org.apache.ignite.lang.NodeStartException;
+import org.apache.ignite.tx.TransactionException;
 import org.jetbrains.annotations.Nullable;
+import org.jetbrains.annotations.TestOnly;
 
 /**
  * Implementation of embedded node.
@@ -101,6 +108,8 @@ public class IgniteServerImpl implements IgniteServer {
 
     private volatile @Nullable CompletableFuture<Void> joinFuture;
 
+    private final Object igniteChangeMutex = new Object();
+
     private final Object restartOrShutdownMutex = new Object();
 
     /**
@@ -108,14 +117,13 @@ public class IgniteServerImpl implements IgniteServer {
      *
      * <p>Guarded by {@link #restartOrShutdownMutex}.
      */
-    private CompletableFuture<Void> restartOrShutdownFuture = nullCompletedFuture();
+    @Nullable
+    private CompletableFuture<Void> restartOrShutdownFuture;
 
     /**
-     * Gets set to {@code true} when the node is shut down. This disallows restarts.
-     *
-     * <p>Guarded by {@link #restartOrShutdownMutex}.
+     * Gets set to {@code true} when the node shutdown is initiated. This disallows restarts.
      */
-    private boolean shutDown;
+    private volatile boolean shutDown;
 
     /**
      * Constructs an embedded node.
@@ -248,11 +256,21 @@ public class IgniteServerImpl implements IgniteServer {
                 throw new NodeNotStartedException();
             }
 
-            throwIfNotJoined();
-
-            result = restartOrShutdownFuture.thenCompose(unused -> doRestartAsync(instance));
-            restartOrShutdownFuture = result;
+            result = chainRestartOrShutdownAction(() -> doRestartAsync(instance));
         }
+
+        return result;
+    }
+
+    /**
+     * This MUST be called under synchronization on {@link #restartOrShutdownMutex}.
+     */
+    private CompletableFuture<Void> chainRestartOrShutdownAction(Supplier<CompletableFuture<Void>> action) {
+        CompletableFuture<Void> result = (restartOrShutdownFuture == null ? nullCompletedFuture() : restartOrShutdownFuture)
+                .thenCompose(unused -> action.get());
+
+        // Suppress exceptions to make sure following futures can be executed.
+        restartOrShutdownFuture = result.handle((res, ex) -> null);
 
         return result;
     }
@@ -260,7 +278,9 @@ public class IgniteServerImpl implements IgniteServer {
     private CompletableFuture<Void> doRestartAsync(IgniteImpl instance) {
         // TODO: IGNITE-23006 - limit the wait to acquire the write lock with a timeout.
         return attachmentLock.detachedAsync(() -> {
-            ignite = null;
+            synchronized (igniteChangeMutex) {
+                this.ignite = null;
+            }
             this.joinFuture = null;
 
             return instance.stopAsync()
@@ -271,19 +291,32 @@ public class IgniteServerImpl implements IgniteServer {
 
     @Override
     public CompletableFuture<Void> shutdownAsync() {
+        shutDown = true;
+
         // We don't use attachmentLock here so that users see NodeStoppingException immediately (instead of pausing their operations
         // forever which would happen if the lock was used).
 
         CompletableFuture<Void> result;
 
         synchronized (restartOrShutdownMutex) {
-            result = restartOrShutdownFuture.thenCompose(unused -> doShutdownAsync());
-            restartOrShutdownFuture = result;
-
-            shutDown = true;
+            result = chainRestartOrShutdownAction(this::doShutdownAsync);
         }
 
+        // Trigger stop to avoid situations when a restart future caused a join that cannot complete, so restart never completes,
+        // so our shutdown can never happen.
+        triggerStopOnCurrentIgnite();
+
         return result;
+    }
+
+    private void triggerStopOnCurrentIgnite() {
+        IgniteImpl currentIgnite;
+        synchronized (igniteChangeMutex) {
+            currentIgnite = ignite;
+        }
+        if (currentIgnite != null) {
+            currentIgnite.stopAsync();
+        }
     }
 
     private CompletableFuture<Void> doShutdownAsync() {
@@ -291,7 +324,9 @@ public class IgniteServerImpl implements IgniteServer {
         if (instance != null) {
             try {
                 return instance.stopAsync().thenRun(() -> {
-                    ignite = null;
+                    synchronized (igniteChangeMutex) {
+                        ignite = null;
+                    }
                     joinFuture = null;
                 });
             } catch (Exception e) {
@@ -329,15 +364,29 @@ public class IgniteServerImpl implements IgniteServer {
     }
 
     private CompletableFuture<Void> doStartAsync() {
-        IgniteImpl instance = new IgniteImpl(this, configPath, workDir, classLoader, asyncContinuationExecutor);
+        if (shutDown) {
+            return failedFuture(new NodeNotStartedException());
+        }
+
+        IgniteImpl instance = new IgniteImpl(this, this::restartAsync, configPath, workDir, classLoader, asyncContinuationExecutor);
 
         ackBanner();
 
-        return instance.startAsync().whenComplete((unused, throwable) -> {
-            if (throwable == null) {
+        return instance.startAsync().handle((result, throwable) -> {
+            if (throwable != null) {
+                return CompletableFuture.<Void>failedFuture(throwable);
+            }
+
+            synchronized (igniteChangeMutex) {
+                if (shutDown) {
+                    return instance.stopAsync();
+                }
+
                 ignite = instance;
             }
-        });
+
+            return completedFuture(result);
+        }).thenCompose(identity());
     }
 
     /**
@@ -386,9 +435,43 @@ public class IgniteServerImpl implements IgniteServer {
         try {
             future.get();
         } catch (ExecutionException e) {
-            throw ExceptionUtils.sneakyThrow(unwrapCause(e));
+            throw sneakyThrow(tryToCopyExceptionWithCause(e));
         } catch (InterruptedException e) {
-            throw ExceptionUtils.sneakyThrow(e);
+            throw sneakyThrow(e);
+        }
+    }
+
+    // TODO: remove after IGNITE-22721 gets resolved.
+    private static Throwable tryToCopyExceptionWithCause(ExecutionException exception) {
+        Throwable copy = copyExceptionWithCause(exception);
+
+        if (copy == null) {
+            return new TransactionException(INTERNAL_ERR, "Cannot make a proper copy of " + exception.getCause().getClass(), exception);
+        }
+
+        return copy;
+    }
+
+    /**
+     * Returns the underlying IgniteImpl even if the join was not completed.
+     */
+    @TestOnly
+    public IgniteImpl igniteImpl() {
+        IgniteImpl instance = ignite;
+        if (instance == null) {
+            throw new NodeNotStartedException();
+        }
+
+        return instance;
+    }
+
+    /**
+     * Returns future that gets completed when restart or shutdown is complete.
+     */
+    @TestOnly
+    public @Nullable CompletableFuture<Void> restartOrShutdownFuture() {
+        synchronized (restartOrShutdownMutex) {
+            return restartOrShutdownFuture;
         }
     }
 }

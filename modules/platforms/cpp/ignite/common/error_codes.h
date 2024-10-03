@@ -112,6 +112,7 @@ enum class code : underlying_t {
     COMPACTION = 0x50003,
     OP_EXECUTION = 0x50004,
     OP_EXECUTION_TIMEOUT = 0x50005,
+    COMPACTED = 0x50006,
 
     // Index group. Group code: 6
     INVALID_INDEX_DEFINITION = 0x60001,
@@ -225,7 +226,8 @@ enum class code : underlying_t {
 
     // Marshalling group. Group code: 22
     COMMON = 0x160001,
-    UNSUPPORTED_OBJECT_TYPE = 0x160002
+    UNSUPPORTED_OBJECT_TYPE = 0x160002,
+    UNMARSHALLING = 0x160003
 };
 
 } // namespace error

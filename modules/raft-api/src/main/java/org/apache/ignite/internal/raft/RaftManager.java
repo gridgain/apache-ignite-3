@@ -24,7 +24,6 @@ import org.apache.ignite.internal.raft.service.RaftGroupListener;
 import org.apache.ignite.internal.raft.service.RaftGroupService;
 import org.apache.ignite.internal.replicator.ReplicationGroupId;
 import org.jetbrains.annotations.Nullable;
-import org.jetbrains.annotations.TestOnly;
 
 /**
  * Raft manager.
@@ -157,11 +156,8 @@ public interface RaftManager extends IgniteComponent {
      * @return Future that will be completed with an instance of a Raft group service.
      * @throws NodeStoppingException If node stopping intention was detected.
      */
-    @TestOnly
-    CompletableFuture<RaftGroupService> startRaftGroupService(
-            ReplicationGroupId groupId,
-            PeersAndLearners configuration
-    ) throws NodeStoppingException;
+    CompletableFuture<RaftGroupService> startRaftGroupService(ReplicationGroupId groupId, PeersAndLearners configuration)
+            throws NodeStoppingException;
 
     /**
      * Creates a Raft group service providing operations on a Raft group, using the given factory.
@@ -180,4 +176,21 @@ public interface RaftManager extends IgniteComponent {
             @Nullable Marshaller commandsMarshaller
     ) throws NodeStoppingException;
 
+    /**
+     * Destroys Raft group node storages (log storage, metadata storage and snapshots storage).
+     *
+     * @param nodeId ID of the Raft node.
+     * @param raftGroupOptionsConfigurer Group options configurer.
+     * @throws NodeStoppingException If the node is already being stopped.
+     */
+    void destroyRaftNodeStorages(RaftNodeId nodeId, RaftGroupOptionsConfigurer raftGroupOptionsConfigurer)
+            throws NodeStoppingException;
+
+    /**
+     * Returns information about index and term of the given node, or {@code null} if the group is not started.
+     *
+     * @param nodeId ID of the Raft node.
+     * @throws NodeStoppingException If the node is already being stopped.
+     */
+    @Nullable IndexWithTerm raftNodeIndex(RaftNodeId nodeId) throws NodeStoppingException;
 }

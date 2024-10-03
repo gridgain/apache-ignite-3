@@ -23,6 +23,7 @@ import static java.util.concurrent.CompletableFuture.failedFuture;
 import static org.apache.ignite.internal.util.ExceptionUtils.unwrapCause;
 import static org.apache.ignite.internal.util.IgniteUtils.retryOperationUntilSuccess;
 
+import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.TimeUnit;
@@ -145,7 +146,7 @@ public class ReplicaImpl implements Replica {
     }
 
     @Override
-    public CompletableFuture<ReplicaResult> processRequest(ReplicaRequest request, String senderId) {
+    public CompletableFuture<ReplicaResult> processRequest(ReplicaRequest request, UUID senderId) {
         assert replicaGrpId.equals(request.groupId().asReplicationGroupId()) : IgniteStringFormatter.format(
                 "Partition mismatch: request does not match the replica [reqReplicaGrpId={}, replicaGrpId={}]",
                 request.groupId(),
@@ -218,7 +219,11 @@ public class ReplicaImpl implements Replica {
                 // group leader are received.
 
                 return waitForActualState(msg.leaseStartTime(), msg.leaseExpirationTime().getPhysical())
-                        .thenCompose(v -> sendPrimaryReplicaChangeToReplicationGroup(msg.leaseStartTime().longValue()))
+                        .thenCompose(v -> sendPrimaryReplicaChangeToReplicationGroup(
+                                msg.leaseStartTime().longValue(),
+                                localNode.id(),
+                                localNode.name()
+                        ))
                         .thenCompose(v -> {
                             CompletableFuture<LeaseGrantedMessageResponse> respFut =
                                     acceptLease(msg.leaseStartTime(), msg.leaseExpirationTime());
@@ -233,7 +238,11 @@ public class ReplicaImpl implements Replica {
             } else {
                 if (leader.equals(localNode)) {
                     return waitForActualState(msg.leaseStartTime(), msg.leaseExpirationTime().getPhysical())
-                            .thenCompose(v -> sendPrimaryReplicaChangeToReplicationGroup(msg.leaseStartTime().longValue()))
+                            .thenCompose(v -> sendPrimaryReplicaChangeToReplicationGroup(
+                                    msg.leaseStartTime().longValue(),
+                                    localNode.id(),
+                                    localNode.name()
+                            ))
                             .thenCompose(v -> acceptLease(msg.leaseStartTime(), msg.leaseExpirationTime()));
                 } else {
                     return proposeLeaseRedirect(leader);
@@ -242,9 +251,15 @@ public class ReplicaImpl implements Replica {
         }));
     }
 
-    private CompletableFuture<Void> sendPrimaryReplicaChangeToReplicationGroup(long leaseStartTime) {
+    private CompletableFuture<Void> sendPrimaryReplicaChangeToReplicationGroup(
+            long leaseStartTime,
+            UUID primaryReplicaNodeId,
+            String primaryReplicaNodeName
+    ) {
         PrimaryReplicaChangeCommand cmd = REPLICA_MESSAGES_FACTORY.primaryReplicaChangeCommand()
                 .leaseStartTime(leaseStartTime)
+                .primaryReplicaNodeId(primaryReplicaNodeId)
+                .primaryReplicaNodeName(primaryReplicaNodeName)
                 .build();
 
         return raftClient.run(cmd);

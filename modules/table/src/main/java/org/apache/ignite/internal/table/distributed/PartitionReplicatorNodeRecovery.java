@@ -37,7 +37,6 @@ import java.util.concurrent.Executor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.function.IntFunction;
-import org.apache.ignite.internal.affinity.Assignment;
 import org.apache.ignite.internal.lang.IgniteInternalException;
 import org.apache.ignite.internal.metastorage.MetaStorageManager;
 import org.apache.ignite.internal.network.MessagingService;
@@ -48,6 +47,7 @@ import org.apache.ignite.internal.partition.replicator.network.PartitionReplicat
 import org.apache.ignite.internal.partition.replicator.network.message.DataPresence;
 import org.apache.ignite.internal.partition.replicator.network.message.HasDataRequest;
 import org.apache.ignite.internal.partition.replicator.network.message.HasDataResponse;
+import org.apache.ignite.internal.partitiondistribution.Assignment;
 import org.apache.ignite.internal.raft.Peer;
 import org.apache.ignite.internal.raft.PeersAndLearners;
 import org.apache.ignite.internal.replicator.TablePartitionId;
@@ -167,12 +167,13 @@ class PartitionReplicatorNodeRecovery {
             TablePartitionId tablePartitionId,
             InternalTable internalTable,
             PeersAndLearners newConfiguration,
-            Assignment localMemberAssignment
+            Assignment localMemberAssignment,
+            long assignmentsTimestamp
     ) {
         // If Raft is running in in-memory mode or the PDS has been cleared, we need to remove the current node
         // from the Raft group in order to avoid the double vote problem.
         if (mightNeedGroupRecovery(internalTable)) {
-            return performGroupRecovery(tablePartitionId, newConfiguration, localMemberAssignment);
+            return performGroupRecovery(tablePartitionId, newConfiguration, localMemberAssignment, assignmentsTimestamp);
         }
 
         return trueCompletedFuture();
@@ -187,7 +188,8 @@ class PartitionReplicatorNodeRecovery {
     private CompletableFuture<Boolean> performGroupRecovery(
             TablePartitionId tablePartitionId,
             PeersAndLearners newConfiguration,
-            Assignment localMemberAssignment
+            Assignment localMemberAssignment,
+            long assignmentsTimestamp
     ) {
         int tableId = tablePartitionId.tableId();
         int partId = tablePartitionId.partitionId();
@@ -205,7 +207,7 @@ class PartitionReplicatorNodeRecovery {
                     boolean majorityAvailable = dataNodesCounts.nonEmptyNodes >= (newConfiguration.peers().size() / 2) + 1;
 
                     if (majorityAvailable) {
-                        RebalanceUtilEx.startPeerRemoval(tablePartitionId, localMemberAssignment, metaStorageManager);
+                        RebalanceUtilEx.startPeerRemoval(tablePartitionId, localMemberAssignment, metaStorageManager, assignmentsTimestamp);
 
                         return false;
                     } else {

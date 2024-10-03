@@ -18,17 +18,24 @@
 package org.apache.ignite.internal.runner.app.client;
 
 import static org.apache.ignite.catalog.definitions.ColumnDefinition.column;
+import static org.hamcrest.CoreMatchers.containsString;
+import static org.hamcrest.CoreMatchers.equalTo;
+import static org.hamcrest.CoreMatchers.hasItem;
+import static org.hamcrest.MatcherAssert.assertThat;
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
+import java.util.Map.Entry;
 import java.util.Set;
+import java.util.concurrent.ExecutionException;
 import java.util.stream.Collectors;
 import org.apache.ignite.catalog.ColumnType;
 import org.apache.ignite.catalog.definitions.TableDefinition;
 import org.apache.ignite.compute.JobDescriptor;
+import org.apache.ignite.compute.JobExecution;
 import org.apache.ignite.compute.JobTarget;
 import org.apache.ignite.compute.TaskDescriptor;
 import org.apache.ignite.internal.runner.app.Jobs.ArgMarshallingJob;
@@ -36,14 +43,15 @@ import org.apache.ignite.internal.runner.app.Jobs.ArgumentAndResultMarshallingJo
 import org.apache.ignite.internal.runner.app.Jobs.ArgumentStringMarshaller;
 import org.apache.ignite.internal.runner.app.Jobs.JsonMarshaller;
 import org.apache.ignite.internal.runner.app.Jobs.MapReduce;
+import org.apache.ignite.internal.runner.app.Jobs.MapReduceTuples;
 import org.apache.ignite.internal.runner.app.Jobs.PojoArg;
 import org.apache.ignite.internal.runner.app.Jobs.PojoJob;
 import org.apache.ignite.internal.runner.app.Jobs.PojoResult;
 import org.apache.ignite.internal.runner.app.Jobs.ResultMarshallingJob;
 import org.apache.ignite.internal.runner.app.Jobs.ResultStringUnMarshaller;
+import org.apache.ignite.marshalling.ByteArrayMarshaller;
 import org.apache.ignite.network.ClusterNode;
 import org.apache.ignite.table.Tuple;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
@@ -61,11 +69,11 @@ public class ItThinClientComputeMarshallingTest extends ItAbstractThinClientTest
 
         assertEquals("itccmt_n_3344", nodes.get(0).name());
         assertEquals(3344, nodes.get(0).address().port());
-        assertTrue(nodes.get(0).id().length() > 10);
+        assertNotNull(nodes.get(0).id());
 
         assertEquals("itccmt_n_3345", nodes.get(1).name());
         assertEquals(3345, nodes.get(1).address().port());
-        assertTrue(nodes.get(1).id().length() > 10);
+        assertNotNull(nodes.get(1).id());
     }
 
     @ParameterizedTest
@@ -172,7 +180,7 @@ public class ItThinClientComputeMarshallingTest extends ItAbstractThinClientTest
     }
 
     @Test
-    void broadcast() {
+    void executeBroadcast() {
         // When.
         Map<ClusterNode, String> result = client().compute().executeBroadcast(
                 Set.of(node(0), node(1)),
@@ -190,6 +198,38 @@ public class ItThinClientComputeMarshallingTest extends ItAbstractThinClientTest
         );
 
         assertEquals(resultExpected, result);
+    }
+
+
+    @Test
+    void submitBroadcast() {
+        // When.
+        Map<ClusterNode, String> result = client().compute().submitBroadcast(
+                Set.of(node(0), node(1)),
+                JobDescriptor.builder(ArgumentAndResultMarshallingJob.class)
+                        .argumentMarshaller(new ArgumentStringMarshaller())
+                        .resultMarshaller(new ResultStringUnMarshaller())
+                        .build(),
+                "Input"
+        ).entrySet().stream().collect(
+                Collectors.toMap(Entry::getKey, ItThinClientComputeMarshallingTest::extractResult, (v, i) -> v)
+        );
+
+        // Then.
+        Map<ClusterNode, String> resultExpected = Map.of(
+                node(0), "Input:marshalledOnClient:unmarshalledOnServer:processedOnServer:marshalledOnServer:unmarshalledOnClient",
+                node(1), "Input:marshalledOnClient:unmarshalledOnServer:processedOnServer:marshalledOnServer:unmarshalledOnClient"
+        );
+
+        assertEquals(resultExpected, result);
+    }
+
+    private static String extractResult(Entry<ClusterNode, JobExecution<String>> e) {
+        try {
+            return e.getValue().resultAsync().get();
+        } catch (InterruptedException | ExecutionException ex) {
+            throw new RuntimeException(ex);
+        }
     }
 
     @Test
@@ -228,20 +268,45 @@ public class ItThinClientComputeMarshallingTest extends ItAbstractThinClientTest
     }
 
     @Test
-    @Disabled("https://issues.apache.org/jira/browse/IGNITE-22787")
     void mapReduce() {
-        // When run job with custom marshaller for string argument.
-        String result = client().compute().executeMapReduce(
-                TaskDescriptor.builder(MapReduce.class).build(),
-                List.of("Input_0", "Input_1"));
-
-        // Then both client and server marshaller were called.
-        assertEquals("Input"
-                        + ":marshalledOnClient"
-                        + ":unmarshalledOnServer"
-                        + ":processedOnServer",
-                result
+        // When.
+        List<String> result = client().compute().executeMapReduce(
+                TaskDescriptor.builder(MapReduce.class)
+                        .splitJobArgumentMarshaller(ByteArrayMarshaller.create())
+                        .reduceJobArgumentMarshaller(ByteArrayMarshaller.create())
+                        .build(),
+                // input_O goes to 0 node and input_1 goes to 1 node
+                List.of("Input_0", "Input_1")
         );
+
+        // Then.
+        assertThat(
+                result,
+                hasItem(containsString("Input_0:marshalledOnClient:unmarshalledOnServer:processedOnServer"))
+        );
+        // And
+        assertThat(
+                result,
+                hasItem(containsString("Input_1:marshalledOnClient:unmarshalledOnServer:processedOnServer"))
+        );
+    }
+
+    @Test
+    void mapReduceTuples() {
+        // When.
+        Tuple result = client().compute().executeMapReduce(
+                TaskDescriptor.builder(MapReduceTuples.class).build(),
+                Tuple.create().set("from", "client")
+        );
+
+        // Then.
+        Tuple expectedTuple = Tuple.create();
+        expectedTuple.set("from", "client");
+        expectedTuple.set("split", "call");
+        expectedTuple.set("reduce", "call");
+        expectedTuple.set("echo", "echo");
+
+        assertThat(result, equalTo(expectedTuple));
     }
 
     private ClusterNode node(int idx) {

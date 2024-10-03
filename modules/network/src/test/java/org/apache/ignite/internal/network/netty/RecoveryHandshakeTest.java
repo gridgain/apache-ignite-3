@@ -36,7 +36,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
-import org.apache.ignite.internal.failure.FailureProcessor;
+import org.apache.ignite.internal.failure.FailureManager;
 import org.apache.ignite.internal.network.ClusterIdSupplier;
 import org.apache.ignite.internal.network.ClusterNodeImpl;
 import org.apache.ignite.internal.network.ConstantClusterIdSupplier;
@@ -714,7 +714,7 @@ public class RecoveryHandshakeTest extends BaseIgniteAbstractTest {
             StaleIdDetector staleIdDetector
     ) {
         return new RecoveryClientHandshakeManager(
-                new ClusterNodeImpl(launchId.toString(), consistentId, new NetworkAddress(CLIENT_HOST, PORT)),
+                new ClusterNodeImpl(launchId, consistentId, new NetworkAddress(CLIENT_HOST, PORT)),
                 CONNECTION_ID,
                 provider,
                 () -> List.of(clientSideChannel.eventLoop()),
@@ -722,7 +722,7 @@ public class RecoveryHandshakeTest extends BaseIgniteAbstractTest {
                 clusterIdSupplier,
                 channel -> {},
                 () -> false,
-                mock(FailureProcessor.class)
+                mock(FailureManager.class)
         );
     }
 
@@ -750,7 +750,7 @@ public class RecoveryHandshakeTest extends BaseIgniteAbstractTest {
             StaleIdDetector staleIdDetector
     ) {
         return new RecoveryServerHandshakeManager(
-                new ClusterNodeImpl(launchId.toString(), consistentId, new NetworkAddress(SERVER_HOST, PORT)),
+                new ClusterNodeImpl(launchId, consistentId, new NetworkAddress(SERVER_HOST, PORT)),
                 MESSAGE_FACTORY,
                 provider,
                 () -> List.of(serverSideChannel.eventLoop()),
@@ -758,7 +758,7 @@ public class RecoveryHandshakeTest extends BaseIgniteAbstractTest {
                 clusterIdSupplier,
                 channel -> {},
                 () -> false,
-                mock(FailureProcessor.class)
+                mock(FailureManager.class)
         );
     }
 

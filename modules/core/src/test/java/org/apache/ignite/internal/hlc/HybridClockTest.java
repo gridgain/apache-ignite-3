@@ -17,6 +17,7 @@
 
 package org.apache.ignite.internal.hlc;
 
+import static org.apache.ignite.internal.hlc.HybridTimestamp.LOGICAL_TIME_BITS_SIZE;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.mockStatic;
@@ -26,7 +27,6 @@ import static org.mockito.Mockito.verify;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Supplier;
 import org.apache.ignite.internal.testframework.BaseIgniteAbstractTest;
-import org.apache.ignite.internal.util.FastTimestamps;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -43,7 +43,7 @@ class HybridClockTest extends BaseIgniteAbstractTest {
     /**
      * Mock of a system clock.
      */
-    private static MockedStatic<FastTimestamps> clockMock;
+    private static MockedStatic<HybridClockImpl> clockMock;
 
     @Mock
     private ClockUpdateListener updateListener;
@@ -58,7 +58,7 @@ class HybridClockTest extends BaseIgniteAbstractTest {
      */
     @Test
     public void testNow() {
-        clockMock = mockCurrentTimestamp(100);
+        clockMock = mockToEpochMilli(100);
 
         HybridClock clock = new HybridClockImpl();
 
@@ -76,7 +76,7 @@ class HybridClockTest extends BaseIgniteAbstractTest {
      */
     @Test
     public void testTick() {
-        clockMock = mockCurrentTimestamp(100);
+        clockMock = mockToEpochMilli(100);
 
         HybridClock clock = new HybridClockImpl();
 
@@ -105,7 +105,7 @@ class HybridClockTest extends BaseIgniteAbstractTest {
     private void assertTimestampEquals(long sysTime, HybridTimestamp expTs, Supplier<HybridTimestamp> clo) {
         closeClockMock();
 
-        clockMock = mockCurrentTimestamp(sysTime);
+        clockMock = mockToEpochMilli(sysTime);
 
         assertEquals(expTs, clo.get());
     }
@@ -164,10 +164,10 @@ class HybridClockTest extends BaseIgniteAbstractTest {
         verify(updateListener, never()).onUpdate(anyLong());
     }
 
-    private static MockedStatic<FastTimestamps> mockCurrentTimestamp(long expected) {
-        MockedStatic<FastTimestamps> clockMock = mockStatic(FastTimestamps.class);
+    private static MockedStatic<HybridClockImpl> mockToEpochMilli(long expected) {
+        MockedStatic<HybridClockImpl> clockMock = mockStatic(HybridClockImpl.class);
 
-        clockMock.when(FastTimestamps::coarseCurrentTimeMillis).thenReturn(expected);
+        clockMock.when(HybridClockImpl::currentTime).thenReturn(expected << LOGICAL_TIME_BITS_SIZE);
 
         return clockMock;
     }

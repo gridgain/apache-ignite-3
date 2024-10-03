@@ -24,6 +24,7 @@ import static org.apache.ignite.compute.JobStatus.FAILED;
 import static org.apache.ignite.internal.util.CompletableFutures.nullCompletedFuture;
 import static org.apache.ignite.internal.util.CompletableFutures.trueCompletedFuture;
 
+import java.net.URL;
 import java.time.Instant;
 import java.util.Collection;
 import java.util.List;
@@ -57,7 +58,9 @@ import org.apache.ignite.internal.compute.ComputeUtils;
 import org.apache.ignite.internal.compute.IgniteComputeInternal;
 import org.apache.ignite.internal.compute.JobExecutionContextImpl;
 import org.apache.ignite.internal.compute.JobStateImpl;
+import org.apache.ignite.internal.compute.MarshallerProvider;
 import org.apache.ignite.internal.compute.TaskStateImpl;
+import org.apache.ignite.internal.compute.loader.JobClassLoader;
 import org.apache.ignite.internal.table.TableViewInternal;
 import org.apache.ignite.internal.util.ExceptionUtils;
 import org.apache.ignite.marshalling.Marshaller;
@@ -95,8 +98,6 @@ public class FakeCompute implements IgniteComputeInternal {
             List<DeploymentUnit> units,
             String jobClassName,
             JobExecutionOptions options,
-            @Nullable Marshaller<Object, byte[]> argumentMarshaller,
-            @Nullable Marshaller<R, byte[]> resultMarshaller,
             Object args) {
         if (Objects.equals(jobClassName, GET_UNITS)) {
             String unitString = units.stream().map(DeploymentUnit::render).collect(Collectors.joining(","));
@@ -115,7 +116,8 @@ public class FakeCompute implements IgniteComputeInternal {
         }
 
         if (jobClassName.startsWith("org.apache.ignite")) {
-            Class<ComputeJob<Object, R>> jobClass = ComputeUtils.jobClass(this.getClass().getClassLoader(), jobClassName);
+            JobClassLoader jobClassLoader = new JobClassLoader(List.of(), new URL[]{}, this.getClass().getClassLoader());
+            Class<ComputeJob<Object, R>> jobClass = ComputeUtils.jobClass(jobClassLoader, jobClassName);
             ComputeJob<Object, R> job = ComputeUtils.instantiateJob(jobClass);
             CompletableFuture<R> jobFut = job.executeAsync(
                     new JobExecutionContextImpl(ignite, new AtomicBoolean(), this.getClass().getClassLoader()), args);
@@ -129,14 +131,12 @@ public class FakeCompute implements IgniteComputeInternal {
 
     /** {@inheritDoc} */
     @Override
-        public <R> CompletableFuture<JobExecution<R>> submitColocatedInternal(
+    public <R> CompletableFuture<JobExecution<R>> submitColocatedInternal(
             TableViewInternal table,
             Tuple key,
             List<DeploymentUnit> units,
             String jobClassName,
             JobExecutionOptions options,
-            @Nullable Marshaller<Object, byte[]> argumentMarshaller,
-            @Nullable Marshaller<R, byte[]> resultMarshaller,
             Object args
     ) {
         return completedFuture(jobExecution(future != null ? future : completedFuture((R) nodeName)));
@@ -147,7 +147,7 @@ public class FakeCompute implements IgniteComputeInternal {
         if (target instanceof AnyNodeJobTarget) {
             Set<ClusterNode> nodes = ((AnyNodeJobTarget) target).nodes();
             return executeAsyncWithFailover(
-                    nodes, descriptor.units(), descriptor.jobClassName(), descriptor.options(), null, null, args
+                    nodes, descriptor.units(), descriptor.jobClassName(), descriptor.options(), args
             );
         } else if (target instanceof ColocatedJobTarget) {
             return jobExecution(future != null ? future : completedFuture((R) nodeName));
@@ -200,27 +200,43 @@ public class FakeCompute implements IgniteComputeInternal {
             JobState newState = JobStateImpl.toBuilder(state).status(status).finishTime(Instant.now()).build();
             jobStates.put(jobId, newState);
         });
-        return new JobExecution<>() {
-            @Override
-            public CompletableFuture<R> resultAsync() {
-                return result;
-            }
+        return new FakeJobExecution<>(result, jobId);
+    }
 
-            @Override
-            public CompletableFuture<@Nullable JobState> stateAsync() {
-                return completedFuture(jobStates.get(jobId));
-            }
+    private class FakeJobExecution<R> implements JobExecution<R>, MarshallerProvider<R> {
+        private final CompletableFuture<R> result;
+        private final UUID jobId;
 
-            @Override
-            public CompletableFuture<@Nullable Boolean> cancelAsync() {
-                return trueCompletedFuture();
-            }
+        private FakeJobExecution(CompletableFuture<R> result, UUID jobId) {
+            this.result = result;
+            this.jobId = jobId;
+        }
 
-            @Override
-            public CompletableFuture<@Nullable Boolean> changePriorityAsync(int newPriority) {
-                return trueCompletedFuture();
-            }
-        };
+        @Override
+        public CompletableFuture<R> resultAsync() {
+            return result;
+        }
+
+        @Override
+        public CompletableFuture<@Nullable JobState> stateAsync() {
+            return completedFuture(jobStates.get(jobId));
+        }
+
+        @Override
+        public CompletableFuture<@Nullable Boolean> cancelAsync() {
+            return trueCompletedFuture();
+        }
+
+        @Override
+        public CompletableFuture<@Nullable Boolean> changePriorityAsync(int newPriority) {
+            return trueCompletedFuture();
+        }
+
+
+        @Override
+        public Marshaller<R, byte[]> resultMarshaller() {
+            return null;
+        }
     }
 
     private <R> TaskExecution<R> taskExecution(CompletableFuture<R> result) {
@@ -248,32 +264,54 @@ public class FakeCompute implements IgniteComputeInternal {
             jobStates.put(subJobId2, toState.apply(subJobId2, status));
         });
 
-        return new TaskExecution<>() {
-            @Override
-            public CompletableFuture<R> resultAsync() {
-                return result;
-            }
+        return new FakeTaskExecution<>(result, jobId, subJobId1, subJobId2, null);
 
-            @Override
-            public CompletableFuture<@Nullable TaskState> stateAsync() {
-                return completedFuture(TaskStateImpl.toBuilder(jobStates.get(jobId)).build());
-            }
+    }
 
-            @Override
-            public CompletableFuture<List<@Nullable JobState>> statesAsync() {
-                return completedFuture(List.of(jobStates.get(subJobId1), jobStates.get(subJobId2)));
-            }
+    class FakeTaskExecution<R> implements TaskExecution<R>, MarshallerProvider<R> {
+        private final CompletableFuture<R> result;
+        private final UUID jobId;
+        private final UUID subJobId1;
+        private final UUID subJobId2;
+        private final Marshaller<R, byte[]> marshaller;
 
-            @Override
-            public CompletableFuture<@Nullable Boolean> cancelAsync() {
-                return trueCompletedFuture();
-            }
+        FakeTaskExecution(CompletableFuture<R> result, UUID jobId, UUID subJobId1, UUID subJobId2, Marshaller<R, byte[]> marshaller) {
+            this.result = result;
+            this.jobId = jobId;
+            this.subJobId1 = subJobId1;
+            this.subJobId2 = subJobId2;
+            this.marshaller = marshaller;
+        }
 
-            @Override
-            public CompletableFuture<@Nullable Boolean> changePriorityAsync(int newPriority) {
-                return trueCompletedFuture();
-            }
-        };
+        @Override
+        public CompletableFuture<R> resultAsync() {
+            return result;
+        }
+
+        @Override
+        public CompletableFuture<@Nullable TaskState> stateAsync() {
+            return completedFuture(TaskStateImpl.toBuilder(jobStates.get(jobId)).build());
+        }
+
+        @Override
+        public CompletableFuture<List<@Nullable JobState>> statesAsync() {
+            return completedFuture(List.of(jobStates.get(subJobId1), jobStates.get(subJobId2)));
+        }
+
+        @Override
+        public CompletableFuture<@Nullable Boolean> cancelAsync() {
+            return trueCompletedFuture();
+        }
+
+        @Override
+        public CompletableFuture<@Nullable Boolean> changePriorityAsync(int newPriority) {
+            return trueCompletedFuture();
+        }
+
+        @Override
+        public @Nullable Marshaller<R, byte[]> resultMarshaller() {
+            return marshaller;
+        }
     }
 
     @Override

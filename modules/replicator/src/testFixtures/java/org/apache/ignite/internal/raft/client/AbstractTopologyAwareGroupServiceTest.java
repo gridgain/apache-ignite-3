@@ -62,7 +62,7 @@ import org.apache.ignite.internal.raft.util.ThreadLocalOptimizedMarshaller;
 import org.apache.ignite.internal.replicator.TestReplicationGroupId;
 import org.apache.ignite.internal.testframework.IgniteAbstractTest;
 import org.apache.ignite.internal.thread.NamedThreadFactory;
-import org.apache.ignite.internal.topology.LogicalTopologyServiceTestImpl;
+import org.apache.ignite.internal.topology.TestLogicalTopologyService;
 import org.apache.ignite.internal.util.CollectionUtils;
 import org.apache.ignite.internal.util.IgniteUtils;
 import org.apache.ignite.network.ClusterNode;
@@ -230,7 +230,7 @@ public abstract class AbstractTopologyAwareGroupServiceTest extends IgniteAbstra
                 isServerAddress,
                 nodes,
                 null,
-                new LogicalTopologyServiceTestImpl(clientClusterService),
+                new TestLogicalTopologyService(clientClusterService),
                 false
         );
 
@@ -305,7 +305,11 @@ public abstract class AbstractTopologyAwareGroupServiceTest extends IgniteAbstra
         assertThat(stopFuture, willCompleteSuccessfully());
 
         // Waiting for the notifications to check.
-        assertTrue(waitForCondition(() -> !leader.equals(leaderRef.get()), WAIT_TIMEOUT_MILLIS));
+        if (!leader.address().equals(new NetworkAddress("localhost", PORT_BASE))) {
+            // leaderRef is updated through raftClient hosted on PORT_BASE, thus if corresponding node was stopped (and it will be stopped
+            // if it occurred to be a leader) leaderRef won't be updated.
+            assertTrue(waitForCondition(() -> !leader.equals(leaderRef.get()), WAIT_TIMEOUT_MILLIS));
+        }
         assertTrue(waitForCondition(() -> !leader.equals(leaderRefNoInitialNotify.get()), WAIT_TIMEOUT_MILLIS));
 
         log.info("New Leader: " + leaderRef.get());
@@ -314,7 +318,7 @@ public abstract class AbstractTopologyAwareGroupServiceTest extends IgniteAbstra
 
         raftClientNoInitialNotify.refreshLeader().get();
 
-        assertEquals(raftClientNoInitialNotify.leader().consistentId(), leaderRef.get().name());
+        assertEquals(raftClientNoInitialNotify.leader().consistentId(), leaderRefNoInitialNotify.get().name());
     }
 
     @Test
@@ -425,7 +429,7 @@ public abstract class AbstractTopologyAwareGroupServiceTest extends IgniteAbstra
         for (NetworkAddress addr : addresses) {
             ClusterService cluster = clusterServices.get(addr);
 
-            LogicalTopologyService logicalTopologyService = new LogicalTopologyServiceTestImpl(cluster);
+            LogicalTopologyService logicalTopologyService = new TestLogicalTopologyService(cluster);
 
             RaftGroupEventsClientListener eventsClientListener = new RaftGroupEventsClientListener();
 

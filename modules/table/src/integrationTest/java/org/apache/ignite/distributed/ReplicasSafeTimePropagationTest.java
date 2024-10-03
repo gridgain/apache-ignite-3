@@ -272,8 +272,10 @@ public class ReplicasSafeTimePropagationTest extends IgniteAbstractTest {
             ComponentWorkingDir workingDir = new ComponentWorkingDir(workDir.resolve(nodeName + "_loza"));
 
             partitionsLogStorageFactory = SharedLogStorageFactoryUtils.create(
+                    "test",
                     clusterService.nodeName(),
-                    workingDir.raftLogPath()
+                    workingDir.raftLogPath(),
+                    raftConfiguration.fsync().value()
             );
 
             assertThat(partitionsLogStorageFactory.startAsync(new ComponentContext()), willCompleteSuccessfully());
@@ -302,7 +304,8 @@ public class ReplicasSafeTimePropagationTest extends IgniteAbstractTest {
                                     mock(CatalogService.class),
                                     mock(SchemaRegistry.class),
                                     clockService,
-                                    mock(IndexMetaStorage.class)
+                                    mock(IndexMetaStorage.class),
+                                    clusterService.topologyService().localMember().id()
                             ),
                             RaftGroupEventsListener.noopLsnr,
                             RaftGroupOptions.defaults()

@@ -45,7 +45,7 @@ import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
-import org.apache.ignite.internal.failure.FailureProcessor;
+import org.apache.ignite.internal.failure.FailureManager;
 import org.apache.ignite.internal.future.OrderingFuture;
 import org.apache.ignite.internal.lang.IgniteInternalException;
 import org.apache.ignite.internal.lang.NodeStoppingException;
@@ -143,7 +143,7 @@ public class ConnectionManager implements ChannelCreationListener {
     private final ExecutorService connectionMaintenanceExecutor;
 
     /** Failure processor. */
-    private final FailureProcessor failureProcessor;
+    private final FailureManager failureManager;
 
     /**
      * Constructor.
@@ -154,7 +154,7 @@ public class ConnectionManager implements ChannelCreationListener {
      * @param bootstrapFactory              Bootstrap factory.
      * @param staleIdDetector               Detects stale member IDs.
      * @param clusterIdSupplier Supplier of cluster ID.
-     * @param failureProcessor Used to fail the node if a critical failure happens.
+     * @param failureManager Used to fail the node if a critical failure happens.
      */
     public ConnectionManager(
             NetworkView networkConfiguration,
@@ -163,7 +163,7 @@ public class ConnectionManager implements ChannelCreationListener {
             NettyBootstrapFactory bootstrapFactory,
             StaleIdDetector staleIdDetector,
             ClusterIdSupplier clusterIdSupplier,
-            FailureProcessor failureProcessor
+            FailureManager failureManager
     ) {
         this(
                 networkConfiguration,
@@ -173,7 +173,7 @@ public class ConnectionManager implements ChannelCreationListener {
                 staleIdDetector,
                 clusterIdSupplier,
                 null,
-                failureProcessor
+                failureManager
         );
     }
 
@@ -187,7 +187,7 @@ public class ConnectionManager implements ChannelCreationListener {
      * @param staleIdDetector               Detects stale member IDs.
      * @param clusterIdSupplier Supplier of cluster ID.
      * @param clientHandshakeManagerFactory Factory for {@link RecoveryClientHandshakeManager} instances.
-     * @param failureProcessor Used to fail the node if a critical failure happens.
+     * @param failureManager Used to fail the node if a critical failure happens.
      */
     public ConnectionManager(
             NetworkView networkConfiguration,
@@ -197,7 +197,7 @@ public class ConnectionManager implements ChannelCreationListener {
             StaleIdDetector staleIdDetector,
             ClusterIdSupplier clusterIdSupplier,
             @Nullable RecoveryClientHandshakeManagerFactory clientHandshakeManagerFactory,
-            FailureProcessor failureProcessor
+            FailureManager failureManager
     ) {
         this.serializationService = serializationService;
         this.consistentId = consistentId;
@@ -206,7 +206,7 @@ public class ConnectionManager implements ChannelCreationListener {
         this.clusterIdSupplier = clusterIdSupplier;
         this.clientHandshakeManagerFactory = clientHandshakeManagerFactory;
         this.networkConfiguration = networkConfiguration;
-        this.failureProcessor = failureProcessor;
+        this.failureManager = failureManager;
 
         this.server = new NettyServer(
                 networkConfiguration,
@@ -402,7 +402,7 @@ public class ConnectionManager implements ChannelCreationListener {
             sender.closeAsync().whenCompleteAsync((res, ex) -> {
                 RecoveryDescriptor recoveryDescriptor = descriptorProvider.getRecoveryDescriptor(
                         sender.consistentId(),
-                        UUID.fromString(sender.launchId()),
+                        sender.launchId(),
                         sender.channelId()
                 );
 
@@ -512,7 +512,7 @@ public class ConnectionManager implements ChannelCreationListener {
                     clusterIdSupplier,
                     this,
                     stopping::get,
-                    failureProcessor
+                    failureManager
             );
         }
 
@@ -536,7 +536,7 @@ public class ConnectionManager implements ChannelCreationListener {
                 clusterIdSupplier,
                 this,
                 stopping::get,
-                failureProcessor
+                failureManager
         );
     }
 
@@ -610,7 +610,7 @@ public class ConnectionManager implements ChannelCreationListener {
      *
      * @param id ID of the node (it must have already left the topology).
      */
-    public void handleNodeLeft(String id) {
+    public void handleNodeLeft(UUID id) {
         // We rely on the fact that the node with the given ID has already left the physical topology.
         assert staleIdDetector.isIdStale(id) : id + " is not stale yet";
 
@@ -625,7 +625,7 @@ public class ConnectionManager implements ChannelCreationListener {
         );
     }
 
-    private CompletableFuture<Void> closeChannelsWith(String id) {
+    private CompletableFuture<Void> closeChannelsWith(UUID id) {
         List<Entry<ConnectorKey<String>, NettySender>> entriesToRemove = channels.entrySet().stream()
                 .filter(entry -> entry.getValue().launchId().equals(id))
                 .collect(toList());
@@ -640,10 +640,10 @@ public class ConnectionManager implements ChannelCreationListener {
         return allOf(closeFutures.toArray(CompletableFuture[]::new));
     }
 
-    private void disposeRecoveryDescriptorsOfLeftNode(String id) {
+    private void disposeRecoveryDescriptorsOfLeftNode(UUID id) {
         Exception exceptionToFailSendFutures = new RecipientLeftException();
 
-        for (RecoveryDescriptor descriptor : descriptorProvider.getRecoveryDescriptorsByLaunchId(UUID.fromString(id))) {
+        for (RecoveryDescriptor descriptor : descriptorProvider.getRecoveryDescriptorsByLaunchId(id)) {
             blockAndDisposeDescriptor(descriptor, exceptionToFailSendFutures);
         }
     }

@@ -68,6 +68,7 @@ dependencies {
     integrationTestImplementation project(':ignite-network')
     integrationTestImplementation project(':ignite-network-api')
     integrationTestImplementation project(':ignite-sql-engine')
+    integrationTestImplementation project(':ignite-schema')
     integrationTestImplementation project(':ignite-table')
     integrationTestImplementation project(':ignite-metrics')
     integrationTestImplementation project(':ignite-security')
@@ -92,7 +93,9 @@ dependencies {
     testFixturesImplementation project(':ignite-placement-driver-api')
     testFixturesImplementation project(':ignite-catalog')
     testFixturesImplementation project(':ignite-security-api')
-    testFixturesImplementation project(':ignite-affinity')
+    testFixturesImplementation project(':ignite-partition-distribution')
+    testFixturesImplementation testFixtures(project(':ignite-core'))
+    testFixturesImplementation libs.jetbrains.annotations
     testFixturesImplementation libs.mockito.junit
 }
 

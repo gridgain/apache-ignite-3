@@ -25,6 +25,7 @@ set(SOURCES
     module.cpp
     py_connection.cpp
     py_cursor.cpp
+    utils.cpp
 )
 
 set(LIBRARIES
@@ -54,4 +55,7 @@ if (WIN32)
     set_target_properties(${TARGET} PROPERTIES SUFFIX ".pyd")
     target_link_libraries(${TARGET} ${Python3_LIBRARIES})
     remove_definitions(-DUNICODE=1)
+else()
+    set_target_properties(${TARGET} PROPERTIES PREFIX "")
 endif()
+
