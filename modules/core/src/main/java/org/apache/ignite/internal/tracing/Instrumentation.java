@@ -196,26 +196,29 @@ public class Instrumentation {
     }
 
     public static void add(Measurement measurement) {
-        if (!isStarted()) {
+        Instrumentation instrumentation = holder.get();
+        if (instrumentation == null) {
             return;
         }
 
-        holder.get().add(measurement);
+        instrumentation.add(measurement);
     }
 
     public static void mark(String message) {
-        if (!isStarted()) {
+        Instrumentation instrumentation = holder.get();
+        if (instrumentation == null) {
             return;
         }
 
         var measure = new Measurement(message);
         measure.start();
         measure.stop();
-        holder.get().measurements.add(measure);
+        instrumentation.measurements.add(measure);
     }
 
     public static <T> T measure(Action<T> block, String message) {
-        if (!isStarted()) {
+        Instrumentation instrumentation = holder.get();
+        if (instrumentation == null) {
             try {
                 return block.action();
             } catch (Exception e) {
@@ -234,13 +237,14 @@ public class Instrumentation {
             measure.stop();
         }
 
-        holder.get().measurements.add(measure);
+        instrumentation.measurements.add(measure);
 
         return results;
     }
 
     public static void measure(VoidAction block, String message) {
-        if (!isStarted()) {
+        Instrumentation instrumentation = holder.get();
+        if (instrumentation == null) {
             try {
                 block.action();
 
@@ -260,7 +264,7 @@ public class Instrumentation {
             measure.stop();
         }
 
-        holder.get().measurements.add(measure);
+        instrumentation.measurements.add(measure);
     }
 
     public static <T> CompletableFuture<T> measure(Supplier<CompletableFuture<T>> future, String message) {
