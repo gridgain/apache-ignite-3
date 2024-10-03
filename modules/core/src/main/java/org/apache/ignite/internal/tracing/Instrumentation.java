@@ -60,12 +60,39 @@ public class Instrumentation {
 
     private static final AtomicInteger opCnt = new AtomicInteger();
 
-    private static final ThreadLocal<Instrumentation> holder = new ThreadLocal<>();
+    private static final StaticProvider holder = new StaticProvider();
 
-    private static final boolean ENABLED = false;
+    private static final boolean ENABLED = true;
 
     public static boolean isEnabled() {
         return ENABLED;
+    }
+
+    interface Provider<T> {
+        void set(T inst);
+
+        T get();
+
+        void remove();
+    }
+
+    public static class StaticProvider implements Provider<Instrumentation> {
+        private volatile Instrumentation ins;
+
+        @Override
+        public void set(org.apache.ignite.internal.tracing.Instrumentation ins) {
+            this.ins = ins;
+        }
+
+        @Override
+        public Instrumentation get() {
+            return ins;
+        }
+
+        @Override
+        public void remove() {
+            ins = null;
+        }
     }
 
     /**
@@ -85,7 +112,8 @@ public class Instrumentation {
         Instrumentation ins = new Instrumentation();
         ins.jfr = jfr;
 
-        Path file = Path.of("/root/asch/trace-" + Thread.currentThread().getName() + ".txt");
+        Path file = Path.of("/run/ignite/trace-" + Thread.currentThread().getName() + ".txt");
+        //Path file = Path.of("c://work/logs/trace-" + Thread.currentThread().getName() + ".txt");
         ins.file = file;
 
         // TODO FIXME remove
@@ -236,7 +264,9 @@ public class Instrumentation {
     }
 
     public static <T> CompletableFuture<T> measure(Supplier<CompletableFuture<T>> future, String message) {
-        if (!isStarted()) {
+        Instrumentation inst = holder.get();
+
+        if (inst == null) {
             return future.get();
         }
 
@@ -247,14 +277,14 @@ public class Instrumentation {
 
         if (fut.isDone()) {
             measure.stop();
-            holder.get().measurements.add(measure);
+            inst.measurements.add(measure);
             return fut;
         }
 
         return fut.thenApply(v -> {
             measure.stop();
             if (isStarted()) {
-                holder.get().measurements.add(measure);
+                inst.measurements.add(measure);
             }
             return v;
         });
