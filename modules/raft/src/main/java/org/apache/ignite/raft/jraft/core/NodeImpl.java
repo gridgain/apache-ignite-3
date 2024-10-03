@@ -1978,6 +1978,8 @@ public class NodeImpl implements Node, RaftServerService {
 
     @Override
     public void apply(final Task task) {
+        Instrumentation.mark("NodeImplApplyTask");
+
         if (this.shutdownLatch != null) {
             Utils.runClosureInThread(this.getOptions().getCommonExecutor(), task.getDone(), new Status(RaftError.ENODESHUTDOWN, "Node is shutting down."));
             throw new IllegalStateException("Node is shutting down");
