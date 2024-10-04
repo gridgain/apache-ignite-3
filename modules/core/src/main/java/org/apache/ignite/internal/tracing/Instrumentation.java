@@ -62,7 +62,7 @@ public class Instrumentation {
 
     private static final StaticProvider holder = new StaticProvider();
 
-    private static final boolean ENABLED = true;
+    private static final boolean ENABLED = false;
 
     public static boolean isEnabled() {
         return ENABLED;
