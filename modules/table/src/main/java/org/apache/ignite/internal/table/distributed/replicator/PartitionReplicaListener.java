@@ -2753,7 +2753,7 @@ public class PartitionReplicaListener implements ReplicaListener {
                 return resultFuture.thenCompose(res -> {
                     UpdateCommandResult updateCommandResult = (UpdateCommandResult) res.getResult();
 
-                    if (updateCommandResult != null && updateCommandResult.isPrimaryReplicaMatch()) {
+                    if (updateCommandResult != null && !updateCommandResult.isPrimaryReplicaMatch()) {
                         throw new PrimaryReplicaMissException(txId, cmd.leaseStartTime(), updateCommandResult.currentLeaseStartTime());
                     }
 
