@@ -2726,18 +2726,20 @@ public class PartitionReplicaListener implements ReplicaListener {
             );
 
             if (!cmd.full()) {
-                // We don't need to take the partition snapshots read lock, see #INTERNAL_DOC_PLACEHOLDER why.
-                storageUpdateHandler.handleUpdate(
-                        cmd.txId(),
-                        cmd.rowUuid(),
-                        cmd.tablePartitionId().asTablePartitionId(),
-                        cmd.rowToUpdate(),
-                        true,
-                        null,
-                        null,
-                        null,
-                        indexIdsAtRwTxBeginTs(txId)
-                );
+                if (!IgniteSystemProperties.getBoolean(IgniteSystemProperties.IGNITE_SKIP_STORAGE_UPDATE_IN_BENCHMARK)) {
+                    // We don't need to take the partition snapshots read lock, see #INTERNAL_DOC_PLACEHOLDER why.
+                    storageUpdateHandler.handleUpdate(
+                            cmd.txId(),
+                            cmd.rowUuid(),
+                            cmd.tablePartitionId().asTablePartitionId(),
+                            cmd.rowToUpdate(),
+                            true,
+                            null,
+                            null,
+                            null,
+                            indexIdsAtRwTxBeginTs(txId)
+                    );
+                }
 
                 CompletableFuture<UUID> fut = applyCmdWithExceptionHandling(cmd, new CompletableFuture<>())
                         .thenApply(res -> cmd.txId());
@@ -2751,11 +2753,11 @@ public class PartitionReplicaListener implements ReplicaListener {
                 return resultFuture.thenCompose(res -> {
                     UpdateCommandResult updateCommandResult = (UpdateCommandResult) res.getResult();
 
-                    if (!updateCommandResult.isPrimaryReplicaMatch()) {
+                    if (updateCommandResult != null && updateCommandResult.isPrimaryReplicaMatch()) {
                         throw new PrimaryReplicaMissException(txId, cmd.leaseStartTime(), updateCommandResult.currentLeaseStartTime());
                     }
 
-                    if (updateCommandResult.isPrimaryInPeersAndLearners()) {
+                    if (updateCommandResult != null && updateCommandResult.isPrimaryInPeersAndLearners()) {
                         return safeTime.waitFor(((UpdateCommand) res.getCommand()).safeTime()).thenApply(ignored -> null);
                     } else {
                         if (!IgniteSystemProperties.getBoolean(IgniteSystemProperties.IGNITE_SKIP_STORAGE_UPDATE_IN_BENCHMARK)) {
