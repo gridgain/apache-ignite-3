@@ -745,7 +745,11 @@ class RelJson {
                             toType(typeFactory, map.get("keyType")),
                             toType(typeFactory, map.get("valueType"))
                     );
-                } else if (sqlTypeName == SqlTypeName.ANY && customType != null) {
+                } else if (customType != null) {
+                    if (precision == null) {
+                        precision = -1;
+                    }
+
                     type = ((IgniteTypeFactory) typeFactory).createCustomType(customType, precision);
                 } else if (precision == null) {
                     type = typeFactory.createSqlType(sqlTypeName);

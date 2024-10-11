@@ -90,7 +90,9 @@ public enum ColumnType {
     PERIOD(17, Period.class, true, false, false),
 
     /** Time interval. */
-    DURATION(18, Duration.class, true, false, false);
+    DURATION(18, Duration.class, true, false, false),
+
+    NUMERIC(19, BigDecimal.class, true, true, false);
 
     private final Class<?> javaClass;
     private final boolean precisionAllowed;

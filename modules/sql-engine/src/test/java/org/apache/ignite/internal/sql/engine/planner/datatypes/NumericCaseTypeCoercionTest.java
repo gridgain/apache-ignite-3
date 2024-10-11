@@ -35,6 +35,7 @@ import org.apache.ignite.internal.sql.engine.schema.IgniteSchema;
 import org.apache.ignite.internal.sql.engine.util.SqlTestUtils;
 import org.apache.ignite.internal.type.NativeType;
 import org.apache.ignite.internal.type.NativeTypes;
+import org.apache.ignite.sql.ColumnType;
 import org.hamcrest.BaseMatcher;
 import org.hamcrest.Description;
 import org.hamcrest.Matcher;
@@ -651,8 +652,8 @@ public class NumericCaseTypeCoercionTest extends BaseTypeCoercionTest {
                         .secondOpBeSame(),
 
                 forTypePair(NumericPair.TINYINT_DECIMAL_1_0)
-                        .firstOpMatches(castTo(DECIMAL_MAX_PREC))
-                        .secondOpMatches(ofTypeWithoutCast(DECIMAL_MAX_PREC)),
+                        .firstOpMatches(castTo(ColumnType.NUMERIC))
+                        .secondOpMatches(ofTypeWithoutCast(ColumnType.NUMERIC)),
 
                 forTypePair(NumericPair.TINYINT_DECIMAL_2_1)
                         .firstOpMatches(castTo(DECIMAL_MAX_PREC))

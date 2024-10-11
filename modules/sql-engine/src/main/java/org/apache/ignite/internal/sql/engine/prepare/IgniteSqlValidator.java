@@ -22,6 +22,7 @@ import static org.apache.calcite.sql.type.SqlTypeName.INTEGER;
 import static org.apache.calcite.sql.type.SqlTypeUtil.isNull;
 import static org.apache.calcite.util.Static.RESOURCE;
 import static org.apache.ignite.internal.lang.IgniteStringFormatter.format;
+import static org.apache.ignite.internal.sql.engine.util.TypeUtils.typeFamiliesAreCompatible;
 
 import it.unimi.dsi.fastutil.ints.Int2ObjectArrayMap;
 import it.unimi.dsi.fastutil.ints.Int2ObjectMap;
@@ -39,7 +40,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
-import java.util.UUID;
 import org.apache.calcite.plan.RelOptTable;
 import org.apache.calcite.prepare.CalciteCatalogReader;
 import org.apache.calcite.prepare.Prepare;
@@ -58,7 +58,6 @@ import org.apache.calcite.sql.SqlDataTypeSpec;
 import org.apache.calcite.sql.SqlDelete;
 import org.apache.calcite.sql.SqlDynamicParam;
 import org.apache.calcite.sql.SqlExplain;
-import org.apache.calcite.sql.SqlFunction;
 import org.apache.calcite.sql.SqlIdentifier;
 import org.apache.calcite.sql.SqlInsert;
 import org.apache.calcite.sql.SqlJoin;
@@ -67,7 +66,6 @@ import org.apache.calcite.sql.SqlLiteral;
 import org.apache.calcite.sql.SqlMerge;
 import org.apache.calcite.sql.SqlNode;
 import org.apache.calcite.sql.SqlNodeList;
-import org.apache.calcite.sql.SqlOperator;
 import org.apache.calcite.sql.SqlOperatorTable;
 import org.apache.calcite.sql.SqlSelect;
 import org.apache.calcite.sql.SqlUpdate;
@@ -76,6 +74,7 @@ import org.apache.calcite.sql.SqlWithItem;
 import org.apache.calcite.sql.dialect.CalciteSqlDialect;
 import org.apache.calcite.sql.fun.SqlStdOperatorTable;
 import org.apache.calcite.sql.parser.SqlParserPos;
+import org.apache.calcite.sql.type.BasicSqlType;
 import org.apache.calcite.sql.type.SqlTypeMappingRule;
 import org.apache.calcite.sql.type.SqlTypeName;
 import org.apache.calcite.sql.type.SqlTypeUtil;
@@ -93,7 +92,6 @@ import org.apache.calcite.sql.validate.SqlValidatorUtil;
 import org.apache.ignite.internal.sql.engine.schema.IgniteDataSource;
 import org.apache.ignite.internal.sql.engine.schema.IgniteSystemView;
 import org.apache.ignite.internal.sql.engine.schema.IgniteTable;
-import org.apache.ignite.internal.sql.engine.sql.fun.IgniteSqlOperatorTable;
 import org.apache.ignite.internal.sql.engine.type.IgniteCustomType;
 import org.apache.ignite.internal.sql.engine.type.IgniteCustomTypeCoercionRules;
 import org.apache.ignite.internal.sql.engine.type.IgniteTypeFactory;
@@ -102,6 +100,7 @@ import org.apache.ignite.internal.sql.engine.util.Commons;
 import org.apache.ignite.internal.sql.engine.util.IgniteCustomAssignmentsRules;
 import org.apache.ignite.internal.sql.engine.util.IgniteResource;
 import org.apache.ignite.internal.sql.engine.util.TypeUtils;
+import org.apache.ignite.internal.type.NativeTypeSpec;
 import org.jetbrains.annotations.Nullable;
 
 /** Validator. */
@@ -342,9 +341,8 @@ public class IgniteSqlValidator extends SqlValidatorImpl {
 
             if (canAssign && ((targetType instanceof IgniteCustomType) || (sourceType instanceof IgniteCustomType))) {
                 // SqlTypeUtil.canAssignFrom doesn't account for custom types, therefore need to check 
-                // this explicitly. Since at the moment there are no custom types which can be assigned from 
-                // each other, let's just check for equality. 
-                canAssign = SqlTypeUtil.equalSansNullability(typeFactory, targetType, sourceType);
+                // this explicitly.
+                canAssign = typeFamiliesAreCompatible(typeFactory, targetType, sourceType);
             }
 
             if (!canAssign) {
@@ -756,8 +754,8 @@ public class IgniteSqlValidator extends SqlValidatorImpl {
         // This check can be a part of some SqlOperandTypeChecker?
 
         if (lhs instanceof IgniteCustomType || rhs instanceof IgniteCustomType) {
-            boolean lhsRhsCompatible = TypeUtils.typeFamiliesAreCompatible(typeFactory, lhs, rhs);
-            boolean rhsLhsCompatible = TypeUtils.typeFamiliesAreCompatible(typeFactory, rhs, lhs);
+            boolean lhsRhsCompatible = typeFamiliesAreCompatible(typeFactory, lhs, rhs);
+            boolean rhsLhsCompatible = typeFamiliesAreCompatible(typeFactory, rhs, lhs);
 
             if (!lhsRhsCompatible && !rhsLhsCompatible) {
                 SqlCallBinding callBinding = new SqlCallBinding(this, scope, (SqlCall) expr);
@@ -823,7 +821,7 @@ public class IgniteSqlValidator extends SqlValidatorImpl {
                 typeFactory, rightHandType, null
         );
 
-        if (!TypeUtils.typeFamiliesAreCompatible(typeFactory, leftRowType, rightRowType)) {
+        if (!typeFamiliesAreCompatible(typeFactory, leftRowType, rightRowType)) {
             throw newValidationError(
                     expr,
                     RESOURCE.incompatibleValueType(SqlStdOperatorTable.IN.getName())
@@ -1210,51 +1208,8 @@ public class IgniteSqlValidator extends SqlValidatorImpl {
 
         try {
             super.validateCall(call, scope);
-
-            checkCallsWithCustomTypes(call, scope);
         } finally {
             callScopes.pop();
-        }
-    }
-
-    private void checkCallsWithCustomTypes(SqlCall call, SqlValidatorScope scope) {
-        SqlOperator operator = call.getOperator();
-
-        // IgniteCustomType:
-        // Since custom data types use ANY that is a catch all type for type checkers,
-        // if a function is called with custom data type argument does not belong to CUSTOM_TYPE_FUNCTIONS,
-        // then this should be considered a validation error.
-
-        if (call.getOperandList().isEmpty()
-                || !(operator instanceof SqlFunction)
-                || IgniteSqlOperatorTable.CUSTOM_TYPE_FUNCTIONS.contains(operator)) {
-            return;
-        }
-
-        for (SqlNode node : call.getOperandList()) {
-            RelDataType type = getValidatedNodeTypeIfKnown(node);
-            // Argument type is not known yet (alias) or it is not a custom data type.
-            if ((!(type instanceof IgniteCustomType))) {
-                continue;
-            }
-
-            String name = call.getOperator().getName();
-
-            // Call to getAllowedSignatures throws NPE, if operandTypeChecker is null.
-            if (operator.getOperandTypeChecker() != null) {
-                // If signatures are available, then return:
-                // Cannot apply 'F' to arguments of type 'F(<ARG_TYPE>)'. Supported form(s): 'F(<TYPE>)'
-                String allowedSignatures = operator.getAllowedSignatures();
-                throw newValidationError(call,
-                        RESOURCE.canNotApplyOp2Type(name,
-                                call.getCallSignature(this, scope),
-                                allowedSignatures));
-            } else {
-                // Otherwise return an error w/o supported forms:
-                // Cannot apply 'F' to arguments of type 'F(<ARG_TYPE>)'
-                throw newValidationError(call, IgniteResource.INSTANCE.canNotApplyOp2Type(name,
-                        call.getCallSignature(this, scope)));
-            }
         }
     }
 
@@ -1347,20 +1302,38 @@ public class IgniteSqlValidator extends SqlValidatorImpl {
     }
 
     private RelDataType deriveTypeFromDynamicParamValue(@Nullable Object value) {
-        IgniteTypeFactory typeFactory = typeFactory();
-
-        RelDataType parameterType;
-        // IgniteCustomType: first we must check whether dynamic parameter is a custom data type.
-        // If so call createCustomType with appropriate arguments.
-        if (value instanceof UUID) {
-            parameterType = typeFactory.createCustomType(UuidType.NAME);
-        } else if (value == null) {
-            parameterType = typeFactory.createSqlType(SqlTypeName.NULL);
-        } else {
-            parameterType = typeFactory.toSql(typeFactory.createType(value.getClass()));
+        if (value == null) {
+            return typeFactory.createSqlType(SqlTypeName.NULL);
         }
 
-        return parameterType;
+        Class<?> valueClass = value.getClass();
+
+        if (valueClass == Character.class) {
+            valueClass = String.class;
+        }
+
+        NativeTypeSpec spec = NativeTypeSpec.fromClass(valueClass);
+
+        assert spec != null : "Unable to derive type from value: " + value;
+
+        switch (spec) {
+            case INT8: return typeFactory.createSqlType(SqlTypeName.TINYINT);
+            case INT16: return typeFactory.createSqlType(SqlTypeName.SMALLINT);
+            case INT32: return typeFactory.createSqlType(INTEGER);
+            case INT64: return typeFactory.createSqlType(SqlTypeName.BIGINT);
+            case FLOAT: return typeFactory.createSqlType(SqlTypeName.REAL);
+            case DOUBLE: return typeFactory.createSqlType(SqlTypeName.DOUBLE);
+            case BOOLEAN: return typeFactory.createSqlType(SqlTypeName.BOOLEAN);
+            case UUID: return typeFactory().createCustomType(UuidType.NAME);
+            case DATE: return typeFactory.createSqlType(SqlTypeName.DATE);
+            case TIME: return typeFactory.createSqlType(SqlTypeName.TIME);
+            case DATETIME: return typeFactory.createSqlType(SqlTypeName.TIMESTAMP);
+            case TIMESTAMP: return typeFactory.createSqlType(SqlTypeName.TIMESTAMP_WITH_LOCAL_TIME_ZONE);
+            case DECIMAL: return typeFactory().createCustomType("NUMERIC");
+            case BYTES: return typeFactory.createSqlType(SqlTypeName.VARBINARY, BasicSqlType.PRECISION_NOT_SPECIFIED);
+            case STRING: return typeFactory.createSqlType(SqlTypeName.VARCHAR, BasicSqlType.PRECISION_NOT_SPECIFIED);
+            default: throw new AssertionError("Unknown type " + spec);
+        }
     }
 
     /** if dynamic parameter is not specified, set its type to the provided type, otherwise return the type of its value. */

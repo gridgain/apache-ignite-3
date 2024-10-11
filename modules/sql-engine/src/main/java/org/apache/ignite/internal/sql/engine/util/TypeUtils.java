@@ -22,7 +22,6 @@ import static org.apache.ignite.internal.lang.IgniteStringFormatter.format;
 import static org.apache.ignite.lang.ErrorGroups.Sql.STMT_VALIDATION_ERR;
 
 import java.lang.reflect.Type;
-import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.Instant;
@@ -48,10 +47,11 @@ import org.apache.calcite.avatica.util.ByteString;
 import org.apache.calcite.plan.RelOptUtil;
 import org.apache.calcite.rel.type.RelDataType;
 import org.apache.calcite.rel.type.RelDataTypeFactory;
+import org.apache.calcite.rel.type.RelDataTypeFamily;
 import org.apache.calcite.rel.type.RelDataTypeField;
-import org.apache.calcite.runtime.SqlFunctions;
 import org.apache.calcite.sql.type.BasicSqlType;
 import org.apache.calcite.sql.type.IntervalSqlType;
+import org.apache.calcite.sql.type.SqlTypeFamily;
 import org.apache.calcite.sql.type.SqlTypeName;
 import org.apache.calcite.sql.type.SqlTypeUtil;
 import org.apache.ignite.internal.sql.engine.exec.ExecutionContext;
@@ -224,58 +224,49 @@ public class TypeUtils {
         return false;
     }
 
+    public static @Nullable Object toInternal(@Nullable Object val, Type storageType) {
+        return toInternal(val, NativeTypeSpec.fromClass((Class<?>) storageType));
+    }
+
     /**
      * Converts the given value to its presentation used by the execution engine.
      */
-    public static @Nullable Object toInternal(@Nullable Object val, Type storageType) {
+    public static @Nullable Object toInternal(@Nullable Object val, @Nullable NativeTypeSpec spec) {
         if (val == null) {
             return null;
-        } else if (storageType == LocalDate.class) {
-            return (int) ((LocalDate) val).toEpochDay();
-        } else if (storageType == LocalTime.class) {
-            return (int) (TimeUnit.NANOSECONDS.toMillis(((LocalTime) val).toNanoOfDay()));
-        } else if (storageType == LocalDateTime.class) {
-            var dt = (LocalDateTime) val;
-
-            return TimeUnit.SECONDS.toMillis(dt.toEpochSecond(ZoneOffset.UTC)) + TimeUnit.NANOSECONDS.toMillis(dt.getNano());
-        } else if (storageType == Instant.class) {
-            var timeStamp = (Instant) val;
-
-            return timeStamp.toEpochMilli();
-        } else if (storageType == Duration.class) {
-            return TimeUnit.SECONDS.toMillis(((Duration) val).getSeconds())
-                    + TimeUnit.NANOSECONDS.toMillis(((Duration) val).getNano());
-        } else if (storageType == Period.class) {
-            return (int) ((Period) val).toTotalMonths();
-        } else if (storageType == byte[].class) {
-            if (val instanceof String) {
-                return new ByteString(((String) val).getBytes(StandardCharsets.UTF_8));
-            } else if (val instanceof byte[]) {
-                return new ByteString((byte[]) val);
-            } else {
-                assert val instanceof ByteString : "Expected ByteString but got " + val + ", type=" + val.getClass().getTypeName();
-                return val;
-            }
-        } else if (val instanceof Number && storageType != val.getClass()) {
-            // For dynamic parameters we don't know exact parameter type in compile time. To avoid casting errors in
-            // runtime we should convert parameter value to expected type.
-            Number num = (Number) val;
-
-            return Byte.class.equals(storageType) || byte.class.equals(storageType) ? SqlFunctions.toByte(num) :
-                    Short.class.equals(storageType) || short.class.equals(storageType) ? SqlFunctions.toShort(num) :
-                            Integer.class.equals(storageType) || int.class.equals(storageType) ? SqlFunctions.toInt(num) :
-                                    Long.class.equals(storageType) || long.class.equals(storageType) ? SqlFunctions.toLong(num) :
-                                            Float.class.equals(storageType) || float.class.equals(storageType) ? SqlFunctions.toFloat(num) :
-                                                    Double.class.equals(storageType) || double.class.equals(storageType)
-                                                            ? SqlFunctions.toDouble(num) :
-                                                            BigDecimal.class.equals(storageType) ? SqlFunctions.toBigDecimal(num) : num;
-        } else {
-            var nativeTypeSpec = NativeTypeSpec.fromClass((Class<?>) storageType);
-            assert nativeTypeSpec != null : "No native type spec for type: " + storageType;
-
-            var customType = SafeCustomTypeInternalConversion.INSTANCE.tryConvertToInternal(val, nativeTypeSpec);
-            return customType != null ? customType : val;
         }
+
+        assert spec != null;
+
+        switch (spec) {
+            case DATE:
+                return (int) ((LocalDate) val).toEpochDay();
+            case TIME:
+                return (int) (TimeUnit.NANOSECONDS.toMillis(((LocalTime) val).toNanoOfDay()));
+            case DATETIME: {
+                var dt = (LocalDateTime) val;
+
+                return TimeUnit.SECONDS.toMillis(dt.toEpochSecond(ZoneOffset.UTC)) + TimeUnit.NANOSECONDS.toMillis(dt.getNano());
+            }
+            case TIMESTAMP: {
+                var timeStamp = (Instant) val;
+
+                return timeStamp.toEpochMilli();
+            }
+            case BYTES: {
+                if (val instanceof String) {
+                    return new ByteString(((String) val).getBytes(StandardCharsets.UTF_8));
+                } else if (val instanceof byte[]) {
+                    return new ByteString((byte[]) val);
+                } else {
+                    assert val instanceof ByteString : "Expected ByteString but got " + val + ", type=" + val.getClass().getTypeName();
+                    return val;
+                }
+            }
+            default: // no-op
+        }
+
+        return val;
     }
 
     /**
@@ -312,6 +303,12 @@ public class TypeUtils {
      * Convert calcite date type to Ignite native type.
      */
     public static ColumnType columnType(RelDataType type) {
+        if (type instanceof IgniteCustomType) {
+            IgniteCustomType customType = (IgniteCustomType) type;
+
+            return customType.spec().columnType();
+        }
+
         switch (type.getSqlTypeName()) {
             case VARCHAR:
             case CHAR:
@@ -344,12 +341,6 @@ public class TypeUtils {
                 return ColumnType.FLOAT;
             case BINARY:
             case VARBINARY:
-            case ANY:
-                if (type instanceof IgniteCustomType) {
-                    IgniteCustomType customType = (IgniteCustomType) type;
-                    return customType.spec().columnType();
-                }
-                // fallthrough
             case OTHER:
                 return ColumnType.BYTE_ARRAY;
             case INTERVAL_YEAR:
@@ -600,8 +591,10 @@ public class TypeUtils {
             // IgniteCustomType: different custom data types are not compatible.
             return Objects.equals(fromCustom.getCustomTypeName(), toCustom.getCustomTypeName());
         } else if (fromType instanceof IgniteCustomType || toType instanceof IgniteCustomType) {
-            // IgniteCustomType: custom data types are not compatible with other types.
-            return false;
+            RelDataTypeFamily fromTypeFamily = fromType.getFamily();
+            RelDataTypeFamily toTypeFamily = toType.getFamily();
+
+            return fromTypeFamily != SqlTypeFamily.ANY && fromTypeFamily == toTypeFamily;
         } else if (SqlTypeUtil.canAssignFrom(toType, fromType)) {
             return SqlTypeUtil.canAssignFrom(fromType, toType);
         } else {

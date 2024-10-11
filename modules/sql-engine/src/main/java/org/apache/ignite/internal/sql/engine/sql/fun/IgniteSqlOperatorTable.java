@@ -442,21 +442,6 @@ public class IgniteSqlOperatorTable extends ReflectiveSqlOperatorTable {
     /** Singleton instance. */
     public static final IgniteSqlOperatorTable INSTANCE = new IgniteSqlOperatorTable();
 
-    /** IgniteCustomType: A list of functions supported by all custom data types. */
-    public static final List<SqlFunction> CUSTOM_TYPE_FUNCTIONS = List.of(
-            SqlStdOperatorTable.CAST,
-            SqlStdOperatorTable.COALESCE,
-            SqlStdOperatorTable.NULLIF,
-            TYPEOF,
-            SqlStdOperatorTable.COUNT,
-            SqlStdOperatorTable.MIN,
-            SqlStdOperatorTable.MAX,
-            SqlStdOperatorTable.ANY_VALUE,
-            SOME,
-            SqlStdOperatorTable.SINGLE_VALUE,
-            EVERY
-    );
-
     /**
      * Default constructor.
      */

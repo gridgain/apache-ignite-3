@@ -20,6 +20,8 @@ package org.apache.ignite.internal.sql.engine;
 import static org.apache.ignite.internal.lang.IgniteStringFormatter.format;
 import static org.apache.ignite.internal.sql.engine.util.SqlTestUtils.assertThrowsSqlException;
 import static org.apache.ignite.internal.testframework.IgniteTestUtils.await;
+import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.Matchers.startsWith;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.params.provider.Arguments.arguments;
@@ -72,7 +74,8 @@ public class ItDynamicParameterTest extends BaseSqlIntegrationTest {
     @ParameterizedTest
     @EnumSource(value = ColumnType.class,
             // TODO: https://issues.apache.org/jira/browse/IGNITE-17373
-            names = {"DURATION", "PERIOD"},
+            // Numeric is not a real type, it represents DECIMAL without particular precision and scale  
+            names = {"DURATION", "PERIOD", "NUMERIC"},
             mode = Mode.EXCLUDE
     )
     void testMetadataTypesForDynamicParameters(ColumnType type) {
@@ -83,12 +86,21 @@ public class ItDynamicParameterTest extends BaseSqlIntegrationTest {
         } else {
             param = SqlTestUtils.generateValueByTypeWithMaxScalePrecisionForSql(type);
         }
+
+        if (type == ColumnType.DECIMAL) {
+            type = ColumnType.NUMERIC; // for dynamic params of type DECIMAL actual type is derived as NUMERIC
+        }
+
         List<List<Object>> ret = sql("SELECT typeof(?)", param);
         String type0 = (String) ret.get(0).get(0);
 
         // ToDo https://issues.apache.org/jira/browse/IGNITE-23130 Typeof for TIMESTAMP return not well formed name.
-        assertTrue(type0.replace('_', ' ').startsWith(SqlTestUtils.toSqlType(type)));
-        assertQuery("SELECT ?").withParams(param).returns(param).columnMetadata(new MetadataMatcher().type(type)).check();
+        assertThat(type0.replace('_', ' '), startsWith(SqlTestUtils.toSqlType(type)));
+        assertQuery("SELECT ?")
+                .withParams(param)
+                .returns(param)
+                .columnMetadata(new MetadataMatcher().type(type))
+                .check();
     }
 
     @Test

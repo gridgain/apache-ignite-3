@@ -33,9 +33,8 @@ import org.apache.calcite.avatica.util.ByteString;
 import org.apache.calcite.avatica.util.DateTimeUtils;
 import org.apache.calcite.linq4j.function.NonDeterministic;
 import org.apache.calcite.runtime.SqlFunctions;
-import org.apache.calcite.sql.type.SqlTypeName;
 import org.apache.ignite.internal.lang.IgniteStringBuilder;
-import org.apache.ignite.internal.sql.engine.type.IgniteTypeSystem;
+import org.apache.ignite.internal.sql.engine.sql.fun.IgniteSqlOperatorTable;
 import org.apache.ignite.internal.sql.engine.util.Commons;
 import org.apache.ignite.internal.sql.engine.util.IgniteMath;
 import org.apache.ignite.internal.sql.engine.util.TypeUtils;
@@ -331,20 +330,12 @@ public class IgniteSqlFunctions {
      * according to SQL spec for CAST specification: General Rules, 8.
      */
     public static BigDecimal toBigDecimal(Number value, int precision, int scale) {
-        assert precision > 0 : "Invalid precision: " + precision;
-
         if (value == null) {
             return null;
         }
 
-        int defaultPrecision = IgniteTypeSystem.INSTANCE.getDefaultPrecision(SqlTypeName.DECIMAL);
-
-        if (precision == defaultPrecision) {
-            BigDecimal dec = convertToBigDecimal(value);
-            // This branch covers at least one known case: access to dynamic parameter from context.
-            // In this scenario precision = DefaultTypePrecision, because types for dynamic params
-            // are created by toSql(createType(param.class)).
-            return dec;
+        if (precision == -1) {
+            return value instanceof BigDecimal ? (BigDecimal) value : new BigDecimal(value.toString());
         }
 
         if (value.longValue() == 0) {

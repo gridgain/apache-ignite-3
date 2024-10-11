@@ -63,6 +63,7 @@ import org.apache.ignite.internal.sql.engine.InternalSqlRow;
 import org.apache.ignite.internal.sql.engine.type.IgniteCustomType;
 import org.apache.ignite.internal.sql.engine.type.IgniteTypeFactory;
 import org.apache.ignite.internal.sql.engine.type.IgniteTypeSystem;
+import org.apache.ignite.internal.sql.engine.type.NumericType;
 import org.apache.ignite.internal.sql.engine.type.UuidType;
 import org.apache.ignite.internal.testframework.IgniteTestUtils;
 import org.apache.ignite.internal.type.DecimalNativeType;
@@ -110,6 +111,7 @@ public class SqlTestUtils {
         COLUMN_TYPE_TO_SQL_TYPE_NAME_MAP.put(ColumnType.BYTE_ARRAY, SqlTypeName.VARBINARY);
         COLUMN_TYPE_TO_SQL_TYPE_NAME_MAP.put(ColumnType.NULL, SqlTypeName.NULL);
         COLUMN_TYPE_TO_SQL_TYPE_NAME_MAP.put(ColumnType.UUID, SqlTypeName.ANY);
+        COLUMN_TYPE_TO_SQL_TYPE_NAME_MAP.put(ColumnType.NUMERIC, SqlTypeName.ANY);
         COLUMN_TYPE_TO_SQL_TYPE_NAME_MAP.put(ColumnType.PERIOD, null);
         COLUMN_TYPE_TO_SQL_TYPE_NAME_MAP.put(ColumnType.DURATION, null);
 
@@ -205,6 +207,8 @@ public class SqlTestUtils {
             switch (columnType) {
                 case UUID:
                     return UuidType.NAME;
+                case NUMERIC:
+                    return NumericType.NAME;
                 default:
                     throw new IllegalArgumentException("Unsupported type " + columnType);
             }

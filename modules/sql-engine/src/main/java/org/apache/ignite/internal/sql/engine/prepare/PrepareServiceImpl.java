@@ -415,9 +415,9 @@ public class PrepareServiceImpl implements PrepareService {
                         nextPlanId(), SqlQueryType.QUERY, optimizedRel, resultSetMetadata, parameterMetadata, catalogVersion, fastPlan
                 );
 
-                if (LOG.isDebugEnabled()) {
-                    LOG.debug("Plan prepared: \n{}\n\n{}", parsedResult.originalQuery(), plan.explain());
-                }
+//                if (LOG.isDebugEnabled()) {
+                    LOG.info("Plan prepared: \n{}\n\n{}", parsedResult.originalQuery(), plan.explain());
+//                }
 
                 return plan;
             }, planningPool));

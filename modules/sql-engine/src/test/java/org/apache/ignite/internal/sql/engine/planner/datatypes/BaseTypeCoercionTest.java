@@ -31,6 +31,7 @@ import org.apache.calcite.rel.type.RelDataType;
 import org.apache.calcite.rex.RexCall;
 import org.apache.calcite.rex.RexNode;
 import org.apache.calcite.sql.SqlKind;
+import org.apache.calcite.sql.type.SqlTypeName;
 import org.apache.calcite.sql.type.SqlTypeUtil;
 import org.apache.ignite.internal.sql.engine.framework.TestBuilders;
 import org.apache.ignite.internal.sql.engine.planner.AbstractPlannerTest;
@@ -46,6 +47,7 @@ import org.apache.ignite.internal.sql.engine.util.SqlTestUtils;
 import org.apache.ignite.internal.type.DecimalNativeType;
 import org.apache.ignite.internal.type.NativeType;
 import org.apache.ignite.internal.type.NativeTypeSpec;
+import org.apache.ignite.sql.ColumnType;
 import org.hamcrest.BaseMatcher;
 import org.hamcrest.Description;
 import org.hamcrest.Matcher;
@@ -193,6 +195,43 @@ public class BaseTypeCoercionTest extends AbstractPlannerTest {
     }
 
     /**
+     * Creates a matcher to verify that given expression has expected return type, but it is not CAST operator.
+     *
+     * @param type Expected return type.
+     * @return A matcher.
+     */
+    static Matcher<RexNode> ofTypeWithoutCast(ColumnType type) {
+        IgniteTypeFactory typeFactory = Commons.typeFactory();
+
+        SqlTypeName name = SqlTestUtils.columnType2SqlTypeName(type);
+
+        RelDataType sqlType;
+        if (name == SqlTypeName.ANY) {
+            sqlType = typeFactory.createCustomType(SqlTestUtils.toSqlType(type));
+        } else {
+            sqlType = typeFactory.createSqlType(name);
+        }
+
+        return new BaseMatcher<>() {
+            @Override
+            public boolean matches(Object actual) {
+                return SqlTypeUtil.equalSansNullability(typeFactory, ((RexNode) actual).getType(), sqlType)
+                        && !((RexNode) actual).isA(SqlKind.CAST);
+            }
+
+            @Override
+            public void describeMismatch(Object item, Description description) {
+                description.appendText("was ").appendValue(item).appendText(" of type " + ((RexNode) item).getType());
+            }
+
+            @Override
+            public void describeTo(Description description) {
+                description.appendText(format("Operand of type {} that is not CAST", sqlType));
+            }
+        };
+    }
+
+    /**
      * Creates a matcher to verify that given expression is CAST operator with expected return type.
      *
      * @param type Expected return type.
@@ -201,6 +240,44 @@ public class BaseTypeCoercionTest extends AbstractPlannerTest {
     static Matcher<RexNode> castTo(NativeType type) {
         IgniteTypeFactory typeFactory = Commons.typeFactory();
         RelDataType sqlType = native2relationalType(typeFactory, type);
+
+        return new BaseMatcher<>() {
+            @Override
+            public boolean matches(Object actual) {
+                return actual instanceof RexCall
+                        && ((RexNode) actual).isA(SqlKind.CAST)
+                        && SqlTypeUtil.equalSansNullability(typeFactory, ((RexNode) actual).getType(), sqlType);
+            }
+
+            @Override
+            public void describeTo(Description description) {
+                description.appendText("Operand that is CAST(..):" + sqlType);
+            }
+
+            @Override
+            public void describeMismatch(Object item, Description description) {
+                description.appendText("was ").appendValue(item).appendText(" of type " + ((RexNode) item).getType());
+            }
+        };
+    }
+
+    /**
+     * Creates a matcher to verify that given expression is CAST operator with expected return type.
+     *
+     * @param type Expected return type.
+     * @return A matcher.
+     */
+    static Matcher<RexNode> castTo(ColumnType type) {
+        IgniteTypeFactory typeFactory = Commons.typeFactory();
+
+        SqlTypeName name = SqlTestUtils.columnType2SqlTypeName(type);
+
+        RelDataType sqlType;
+        if (name == SqlTypeName.ANY) {
+            sqlType = typeFactory.createCustomType(SqlTestUtils.toSqlType(type));
+        } else {
+            sqlType = typeFactory.createSqlType(name);
+        }
 
         return new BaseMatcher<>() {
             @Override

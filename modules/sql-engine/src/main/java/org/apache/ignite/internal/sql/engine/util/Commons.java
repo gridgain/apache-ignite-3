@@ -341,9 +341,9 @@ public final class Commons {
     public static <T> T compile(Class<T> interfaceType, String body) {
         final boolean debug = CalciteSystemProperty.DEBUG.value();
 
-        if (debug) {
+//        if (debug) {
             Util.debugCode(System.out, body);
-        }
+//        }
 
         try {
             final ICompilerFactory compilerFactory;
@@ -476,7 +476,12 @@ public final class Commons {
             case INT64: return tuple.longValueBoxed(fieldIndex);
             case FLOAT: return tuple.floatValueBoxed(fieldIndex);
             case DOUBLE: return tuple.doubleValueBoxed(fieldIndex);
-            case DECIMAL: return tuple.decimalValue(fieldIndex, ((DecimalNativeType) nativeType).scale());
+            case DECIMAL: {
+                DecimalNativeType decimalType = (DecimalNativeType) nativeType;
+
+                int scale = decimalType.scale() < 0 ? Integer.MIN_VALUE : decimalType.scale();
+                return tuple.decimalValue(fieldIndex, scale);
+            }
             case UUID: return tuple.uuidValue(fieldIndex);
             case STRING: return tuple.stringValue(fieldIndex);
             case BYTES: return tuple.bytesValue(fieldIndex);

@@ -25,6 +25,7 @@ import org.apache.calcite.sql.type.BasicSqlType;
 import org.apache.calcite.sql.type.SqlTypeName;
 import org.apache.calcite.sql.type.SqlTypeUtil;
 import org.apache.ignite.internal.catalog.commands.CatalogUtils;
+import org.checkerframework.checker.nullness.qual.Nullable;
 
 /**
  * Ignite type system.
@@ -180,5 +181,16 @@ public class IgniteTypeSystem extends RelDataTypeSystemImpl {
         }
 
         return super.deriveAvgAggType(typeFactory, argumentType);
+    }
+
+    @Override
+    public @Nullable RelDataType deriveDecimalPlusType(RelDataTypeFactory typeFactory, RelDataType type1, RelDataType type2) {
+        if (SqlTypeUtil.equalSansNullability(typeFactory, type1, NumericType.INSTANCE)
+                || SqlTypeUtil.equalSansNullability(typeFactory, type1, NumericType.INSTANCE)
+        ) {
+            return type1.isNullable() || type2.isNullable() ? NumericType.NULLABLE_INSTANCE : NumericType.INSTANCE;
+        }
+
+        return super.deriveDecimalPlusType(typeFactory, type1, type2);
     }
 }

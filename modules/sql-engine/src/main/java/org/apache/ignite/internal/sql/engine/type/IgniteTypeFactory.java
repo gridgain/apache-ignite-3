@@ -52,8 +52,11 @@ import org.apache.calcite.sql.SqlUtil;
 import org.apache.calcite.sql.parser.SqlParserPos;
 import org.apache.calcite.sql.type.BasicSqlType;
 import org.apache.calcite.sql.type.IntervalSqlType;
+import org.apache.calcite.sql.type.SqlTypeFamily;
 import org.apache.calcite.sql.type.SqlTypeName;
+import org.apache.calcite.sql.type.SqlTypeUtil;
 import org.apache.ignite.internal.sql.engine.util.Commons;
+import org.apache.ignite.internal.sql.engine.util.IgniteCustomAssignmentsRules;
 import org.apache.ignite.internal.type.NativeType;
 import org.apache.ignite.internal.type.NativeTypes;
 import org.jetbrains.annotations.Nullable;
@@ -117,7 +120,13 @@ public class IgniteTypeFactory extends JavaTypeFactoryImpl {
         // UUID type can be converted from character types.
         uuidType.addCoercionRules(SqlTypeName.CHAR_TYPES);
 
-        customDataTypes = new CustomDataTypes(Set.of(uuidType));
+        NewCustomType numericType = new NewCustomType(
+                NumericType.SPEC,
+                (nullable, precision) -> nullable ? NumericType.NULLABLE_INSTANCE : NumericType.INSTANCE
+        );
+        numericType.addCoercionRules(IgniteCustomAssignmentsRules.instance().getTypeMapping().get(SqlTypeName.DECIMAL));
+
+        customDataTypes = new CustomDataTypes(Set.of(uuidType, numericType));
     }
 
     /** {@inheritDoc} */
@@ -222,7 +231,7 @@ public class IgniteTypeFactory extends JavaTypeFactoryImpl {
             case BIGINT:
                 return NativeTypes.INT64;
             case DECIMAL:
-                assert relType.getPrecision() != PRECISION_NOT_SPECIFIED;
+//                assert relType.getPrecision() != PRECISION_NOT_SPECIFIED;
 
                 return NativeTypes.decimalOf(relType.getPrecision(), relType.getScale());
             case FLOAT:
@@ -385,6 +394,35 @@ public class IgniteTypeFactory extends JavaTypeFactoryImpl {
             return first(types);
         }
 
+        boolean hasUnboundNumeric = false;
+        boolean hasNonNumericTypes = false;
+        boolean hasNullable = false;
+        RelDataType numeric = createCustomType(NumericType.NAME);
+        RelDataType nullableNumeric = createTypeWithNullability(numeric, true);
+        for (RelDataType type : types) {
+            hasNullable = hasNullable || type.isNullable();
+
+            if (SqlTypeUtil.isNull(type)) {
+                continue;
+            }
+
+            if (SqlTypeUtil.equalSansNullability(this, numeric, type)) {
+                hasUnboundNumeric = true;
+            } else if (!SqlTypeFamily.NUMERIC.contains(type)) {
+                hasNonNumericTypes = true;
+            }
+
+            if (hasUnboundNumeric && hasNonNumericTypes) {
+                return null;
+            }
+        }
+
+        if (hasUnboundNumeric) {
+            assert !hasNonNumericTypes;
+
+            return hasNullable ? nullableNumeric : numeric;
+        }
+
         RelDataType resultType = super.leastRestrictive(types);
 
         if (resultType == null) {
@@ -408,10 +446,10 @@ public class IgniteTypeFactory extends JavaTypeFactoryImpl {
         IgniteCustomType firstCustomType = null;
         boolean hasAnyType = false;
         boolean hasBuiltInType = false;
-        boolean hasNullable = false;
+        hasNullable = false;
         IgniteCustomType firstNullable = null;
 
-        for (var type : types) {
+        for (RelDataType type : types) {
             SqlTypeName sqlTypeName = type.getSqlTypeName();
             // NULL types should be ignored when we are trying to determine the least restrictive type.
             if (sqlTypeName == SqlTypeName.NULL) {
@@ -430,7 +468,7 @@ public class IgniteTypeFactory extends JavaTypeFactoryImpl {
                 }
 
                 if (type.isNullable() && firstNullable == null) {
-                    hasNullable = type.isNullable();
+                    hasNullable = true;
                     firstNullable = (IgniteCustomType) type;
                 }
 

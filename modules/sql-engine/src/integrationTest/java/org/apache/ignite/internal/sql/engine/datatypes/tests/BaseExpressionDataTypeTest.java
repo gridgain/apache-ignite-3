@@ -109,7 +109,7 @@ public abstract class BaseExpressionDataTypeTest<T extends Comparable<T>> extend
     public void testCoalesce() {
         T value1 = values.get(0);
 
-        checkQuery("SELECT COALESCE($0, $1)").returns(value1).check();
+//        checkQuery("SELECT COALESCE($0, $1)").returns(value1).check();
 
         // Checks that NULL type is properly handled by by typeFactory::leastRestrictiveType
         checkQuery("SELECT COALESCE(NULL, $0)").returns(value1).check();

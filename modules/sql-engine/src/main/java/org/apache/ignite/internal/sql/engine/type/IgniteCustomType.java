@@ -116,8 +116,8 @@ public abstract class IgniteCustomType extends RelDataTypeImpl {
     }
 
     /** {@inheritDoc} */
-    @Override public final SqlTypeName getSqlTypeName() {
-        return SqlTypeName.ANY;
+    @Override public SqlTypeName getSqlTypeName() {
+        return SqlTypeName.OTHER;
     }
 
     /** {@inheritDoc} */
