@@ -74,7 +74,7 @@ public class HeapLockManager extends AbstractEventProducer<LockEvent, LockEventP
     /**
      * Table size. TODO make it configurable IGNITE-20694
      */
-    public static final int SLOTS = 800_000;
+    public static final int SLOTS = 1_048_576;
 
     /**
      * Empty slots.
@@ -267,7 +267,9 @@ public class HeapLockManager extends AbstractEventProducer<LockEvent, LockEventP
                     res[0] = slots[index];
                     assert !res[0].markedForRemove;
 
-                    assert key.equals(res[0].key) : "PVD:: Lock key does not match.";
+                    if (!key.equals(res[0].key)) {
+                        throw new AssertionError("PVD:: Lock key does not match.");
+                    }
                 } else {
                     v.markedForRemove = false;
                     v.key = k;
