@@ -266,6 +266,8 @@ public class HeapLockManager extends AbstractEventProducer<LockEvent, LockEventP
                 if (v == null) {
                     res[0] = slots[index];
                     assert !res[0].markedForRemove;
+
+                    assert key.equals(res[0].key) : "PVD:: Lock key does not match.";
                 } else {
                     v.markedForRemove = false;
                     v.key = k;

@@ -75,7 +75,6 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.CompletionException;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.Executor;
@@ -160,7 +159,6 @@ import org.apache.ignite.internal.schema.BinaryTuplePrefix;
 import org.apache.ignite.internal.schema.NullBinaryRow;
 import org.apache.ignite.internal.schema.SchemaRegistry;
 import org.apache.ignite.internal.schema.SchemaSyncService;
-import org.apache.ignite.internal.schema.row.Row;
 import org.apache.ignite.internal.storage.MvPartitionStorage;
 import org.apache.ignite.internal.storage.PartitionTimestampCursor;
 import org.apache.ignite.internal.storage.ReadResult;
@@ -2438,22 +2436,6 @@ public class PartitionReplicaListener implements ReplicaListener {
                         return insert
                                 ? takeLocksForInsert(searchRow, rowId0, txId)
                                 : takeLocksForUpdate(searchRow, rowId0, txId);
-                    }).exceptionally(throwable -> {
-                        Row resolvedRow = schemaRegistry.resolve(searchRow, schemaRegistry.lastKnownSchemaVersion());
-
-                        StringBuilder sb = new StringBuilder("{");
-
-                        for (int col = 0; col < resolvedRow.elementCount(); col++) {
-                            sb.append(resolvedRow.value(col));
-
-                            if (col + 1 != resolvedRow.elementCount()) {
-                                sb.append(", ");
-                            }
-                        }
-
-                        LOG.info("Exception on trying to resolve PK [part={}, row={}]", replicationGroupId, sb.append("}"));
-
-                        throw new CompletionException(throwable);
                     });
                 }
 
