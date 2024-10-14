@@ -24,7 +24,7 @@ import java.util.Objects;
  */
 public class RetryLimitPolicy implements RetryPolicy {
     /** Default retry limit. */
-    public static final int DFLT_RETRY_LIMIT = 0;
+    public static final int DFLT_RETRY_LIMIT = 16;
 
     /** Retry limit. */
     private int retryLimit = DFLT_RETRY_LIMIT;

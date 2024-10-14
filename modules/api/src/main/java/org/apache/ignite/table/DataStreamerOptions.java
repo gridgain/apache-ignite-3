@@ -104,7 +104,7 @@ public class DataStreamerOptions {
 
         private int autoFlushInterval = 5000;
 
-        private int retryLimit = 0;
+        private int retryLimit = 16;
 
         /**
          * Sets the page size (the number of entries that will be sent to the cluster in one network call).
