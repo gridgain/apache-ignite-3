@@ -70,9 +70,8 @@ import org.openjdk.jmh.runner.options.OptionsBuilder;
 @Threads(1)
 @Warmup(iterations = 10, time = 2)
 @Measurement(iterations = 20, time = 2)
-@BenchmarkMode(Mode.Throughput)
-@OutputTimeUnit(TimeUnit.SECONDS)
-//@OutputTimeUnit(TimeUnit.MICROSECONDS)
+@BenchmarkMode(Mode.AverageTime)
+@OutputTimeUnit(TimeUnit.MICROSECONDS)
 @SuppressWarnings({"WeakerAccess", "unused"})
 public class SelectBenchmark extends AbstractMultiNodeBenchmark {
     private static final int TABLE_SIZE = 30_000;
@@ -85,7 +84,7 @@ public class SelectBenchmark extends AbstractMultiNodeBenchmark {
     @Param({"1"/*, "2", "3"*/})
     private int clusterSize;
 
-    @Param({"true"/*, "false"*/})
+    @Param({"true", "false"})
     private boolean switchThreadFast;
 
     @Override
