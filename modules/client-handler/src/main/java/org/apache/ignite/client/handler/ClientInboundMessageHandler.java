@@ -112,6 +112,7 @@ import org.apache.ignite.internal.jdbc.proto.JdbcQueryCursorHandler;
 import org.apache.ignite.internal.jdbc.proto.JdbcQueryEventHandler;
 import org.apache.ignite.internal.lang.IgniteExceptionMapperUtil;
 import org.apache.ignite.internal.lang.IgniteInternalCheckedException;
+import org.apache.ignite.internal.lang.IgniteSystemProperties;
 import org.apache.ignite.internal.logger.IgniteLogger;
 import org.apache.ignite.internal.logger.Loggers;
 import org.apache.ignite.internal.network.ClusterService;
@@ -167,6 +168,9 @@ public class ClientInboundMessageHandler extends ChannelInboundHandlerAdapter im
 
     /** Connection resources. */
     private final ClientResourceRegistry resources = new ClientResourceRegistry();
+
+    /** Fast switch to the partition thread for table operations if it is true. */
+    private final boolean switchThreadFast = IgniteSystemProperties.getBoolean("IGNITE_SWITCH_THREAD_FAST");
 
     /** Configuration. */
     private final ClientConnectorView configuration;
@@ -602,7 +606,7 @@ public class ClientInboundMessageHandler extends ChannelInboundHandlerAdapter im
                         + ", remoteAddress=" + ctx.channel().remoteAddress() + "]");
             }
 
-            if (isPartitionOperation(opCode)) {
+            if (switchThreadFast && isPartitionOperation(opCode)) {
                 long requestId0 = requestId;
                 int opCode0 = opCode;
 
