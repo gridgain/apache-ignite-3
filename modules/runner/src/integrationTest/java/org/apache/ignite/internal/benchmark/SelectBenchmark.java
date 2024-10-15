@@ -67,7 +67,7 @@ import org.openjdk.jmh.runner.options.OptionsBuilder;
  */
 @State(Scope.Benchmark)
 @Fork(1)
-@Threads(32)
+@Threads(1)
 @Warmup(iterations = 10, time = 2)
 @Measurement(iterations = 20, time = 2)
 @BenchmarkMode(Mode.Throughput)
@@ -82,10 +82,10 @@ public class SelectBenchmark extends AbstractMultiNodeBenchmark {
 
     private KeyValueView<Tuple, Tuple> keyValueView;
 
-    @Param({"1", "2"/*, "3"*/})
+    @Param({"1"/*, "2", "3"*/})
     private int clusterSize;
 
-    @Param({"true", "false"})
+    @Param({"true"/*, "false"*/})
     private boolean switchThreadFast;
 
     @Override
