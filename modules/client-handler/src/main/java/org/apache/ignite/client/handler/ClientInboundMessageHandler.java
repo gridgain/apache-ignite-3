@@ -320,13 +320,12 @@ public class ClientInboundMessageHandler extends ChannelInboundHandlerAdapter im
         var unpacker = new ClientMessageUnpacker(byteBuf);
         metrics.bytesReceivedAdd(byteBuf.readableBytes() + ClientMessageCommon.HEADER_SIZE);
 
-        // Packer buffer is released by Netty on send, or by inner exception handlers below.
-        var packer = getPacker(ctx.alloc());
-
         switch (state) {
             case STATE_BEFORE_HANDSHAKE:
                 state = STATE_HANDSHAKE_REQUESTED;
                 metrics.bytesReceivedAdd(ClientMessageCommon.MAGIC_BYTES.length);
+                // Packer buffer is released by Netty on send, or by inner exception handlers below.
+                var packer = getPacker(ctx.alloc());
                 handshake(ctx, unpacker, packer);
 
                 break;
