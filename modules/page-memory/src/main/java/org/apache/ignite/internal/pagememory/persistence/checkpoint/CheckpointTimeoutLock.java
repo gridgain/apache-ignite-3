@@ -141,6 +141,7 @@ public class CheckpointTimeoutLock {
                             checkpointReadWriteLock.readLock();
                         }
                     } catch (InterruptedException e) {
+                        LOG.info("Interrupted");
                         interrupted = true;
 
                         continue;
