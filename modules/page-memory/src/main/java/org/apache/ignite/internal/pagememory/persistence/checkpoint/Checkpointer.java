@@ -259,6 +259,7 @@ public class Checkpointer extends IgniteWorker {
 
         // If checkpoint haven't taken write lock yet it shouldn't trigger a new checkpoint but should return current one.
         if (current != null && !current.greaterOrEqualTo(LOCK_TAKEN)) {
+            LOG.info("Returning current checkpoing");
             return current;
         }
 

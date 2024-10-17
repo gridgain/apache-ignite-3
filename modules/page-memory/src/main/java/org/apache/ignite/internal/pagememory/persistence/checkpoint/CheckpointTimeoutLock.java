@@ -17,7 +17,6 @@
 
 package org.apache.ignite.internal.pagememory.persistence.checkpoint;
 
-import static java.util.concurrent.TimeUnit.MILLISECONDS;
 import static org.apache.ignite.internal.failure.FailureType.SYSTEM_CRITICAL_OPERATION_TIMEOUT;
 import static org.apache.ignite.internal.pagememory.persistence.checkpoint.CheckpointState.LOCK_RELEASED;
 import static org.apache.ignite.internal.util.FastTimestamps.coarseCurrentTimeMillis;
@@ -30,7 +29,6 @@ import java.util.function.Supplier;
 import org.apache.ignite.internal.failure.FailureContext;
 import org.apache.ignite.internal.failure.FailureProcessor;
 import org.apache.ignite.internal.lang.IgniteInternalException;
-import org.apache.ignite.internal.lang.NodeStoppingException;
 import org.apache.ignite.internal.logger.IgniteLogger;
 import org.apache.ignite.internal.logger.Loggers;
 import org.apache.ignite.internal.pagememory.persistence.CheckpointUrgency;
@@ -126,32 +124,32 @@ public class CheckpointTimeoutLock {
         try {
             for (; ; ) {
                 try {
-                    if (timeout > 0 && (coarseCurrentTimeMillis() - start) >= timeout) {
-                        LOG.info("Didn't even try to lock. Start {}, current {}", start, coarseCurrentTimeMillis());
-
-                        failCheckpointReadLock();
-                    }
-
-                    try {
-                        if (timeout > 0) {
-                            if (!checkpointReadWriteLock.tryReadLock(timeout - (coarseCurrentTimeMillis() - start), MILLISECONDS)) {
-                                failCheckpointReadLock();
-                            }
-                        } else {
-                            checkpointReadWriteLock.readLock();
-                        }
-                    } catch (InterruptedException e) {
-                        LOG.info("Interrupted");
-                        interrupted = true;
-
-                        continue;
-                    }
-
-                    if (stop) {
-                        checkpointReadWriteLock.readUnlock();
-
-                        throw new IgniteInternalException(new NodeStoppingException("Failed to get checkpoint read lock"));
-                    }
+//                    if (timeout > 0 && (coarseCurrentTimeMillis() - start) >= timeout) {
+//                        LOG.info("Didn't even try to lock. Start {}, current {}", start, coarseCurrentTimeMillis());
+//
+//                        failCheckpointReadLock();
+//                    }
+//
+//                    try {
+//                        if (timeout > 0) {
+//                            if (!checkpointReadWriteLock.tryReadLock(timeout - (coarseCurrentTimeMillis() - start), MILLISECONDS)) {
+//                                failCheckpointReadLock();
+//                            }
+//                        } else {
+//                            checkpointReadWriteLock.readLock();
+//                        }
+//                    } catch (InterruptedException e) {
+//                        LOG.info("Interrupted");
+//                        interrupted = true;
+//
+//                        continue;
+//                    }
+//
+//                    if (stop) {
+//                        checkpointReadWriteLock.readUnlock();
+//
+//                        throw new IgniteInternalException(new NodeStoppingException("Failed to get checkpoint read lock"));
+//                    }
 
                     CheckpointUrgency urgency;
 
@@ -181,6 +179,8 @@ public class CheckpointTimeoutLock {
                         }
 
                         try {
+                            LOG.info("Waiting for LOCK_RELEASED");
+
                             getUninterruptibly(checkpoint.futureFor(LOCK_RELEASED));
                         } catch (ExecutionException e) {
                             throw new IgniteInternalException("Failed to wait for checkpoint begin", e.getCause());
