@@ -173,6 +173,7 @@ public class CheckpointTimeoutLock {
                         checkpointReadWriteLock.readUnlock();
 
                         if (timeout > 0 && coarseCurrentTimeMillis() - start >= timeout) {
+                            LOG.info("Failing after unliock");
                             failCheckpointReadLock();
                         }
 
