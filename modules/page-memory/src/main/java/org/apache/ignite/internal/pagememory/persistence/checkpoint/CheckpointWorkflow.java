@@ -230,6 +230,8 @@ class CheckpointWorkflow {
 
         tracker.onWriteLockWaitStart();
 
+        long timeAtStart = System.currentTimeMillis();
+        LOG.info("WRITE LOCK ACQUIRED AT {}", timeAtStart);
         checkpointReadWriteLock.writeLock();
 
         DataRegionsDirtyPages dirtyPages;
@@ -263,6 +265,8 @@ class CheckpointWorkflow {
             curr.transitTo(PAGES_SNAPSHOT_TAKEN);
         } finally {
             checkpointReadWriteLock.writeUnlock();
+
+            LOG.info("WRITE LOCK RELEASED AFTER {}", System.currentTimeMillis() - timeAtStart);
 
             tracker.onWriteLockRelease();
 
