@@ -57,7 +57,7 @@ public class PageMemoryCheckpointConfigurationSchema {
     /** Timeout for checkpoint read lock acquisition in milliseconds. */
     @Range(min = 0)
     @Value(hasDefault = true)
-    public long readLockTimeout = 20_000;
+    public long readLockTimeout = 10_000;
 
     /** Threshold for logging (if greater than zero) read lock holders in milliseconds. */
     @Range(min = 0)
