@@ -328,6 +328,8 @@ public class PartitionReplicaListener implements ReplicaListener {
     /** Placement driver. */
     private final PlacementDriver placementDriver;
 
+    private final boolean useCurrentTime = IgniteSystemProperties.getBoolean("IGNITE_USE_CURRENT_TIME");
+
     /**
      * Mutex for command processing linearization.
      * Some actions like update or updateAll require strict ordering within their application to storage on all nodes in replication group.
@@ -3520,7 +3522,7 @@ public class PartitionReplicaListener implements ReplicaListener {
      *     lease start time is not {@code null} in case of {@link PrimaryReplicaRequest}.
      */
     private CompletableFuture<IgniteBiTuple<Boolean, Long>> ensureReplicaIsPrimary(ReplicaRequest request) {
-        HybridTimestamp now = clockService.current();
+        HybridTimestamp now = useCurrentTime ? clockService.current() : clockService.now();
 
         if (request instanceof PrimaryReplicaRequest) {
             Long enlistmentConsistencyToken = ((PrimaryReplicaRequest) request).enlistmentConsistencyToken();
