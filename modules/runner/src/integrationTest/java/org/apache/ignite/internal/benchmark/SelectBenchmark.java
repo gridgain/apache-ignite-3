@@ -70,8 +70,8 @@ import org.openjdk.jmh.runner.options.OptionsBuilder;
 @Threads(1)
 @Warmup(iterations = 10, time = 2)
 @Measurement(iterations = 20, time = 2)
-@BenchmarkMode(Mode.AverageTime)
-@OutputTimeUnit(TimeUnit.MICROSECONDS)
+@BenchmarkMode(Mode.Throughput)
+@OutputTimeUnit(TimeUnit.SECONDS)
 @SuppressWarnings({"WeakerAccess", "unused"})
 public class SelectBenchmark extends AbstractMultiNodeBenchmark {
     private static final int TABLE_SIZE = 30_000;
