@@ -506,9 +506,7 @@ public class PartitionListener implements RaftGroupListener, BeforeApplyHandler 
 
     private void advanceLastAppliedIndexConsistently(long commandIndex, long commandTerm) {
         storage.runConsistently(locker -> {
-            LOG.info("ADVANCE LAST APPLIED INDEX STARTED");
             storage.lastApplied(commandIndex, commandTerm);
-            LOG.info("ADVANCE LAST APPLIED INDEX COMPLETED");
 
             return null;
         });
