@@ -238,6 +238,8 @@ public class CheckpointTimeoutLock {
     }
 
     private void failCheckpointReadLock() throws CheckpointReadLockTimeoutException {
+        LOG.error("Read lock timeout!");
+
         String msg = "Checkpoint read lock acquisition has been timed out.";
 
         IgniteInternalException e = new IgniteInternalException(SYSTEM_CRITICAL_OPERATION_TIMEOUT_ERR, msg);
