@@ -30,6 +30,8 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 import org.apache.ignite.internal.lang.IgniteInternalCheckedException;
+import org.apache.ignite.internal.logger.IgniteLogger;
+import org.apache.ignite.internal.logger.Loggers;
 import org.apache.ignite.internal.pagememory.DataRegion;
 import org.apache.ignite.internal.pagememory.freelist.FreeListImpl;
 import org.apache.ignite.internal.pagememory.metric.IoStatisticsHolderNoOp;
@@ -60,6 +62,8 @@ import org.jetbrains.annotations.Nullable;
  * Implementation of {@link MvPartitionStorage} based on a {@link BplusTree} for persistent case.
  */
 public class PersistentPageMemoryMvPartitionStorage extends AbstractPageMemoryMvPartitionStorage {
+    private static final IgniteLogger LOG = Loggers.forClass(PersistentPageMemoryMvPartitionStorage.class);
+
     /** Checkpoint manager instance. */
     private final CheckpointManager checkpointManager;
 
@@ -172,6 +176,8 @@ public class PersistentPageMemoryMvPartitionStorage extends AbstractPageMemoryMv
 
                 LocalLocker locker0 = new LocalLocker(lockByRowId);
 
+                long atAcquired = System.currentTimeMillis();
+                LOG.info("LOCK ACQUIRED at {} ms", atAcquired);
                 checkpointTimeoutLock.checkpointReadLock();
 
                 THREAD_LOCAL_LOCKER.set(locker0);
@@ -185,6 +191,7 @@ public class PersistentPageMemoryMvPartitionStorage extends AbstractPageMemoryMv
                     locker0.unlockAll();
 
                     checkpointTimeoutLock.checkpointReadUnlock();
+                    LOG.info("LOCK UNLOCKED after {} ms", System.currentTimeMillis() - System.currentTimeMillis());
                 }
             });
         }

@@ -506,7 +506,9 @@ public class PartitionListener implements RaftGroupListener, BeforeApplyHandler 
 
     private void advanceLastAppliedIndexConsistently(long commandIndex, long commandTerm) {
         storage.runConsistently(locker -> {
+            LOG.info("ADVANCE LAST APPLIED INDEX STARTED");
             storage.lastApplied(commandIndex, commandTerm);
+            LOG.info("ADVANCE LAST APPLIED INDEX COMPLETED");
 
             return null;
         });
@@ -529,12 +531,14 @@ public class PartitionListener implements RaftGroupListener, BeforeApplyHandler 
 
         try {
             storage.runConsistently(locker -> {
+                LOG.info("ON CONFIGURATION COMMITED STARTED");
                 storage.committedGroupConfiguration(
                         new RaftGroupConfiguration(config.peers(), config.learners(), config.oldPeers(), config.oldLearners())
                 );
                 storage.lastApplied(config.index(), config.term());
                 updateTrackerIgnoringTrackerClosedException(storageIndexTracker, config.index());
 
+                LOG.info("ON CONFIGURATION COMMITED FINISHED");
                 return null;
             });
         } finally {
@@ -560,7 +564,9 @@ public class PartitionListener implements RaftGroupListener, BeforeApplyHandler 
         long maxLastAppliedTerm = Math.max(storage.lastAppliedTerm(), txStateStorage.lastAppliedTerm());
 
         storage.runConsistently(locker -> {
+            LOG.info("ON SNAPSHOT SAVE STARTED");
             storage.lastApplied(maxLastAppliedIndex, maxLastAppliedTerm);
+            LOG.info("ON SNAPSHOT SAVE COMPLETED");
 
             return null;
         });
@@ -657,6 +663,7 @@ public class PartitionListener implements RaftGroupListener, BeforeApplyHandler 
         BinaryRowUpgrader binaryRowUpgrader = createBinaryRowUpgrader(indexMeta);
 
         storage.runConsistently(locker -> {
+            LOG.info("HANDLE BUILD INDEX STARTED");
             List<UUID> rowUuids = new ArrayList<>(cmd.rowIds());
 
             // Natural UUID order matches RowId order within the same partition.
@@ -675,6 +682,7 @@ public class PartitionListener implements RaftGroupListener, BeforeApplyHandler 
 
             storage.lastApplied(commandIndex, commandTerm);
 
+            LOG.info("HANDLE BUILD INDEX COMPLETED");
             return null;
         });
 
@@ -700,10 +708,12 @@ public class PartitionListener implements RaftGroupListener, BeforeApplyHandler 
         }
 
         storage.runConsistently(locker -> {
+            LOG.info("HANDLE PRIMARY REPLICA CHANGE STARTED");
             storage.updateLease(cmd.leaseStartTime(), cmd.primaryReplicaNodeId(), cmd.primaryReplicaNodeName());
 
             storage.lastApplied(commandIndex, commandTerm);
 
+            LOG.info("HANDLE PRIMARY REPLICA CHANGE COMPLETED");
             return null;
         });
     }

@@ -18,6 +18,8 @@
 package org.apache.ignite.internal.table.distributed.gc;
 
 import org.apache.ignite.internal.hlc.HybridTimestamp;
+import org.apache.ignite.internal.logger.IgniteLogger;
+import org.apache.ignite.internal.logger.Loggers;
 import org.apache.ignite.internal.schema.BinaryRow;
 import org.apache.ignite.internal.storage.MvPartitionStorage.Locker;
 import org.apache.ignite.internal.storage.ReadResult;
@@ -32,6 +34,7 @@ import org.apache.ignite.internal.util.PendingComparableValuesTracker;
  * Garbage collection update handler.
  */
 public class GcUpdateHandler {
+    private static final IgniteLogger LOG = Loggers.forClass(GcUpdateHandler.class);
     private final PartitionDataStorage storage;
 
     private final IndexUpdateHandler indexUpdateHandler;
@@ -103,6 +106,7 @@ public class GcUpdateHandler {
 
     private VacuumResult internalVacuumBatch(HybridTimestamp lowWatermark, IntHolder countHolder) {
         return storage.runConsistently(locker -> {
+            LOG.info("vacuum batch started");
             int count = countHolder.get();
 
             for (int i = 0; i < count; i++) {
@@ -117,6 +121,7 @@ public class GcUpdateHandler {
                 countHolder.getAndDecrement();
             }
 
+            LOG.info("vacuum batch completed");
             return VacuumResult.SUCCESS;
         });
     }

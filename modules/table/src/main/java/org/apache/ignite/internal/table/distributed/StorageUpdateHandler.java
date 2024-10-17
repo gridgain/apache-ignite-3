@@ -27,6 +27,8 @@ import java.util.Map.Entry;
 import java.util.Set;
 import java.util.UUID;
 import org.apache.ignite.internal.hlc.HybridTimestamp;
+import org.apache.ignite.internal.logger.IgniteLogger;
+import org.apache.ignite.internal.logger.Loggers;
 import org.apache.ignite.internal.partition.replicator.network.TimedBinaryRow;
 import org.apache.ignite.internal.replicator.TablePartitionId;
 import org.apache.ignite.internal.schema.BinaryRow;
@@ -42,6 +44,7 @@ import org.jetbrains.annotations.Nullable;
 
 /** Handler for storage updates that can be performed on processing of primary replica requests and partition replication requests. */
 public class StorageUpdateHandler {
+    private static final IgniteLogger LOG = Loggers.forClass(StorageUpdateHandler.class);
     /** Partition id. */
     private final int partitionId;
 
@@ -107,6 +110,7 @@ public class StorageUpdateHandler {
             @Nullable List<Integer> indexIds
     ) {
         storage.runConsistently(locker -> {
+            LOG.info("handle update started");
             int commitTblId = commitPartitionId.tableId();
             int commitPartId = commitPartitionId.partitionId();
             RowId rowId = new RowId(partitionId, rowUuid);
@@ -132,6 +136,7 @@ public class StorageUpdateHandler {
                 onApplication.run();
             }
 
+            LOG.info("handle update finished");
             return null;
         });
     }
@@ -234,6 +239,7 @@ public class StorageUpdateHandler {
             @Nullable List<Integer> indexIds
     ) {
         return storage.runConsistently(locker -> {
+            LOG.info("Process entries until batch limit started");
             List<RowId> processedRowIds = new ArrayList<>();
             int batchLength = 0;
             Entry<UUID, TimedBinaryRow> entryToProcess = lastUnprocessedEntry;
@@ -278,6 +284,7 @@ public class StorageUpdateHandler {
                 onApplication.run();
             }
 
+            LOG.info("Process entries until batch limit finished");
             return entryToProcess;
         });
     }
@@ -412,6 +419,7 @@ public class StorageUpdateHandler {
         // to update indexes. In this case it should be executed under `runConsistently`.
         if (!pendingRowIds.isEmpty() || onApplication != null) {
             storage.runConsistently(locker -> {
+                LOG.info("Switching write intents started");
                 pendingRowIds.forEach(locker::lock);
 
                 if (commit) {
@@ -424,6 +432,7 @@ public class StorageUpdateHandler {
                     onApplication.run();
                 }
 
+                LOG.info("Switching write intents completed");
                 return null;
             });
         }
