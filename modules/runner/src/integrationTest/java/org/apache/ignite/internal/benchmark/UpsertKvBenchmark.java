@@ -22,7 +22,6 @@ import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicInteger;
 import org.apache.ignite.internal.lang.IgniteSystemProperties;
 import org.apache.ignite.internal.metrics.DistributionMetric;
 import org.apache.ignite.internal.metrics.MetricSet;
@@ -39,7 +38,6 @@ import org.openjdk.jmh.annotations.Scope;
 import org.openjdk.jmh.annotations.State;
 import org.openjdk.jmh.annotations.Threads;
 import org.openjdk.jmh.annotations.Warmup;
-import org.openjdk.jmh.profile.JavaFlightRecorderProfiler;
 import org.openjdk.jmh.runner.Runner;
 import org.openjdk.jmh.runner.RunnerException;
 import org.openjdk.jmh.runner.options.Options;
@@ -129,6 +127,8 @@ public class UpsertKvBenchmark extends AbstractMultiNodeBenchmark {
                 .include(".*" + UpsertKvBenchmark.class.getSimpleName() + ".*")
                 //.jvmArgsAppend("-Djmh.executor=VIRTUAL")
                 //.addProfiler(JavaFlightRecorderProfiler.class, "configName=profile.jfc")
+                .output("output-log")
+                .shouldFailOnError(true)
                 .build();
 
         new Runner(opt).run();
