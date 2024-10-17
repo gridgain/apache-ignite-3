@@ -124,8 +124,6 @@ public class CheckpointReadWriteLock {
         checkpointLock.readLock().unlock();
 
         checkpointReadLockHoldCount.set(checkpointReadLockHoldCount.get() - 1);
-
-        LOG.info("READ LOCK UNLOCKED, {}", checkpointReadLockHoldCount.get());
     }
 
     /**
