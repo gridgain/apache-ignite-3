@@ -110,7 +110,6 @@ public class StorageUpdateHandler {
             @Nullable List<Integer> indexIds
     ) {
         storage.runConsistently(locker -> {
-            LOG.info("handle update started");
             int commitTblId = commitPartitionId.tableId();
             int commitPartId = commitPartitionId.partitionId();
             RowId rowId = new RowId(partitionId, rowUuid);
@@ -136,7 +135,6 @@ public class StorageUpdateHandler {
                 onApplication.run();
             }
 
-            LOG.info("handle update finished");
             return null;
         });
     }

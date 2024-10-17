@@ -176,8 +176,6 @@ public class PersistentPageMemoryMvPartitionStorage extends AbstractPageMemoryMv
 
                 LocalLocker locker0 = new LocalLocker(lockByRowId);
 
-                long atAcquired = System.currentTimeMillis();
-                LOG.info("LOCK ACQUIRED at {} ms", atAcquired);
                 checkpointTimeoutLock.checkpointReadLock();
 
                 THREAD_LOCAL_LOCKER.set(locker0);
@@ -191,7 +189,6 @@ public class PersistentPageMemoryMvPartitionStorage extends AbstractPageMemoryMv
                     locker0.unlockAll();
 
                     checkpointTimeoutLock.checkpointReadUnlock();
-                    LOG.info("LOCK UNLOCKED after {} ms", System.currentTimeMillis() - System.currentTimeMillis());
                 }
             });
         }
