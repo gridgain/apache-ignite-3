@@ -127,6 +127,8 @@ public class CheckpointTimeoutLock {
             for (; ; ) {
                 try {
                     if (timeout > 0 && (coarseCurrentTimeMillis() - start) >= timeout) {
+                        LOG.info("Didn't even try to lock");
+
                         failCheckpointReadLock();
                     }
 

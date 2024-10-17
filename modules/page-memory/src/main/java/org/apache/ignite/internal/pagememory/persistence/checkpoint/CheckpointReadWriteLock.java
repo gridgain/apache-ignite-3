@@ -19,6 +19,8 @@ package org.apache.ignite.internal.pagememory.persistence.checkpoint;
 
 import java.util.concurrent.TimeUnit;
 import org.apache.ignite.internal.lang.IgniteInternalException;
+import org.apache.ignite.internal.logger.IgniteLogger;
+import org.apache.ignite.internal.logger.Loggers;
 
 /**
  * Wrapper of the classic read write lock with checkpoint features.
@@ -30,6 +32,7 @@ public class CheckpointReadWriteLock {
      * <p>So some conditions can rely on it(ex. we don't need a checkpoint lock there because the lock is already taken).
      */
     static final String CHECKPOINT_RUNNER_THREAD_PREFIX = "checkpoint-runner";
+    private static final IgniteLogger LOG = Loggers.forClass(CheckpointReadWriteLock.class);
 
     private final ThreadLocal<Integer> checkpointReadLockHoldCount = ThreadLocal.withInitial(() -> 0);
 
@@ -58,6 +61,7 @@ public class CheckpointReadWriteLock {
         checkpointLock.readLock().lock();
 
         checkpointReadLockHoldCount.set(checkpointReadLockHoldCount.get() + 1);
+        LOG.info("READ LOCK ACQUIRED");
     }
 
     /**
@@ -120,6 +124,8 @@ public class CheckpointReadWriteLock {
         checkpointLock.readLock().unlock();
 
         checkpointReadLockHoldCount.set(checkpointReadLockHoldCount.get() - 1);
+
+        LOG.info("READ LOCK UNLOCKED");
     }
 
     /**
