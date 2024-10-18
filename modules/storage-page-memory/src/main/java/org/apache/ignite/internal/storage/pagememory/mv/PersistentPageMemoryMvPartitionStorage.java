@@ -21,6 +21,7 @@ import static org.apache.ignite.internal.storage.util.StorageUtils.throwExceptio
 import static org.apache.ignite.internal.storage.util.StorageUtils.throwExceptionIfStorageNotInProgressOfRebalance;
 import static org.apache.ignite.internal.storage.util.StorageUtils.throwExceptionIfStorageNotInRunnableOrRebalanceState;
 import static org.apache.ignite.internal.util.ByteUtils.stringToBytes;
+import static org.apache.ignite.internal.util.FastTimestamps.coarseCurrentTimeMillis;
 
 import java.util.List;
 import java.util.UUID;
@@ -30,6 +31,8 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 import org.apache.ignite.internal.lang.IgniteInternalCheckedException;
+import org.apache.ignite.internal.logger.IgniteLogger;
+import org.apache.ignite.internal.logger.Loggers;
 import org.apache.ignite.internal.pagememory.DataRegion;
 import org.apache.ignite.internal.pagememory.freelist.FreeListImpl;
 import org.apache.ignite.internal.pagememory.metric.IoStatisticsHolderNoOp;
@@ -60,6 +63,8 @@ import org.jetbrains.annotations.Nullable;
  * Implementation of {@link MvPartitionStorage} based on a {@link BplusTree} for persistent case.
  */
 public class PersistentPageMemoryMvPartitionStorage extends AbstractPageMemoryMvPartitionStorage {
+    private static final IgniteLogger LOG = Loggers.forClass(PersistentPageMemoryTableStorage.class);
+
     /** Checkpoint manager instance. */
     private final CheckpointManager checkpointManager;
 
@@ -172,6 +177,8 @@ public class PersistentPageMemoryMvPartitionStorage extends AbstractPageMemoryMv
 
                 LocalLocker locker0 = new LocalLocker(lockByRowId);
 
+                long atAcquired = coarseCurrentTimeMillis();
+
                 checkpointTimeoutLock.checkpointReadLock();
 
                 THREAD_LOCAL_LOCKER.set(locker0);
@@ -185,6 +192,11 @@ public class PersistentPageMemoryMvPartitionStorage extends AbstractPageMemoryMv
                     locker0.unlockAll();
 
                     checkpointTimeoutLock.checkpointReadUnlock();
+                    long atUnlock = coarseCurrentTimeMillis();
+
+                    if (atAcquired - atUnlock > 1000) {
+                        LOG.warn("LONG READ LOCK IN inCheckpointLock {}", atUnlock - atAcquired);
+                    }
                 }
             });
         }

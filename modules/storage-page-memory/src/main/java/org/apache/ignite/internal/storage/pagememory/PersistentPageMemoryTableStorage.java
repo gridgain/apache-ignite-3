@@ -18,6 +18,7 @@
 package org.apache.ignite.internal.storage.pagememory;
 
 import static org.apache.ignite.internal.pagememory.PageIdAllocator.FLAG_AUX;
+import static org.apache.ignite.internal.util.FastTimestamps.coarseCurrentTimeMillis;
 import static org.apache.ignite.internal.util.GridUnsafe.allocateBuffer;
 import static org.apache.ignite.internal.util.GridUnsafe.freeBuffer;
 
@@ -28,6 +29,8 @@ import java.util.concurrent.ExecutorService;
 import java.util.function.Supplier;
 import org.apache.ignite.internal.lang.IgniteInternalCheckedException;
 import org.apache.ignite.internal.lang.IgniteStringFormatter;
+import org.apache.ignite.internal.logger.IgniteLogger;
+import org.apache.ignite.internal.logger.Loggers;
 import org.apache.ignite.internal.pagememory.PageMemory;
 import org.apache.ignite.internal.pagememory.freelist.FreeListImpl;
 import org.apache.ignite.internal.pagememory.metric.IoStatisticsHolderNoOp;
@@ -52,6 +55,7 @@ import org.jetbrains.annotations.Nullable;
  * Implementation of {@link AbstractPageMemoryTableStorage} for persistent case.
  */
 public class PersistentPageMemoryTableStorage extends AbstractPageMemoryTableStorage {
+    private static final IgniteLogger LOG = Loggers.forClass(PersistentPageMemoryTableStorage.class);
     /** Storage engine instance. */
     private final PersistentPageMemoryStorageEngine engine;
 
@@ -369,12 +373,19 @@ public class PersistentPageMemoryTableStorage extends AbstractPageMemoryTableSto
     private <V> V inCheckpointLock(Supplier<V> supplier) {
         CheckpointTimeoutLock checkpointTimeoutLock = dataRegion.checkpointManager().checkpointTimeoutLock();
 
+        long atAcquired = coarseCurrentTimeMillis();
+
         checkpointTimeoutLock.checkpointReadLock();
 
         try {
             return supplier.get();
         } finally {
             checkpointTimeoutLock.checkpointReadUnlock();
+            long atUnlock = coarseCurrentTimeMillis();
+            
+            if (atUnlock - atAcquired > 1000) {
+                LOG.warn("LONG READ LOCK IN inCheckpointLock {}", atUnlock - atAcquired);
+            }
         }
     }
 
