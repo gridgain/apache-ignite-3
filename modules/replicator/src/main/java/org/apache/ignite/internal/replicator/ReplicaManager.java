@@ -128,6 +128,7 @@ import org.apache.ignite.internal.util.IgniteSpinBusyLock;
 import org.apache.ignite.internal.util.IgniteUtils;
 import org.apache.ignite.internal.util.PendingComparableValuesTracker;
 import org.apache.ignite.lang.IgniteException;
+import org.apache.ignite.internal.util.StripedCompositeReadWriteLock;
 import org.apache.ignite.network.ClusterNode;
 import org.jetbrains.annotations.Nullable;
 import org.jetbrains.annotations.TestOnly;
@@ -152,7 +153,7 @@ public class ReplicaManager extends AbstractEventProducer<LocalReplicaEvent, Loc
     private static final PlacementDriverMessagesFactory PLACEMENT_DRIVER_MESSAGES_FACTORY = new PlacementDriverMessagesFactory();
 
     /** Busy lock to stop synchronously. */
-    private final IgniteSpinBusyLock busyLock = new IgniteSpinBusyLock();
+    private final StripedCompositeReadWriteLock busyLock = new StripedCompositeReadWriteLock(32);
 
     /** Prevents double stopping of the component. */
     private final AtomicBoolean stopGuard = new AtomicBoolean();
@@ -386,7 +387,48 @@ public class ReplicaManager extends AbstractEventProducer<LocalReplicaEvent, Loc
     }
 
     private void handleReplicaRequest(ReplicaRequest request, ClusterNode sender, @Nullable Long correlationId) {
-        if (!busyLock.enterBusy()) {
+        if (request.getClass().getName().contains("ReadWriteSingleRowReplicaRequestImpl")) {
+            if (!busyLock.readLock().tryLock()) {
+                if (LOG.isInfoEnabled()) {
+                    LOG.info("Failed to process replica request (the node is stopping) [request={}].", request);
+                }
+
+                return;
+            }
+
+            try {
+//            String senderConsistentId = sender.name();
+//            NetworkMessage msg = prepareReplicaResponse(false, null);
+//
+//            clusterNetSvc.messagingService().respond(senderConsistentId, msg, correlationId);
+//            return;
+
+                ReplicationGroupId groupId = request.groupId().asReplicationGroupId();
+
+                String senderConsistentId = sender.name();
+
+                CompletableFuture<Replica> replicaFut = replicas.get(groupId);
+
+                //boolean sendTimestamp = request instanceof TimestampAware || request instanceof ReadOnlyDirectReplicaRequest;
+
+                // replicaFut is always completed here.
+                Replica replica = replicaFut.join();
+
+                CompletableFuture<ReplicaResult> resFut = replica.processRequest(request, sender.id());
+
+                resFut.whenComplete((res, ex) -> {
+                    NetworkMessage msg = prepareReplicaResponse(false, res.result());
+
+                    clusterNetSvc.messagingService().respond(senderConsistentId, msg, correlationId);
+                });
+            } finally {
+                busyLock.readLock().unlock();
+            }
+
+            return;
+        }
+
+        if (!busyLock.readLock().tryLock()) {
             if (LOG.isInfoEnabled()) {
                 LOG.info("Failed to process replica request (the node is stopping) [request={}].", request);
             }
@@ -493,7 +535,7 @@ public class ReplicaManager extends AbstractEventProducer<LocalReplicaEvent, Loc
                 }
             });
         } finally {
-            busyLock.leaveBusy();
+            busyLock.readLock().unlock();
         }
     }
 
@@ -526,7 +568,7 @@ public class ReplicaManager extends AbstractEventProducer<LocalReplicaEvent, Loc
 
         var msg = (PlacementDriverReplicaMessage) msg0;
 
-        if (!busyLock.enterBusy()) {
+        if (!busyLock.readLock().tryLock()) {
             if (LOG.isInfoEnabled()) {
                 LOG.info("Failed to process placement driver message (the node is stopping) [msg={}].", msg);
             }
@@ -547,7 +589,7 @@ public class ReplicaManager extends AbstractEventProducer<LocalReplicaEvent, Loc
                         }
                     });
         } finally {
-            busyLock.leaveBusy();
+            busyLock.readLock().unlock();
         }
     }
 
@@ -729,7 +771,7 @@ public class ReplicaManager extends AbstractEventProducer<LocalReplicaEvent, Loc
             ReplicationGroupId replicaGrpId,
             PeersAndLearners newConfiguration
     ) throws NodeStoppingException {
-        if (!busyLock.enterBusy()) {
+        if (!busyLock.readLock().tryLock()) {
             throw new NodeStoppingException();
         }
 
@@ -744,7 +786,7 @@ public class ReplicaManager extends AbstractEventProducer<LocalReplicaEvent, Loc
                     replicaGrpId,
                     newConfiguration);
         } finally {
-            busyLock.leaveBusy();
+            busyLock.readLock().unlock();
         }
     }
 
@@ -908,14 +950,14 @@ public class ReplicaManager extends AbstractEventProducer<LocalReplicaEvent, Loc
      * @throws NodeStoppingException If the node is stopping.
      */
     public CompletableFuture<Boolean> stopReplica(ReplicationGroupId replicaGrpId) throws NodeStoppingException {
-        if (!busyLock.enterBusy()) {
+        if (!busyLock.readLock().tryLock()) {
             throw new NodeStoppingException();
         }
 
         try {
             return stopReplicaInternal(replicaGrpId);
         } finally {
-            busyLock.leaveBusy();
+            busyLock.readLock().unlock();
         }
     }
 
@@ -935,7 +977,7 @@ public class ReplicaManager extends AbstractEventProducer<LocalReplicaEvent, Loc
                 LOG.error("Error when notifying about BEFORE_REPLICA_STOPPED event.", e);
             }
 
-            if (!busyLock.enterBusy()) {
+            if (!busyLock.readLock().tryLock()) {
                 isRemovedFuture.completeExceptionally(new NodeStoppingException());
 
                 return;
@@ -968,7 +1010,7 @@ public class ReplicaManager extends AbstractEventProducer<LocalReplicaEvent, Loc
                     return null;
                 });
             } finally {
-                busyLock.leaveBusy();
+                busyLock.readLock().unlock();
             }
         });
 
@@ -1025,7 +1067,7 @@ public class ReplicaManager extends AbstractEventProducer<LocalReplicaEvent, Loc
             return nullCompletedFuture();
         }
 
-        busyLock.block();
+        busyLock.writeLock().lock();
 
         int shutdownTimeoutSeconds = 10;
 
