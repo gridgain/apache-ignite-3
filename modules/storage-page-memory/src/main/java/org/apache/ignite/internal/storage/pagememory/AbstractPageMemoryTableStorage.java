@@ -28,6 +28,8 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Supplier;
+import org.apache.ignite.internal.logger.IgniteLogger;
+import org.apache.ignite.internal.logger.Loggers;
 import org.apache.ignite.internal.pagememory.DataRegion;
 import org.apache.ignite.internal.pagememory.PageMemory;
 import org.apache.ignite.internal.pagememory.freelist.FreeList;
@@ -53,6 +55,7 @@ import org.jetbrains.annotations.Nullable;
  * Abstract table storage implementation based on {@link PageMemory}.
  */
 public abstract class AbstractPageMemoryTableStorage implements MvTableStorage {
+    private static final IgniteLogger LOG = Loggers.forClass(AbstractPageMemoryTableStorage.class);
     private final MvPartitionStorages<AbstractPageMemoryMvPartitionStorage> mvPartitionStorages;
 
     private final IgniteSpinBusyLock busyLock = new IgniteSpinBusyLock();
@@ -232,6 +235,7 @@ public abstract class AbstractPageMemoryTableStorage implements MvTableStorage {
         return inBusyLock(busyLock, () -> mvPartitionStorages.startRebalance(partitionId, mvPartitionStorage -> {
             mvPartitionStorage.startRebalance();
 
+            LOG.info("REBALANCING PARTITION");
             return clearStorageAndUpdateDataStructures(mvPartitionStorage)
                     .thenAccept(unused ->
                             mvPartitionStorage.runConsistently(locker -> {
@@ -245,6 +249,8 @@ public abstract class AbstractPageMemoryTableStorage implements MvTableStorage {
 
     @Override
     public CompletableFuture<Void> abortRebalancePartition(int partitionId) {
+        LOG.info("ABORTING REBALANCE PARTITION");
+        
         return inBusyLock(busyLock, () -> mvPartitionStorages.abortRebalance(partitionId, mvPartitionStorage ->
                 clearStorageAndUpdateDataStructures(mvPartitionStorage)
                         .thenAccept(unused -> {
@@ -287,6 +293,7 @@ public abstract class AbstractPageMemoryTableStorage implements MvTableStorage {
             try {
                 mvPartitionStorage.startCleanup();
 
+                LOG.info("CLEARING PARTITION");
                 return clearStorageAndUpdateDataStructures(mvPartitionStorage)
                         .whenComplete((unused, throwable) -> mvPartitionStorage.finishCleanup());
             } catch (StorageException e) {

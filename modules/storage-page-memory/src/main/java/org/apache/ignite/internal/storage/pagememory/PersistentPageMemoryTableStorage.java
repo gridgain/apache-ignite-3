@@ -112,6 +112,8 @@ public class PersistentPageMemoryTableStorage extends AbstractPageMemoryTableSto
 
         StoragePartitionMeta meta = getOrCreatePartitionMetaOnCreatePartition(groupPartitionId);
 
+        LOG.info("CREATING MV PARTITION STORAGE");
+
         return inCheckpointLock(() -> {
             PersistentPageMemory pageMemory = dataRegion.pageMemory();
 
@@ -334,6 +336,7 @@ public class PersistentPageMemoryTableStorage extends AbstractPageMemoryTableSto
 
             StoragePartitionMeta meta = getOrCreatePartitionMetaOnCreatePartition(groupPartitionId);
 
+            LOG.info("CLEARING STORAGE");
             inCheckpointLock(() -> {
                 FreeListImpl freeList = createFreeList(partitionId, pageMemory, meta);
 
