@@ -18,7 +18,6 @@
 package org.apache.ignite.internal.util;
 
 import static java.util.concurrent.CompletableFuture.completedFuture;
-import static java.util.concurrent.CompletableFuture.failedFuture;
 
 import java.lang.invoke.MethodHandles;
 import java.lang.invoke.VarHandle;
@@ -130,8 +129,6 @@ public class PendingComparableValuesTracker<T extends Comparable<T>, R> implemen
             if (current.getKey().compareTo(valueToWait) >= 0) {
                 return completedFuture(current.getValue());
             }
-
-            LOG.warn("Wait for schema!");
 
             return addNewWaiter(valueToWait);
 //        } finally {

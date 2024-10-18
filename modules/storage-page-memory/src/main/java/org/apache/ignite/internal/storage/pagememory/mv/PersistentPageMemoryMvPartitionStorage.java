@@ -63,7 +63,7 @@ import org.jetbrains.annotations.Nullable;
  * Implementation of {@link MvPartitionStorage} based on a {@link BplusTree} for persistent case.
  */
 public class PersistentPageMemoryMvPartitionStorage extends AbstractPageMemoryMvPartitionStorage {
-    private static final IgniteLogger LOG = Loggers.forClass(PersistentPageMemoryTableStorage.class);
+    private static final IgniteLogger LOG = Loggers.forClass(PersistentPageMemoryMvPartitionStorage.class);
 
     /** Checkpoint manager instance. */
     private final CheckpointManager checkpointManager;
@@ -177,9 +177,11 @@ public class PersistentPageMemoryMvPartitionStorage extends AbstractPageMemoryMv
 
                 LocalLocker locker0 = new LocalLocker(lockByRowId);
 
-                long atAcquired = coarseCurrentTimeMillis();
+                long atAcquiring = coarseCurrentTimeMillis();
 
                 checkpointTimeoutLock.checkpointReadLock();
+
+                long atAcquired = coarseCurrentTimeMillis();
 
                 THREAD_LOCAL_LOCKER.set(locker0);
 
@@ -194,8 +196,12 @@ public class PersistentPageMemoryMvPartitionStorage extends AbstractPageMemoryMv
                     checkpointTimeoutLock.checkpointReadUnlock();
                     long atUnlock = coarseCurrentTimeMillis();
 
+                    if (atAcquired - atAcquiring > 10) {
+                        LOG.warn("LONG READ LOCK ACQUIRING {} IN runConsistently [atAcquiring={}, atAcquired={}, atUnlock={}", atAcquired - atAcquiring, atAcquiring, atAcquired, atUnlock);
+                    }
+
                     if (atUnlock - atAcquired > 10) {
-                        LOG.warn("LONG READ LOCK IN runConsistently {}", atUnlock - atAcquired);
+                        LOG.warn("LONG READ LOCK {} IN runConsistently [atAcquiring={}, atAcquired={}, atUnlock={}", atUnlock - atAcquired, atAcquiring, atAcquired, atUnlock);
                     }
                 }
             });
