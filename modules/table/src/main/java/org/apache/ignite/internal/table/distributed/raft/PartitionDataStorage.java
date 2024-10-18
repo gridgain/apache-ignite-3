@@ -62,7 +62,11 @@ public interface PartitionDataStorage extends ManuallyCloseable {
      * @throws StorageException If failed to write data to the storage.
      * @see MvPartitionStorage#runConsistently(WriteClosure)
      */
-    <V> V runConsistently(WriteClosure<V> closure) throws StorageException;
+    default <V> V runConsistently(WriteClosure<V> closure) throws StorageException {
+        return runConsistently(closure, "");
+    };
+
+    <V> V runConsistently(WriteClosure<V> closure, String name) throws StorageException;
 
     /**
      * Acquires the read lock on partition snapshots.

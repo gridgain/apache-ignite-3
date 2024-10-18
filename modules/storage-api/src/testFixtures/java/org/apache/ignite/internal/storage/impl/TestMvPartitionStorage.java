@@ -164,7 +164,7 @@ public class TestMvPartitionStorage implements MvPartitionStorage {
     }
 
     @Override
-    public <V> V runConsistently(WriteClosure<V> closure) throws StorageException {
+    public <V> V runConsistently(WriteClosure<V> closure, String name) throws StorageException {
         checkStorageClosed();
 
         LocalLocker locker = THREAD_LOCAL_LOCKER.get();

@@ -166,7 +166,7 @@ public class PersistentPageMemoryMvPartitionStorage extends AbstractPageMemoryMv
     }
 
     @Override
-    public <V> V runConsistently(WriteClosure<V> closure) throws StorageException {
+    public <V> V runConsistently(WriteClosure<V> closure, String name) throws StorageException {
         LocalLocker locker = THREAD_LOCAL_LOCKER.get();
 
         if (locker != null) {
@@ -197,11 +197,11 @@ public class PersistentPageMemoryMvPartitionStorage extends AbstractPageMemoryMv
                     long atUnlock = coarseCurrentTimeMillis();
 
                     if (atAcquired - atAcquiring > 10) {
-                        LOG.warn("LONG READ LOCK ACQUIRING {} IN runConsistently [atAcquiring={}, atAcquired={}, atUnlock={}", atAcquired - atAcquiring, atAcquiring, atAcquired, atUnlock);
+                        LOG.warn("LONG ACQUIRING READ LOCK {} IN {}", atAcquired - atAcquiring, name);
                     }
 
-                    if (atUnlock - atAcquired > 10) {
-                        LOG.warn("LONG READ LOCK {} IN runConsistently [atAcquiring={}, atAcquired={}, atUnlock={}", atUnlock - atAcquired, atAcquiring, atAcquired, atUnlock);
+                    if (atUnlock - atAcquired > 100) {
+                        LOG.warn("LONG READ LOCK {} IN {}", atUnlock - atAcquired, name);
                     }
                 }
             });

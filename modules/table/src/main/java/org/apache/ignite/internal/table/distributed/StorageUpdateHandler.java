@@ -109,7 +109,6 @@ public class StorageUpdateHandler {
             @Nullable HybridTimestamp lastCommitTs,
             @Nullable List<Integer> indexIds
     ) {
-        LOG.info("handleUpdate");
         storage.runConsistently(locker -> {
             int commitTblId = commitPartitionId.tableId();
             int commitPartId = commitPartitionId.partitionId();
@@ -137,7 +136,7 @@ public class StorageUpdateHandler {
             }
 
             return null;
-        });
+        }, "handleUpdate");
     }
 
     private boolean tryProcessRow(

@@ -69,8 +69,8 @@ public class TestPartitionDataStorage implements PartitionDataStorage {
     }
 
     @Override
-    public <V> V runConsistently(WriteClosure<V> closure) throws StorageException {
-        return partitionStorage.runConsistently(closure);
+    public <V> V runConsistently(WriteClosure<V> closure, String name) throws StorageException {
+        return partitionStorage.runConsistently(closure, name);
     }
 
     @Override

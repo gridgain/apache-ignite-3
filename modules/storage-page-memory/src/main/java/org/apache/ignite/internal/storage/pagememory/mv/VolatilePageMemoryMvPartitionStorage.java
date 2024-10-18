@@ -118,7 +118,7 @@ public class VolatilePageMemoryMvPartitionStorage extends AbstractPageMemoryMvPa
     }
 
     @Override
-    public <V> V runConsistently(WriteClosure<V> closure) throws StorageException {
+    public <V> V runConsistently(WriteClosure<V> closure, String name) throws StorageException {
         LocalLocker locker = THREAD_LOCAL_LOCKER.get();
 
         if (locker != null) {

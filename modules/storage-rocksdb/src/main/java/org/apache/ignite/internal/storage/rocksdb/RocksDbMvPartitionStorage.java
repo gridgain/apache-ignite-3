@@ -289,7 +289,7 @@ public class RocksDbMvPartitionStorage implements MvPartitionStorage {
     }
 
     @Override
-    public <V> V runConsistently(WriteClosure<V> closure) throws StorageException {
+    public <V> V runConsistently(WriteClosure<V> closure, String name) throws StorageException {
         ThreadLocalState existingState = THREAD_LOCAL_STATE.get();
 
         if (existingState != null) {

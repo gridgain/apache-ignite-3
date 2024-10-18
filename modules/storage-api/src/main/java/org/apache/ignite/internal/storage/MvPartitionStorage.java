@@ -96,7 +96,11 @@ public interface MvPartitionStorage extends ManuallyCloseable {
      * @return Closure result.
      * @throws StorageException If failed to write data to the storage.
      */
-    <V> V runConsistently(WriteClosure<V> closure) throws StorageException;
+    default <V> V runConsistently(WriteClosure<V> closure) throws StorageException {
+        return runConsistently(closure, "");
+    }
+
+    <V> V runConsistently(WriteClosure<V> closure, String name) throws StorageException;
 
     /**
      * Flushes current state of the data or <i>the state from the nearest future</i> to the storage.
