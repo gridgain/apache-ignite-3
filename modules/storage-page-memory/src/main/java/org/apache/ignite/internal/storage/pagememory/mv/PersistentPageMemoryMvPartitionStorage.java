@@ -194,7 +194,7 @@ public class PersistentPageMemoryMvPartitionStorage extends AbstractPageMemoryMv
                     checkpointTimeoutLock.checkpointReadUnlock();
                     long atUnlock = coarseCurrentTimeMillis();
 
-                    if (atAcquired - atUnlock > 1000) {
+                    if (atUnlock - atAcquired > 1000) {
                         LOG.warn("LONG READ LOCK IN inCheckpointLock {}", atUnlock - atAcquired);
                     }
                 }
