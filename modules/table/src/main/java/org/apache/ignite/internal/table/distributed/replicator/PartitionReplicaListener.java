@@ -466,7 +466,7 @@ public class PartitionReplicaListener implements ReplicaListener {
     }
 
     @Override
-    public CompletableFuture<ReplicaResult> invoke(ReplicaRequest request, String senderId) {
+    public CompletableFuture<ReplicaResult> invoke(ReplicaRequest request, UUID senderId) {
         return measure(() -> ensureReplicaIsPrimary(request), "ensureReplicaIsPrimary")
                 .thenCompose(res -> processRequest(request, res.get1(), senderId, res.get2()))
                 .thenApply(res -> {
