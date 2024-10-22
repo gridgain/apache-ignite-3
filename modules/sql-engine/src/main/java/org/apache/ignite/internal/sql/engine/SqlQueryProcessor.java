@@ -336,7 +336,8 @@ public class SqlQueryProcessor implements QueryProcessor {
                 CACHE_FACTORY,
                 clusterCfg.planner().estimatedNumberOfQueries().value(),
                 partitionPruner,
-                taskExecutor
+                taskExecutor,
+                logicalTopologyService
         );
 
         logicalTopologyService.addEventListener(mappingService);
