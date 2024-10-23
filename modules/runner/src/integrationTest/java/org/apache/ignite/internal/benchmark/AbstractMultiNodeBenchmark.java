@@ -79,7 +79,7 @@ public class AbstractMultiNodeBenchmark {
      */
     @Setup
     public void nodeSetUp() throws Exception {
-        System.setProperty("jraft.available_processors", "2");
+        //System.setProperty("jraft.available_processors", "2");
         startCluster();
 
         try {
@@ -95,6 +95,8 @@ public class AbstractMultiNodeBenchmark {
             );
 
             createTable(TABLE_NAME);
+
+            Thread.sleep(2000);
         } catch (Throwable th) {
             nodeTearDown();
 
@@ -174,7 +176,7 @@ public class AbstractMultiNodeBenchmark {
      * @throws Exception In case of any error.
      */
     @TearDown
-    public final void nodeTearDown() throws Exception {
+    public void nodeTearDown() throws Exception {
         IgniteUtils.closeAll(igniteServers.stream().map(node -> node::shutdown));
     }
 
@@ -193,11 +195,15 @@ public class AbstractMultiNodeBenchmark {
                 + "  },\n"
                 + "  storage.profiles: {"
                 + "        " + DEFAULT_STORAGE_PROFILE + ".engine: aipersist, "
+                + "        " + DEFAULT_STORAGE_PROFILE + ".size: 2073741824 "
+                + "  },\n"
+                + "  storage.profiles: {"
+                + "        " + DEFAULT_STORAGE_PROFILE + ".engine: aipersist, "
                 + "        " + DEFAULT_STORAGE_PROFILE + ".size: 2073741824 " // Avoid page replacement.
                 + "  },\n"
                 + "  clientConnector: { port:{} },\n"
                 + "  rest.port: {},\n"
-                + "  raft.fsync = " + fsync
+                + "  raft.fsync = " + fsync()
                 + "}";
 
         for (int i = 0; i < nodes(); i++) {
@@ -235,6 +241,10 @@ public class AbstractMultiNodeBenchmark {
 
     protected Path workDir() throws Exception {
         return Files.createTempDirectory("tmpDirPrefix").toFile().toPath();
+    }
+
+    protected boolean fsync() {
+        return fsync;
     }
 
     protected int nodes() {
