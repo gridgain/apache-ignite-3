@@ -82,6 +82,7 @@ import org.apache.ignite.internal.sql.engine.exec.QueryTaskExecutorImpl;
 import org.apache.ignite.internal.sql.engine.exec.SqlRowHandler;
 import org.apache.ignite.internal.sql.engine.exec.ddl.DdlCommandHandler;
 import org.apache.ignite.internal.sql.engine.exec.exp.func.TableFunctionRegistryImpl;
+import org.apache.ignite.internal.sql.engine.exec.fsm.QueryExecutor;
 import org.apache.ignite.internal.sql.engine.exec.mapping.MappingServiceImpl;
 import org.apache.ignite.internal.sql.engine.message.MessageServiceImpl;
 import org.apache.ignite.internal.sql.engine.prepare.KeyValueGetPlan;
@@ -184,6 +185,8 @@ public class SqlQueryProcessor implements QueryProcessor {
     private final FailureManager failureManager;
 
     private final SystemViewManager systemViewManager;
+
+    private volatile QueryExecutor queryExecutor;
 
     private volatile QueryTaskExecutor taskExecutor;
 
@@ -359,6 +362,19 @@ public class SqlQueryProcessor implements QueryProcessor {
                 EXECUTION_SERVICE_SHUTDOWN_TIMEOUT
         ));
 
+        queryExecutor = new QueryExecutor(
+                CACHE_FACTORY,
+                PARSED_RESULT_CACHE_SIZE,
+                parserService,
+                taskExecutor,
+                clockService,
+                schemaSyncService,
+                prepareSvc,
+                catalogManager,
+                executionSrvc,
+                DEFAULT_PROPERTIES
+        );
+
         clusterSrvc.topologyService().addEventHandler(executionSrvc);
         clusterSrvc.topologyService().addEventHandler(mailboxRegistry);
 
@@ -438,7 +454,7 @@ public class SqlQueryProcessor implements QueryProcessor {
             if (Commons.isMultiStatementQueryAllowed(properties0)) {
                 return queryScript(properties0, txContext, qry, params);
             } else {
-                return querySingle(properties0, txContext, qry, params);
+                return queryExecutor.executeQuery(properties, txContext, qry, params);
             }
         } finally {
             busyLock.leaveBusy();
