@@ -137,7 +137,6 @@ public class StorageUpdateHandler {
                 pendingRows.addPendingRowId(txId, rowId);
             }
 
-
             if (onApplication != null) {
                 onApplication.run();
             }

@@ -21,6 +21,7 @@ import static org.apache.ignite.internal.storage.util.StorageUtils.throwExceptio
 import static org.apache.ignite.internal.storage.util.StorageUtils.throwExceptionDependingOnStorageStateOnRebalance;
 import static org.apache.ignite.internal.storage.util.StorageUtils.throwExceptionIfStorageNotInRunnableOrRebalanceState;
 import static org.apache.ignite.internal.storage.util.StorageUtils.throwStorageExceptionIfItCause;
+import static org.apache.ignite.internal.util.FastTimestamps.coarseCurrentTimeMillis;
 import static org.apache.ignite.internal.util.IgniteUtils.closeAll;
 
 import java.util.ArrayList;
@@ -35,6 +36,8 @@ import java.util.function.Supplier;
 import org.apache.ignite.internal.hlc.HybridTimestamp;
 import org.apache.ignite.internal.lang.IgniteInternalCheckedException;
 import org.apache.ignite.internal.lang.IgniteStringFormatter;
+import org.apache.ignite.internal.logger.IgniteLogger;
+import org.apache.ignite.internal.logger.Loggers;
 import org.apache.ignite.internal.pagememory.PageMemory;
 import org.apache.ignite.internal.pagememory.datapage.DataPageReader;
 import org.apache.ignite.internal.pagememory.freelist.FreeListImpl;
@@ -92,6 +95,7 @@ public abstract class AbstractPageMemoryMvPartitionStorage implements MvPartitio
 
     /** Preserved {@link LocalLocker} instance to allow nested calls of {@link #runConsistently(WriteClosure)}. */
     static final ThreadLocal<LocalLocker> THREAD_LOCAL_LOCKER = new ThreadLocal<>();
+    private static final IgniteLogger LOG = Loggers.forClass(AbstractPageMemoryMvPartitionStorage.class);
 
     protected final int partitionId;
 
@@ -428,9 +432,19 @@ public abstract class AbstractPageMemoryMvPartitionStorage implements MvPartitio
             try {
                 AddWriteInvokeClosure addWrite = new AddWriteInvokeClosure(rowId, row, txId, commitTableId, commitPartitionId, this);
 
+                long startTime = coarseCurrentTimeMillis();
+
                 renewableState.versionChainTree().invoke(new VersionChainKey(rowId), null, addWrite);
 
+                long writtenTime = coarseCurrentTimeMillis();
+
                 addWrite.afterCompletion();
+
+                long afterCompletionTime = coarseCurrentTimeMillis();
+
+                if (afterCompletionTime - startTime > 20) {
+                    LOG.info("writingTime = {}, afterCompletionTime = {}", writtenTime - startTime, afterCompletionTime - writtenTime);
+                }
 
                 return addWrite.getPreviousUncommittedRowVersion();
             } catch (IgniteInternalCheckedException e) {
