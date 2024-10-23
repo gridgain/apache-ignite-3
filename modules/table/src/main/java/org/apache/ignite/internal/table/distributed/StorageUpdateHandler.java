@@ -18,6 +18,7 @@
 package org.apache.ignite.internal.table.distributed;
 
 import static org.apache.ignite.internal.util.CollectionUtils.nullOrEmpty;
+import static org.apache.ignite.internal.util.FastTimestamps.coarseCurrentTimeMillis;
 
 import java.util.ArrayList;
 import java.util.Iterator;
@@ -27,6 +28,8 @@ import java.util.Map.Entry;
 import java.util.Set;
 import java.util.UUID;
 import org.apache.ignite.internal.hlc.HybridTimestamp;
+import org.apache.ignite.internal.logger.IgniteLogger;
+import org.apache.ignite.internal.logger.Loggers;
 import org.apache.ignite.internal.partition.replicator.network.TimedBinaryRow;
 import org.apache.ignite.internal.replicator.TablePartitionId;
 import org.apache.ignite.internal.schema.BinaryRow;
@@ -42,6 +45,8 @@ import org.jetbrains.annotations.Nullable;
 
 /** Handler for storage updates that can be performed on processing of primary replica requests and partition replication requests. */
 public class StorageUpdateHandler {
+    private static final IgniteLogger LOG = Loggers.forClass(StorageUpdateHandler.class);
+
     /** Partition id. */
     private final int partitionId;
 
@@ -111,6 +116,8 @@ public class StorageUpdateHandler {
             int commitPartId = commitPartitionId.partitionId();
             RowId rowId = new RowId(partitionId, rowUuid);
 
+            long startTime = coarseCurrentTimeMillis();
+
             tryProcessRow(
                     locker,
                     commitTblId,
@@ -124,12 +131,21 @@ public class StorageUpdateHandler {
                     indexIds
             );
 
+            long rowProcessedTime = coarseCurrentTimeMillis();
+
             if (trackWriteIntent) {
                 pendingRows.addPendingRowId(txId, rowId);
             }
 
+
             if (onApplication != null) {
                 onApplication.run();
+            }
+
+            long onApplicationFinished = coarseCurrentTimeMillis();
+
+            if (onApplicationFinished - startTime > 30) {
+                LOG.info("LONG HANDLE UPDATE rowProcessing: {}, onApplication: {}", rowProcessedTime - startTime, onApplicationFinished - rowProcessedTime);
             }
 
             return null;
@@ -148,6 +164,8 @@ public class StorageUpdateHandler {
             boolean useTryLock,
             @Nullable List<Integer> indexIds
     ) {
+        long processingStartTime = coarseCurrentTimeMillis();
+
         if (useTryLock) {
             if (!locker.tryLock(rowId)) {
                 return false;
@@ -156,7 +174,11 @@ public class StorageUpdateHandler {
             locker.lock(rowId);
         }
 
+        long lockAcquiredTime = coarseCurrentTimeMillis();
+
         performStorageCleanupIfNeeded(txId, rowId, lastCommitTs, indexIds);
+
+        long cleanupFinishedTime = coarseCurrentTimeMillis();
 
         if (commitTs != null) {
             storage.addWriteCommitted(rowId, row, commitTs);
@@ -170,7 +192,15 @@ public class StorageUpdateHandler {
             }
         }
 
+        long writeFinished = coarseCurrentTimeMillis();
+
         indexUpdateHandler.addToIndexes(row, rowId, indexIds);
+
+        long indexUpdateFinished = coarseCurrentTimeMillis();
+
+        if (indexUpdateFinished - processingStartTime > 30) {
+            LOG.info("LONG PROCESSING. lockAcquired: {}, cleanupFinished: {}, writeFinished: {}, indexUpdateFinished: {}", lockAcquiredTime - processingStartTime, cleanupFinishedTime - lockAcquiredTime, writeFinished - cleanupFinishedTime, indexUpdateFinished - writeFinished);
+        }
 
         return true;
     }
