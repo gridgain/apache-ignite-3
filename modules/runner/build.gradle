@@ -261,6 +261,26 @@ tasks.register("runUpsertBenchmark", JavaExec) {
     enableAssertions = true
 }
 
+tasks.register("runTxBalanceRetryOperationBenchmark", JavaExec) {
+    mainClass = "org.apache.ignite.internal.benchmark.TxBalanceRetryOperationBenchmark"
+
+    jvmArgs += defaultJvmArgs
+
+    classpath = sourceSets.integrationTest.runtimeClasspath
+
+    enableAssertions = true
+}
+
+tasks.register("runTxUpsertRetryOperationBenchmark", JavaExec) {
+    mainClass = "org.apache.ignite.internal.benchmark.TxUpsertRetryOperationBenchmark"
+
+    jvmArgs += defaultJvmArgs
+
+    classpath = sourceSets.integrationTest.runtimeClasspath
+
+    enableAssertions = true
+}
+
 jar {
     manifest {
         attributes(
