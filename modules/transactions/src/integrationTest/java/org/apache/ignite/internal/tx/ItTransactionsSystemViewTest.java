@@ -45,11 +45,6 @@ import org.junit.jupiter.api.Test;
  * End-to-end tests to verify {@code TRANSACTIONS} system view.
  */
 public class ItTransactionsSystemViewTest extends BaseSqlIntegrationTest {
-    @Override
-    protected int initialNodes() {
-        return 2;
-    }
-
     @BeforeAll
     void beforeAll() {
         await(systemViewManager().completeRegistration());
@@ -71,25 +66,29 @@ public class ItTransactionsSystemViewTest extends BaseSqlIntegrationTest {
 
     @Test
     public void testData() {
-        Map<UUID, String> nodeIdToName = new HashMap<>();
+        int txPerNode = 2;
         List<Transaction> txs = new ArrayList<>();
+
+        Map<UUID, String> nodeNameToId = new HashMap<>();
 
         CLUSTER.runningNodes().forEach(node -> {
             IgniteTransactionsImpl transactions = unwrapIgniteTransactionsImpl(node.transactions());
 
-            for (TxPriority priority : TxPriority.values()) {
-                txs.add(transactions.beginWithPriority(true, priority));
-                txs.add(transactions.beginWithPriority(false, priority));
+            for (int i = 0; i < txPerNode; i++) {
+                txs.add(transactions.beginWithPriority(true, TxPriority.NORMAL));
+                txs.add(transactions.beginWithPriority(true, TxPriority.LOW));
+                txs.add(transactions.beginWithPriority(false, TxPriority.NORMAL));
+                txs.add(transactions.beginWithPriority(false, TxPriority.LOW));
             }
 
             ClusterNode localMember = unwrapIgniteImpl(node).clusterService().topologyService().localMember();
 
-            nodeIdToName.put(localMember.id(), localMember.name());
+            nodeNameToId.put(localMember.id(), localMember.name());
         });
 
         // Verify rows count.
         assertQuery("SELECT count(*) FROM SYSTEM.TRANSACTIONS")
-                .returns((long) txs.size() + /* implicit tx used for query */ 1)
+                .returns((long) txPerNode * initialNodes() * 4 + /* implicit tx used for query */ 1)
                 .check();
 
         // Verify view data for each transaction.
@@ -97,7 +96,7 @@ public class ItTransactionsSystemViewTest extends BaseSqlIntegrationTest {
             InternalTransaction tx = (InternalTransaction) tx0;
 
             assertQuery("SELECT * FROM SYSTEM.TRANSACTIONS WHERE ID = '" + tx.id() + "'")
-                    .returns(makeExpectedRow(tx, nodeIdToName))
+                    .returns(makeExpectedRow(tx, nodeNameToId))
                     .check();
         }
 
@@ -112,16 +111,16 @@ public class ItTransactionsSystemViewTest extends BaseSqlIntegrationTest {
 
         Transaction tx = CLUSTER.aliveNode().transactions().begin();
 
-        Object[] expected = makeExpectedRow((InternalTransaction) tx, nodeIdToName);
+        Object[] expected = makeExpectedRow((InternalTransaction) tx, nodeNameToId);
         List<List<Object>> resultRow = sql(tx, "SELECT * FROM SYSTEM.TRANSACTIONS");
 
         assertThat(resultRow, hasSize(1));
         assertThat(resultRow.get(0), equalTo(Arrays.asList(expected)));
     }
 
-    private static Object[] makeExpectedRow(InternalTransaction tx, Map<UUID, String> nodeIdToName) {
+    private static Object[] makeExpectedRow(InternalTransaction tx, Map<UUID, String> nodeNameToId) {
         return new Object[]{
-                nodeIdToName.get(tx.coordinatorId()),
+                nodeNameToId.get(tx.coordinatorId()),
                 tx.state() == null ? null : tx.state().name(),
                 tx.id().toString(),
                 Instant.ofEpochMilli(tx.startTimestamp().getPhysical()),
