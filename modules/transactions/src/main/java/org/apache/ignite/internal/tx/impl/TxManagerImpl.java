@@ -392,7 +392,11 @@ public class TxManagerImpl implements TxManager, NetworkMessageHandler, SystemVi
         if (!readOnly) {
             txStateVolatileStorage.initialize(txId, localNodeId);
 
-            return register(new ReadWriteTransactionImpl(this, timestampTracker, txId, localNodeId));
+            ReadWriteTransactionImpl tx = new ReadWriteTransactionImpl(this, timestampTracker, txId, localNodeId);
+
+            ;
+
+            return register(tx);
         }
 
         HybridTimestamp observableTimestamp = timestampTracker.get();
@@ -468,7 +472,7 @@ public class TxManagerImpl implements TxManager, NetworkMessageHandler, SystemVi
                         old == null ? null : old.commitTimestamp()
                 ));
 
-        onFinishRwTx(txId);
+        decrementRwTxCount(txId);
     }
 
     private @Nullable HybridTimestamp commitTimestamp(boolean commit) {
@@ -495,7 +499,7 @@ public class TxManagerImpl implements TxManager, NetworkMessageHandler, SystemVi
                     commitIntent ? COMMITTED : ABORTED, localNodeId, commitPartition, commitTimestamp(commitIntent)
             ));
 
-            onFinishRwTx(txId);
+            decrementRwTxCount(txId);
 
             return nullCompletedFuture();
         }
@@ -543,7 +547,7 @@ public class TxManagerImpl implements TxManager, NetworkMessageHandler, SystemVi
                 )
         ).thenAccept(unused -> {
             if (localNodeId.equals(finishingStateMeta.txCoordinatorId())) {
-                onFinishRwTx(txId);
+                decrementRwTxCount(txId);
             }
         }).whenComplete((unused, throwable) -> transactionInflights.removeTxContext(txId));
     }
@@ -978,34 +982,24 @@ public class TxManagerImpl implements TxManager, NetworkMessageHandler, SystemVi
         });
     }
 
-    /** Called when a read-write transaction is finished. */
-    private void onFinishRwTx(UUID txId) {
-        decrementRwTxCount(txId);
-
-        unregister(txId);
-    }
-
     private void decrementRwTxCount(UUID txId) {
         localRwTxCounter.inUpdateRwTxCountLock(() -> {
             localRwTxCounter.decrementRwTxCount(beginTimestamp(txId));
 
             return null;
         });
+
+        unregister(txId);
     }
 
-    /**
-     * Puts a transaction into the registry.
-     *
-     * @param tx Transaction.
-     * @return Registered transaction.
-     */
+    /** Puts transaction into the registry. */
     private InternalTransaction register(InternalTransaction tx) {
         transactions.put(tx.id(), tx);
 
         return tx;
     }
 
-    /** Removes a transaction from the registry. */
+    /** Removes transaction from the registry. */
     private void unregister(UUID txId) {
         transactions.remove(txId);
     }
