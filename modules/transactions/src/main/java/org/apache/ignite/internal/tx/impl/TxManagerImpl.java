@@ -199,6 +199,8 @@ public class TxManagerImpl implements TxManager, NetworkMessageHandler, SystemVi
     /** Registry of locally started active transactions. */
     private final Map<UUID, InternalTransaction> transactions = new ConcurrentHashMap<>();
 
+    private final TransactionsViewProvider txSystemViewProvider = new TransactionsViewProvider(transactions);
+
     private volatile PersistentTxStateVacuumizer persistentTxStateVacuumizer;
 
     /**
@@ -931,7 +933,7 @@ public class TxManagerImpl implements TxManager, NetworkMessageHandler, SystemVi
 
     @Override
     public List<SystemView<?>> systemViews() {
-        return List.of(new TransactionsViewProvider(transactions).get());
+        return List.of(txSystemViewProvider.get());
     }
 
     static class TransactionFailureHandler {
@@ -998,9 +1000,7 @@ public class TxManagerImpl implements TxManager, NetworkMessageHandler, SystemVi
      * @return Registered transaction.
      */
     private InternalTransaction register(InternalTransaction tx) {
-        InternalTransaction prevTx = transactions.put(tx.id(), tx);
-
-        assert prevTx == null : "Duplicate registration: " + tx.id();
+        transactions.put(tx.id(), tx);
 
         return tx;
     }
