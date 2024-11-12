@@ -39,7 +39,6 @@ import static org.apache.ignite.lang.ErrorGroups.Transactions.TX_READ_ONLY_TOO_O
 
 import java.io.IOException;
 import java.util.Collection;
-import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Set;
@@ -83,8 +82,6 @@ import org.apache.ignite.internal.replicator.exception.ReplicationTimeoutExcepti
 import org.apache.ignite.internal.replicator.message.ErrorReplicaResponse;
 import org.apache.ignite.internal.replicator.message.ReplicaMessageGroup;
 import org.apache.ignite.internal.replicator.message.ReplicaResponse;
-import org.apache.ignite.internal.systemview.api.SystemView;
-import org.apache.ignite.internal.systemview.api.SystemViewProvider;
 import org.apache.ignite.internal.thread.IgniteThreadFactory;
 import org.apache.ignite.internal.tx.HybridTimestampTracker;
 import org.apache.ignite.internal.tx.InternalTransaction;
@@ -113,7 +110,7 @@ import org.jetbrains.annotations.TestOnly;
  *
  * <p>Uses 2PC for atomic commitment and 2PL for concurrency control.
  */
-public class TxManagerImpl implements TxManager, NetworkMessageHandler, SystemViewProvider {
+public class TxManagerImpl implements TxManager, NetworkMessageHandler {
     /** The logger. */
     private static final IgniteLogger LOG = Loggers.forClass(TxManagerImpl.class);
 
@@ -194,8 +191,6 @@ public class TxManagerImpl implements TxManager, NetworkMessageHandler, SystemVi
     private final TransactionInflights transactionInflights;
 
     private final ReplicaService replicaService;
-
-    private final TxRegistry txRegistry = new TxRegistry();
 
     private volatile PersistentTxStateVacuumizer persistentTxStateVacuumizer;
 
@@ -388,11 +383,7 @@ public class TxManagerImpl implements TxManager, NetworkMessageHandler, SystemVi
         if (!readOnly) {
             txStateVolatileStorage.initialize(txId, localNodeId);
 
-            ReadWriteTransactionImpl tx = new ReadWriteTransactionImpl(this, timestampTracker, txId, localNodeId);
-
-            txRegistry.register(tx);
-
-            return tx;
+            return new ReadWriteTransactionImpl(this, timestampTracker, txId, localNodeId);
         }
 
         HybridTimestamp observableTimestamp = timestampTracker.get();
@@ -412,16 +403,9 @@ public class TxManagerImpl implements TxManager, NetworkMessageHandler, SystemVi
 
         try {
             CompletableFuture<Void> txFuture = new CompletableFuture<>();
-            txFuture.whenComplete((unused, throwable) -> {
-                lowWatermark.unlock(txId);
-                txRegistry.unregister(txId);
-            });
+            txFuture.whenComplete((unused, throwable) -> lowWatermark.unlock(txId));
 
-            ReadOnlyTransactionImpl tx = new ReadOnlyTransactionImpl(this, timestampTracker, txId, localNodeId, readTimestamp, txFuture);
-
-            txRegistry.register(tx);
-
-            return tx;
+            return new ReadOnlyTransactionImpl(this, timestampTracker, txId, localNodeId, readTimestamp, txFuture);
         } catch (Throwable t) {
             lowWatermark.unlock(txId);
             throw t;
@@ -935,11 +919,6 @@ public class TxManagerImpl implements TxManager, NetworkMessageHandler, SystemVi
         return allOf(verificationFutures);
     }
 
-    @Override
-    public List<SystemView<?>> systemViews() {
-        return List.of(txRegistry.asSystemView());
-    }
-
     static class TransactionFailureHandler {
         private static final Set<Class<? extends Throwable>> RECOVERABLE = Set.of(
                 TimeoutException.class,
@@ -988,7 +967,5 @@ public class TxManagerImpl implements TxManager, NetworkMessageHandler, SystemVi
 
             return null;
         });
-
-        txRegistry.unregister(txId);
     }
 }
