@@ -24,6 +24,7 @@ import static org.apache.ignite.internal.hlc.HybridTimestamp.hybridTimestamp;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicLongFieldUpdater;
+import org.apache.ignite.internal.lang.IgniteSystemProperties;
 import org.apache.ignite.internal.logger.IgniteLogger;
 import org.apache.ignite.internal.logger.Loggers;
 import org.apache.ignite.internal.tostring.S;
@@ -41,6 +42,8 @@ public class HybridClockImpl implements HybridClock {
             HybridClockImpl.class,
             "latestTime"
     );
+
+    private final boolean clockListenerEnable = IgniteSystemProperties.getBoolean("IGNITE_CLOCK_LISTENER_ENABLE");
 
     private volatile long latestTime;
 
@@ -139,7 +142,9 @@ public class HybridClockImpl implements HybridClock {
             long newLatestTime = max(requestTimeLong + 1, max(now, oldLatestTime + 1));
 
             if (LATEST_TIME.compareAndSet(this, oldLatestTime, newLatestTime)) {
-                notifyUpdateListeners(newLatestTime);
+                if (clockListenerEnable) {
+                    notifyUpdateListeners(newLatestTime);
+                }
 
                 return hybridTimestamp(newLatestTime);
             }
@@ -165,7 +170,9 @@ public class HybridClockImpl implements HybridClock {
             }
 
             if (LATEST_TIME.compareAndSet(this, oldLatestTime, requestTimeLong)) {
-                notifyUpdateListeners(requestTimeLong);
+                if (clockListenerEnable) {
+                    notifyUpdateListeners(requestTimeLong);
+                }
 
                 return;
             }
