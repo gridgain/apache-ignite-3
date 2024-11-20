@@ -25,6 +25,7 @@ import org.apache.ignite.internal.catalog.CatalogService;
 import org.apache.ignite.internal.catalog.descriptors.CatalogTableDescriptor;
 import org.apache.ignite.internal.hlc.ClockService;
 import org.apache.ignite.internal.hlc.HybridTimestamp;
+import org.apache.ignite.internal.lang.IgniteSystemProperties;
 import org.apache.ignite.internal.schema.SchemaSyncService;
 import org.apache.ignite.lang.TableNotFoundException;
 
@@ -37,6 +38,8 @@ public class SchemaVersionsImpl implements SchemaVersions {
     private final CatalogService catalogService;
 
     private final ClockService clockService;
+
+    private final boolean useCurrentTimestamp = IgniteSystemProperties.getBoolean("IGNITE_USE_CURRENT_TIMESTAMP");
 
     /**
      * Creates a new instance.
@@ -83,6 +86,6 @@ public class SchemaVersionsImpl implements SchemaVersions {
 
     @Override
     public CompletableFuture<Integer> schemaVersionAtNow(int tableId) {
-        return schemaVersionAt(clockService.current(), tableId);
+        return schemaVersionAt(useCurrentTimestamp ? clockService.current() : clockService.now(), tableId);
     }
 }
