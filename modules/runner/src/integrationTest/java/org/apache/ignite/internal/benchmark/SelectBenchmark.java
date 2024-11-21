@@ -80,19 +80,19 @@ public class SelectBenchmark extends AbstractMultiNodeBenchmark {
 
     private KeyValueView<Tuple, Tuple> keyValueView;
 
-    @Param({"1"/*, "2", "3"*/})
+    @Param({"1"})
     private int clusterSize;
 
     @Param({"false"})
     private boolean fsync;
 
     @Param({"false", "true"})
-    private boolean useCurrentTimestamp;
+    private boolean earlierImplicitTransactionCreation;
 
     @Override
     public void nodeSetUp() throws Exception {
-        System.setProperty("IGNITE_USE_CURRENT_TIMESTAMP", Boolean.toString(useCurrentTimestamp));
-        
+        System.setProperty("IGNITE_EARLIER_IMPLICIT_TRANSACTION_CREATION", Boolean.toString(earlierImplicitTransactionCreation));
+
         super.nodeSetUp();
     }
 
@@ -426,5 +426,3 @@ public class SelectBenchmark extends AbstractMultiNodeBenchmark {
         return clusterSize;
     }
 }
-
-
