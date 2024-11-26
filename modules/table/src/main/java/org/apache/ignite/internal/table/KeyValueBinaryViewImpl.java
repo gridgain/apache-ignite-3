@@ -18,7 +18,7 @@
 package org.apache.ignite.internal.table;
 
 import static org.apache.ignite.internal.lang.IgniteExceptionMapperUtil.convertToPublicFuture;
-import static org.apache.ignite.internal.lang.IgniteSystemProperties.getBoolean;
+import static org.apache.ignite.internal.lang.IgniteSystemProperties.getString;
 import static org.apache.ignite.internal.util.CompletableFutures.trueCompletedFuture;
 import static org.apache.ignite.internal.util.ViewUtils.checkKeysForNulls;
 import static org.apache.ignite.internal.util.ViewUtils.sync;
@@ -71,7 +71,7 @@ import org.jetbrains.annotations.Nullable;
 public class KeyValueBinaryViewImpl extends AbstractTableView<Entry<Tuple, Tuple>> implements KeyValueView<Tuple, Tuple> {
     private final TupleMarshallerCache marshallerCache;
 
-    private boolean earlierImplicitTransactionCreation = getBoolean("IGNITE_EARLIER_IMPLICIT_TRANSACTION_CREATION");
+    private final String opt = getString("IGNITE_OPTIMIZATION");
 
     /**
      * The constructor.
@@ -105,7 +105,7 @@ public class KeyValueBinaryViewImpl extends AbstractTableView<Entry<Tuple, Tuple
     public CompletableFuture<Tuple> getAsync(@Nullable Transaction tx, Tuple key) {
         Objects.requireNonNull(key, "key");
 
-        InternalTransaction tx0 = earlierImplicitTransactionCreation ? tbl.startImplicitRoTxIfNeeded((InternalTransaction) tx) : null;
+        InternalTransaction tx0 = "earlierImplicitTx".equals(opt) ? tbl.startImplicitRoTxIfNeeded((InternalTransaction) tx) : null;
 
         return doOperation(tx0, (schemaVersion) -> {
             Row keyRow = marshal(key, null, schemaVersion);

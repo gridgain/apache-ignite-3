@@ -86,12 +86,12 @@ public class SelectBenchmark extends AbstractMultiNodeBenchmark {
     @Param({"false"})
     private boolean fsync;
 
-    @Param({"false", "true"})
-    private boolean earlierImplicitTransactionCreation;
+    @Param({"none", "earlierImplicitTx", "currentSchema"})
+    private String opt;
 
     @Override
     public void nodeSetUp() throws Exception {
-        System.setProperty("IGNITE_EARLIER_IMPLICIT_TRANSACTION_CREATION", Boolean.toString(earlierImplicitTransactionCreation));
+        System.setProperty("IGNITE_OPTIMIZATION", opt);
 
         super.nodeSetUp();
     }

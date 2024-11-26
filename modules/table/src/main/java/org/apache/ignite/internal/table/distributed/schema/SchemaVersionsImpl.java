@@ -17,6 +17,7 @@
 
 package org.apache.ignite.internal.table.distributed.schema;
 
+import static org.apache.ignite.internal.lang.IgniteSystemProperties.getString;
 import static org.apache.ignite.lang.ErrorGroups.Table.TABLE_NOT_FOUND_ERR;
 
 import java.util.UUID;
@@ -37,6 +38,8 @@ public class SchemaVersionsImpl implements SchemaVersions {
     private final CatalogService catalogService;
 
     private final ClockService clockService;
+
+    private final String opt = getString("IGNITE_OPTIMIZATION");
 
     /**
      * Creates a new instance.
@@ -83,6 +86,6 @@ public class SchemaVersionsImpl implements SchemaVersions {
 
     @Override
     public CompletableFuture<Integer> schemaVersionAtNow(int tableId) {
-        return schemaVersionAt(clockService.now(), tableId);
+        return schemaVersionAt("currentSchema".equals(opt) ? clockService.current() : clockService.now(), tableId);
     }
 }
