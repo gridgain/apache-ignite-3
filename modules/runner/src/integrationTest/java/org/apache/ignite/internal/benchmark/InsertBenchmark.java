@@ -25,9 +25,13 @@ import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
+import java.util.Map;
+import java.util.Map.Entry;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.IntStream;
 import org.apache.ignite.client.IgniteClient;
+import org.apache.ignite.internal.streamer.SimplePublisher;
 import org.apache.ignite.sql.IgniteSql;
 import org.apache.ignite.sql.ResultSet;
 import org.apache.ignite.sql.Statement;
@@ -56,25 +60,28 @@ import org.openjdk.jmh.runner.options.OptionsBuilder;
  */
 @State(Scope.Benchmark)
 @Fork(1)
-@Threads(1)
+// @Threads(1)
 @Warmup(iterations = 10, time = 2)
 @Measurement(iterations = 20, time = 2)
 @BenchmarkMode(Mode.AverageTime)
 @OutputTimeUnit(TimeUnit.MICROSECONDS)
 public class InsertBenchmark extends AbstractMultiNodeBenchmark {
-    @Param({"1", "2", "3"})
+    @Param({"1"/*, "2", "3"*/})
     private int clusterSize;
 
-    @Param({"1", "2", "4", "8", "16", "32"})
+    @Param({"32"/*, "2", "4", "8", "16", "32"*/})
     private int partitionCount;
 
-    @Param({"1", "2", "3"})
+    @Param({"1"/*, "2", "3"*/})
     private int replicaCount;
+
+    @Param({"false"/*, "true"*/})
+    private boolean fsync;
 
     /**
      * Benchmark for SQL insert via embedded client.
      */
-    @Benchmark
+    // @Benchmark
     public void sqlPreparedInsert(SqlState state) {
         state.executeQuery();
     }
@@ -82,7 +89,7 @@ public class InsertBenchmark extends AbstractMultiNodeBenchmark {
     /**
      * Benchmark for SQL insert via embedded client.
      */
-    @Benchmark
+    // @Benchmark
     public void sqlInlinedInsert(SqlState state) {
         state.executeInlinedQuery();
     }
@@ -90,7 +97,7 @@ public class InsertBenchmark extends AbstractMultiNodeBenchmark {
     /**
      * Benchmark for SQL multiple rows insert via embedded client.
      */
-    @Benchmark
+    // @Benchmark
     public void sqlInsertMulti(SqlStateMultiValues state) {
         state.executeQuery();
     }
@@ -98,7 +105,7 @@ public class InsertBenchmark extends AbstractMultiNodeBenchmark {
     /**
      * Benchmark for SQL script insert via embedded client.
      */
-    @Benchmark
+    // @Benchmark
     public void sqlInsertScript(SqlState state) {
         state.executeScript();
     }
@@ -106,7 +113,7 @@ public class InsertBenchmark extends AbstractMultiNodeBenchmark {
     /**
      * Benchmark for KV insert via embedded client.
      */
-    @Benchmark
+    // @Benchmark
     public void kvInsert(KvState state) {
         state.executeQuery();
     }
@@ -114,7 +121,7 @@ public class InsertBenchmark extends AbstractMultiNodeBenchmark {
     /**
      * Benchmark for JDBC insert.
      */
-    @Benchmark
+    // @Benchmark
     public void jdbcInsert(JdbcState state) throws SQLException {
         state.executeQuery();
     }
@@ -122,7 +129,7 @@ public class InsertBenchmark extends AbstractMultiNodeBenchmark {
     /**
      * Benchmark for JDBC script insert.
      */
-    @Benchmark
+    // @Benchmark
     public void jdbcInsertScript(JdbcState state) throws SQLException {
         state.executeScript();
     }
@@ -130,7 +137,7 @@ public class InsertBenchmark extends AbstractMultiNodeBenchmark {
     /**
      * Benchmark for SQL insert via thin client.
      */
-    @Benchmark
+    // @Benchmark
     public void sqlThinInsert(SqlThinState state) {
         state.executeQuery();
     }
@@ -138,8 +145,44 @@ public class InsertBenchmark extends AbstractMultiNodeBenchmark {
     /**
      * Benchmark for KV insert via thin client.
      */
-    @Benchmark
+    // @Benchmark
     public void kvThinInsert(KvThinState state) {
+        state.executeQuery();
+    }
+
+    /**
+     * Benchmark for KV insert via thin client.
+     */
+    @Benchmark
+    @Threads(2)
+    public void kvThinStreamInsert2(KvStreamThinState state) {
+        state.executeQuery();
+    }
+
+    /**
+     * Benchmark for KV insert via thin client.
+     */
+    @Benchmark
+    @Threads(8)
+    public void kvThinStreamInsert8(KvStreamThinState state) {
+        state.executeQuery();
+    }
+
+    /**
+     * Benchmark for KV insert via thin client.
+     */
+    @Benchmark
+    @Threads(16)
+    public void kvThinStreamInsert16(KvStreamThinState state) {
+        state.executeQuery();
+    }
+
+    /**
+     * Benchmark for KV insert via thin client.
+     */
+    @Benchmark
+    @Threads(32)
+    public void kvThinStreamInsert32(KvStreamThinState state) {
         state.executeQuery();
     }
 
@@ -372,6 +415,46 @@ public class InsertBenchmark extends AbstractMultiNodeBenchmark {
 
         void executeQuery() {
             kvView.put(null, Tuple.create().set("ycsb_key", id++), tuple);
+        }
+    }
+
+    /**
+     * Benchmark state for {@link #kvThinInsert(KvThinState)}.
+     *
+     * <p>Holds {@link Tuple}, {@link IgniteClient}, and {@link KeyValueView} for the table.
+     */
+    @State(Scope.Benchmark)
+    public static class KvStreamThinState {
+        private final Tuple tuple = Tuple.create();
+
+        private IgniteClient client;
+        private SimplePublisher<Entry<Tuple, Tuple>> publisher;
+
+        private AtomicInteger id = new AtomicInteger();
+
+        /**
+         * Initializes the tuple.
+         */
+        @Setup
+        public void setUp() {
+            for (int i = 1; i < 11; i++) {
+                tuple.set("field" + i, FIELD_VAL);
+            }
+
+            client = IgniteClient.builder().addresses("127.0.0.1:10800").build();
+
+            publisher = new SimplePublisher<>();
+
+            client.tables().table(TABLE_NAME).keyValueView().streamData(publisher, null);
+        }
+
+        @TearDown
+        public void tearDown() throws Exception {
+            closeAll(publisher, client);
+        }
+
+        void executeQuery() {
+            publisher.submit(Map.entry(Tuple.create().set("ycsb_key", id.getAndIncrement()), tuple));
         }
     }
 
