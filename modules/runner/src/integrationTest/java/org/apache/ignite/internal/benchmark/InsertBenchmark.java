@@ -27,6 +27,7 @@ import java.sql.PreparedStatement;
 import java.sql.SQLException;
 import java.util.Map;
 import java.util.Map.Entry;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.IntStream;
@@ -432,6 +433,8 @@ public class InsertBenchmark extends AbstractMultiNodeBenchmark {
 
         private AtomicInteger id = new AtomicInteger();
 
+        private CompletableFuture<Void> loaded;
+
         /**
          * Initializes the tuple.
          */
@@ -445,12 +448,16 @@ public class InsertBenchmark extends AbstractMultiNodeBenchmark {
 
             publisher = new SimplePublisher<>();
 
-            client.tables().table(TABLE_NAME).keyValueView().streamData(publisher, null);
+            loaded = client.tables().table(TABLE_NAME).keyValueView().streamData(publisher, null);
         }
 
         @TearDown
         public void tearDown() throws Exception {
-            closeAll(publisher, client);
+            publisher.close();
+
+            loaded.get();
+
+            closeAll(client);
         }
 
         void executeQuery() {
