@@ -46,6 +46,8 @@ import java.util.concurrent.Executor;
 import java.util.concurrent.TimeUnit;
 import org.apache.ignite.internal.event.AbstractEventProducer;
 import org.apache.ignite.internal.lang.IgniteBiTuple;
+import org.apache.ignite.internal.logger.IgniteLogger;
+import org.apache.ignite.internal.logger.Loggers;
 import org.apache.ignite.internal.tostring.IgniteToStringExclude;
 import org.apache.ignite.internal.tostring.S;
 import org.apache.ignite.internal.tx.DeadlockPreventionPolicy;
@@ -83,6 +85,8 @@ public class HeapLockManager extends AbstractEventProducer<LockEvent, LockEventP
      * Striped lock concurrency.
      */
     private static final int CONCURRENCY = Math.max(1, Runtime.getRuntime().availableProcessors() / 2);
+
+    private static IgniteLogger LOG = Loggers.forClass(HeapLockManager.class);
 
     /** Lock map size. */
     private final int lockMapSize;
@@ -179,6 +183,10 @@ public class HeapLockManager extends AbstractEventProducer<LockEvent, LockEventP
 
         while (true) {
             LockState state = lockState(lockKey);
+
+            if (state.key != lockKey) {
+                LOG.warn("Lock table ran out of slots, so the transaction can conflict, although their keys are different [tx={}].", txId);
+            }
 
             IgniteBiTuple<CompletableFuture<Void>, LockMode> futureTuple = state.tryAcquire(txId, lockMode);
 
