@@ -184,7 +184,7 @@ public class HeapLockManager extends AbstractEventProducer<LockEvent, LockEventP
         while (true) {
             LockState state = lockState(lockKey);
 
-            if (state.key != lockKey) {
+            if (!lockKey.equals(state.key)) {
                 LOG.warn("Lock table ran out of slots, so the transaction can conflict, although their keys are different [tx={}].", txId);
             }
 
