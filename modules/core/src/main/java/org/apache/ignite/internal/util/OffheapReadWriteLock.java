@@ -57,7 +57,7 @@ public class OffheapReadWriteLock {
      *
      * @see #IGNITE_OFFHEAP_RWLOCK_SPIN_COUNT
      */
-    private static final int DFLT_OFFHEAP_RWLOCK_SPIN_COUNT = 512;
+    private static final int DFLT_OFFHEAP_RWLOCK_SPIN_COUNT = 256;
 
     /** A number of spin-lock iterations to take before falling back to the blocking approach. */
     private static final String IGNITE_OFFHEAP_RWLOCK_SPIN_COUNT = "IGNITE_OFFHEAP_RWLOCK_SPIN_COUNT";
@@ -90,7 +90,7 @@ public class OffheapReadWriteLock {
      * @param lock Lock address.
      */
     public boolean readLock(long lock, int tag) {
-        outer : while (true) {
+        while (true) {
             for (int i = 0; i < SPIN_CNT; i++) {
                 long state = UNSAFE.getLongVolatile(null, lock);
 
@@ -98,12 +98,12 @@ public class OffheapReadWriteLock {
 
                 if ((state & 0xFFFF000000000000L) != 0L) {
                     // Write lock counter is not 0. Write lock is or will soon be acquired.
-                    Thread.yield();
-
-                    continue outer;
+                    continue;
                 }
 
                 if (!UNSAFE.weakCompareAndSetLong(null, lock, state, state + 1)) {
+                    i--;
+
                     continue;
                 }
 
@@ -174,6 +174,8 @@ public class OffheapReadWriteLock {
                 }
 
                 if (!UNSAFE.weakCompareAndSetLong(null, lock, state, state + delta)) {
+                    i--;
+
                     continue;
                 }
 
@@ -262,7 +264,7 @@ public class OffheapReadWriteLock {
      *      state must be re-validated.
      */
     // TODO This is stupid, we only need "tryUpgradeToWriteLock".
-    //  Current method makes no sense, it's unused, and it's broken in theoriginal implementation.
+    //  Current method makes no sense, it's unused, and it's broken in the original implementation.
     public @Nullable Boolean upgradeToWriteLock(long lock, int tag) {
         for (int i = 0; i < SPIN_CNT; i++) {
             long state = UNSAFE.getLongVolatile(null, lock);
