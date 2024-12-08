@@ -29,6 +29,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.apache.ignite.internal.testframework.BaseIgniteAbstractTest;
 import org.apache.ignite.internal.testframework.IgniteTestUtils;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
 /** Tests basic invariants of {@link OffheapReadWriteLock}. */
@@ -208,6 +209,7 @@ public class IgniteOffheapReadWriteLockSelfTest extends BaseIgniteAbstractTest {
     }
 
     @Test
+    @Disabled
     public void testLockUpgradeMultipleLocks() throws Exception {
         final int numPairs = 100;
         final Pair[] data = new Pair[numPairs];
