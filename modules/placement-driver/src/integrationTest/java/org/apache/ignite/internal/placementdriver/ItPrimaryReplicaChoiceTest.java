@@ -74,7 +74,6 @@ import org.apache.ignite.tx.TransactionOptions;
 import org.jetbrains.annotations.Nullable;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.TestInfo;
 
 /**
  * TODO: IGNITE-20485 Configure the lease interval as less as possible to decrease the duration of tests.
@@ -95,17 +94,14 @@ public class ItPrimaryReplicaChoiceTest extends ClusterPerTestIntegrationTest {
     private static final String SORTED_IDX = "SORTED_IDX";
 
     @BeforeEach
-    @Override
-    public void setup(TestInfo testInfo) throws Exception {
-        super.setup(testInfo);
-
+    public void setup() {
         String zoneSql = IgniteStringFormatter.format(
                 "CREATE ZONE IF NOT EXISTS {} WITH REPLICAS={}, PARTITIONS={}, STORAGE_PROFILES='{}'",
                 ZONE_NAME, 3, 1, TestProfileConfigurationSchema.TEST_PROFILE_NAME
         );
 
         String sql = IgniteStringFormatter.format(
-                "CREATE TABLE {} (key INT PRIMARY KEY, val VARCHAR(20)) WITH PRIMARY_ZONE='{}'",
+                "CREATE TABLE {} (key INT PRIMARY KEY, val VARCHAR(20)) ZONE {}",
                 TABLE_NAME, ZONE_NAME
         );
 

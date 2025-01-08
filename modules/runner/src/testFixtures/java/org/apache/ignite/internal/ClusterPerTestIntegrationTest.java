@@ -34,6 +34,7 @@ import org.apache.ignite.internal.logger.Loggers;
 import org.apache.ignite.internal.testframework.BaseIgniteAbstractTest;
 import org.apache.ignite.internal.testframework.WorkDirectory;
 import org.apache.ignite.internal.testframework.WorkDirectoryExtension;
+import org.jetbrains.annotations.Nullable;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.TestInfo;
@@ -62,7 +63,8 @@ public abstract class ClusterPerTestIntegrationTest extends BaseIgniteAbstractTe
             + "  },\n"
             + "  clientConnector.port: {},\n"
             + "  rest.port: {},\n"
-            + "  compute.threadPoolSize: 1\n"
+            + "  compute.threadPoolSize: 1,\n"
+            + "  failureHandler.dumpThreadsOnFailure: false\n"
             + "}";
 
     /** Template for node bootstrap config with Scalecube settings for fast failure detection. */
@@ -83,7 +85,8 @@ public abstract class ClusterPerTestIntegrationTest extends BaseIgniteAbstractTe
             + "    }\n"
             + "  },\n"
             + "  clientConnector: { port:{} }, \n"
-            + "  rest.port: {}\n"
+            + "  rest.port: {},\n"
+            + "  failureHandler.dumpThreadsOnFailure: false\n"
             + "}";
 
     /** Template for node bootstrap config with Scalecube settings for a disabled failure detection. */
@@ -98,7 +101,8 @@ public abstract class ClusterPerTestIntegrationTest extends BaseIgniteAbstractTe
             + "    }\n"
             + "  },\n"
             + "  clientConnector: { port:{} },\n"
-            + "  rest.port: {}\n"
+            + "  rest.port: {},\n"
+            + "  failureHandler.dumpThreadsOnFailure: false\n"
             + "}";
 
     protected Cluster cluster;
@@ -114,8 +118,13 @@ public abstract class ClusterPerTestIntegrationTest extends BaseIgniteAbstractTe
      * @throws Exception If failed.
      */
     @BeforeEach
-    public void setup(TestInfo testInfo) throws Exception {
-        cluster = new Cluster(testInfo, workDir, getNodeBootstrapConfigTemplate());
+    public void startCluster(TestInfo testInfo) throws Exception {
+        ClusterConfiguration.Builder clusterConfiguration = ClusterConfiguration.builder(testInfo, workDir)
+                .defaultNodeBootstrapConfigTemplate(getNodeBootstrapConfigTemplate());
+
+        customizeConfiguration(clusterConfiguration);
+
+        cluster = new Cluster(clusterConfiguration.build());
 
         if (initialNodes() > 0) {
             cluster.startAndInit(initialNodes(), cmgMetastoreNodes(), this::customizeInitParameters);
@@ -124,8 +133,14 @@ public abstract class ClusterPerTestIntegrationTest extends BaseIgniteAbstractTe
 
     @AfterEach
     @Timeout(60)
-    public void tearDown() {
+    public void stopCluster() {
         cluster.shutdown();
+    }
+
+    /**
+     * Inheritors should override this method to change configuration of the test cluster before its creation.
+     */
+    protected void customizeConfiguration(ClusterConfiguration.Builder clusterConfigurationBuilder) {
     }
 
     /**
@@ -220,6 +235,14 @@ public abstract class ClusterPerTestIntegrationTest extends BaseIgniteAbstractTe
         return cluster.node(index);
     }
 
+    public @Nullable Ignite nullableNode(int index) {
+        return cluster.nullableNode(index);
+    }
+
+    protected int nodeIndex(String name) {
+        return cluster.nodeIndex(name);
+    }
+
     protected final IgniteImpl igniteImpl(int index) {
         return unwrapIgniteImpl(node(index));
     }
@@ -231,6 +254,6 @@ public abstract class ClusterPerTestIntegrationTest extends BaseIgniteAbstractTe
     protected final List<List<Object>> executeSql(int nodeIndex, String sql, Object... args) {
         Ignite ignite = node(nodeIndex);
 
-        return ClusterPerClassIntegrationTest.sql(ignite, null, null, sql, args);
+        return ClusterPerClassIntegrationTest.sql(ignite, null, null, null, sql, args);
     }
 }

@@ -31,6 +31,7 @@ import static org.apache.ignite.internal.distributionzones.DistributionZonesTest
 import static org.apache.ignite.internal.distributionzones.DistributionZonesTestUtil.createZone;
 import static org.apache.ignite.internal.distributionzones.DistributionZonesTestUtil.getDefaultZone;
 import static org.apache.ignite.internal.distributionzones.DistributionZonesUtil.dataNodes;
+import static org.apache.ignite.internal.distributionzones.DistributionZonesUtil.deserializeDataNodesMap;
 import static org.apache.ignite.internal.distributionzones.DistributionZonesUtil.toDataNodesMap;
 import static org.apache.ignite.internal.distributionzones.DistributionZonesUtil.zoneDataNodesKey;
 import static org.apache.ignite.internal.distributionzones.DistributionZonesUtil.zoneScaleDownChangeTriggerKeyPrefix;
@@ -38,14 +39,13 @@ import static org.apache.ignite.internal.distributionzones.DistributionZonesUtil
 import static org.apache.ignite.internal.distributionzones.DistributionZonesUtil.zonesLastHandledTopology;
 import static org.apache.ignite.internal.distributionzones.DistributionZonesUtil.zonesRecoverableStateRevision;
 import static org.apache.ignite.internal.distributionzones.rebalance.RebalanceUtil.REBALANCE_SCHEDULER_POOL_SIZE;
+import static org.apache.ignite.internal.network.utils.ClusterServiceTestUtils.defaultChannelTypeRegistry;
 import static org.apache.ignite.internal.network.utils.ClusterServiceTestUtils.defaultSerializationRegistry;
 import static org.apache.ignite.internal.testframework.IgniteTestUtils.testNodeName;
 import static org.apache.ignite.internal.testframework.IgniteTestUtils.waitForCondition;
 import static org.apache.ignite.internal.testframework.matchers.CompletableFutureMatcher.willBe;
 import static org.apache.ignite.internal.testframework.matchers.CompletableFutureMatcher.willCompleteSuccessfully;
-import static org.apache.ignite.internal.util.ByteUtils.fromBytes;
 import static org.apache.ignite.internal.util.ByteUtils.toByteArray;
-import static org.apache.ignite.internal.util.ByteUtils.toBytes;
 import static org.apache.ignite.internal.util.CompletableFutures.nullCompletedFuture;
 import static org.apache.ignite.internal.util.IgniteUtils.startsWith;
 import static org.hamcrest.MatcherAssert.assertThat;
@@ -71,13 +71,10 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
-import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentSkipListMap;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledThreadPoolExecutor;
-import java.util.function.Consumer;
-import java.util.function.LongFunction;
 import java.util.stream.Stream;
 import org.apache.ignite.configuration.validation.Validator;
 import org.apache.ignite.internal.BaseIgniteRestartTest;
@@ -96,6 +93,7 @@ import org.apache.ignite.internal.configuration.ConfigurationModules;
 import org.apache.ignite.internal.configuration.ConfigurationRegistry;
 import org.apache.ignite.internal.configuration.ConfigurationTreeGenerator;
 import org.apache.ignite.internal.configuration.NodeConfigWriteException;
+import org.apache.ignite.internal.configuration.SystemDistributedExtensionConfiguration;
 import org.apache.ignite.internal.configuration.storage.DistributedConfigurationStorage;
 import org.apache.ignite.internal.configuration.storage.LocalFileConfigurationStorage;
 import org.apache.ignite.internal.configuration.testframework.ConfigurationExtension;
@@ -113,8 +111,10 @@ import org.apache.ignite.internal.manager.ComponentContext;
 import org.apache.ignite.internal.manager.IgniteComponent;
 import org.apache.ignite.internal.metastorage.Entry;
 import org.apache.ignite.internal.metastorage.MetaStorageManager;
+import org.apache.ignite.internal.metastorage.impl.MetaStorageRevisionListenerRegistry;
 import org.apache.ignite.internal.metastorage.impl.StandaloneMetaStorageManager;
 import org.apache.ignite.internal.metastorage.server.If;
+import org.apache.ignite.internal.metastorage.server.ReadOperationForCompactionTracker;
 import org.apache.ignite.internal.metastorage.server.persistence.RocksDbKeyValueStorage;
 import org.apache.ignite.internal.metastorage.server.raft.MetaStorageWriteHandler;
 import org.apache.ignite.internal.network.ClusterNodeImpl;
@@ -124,9 +124,10 @@ import org.apache.ignite.internal.network.configuration.NetworkExtensionConfigur
 import org.apache.ignite.internal.network.recovery.VaultStaleIds;
 import org.apache.ignite.internal.network.scalecube.TestScaleCubeClusterServiceFactory;
 import org.apache.ignite.internal.security.authentication.validator.AuthenticationProvidersValidatorImpl;
+import org.apache.ignite.internal.testframework.ExecutorServiceExtension;
+import org.apache.ignite.internal.testframework.InjectExecutorService;
 import org.apache.ignite.internal.testframework.TestIgnitionManager;
 import org.apache.ignite.internal.thread.NamedThreadFactory;
-import org.apache.ignite.internal.util.ByteUtils;
 import org.apache.ignite.internal.vault.VaultManager;
 import org.apache.ignite.internal.worker.fixtures.NoOpCriticalWorkerRegistry;
 import org.apache.ignite.network.NetworkAddress;
@@ -141,6 +142,7 @@ import org.junit.jupiter.params.provider.ValueSource;
  * Tests for checking {@link DistributionZoneManager} behavior after node's restart.
  */
 @ExtendWith(ConfigurationExtension.class)
+@ExtendWith(ExecutorServiceExtension.class)
 public class ItIgniteDistributionZoneManagerNodeRestartTest extends BaseIgniteRestartTest {
     private static final LogicalNode A = new LogicalNode(
             new ClusterNodeImpl(randomUUID(), "A", new NetworkAddress("localhost", 123)),
@@ -172,6 +174,9 @@ public class ItIgniteDistributionZoneManagerNodeRestartTest extends BaseIgniteRe
     private volatile boolean startScaleDownBlocking;
 
     private volatile boolean startGlobalStateUpdateBlocking;
+
+    @InjectExecutorService
+    private ScheduledExecutorService commonScheduledExecutorService;
 
     /**
      * Start some of Ignite components that are able to serve as Ignite node for test purposes.
@@ -228,7 +233,8 @@ public class ItIgniteDistributionZoneManagerNodeRestartTest extends BaseIgniteRe
                 new VaultStaleIds(vault),
                 clusterIdService,
                 new NoOpCriticalWorkerRegistry(),
-                mock(FailureManager.class)
+                mock(FailureManager.class),
+                defaultChannelTypeRegistry()
         );
 
         var logicalTopology = new LogicalTopologyImpl(clusterStateStorage);
@@ -240,14 +246,23 @@ public class ItIgniteDistributionZoneManagerNodeRestartTest extends BaseIgniteRe
         when(cmgManager.startAsync(any())).thenReturn(nullCompletedFuture());
         when(cmgManager.stopAsync(any())).thenReturn(nullCompletedFuture());
 
-        metastore = spy(StandaloneMetaStorageManager.create(
-                new RocksDbKeyValueStorage(name, workDir.resolve("metastorage"), new NoOpFailureManager())
-        ));
+        var readOperationForCompactionTracker = new ReadOperationForCompactionTracker();
+
+        var storage = new RocksDbKeyValueStorage(
+                name,
+                workDir.resolve("metastorage"),
+                new NoOpFailureManager(),
+                readOperationForCompactionTracker,
+                commonScheduledExecutorService
+        );
+
+        var clock = new HybridClockImpl();
+
+        metastore = spy(StandaloneMetaStorageManager.create(storage, clock, readOperationForCompactionTracker));
 
         blockMetaStorageUpdates(metastore);
 
-        Consumer<LongFunction<CompletableFuture<?>>> revisionUpdater = (LongFunction<CompletableFuture<?>> function) ->
-                metastore.registerRevisionUpdateListener(function::apply);
+        var revisionUpdater = new MetaStorageRevisionListenerRegistry(metastore);
 
         var cfgStorage = new DistributedConfigurationStorage("test", metastore);
 
@@ -271,9 +286,7 @@ public class ItIgniteDistributionZoneManagerNodeRestartTest extends BaseIgniteRe
 
         LogicalTopologyServiceImpl logicalTopologyService = new LogicalTopologyServiceImpl(logicalTopology, cmgManager);
 
-        var clock = new HybridClockImpl();
-
-        var clockWaiter = new ClockWaiter(name, clock);
+        var clockWaiter = new ClockWaiter(name, clock, commonScheduledExecutorService);
 
         var catalogManager = new CatalogManagerImpl(new UpdateLogImpl(metastore), new TestClockService(clock, clockWaiter));
 
@@ -286,7 +299,8 @@ public class ItIgniteDistributionZoneManagerNodeRestartTest extends BaseIgniteRe
                 metastore,
                 logicalTopologyService,
                 catalogManager,
-                rebalanceScheduler
+                rebalanceScheduler,
+                clusterCfgMgr.configurationRegistry().getConfiguration(SystemDistributedExtensionConfiguration.KEY).system()
         );
 
         // Preparing the result map.
@@ -472,7 +486,7 @@ public class ItIgniteDistributionZoneManagerNodeRestartTest extends BaseIgniteRe
 
         assertTrue(waitForCondition(() -> logicalTopology.equals(finalDistributionZoneManager.logicalTopology()), TIMEOUT_MILLIS));
 
-        assertValueInStorage(metastore, zonesLastHandledTopology(), ByteUtils::fromBytes, logicalTopology, TIMEOUT_MILLIS);
+        assertValueInStorage(metastore, zonesLastHandledTopology(), this::deserializeLogicalTopologySet, logicalTopology, TIMEOUT_MILLIS);
 
         int zoneId = getDefaultZoneId(node);
 
@@ -498,7 +512,7 @@ public class ItIgniteDistributionZoneManagerNodeRestartTest extends BaseIgniteRe
 
         assertTrue(waitForCondition(() -> newLogicalTopology.equals(finalDistributionZoneManager.logicalTopology()), TIMEOUT_MILLIS));
 
-        assertValueInStorage(metastore, zonesLastHandledTopology(), ByteUtils::fromBytes, logicalTopology, TIMEOUT_MILLIS);
+        assertValueInStorage(metastore, zonesLastHandledTopology(), this::deserializeLogicalTopologySet, logicalTopology, TIMEOUT_MILLIS);
 
         node.stop();
 
@@ -512,7 +526,13 @@ public class ItIgniteDistributionZoneManagerNodeRestartTest extends BaseIgniteRe
 
         assertEquals(newLogicalTopology, distributionZoneManager.logicalTopology());
 
-        assertValueInStorage(metastore, zonesLastHandledTopology(), ByteUtils::fromBytes, newLogicalTopology, TIMEOUT_MILLIS);
+        assertValueInStorage(
+                metastore,
+                zonesLastHandledTopology(),
+                this::deserializeLogicalTopologySet,
+                newLogicalTopology,
+                TIMEOUT_MILLIS
+        );
 
         assertDataNodesFromManager(
                 distributionZoneManager,
@@ -564,7 +584,13 @@ public class ItIgniteDistributionZoneManagerNodeRestartTest extends BaseIgniteRe
 
         assertEquals(newLogicalTopology, distributionZoneManager.logicalTopology());
 
-        assertValueInStorage(metastore, zonesLastHandledTopology(), ByteUtils::fromBytes, newLogicalTopology, TIMEOUT_MILLIS);
+        assertValueInStorage(
+                metastore,
+                zonesLastHandledTopology(),
+                this::deserializeLogicalTopologySet,
+                newLogicalTopology,
+                TIMEOUT_MILLIS
+        );
 
         int zoneId = getDefaultZoneId(node);
 
@@ -601,7 +627,7 @@ public class ItIgniteDistributionZoneManagerNodeRestartTest extends BaseIgniteRe
         assertValueInStorage(
                 metastore,
                 zoneDataNodesKey(zoneId),
-                (v) -> dataNodes(fromBytes(v)).stream().map(Node::nodeName).collect(toSet()),
+                (v) -> dataNodes(deserializeDataNodesMap(v)).stream().map(Node::nodeName).collect(toSet()),
                 Set.of(A.name(), B.name(), C.name()),
                 TIMEOUT_MILLIS
         );
@@ -617,7 +643,7 @@ public class ItIgniteDistributionZoneManagerNodeRestartTest extends BaseIgniteRe
             ByteArray dataNodeKeyForZone = new ByteArray(dataNodeKey[0]);
 
             // Here we remove data nodes value for newly created zone, so it is tombstone
-            metastore.put(dataNodeKeyForZone, toBytes(toDataNodesMap(emptySet()))).get();
+            metastore.put(dataNodeKeyForZone, DataNodesMapSerializer.serialize(toDataNodesMap(emptySet()))).get();
 
             metastore.remove(dataNodeKeyForZone).get();
 
@@ -640,6 +666,10 @@ public class ItIgniteDistributionZoneManagerNodeRestartTest extends BaseIgniteRe
 
         // Assert that after creation of a zone, data nodes are still tombstone, but not the logical topology, as for default zone.
         assertThat(metastore.get(new ByteArray(dataNodeKey[0])).thenApply(Entry::tombstone), willBe(true));
+    }
+
+    private Set<NodeWithAttributes> deserializeLogicalTopologySet(byte[] bytes) {
+        return DistributionZonesUtil.deserializeLogicalTopologySet(bytes);
     }
 
     @ParameterizedTest(name = "defaultZone={0}")
@@ -743,7 +773,7 @@ public class ItIgniteDistributionZoneManagerNodeRestartTest extends BaseIgniteRe
         assertValueInStorage(
                 metastore,
                 zoneDataNodesKey(zoneId),
-                (v) -> dataNodes(fromBytes(v)).stream().map(Node::nodeName).collect(toSet()),
+                (v) -> dataNodes(deserializeDataNodesMap(v)).stream().map(Node::nodeName).collect(toSet()),
                 Set.of(A.name(), B.name(), C.name()),
                 TIMEOUT_MILLIS
         );
@@ -804,7 +834,7 @@ public class ItIgniteDistributionZoneManagerNodeRestartTest extends BaseIgniteRe
         assertValueInStorage(
                 metastore,
                 zoneDataNodesKey(zoneId),
-                (v) -> dataNodes(fromBytes(v)).stream().map(Node::nodeName).collect(toSet()),
+                (v) -> dataNodes(deserializeDataNodesMap(v)).stream().map(Node::nodeName).collect(toSet()),
                 Set.of(A.name(), C.name()),
                 TIMEOUT_MILLIS
         );

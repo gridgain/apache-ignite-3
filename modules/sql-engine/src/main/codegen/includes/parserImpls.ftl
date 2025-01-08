@@ -24,40 +24,6 @@ boolean IfNotExistsOpt() :
     { return false; }
 }
 
-SqlNodeList CreateTableOptionList() :
-{
-    List<SqlNode> list = new ArrayList<SqlNode>();
-    final Span s = Span.of();
-}
-{
-    CreateTableOption(list)
-    (
-        <COMMA> { s.add(this); } CreateTableOption(list)
-    )*
-    {
-        return new SqlNodeList(list, s.end(this));
-    }
-}
-
-void CreateTableOption(List<SqlNode> list) :
-{
-    final Span s;
-    final SqlIdentifier key;
-    final SqlNode val;
-}
-{
-    key = SimpleIdentifier() { s = span(); }
-    <EQ>
-    (
-        val = Literal()
-    |
-        val = SimpleIdentifier()
-    )
-    {
-        list.add(new IgniteSqlCreateTableOption(key, val, s.end(this)));
-    }
-}
-
 SqlDataTypeSpec DataTypeEx(Span s, boolean allowCharType) :
 {
     final SqlDataTypeSpec dt;
@@ -206,7 +172,8 @@ SqlCreate SqlCreateTable(Span s, boolean replace) :
     final boolean ifNotExists;
     final SqlIdentifier id;
     final SqlNodeList columnList;
-    SqlNodeList optionList = null;
+    SqlIdentifier zoneName = null;
+    SqlNode storageProfile = null;
     SqlNodeList colocationColumns = null;
 }
 {
@@ -219,10 +186,13 @@ SqlCreate SqlCreateTable(Span s, boolean replace) :
             colocationColumns = ParenthesizedSimpleIdentifierList()
     ]
     [
-        <WITH> { s.add(this); } optionList = CreateTableOptionList()
+        <ZONE> {s.add(this);} zoneName = SimpleIdentifier()
+    ]
+    [
+        <STORAGE> <PROFILE> {s.add(this);} storageProfile = StringLiteral()
     ]
     {
-        return new IgniteSqlCreateTable(s.end(this), ifNotExists, id, columnList, colocationColumns, optionList);
+        return new IgniteSqlCreateTable(s.end(this), ifNotExists, id, columnList, colocationColumns, zoneName, storageProfile);
     }
 }
 
@@ -316,6 +286,20 @@ SqlCreate SqlCreateIndex(Span s, boolean replace) :
     }
 }
 
+SqlCreate SqlCreateSchema(Span s, boolean replace) :
+{
+        final boolean ifNotExists;
+        final SqlIdentifier id;
+}
+{
+    <SCHEMA> { s.add(this); }
+        ifNotExists = IfNotExistsOpt()
+        id = CompoundIdentifier()
+    {
+        return new IgniteSqlCreateSchema(s.end(this), ifNotExists, id);
+    }
+}
+
 boolean IfExistsOpt() :
 {
 }
@@ -344,6 +328,32 @@ SqlDrop SqlDropIndex(Span s, boolean replace) :
 {
     <INDEX> ifExists = IfExistsOpt() idxId = CompoundIdentifier() {
         return new IgniteSqlDropIndex(s.end(this), ifExists, idxId);
+    }
+}
+
+SqlDrop SqlDropSchema(Span s, boolean replace) :
+{
+    final SqlIdentifier schemaName;
+    final boolean ifExists;
+    IgniteSqlDropSchemaBehavior dropBehavior = IgniteSqlDropSchemaBehavior.IMPLICIT_RESTRICT;
+}
+{
+    <SCHEMA> { s.add(this); }
+        ifExists = IfExistsOpt()
+        schemaName = CompoundIdentifier()
+    [
+        (
+          <CASCADE> {
+            dropBehavior = IgniteSqlDropSchemaBehavior.CASCADE;
+          }
+          |
+          <RESTRICT> {
+            dropBehavior = IgniteSqlDropSchemaBehavior.RESTRICT;
+          }
+        )
+    ]
+    {
+        return new IgniteSqlDropSchema(s.end(this), ifExists, schemaName, dropBehavior);
     }
 }
 
@@ -697,5 +707,54 @@ SqlNode SqlCommitTransaction() :
 {
     <COMMIT> { s = span(); } {
        return new IgniteSqlCommitTransaction(s.end(this));
+    }
+}
+
+SqlNode SqlKill() :
+{
+    final Span s;
+    final SqlNode objectId;
+    final IgniteSqlKillObjectType objectType;
+    final Boolean noWait;
+}
+{
+    <KILL> {
+        s = span();
+        objectType = SqlKillObjectType();
+        objectId = StringLiteral();
+        noWait = SqlKillNoWait();
+    }
+    {
+        return new IgniteSqlKill(s.end(this), objectType, (SqlLiteral) objectId, noWait);
+    }
+}
+
+IgniteSqlKillObjectType SqlKillObjectType():
+{
+    final IgniteSqlKillObjectType objectType;
+}
+{
+    (
+        <QUERY> { objectType = IgniteSqlKillObjectType.QUERY; }
+        |
+        <TRANSACTION> { objectType = IgniteSqlKillObjectType.TRANSACTION; }
+        |
+        <COMPUTE> { objectType = IgniteSqlKillObjectType.COMPUTE; }
+    )
+    {
+        return objectType;
+    }
+}
+
+Boolean SqlKillNoWait():
+{
+    Boolean noWait = null;
+}
+{
+    (
+        <NO> <WAIT> { noWait = true; }
+    )?
+    {
+        return noWait;
     }
 }

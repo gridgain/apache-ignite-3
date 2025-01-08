@@ -18,7 +18,10 @@
 package org.apache.ignite.table;
 
 import java.io.IOException;
+import java.io.ObjectInputStream;
+import java.io.ObjectOutputStream;
 import java.io.Serializable;
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -250,6 +253,18 @@ class TupleImpl implements Tuple, Serializable {
 
     /** {@inheritDoc} */
     @Override
+    public BigDecimal decimalValue(String columnName) {
+        return value(columnName);
+    }
+
+    /** {@inheritDoc} */
+    @Override
+    public BigDecimal decimalValue(int columnIndex) {
+        return value(columnIndex);
+    }
+
+    /** {@inheritDoc} */
+    @Override
     public String stringValue(String columnName) {
         return value(columnName);
     }
@@ -347,7 +362,7 @@ class TupleImpl implements Tuple, Serializable {
      * @throws IOException            If failed.
      * @throws ClassNotFoundException If failed.
      */
-    private void readObject(java.io.ObjectInputStream in) throws IOException, ClassNotFoundException {
+    private void readObject(ObjectInputStream in) throws IOException, ClassNotFoundException {
         in.defaultReadObject();
 
         // Recover column name->index mapping.
@@ -356,6 +371,18 @@ class TupleImpl implements Tuple, Serializable {
         for (int i = 0; i < colNames.size(); i++) {
             colMapping.put(colNames.get(i), i);
         }
+    }
+
+    /**
+     * Serializes an object. Required to be implemented in pair with the {@link #readObject(ObjectInputStream)} so that the
+     * {@code StructuredObjectMarshaller#fillStructuredObjectLayerFrom} will actually call the {@link #readObject(ObjectInputStream)}.
+     * TODO https://issues.apache.org/jira/browse/IGNITE-23868
+     *
+     * @param out Output object stream.
+     * @throws IOException If failed.
+     */
+    private void writeObject(ObjectOutputStream out) throws IOException {
+        out.defaultWriteObject();
     }
 
     <T> @Nullable T valueOrDefaultSkipNormalization(String columnName, @Nullable T def) {

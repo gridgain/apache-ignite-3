@@ -50,11 +50,14 @@ import org.apache.ignite.internal.sql.engine.schema.IgniteSchema;
 import org.apache.ignite.internal.sql.engine.schema.IgniteTable;
 import org.apache.ignite.internal.sql.engine.trait.IgniteDistributions;
 import org.apache.ignite.internal.sql.engine.type.IgniteTypeFactory;
+import org.apache.ignite.internal.sql.engine.util.Commons;
 import org.apache.ignite.internal.sql.engine.util.NativeTypeValues;
 import org.apache.ignite.internal.sql.engine.util.StatementChecker;
 import org.apache.ignite.internal.testframework.WithSystemProperty;
 import org.apache.ignite.internal.type.NativeTypes;
 import org.jetbrains.annotations.Nullable;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DynamicTest;
 import org.junit.jupiter.api.TestFactory;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -153,6 +156,12 @@ public class ImplicitCastsTest extends AbstractPlannerTest {
         return result.stream();
     }
 
+    @BeforeAll
+    @AfterAll
+    public static void resetFlag() {
+        Commons.resetFastQueryOptimizationFlag();
+    }
+
     /** MergeSort join - casts are pushed down to children. **/
     @ParameterizedTest
     @MethodSource("joinColumnTypes")
@@ -193,7 +202,7 @@ public class ImplicitCastsTest extends AbstractPlannerTest {
 
         List<Object> params = NativeTypeValues.values(rhs, 1);
 
-        String query = format("SELECT * FROM A1 WHERE COL1 > ?", rhs);
+        String query = "SELECT * FROM A1 WHERE COL1 > ?";
         assertPlan(query, igniteSchema, isInstanceOf(IgniteTableScan.class)
                 .and(node -> {
                     String actualPredicate = node.condition().toString();
@@ -303,7 +312,7 @@ public class ImplicitCastsTest extends AbstractPlannerTest {
                 checkStatement()
                         .table("t", "int_col", NativeTypes.INT32, "str_col", NativeTypes.stringOf(4), "bigint_col", NativeTypes.INT64)
                         .sql("SELECT int_col IN ('c'::REAL, 1) FROM t")
-                        .project("OR(=(CAST($t0):REAL, CAST(_UTF-8'c'):REAL NOT NULL), =(CAST($t0):REAL, 1))"),
+                        .project("OR(=(CAST($t0):REAL, CAST(_UTF-8'c'):REAL NOT NULL), =(CAST($t0):REAL, 1.0E0))"),
 
                 checkStatement()
                         .table("t", "int_col", NativeTypes.INT32, "str_col", NativeTypes.stringOf(4), "bigint_col", NativeTypes.INT64)
@@ -392,18 +401,16 @@ public class ImplicitCastsTest extends AbstractPlannerTest {
                         .ok(),
 
                 // incompatible types.
-                // https://issues.apache.org/jira/browse/IGNITE-19503
-                /*
-                checkStatement(setup)
-                        .table("t1", "int_col", NativeTypes.INT32)
-                        .sql("UPDATE t1 SET str_col='1111'::UUID")
-                        .fail("!!!!"),
 
                 checkStatement(setup)
                         .table("t1", "int_col", NativeTypes.INT32)
-                        .sql("INSERT INTO t1 VALUES('1111'::UUID)")
-                        .fail("!!!!"),
-                 */
+                        .sql("UPDATE t1 SET str_col='1111'::UUID")
+                        .fails("Cannot assign to target field 'STR_COL' of type VARCHAR(65536) from source field 'EXPR$0' of type UUID"),
+
+                checkStatement(setup)
+                        .table("t3", "int_col", NativeTypes.INT32)
+                        .sql("INSERT INTO t3 VALUES('1111'::UUID)")
+                        .fails("Cannot assign to target field 'INT_COL' of type INTEGER from source field 'EXPR$0' of type UUID"),
 
                 checkStatement(setup)
                         .sql("SELECT uuid_col FROM t1 UNION SELECT ?", "str")

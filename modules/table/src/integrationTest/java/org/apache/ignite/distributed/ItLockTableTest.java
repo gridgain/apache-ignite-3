@@ -40,7 +40,6 @@ import org.apache.ignite.internal.schema.configuration.GcConfiguration;
 import org.apache.ignite.internal.schema.configuration.StorageUpdateConfiguration;
 import org.apache.ignite.internal.table.TableViewInternal;
 import org.apache.ignite.internal.testframework.IgniteAbstractTest;
-import org.apache.ignite.internal.tx.DeadlockPreventionPolicy;
 import org.apache.ignite.internal.tx.HybridTimestampTracker;
 import org.apache.ignite.internal.tx.configuration.TransactionConfiguration;
 import org.apache.ignite.internal.tx.impl.HeapLockManager;
@@ -93,7 +92,7 @@ public class ItLockTableTest extends IgniteAbstractTest {
     @InjectConfiguration
     protected static GcConfiguration gcConfig;
 
-    @InjectConfiguration
+    @InjectConfiguration("mock: { deadlockPreventionPolicy: { waitTimeout: -1, txIdComparator: NONE } }")
     protected static TransactionConfiguration txConfiguration;
 
     @InjectConfiguration
@@ -104,7 +103,7 @@ public class ItLockTableTest extends IgniteAbstractTest {
 
     private ItTxTestCluster txTestCluster;
 
-    private HybridTimestampTracker timestampTracker = new HybridTimestampTracker();
+    private HybridTimestampTracker timestampTracker = HybridTimestampTracker.atomicTracker(null);
 
     /**
      * The constructor.
@@ -146,8 +145,7 @@ public class ItLockTableTest extends IgniteAbstractTest {
                         clusterService,
                         replicaSvc,
                         new HeapLockManager(
-                                DeadlockPreventionPolicy.NO_OP,
-                                HeapLockManager.SLOTS,
+                                131072,
                                 CACHE_SIZE),
                         clockService,
                         generator,

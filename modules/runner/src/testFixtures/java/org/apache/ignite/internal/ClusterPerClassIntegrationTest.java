@@ -44,10 +44,12 @@ import org.apache.ignite.internal.catalog.CatalogManager;
 import org.apache.ignite.internal.catalog.descriptors.CatalogIndexDescriptor;
 import org.apache.ignite.internal.catalog.descriptors.CatalogZoneDescriptor;
 import org.apache.ignite.internal.hlc.HybridClock;
+import org.apache.ignite.internal.lang.IgniteBiTuple;
 import org.apache.ignite.internal.testframework.BaseIgniteAbstractTest;
 import org.apache.ignite.internal.testframework.TestIgnitionManager;
 import org.apache.ignite.internal.testframework.WorkDirectory;
 import org.apache.ignite.internal.testframework.WorkDirectoryExtension;
+import org.apache.ignite.network.ClusterNode;
 import org.apache.ignite.sql.IgniteSql;
 import org.apache.ignite.sql.ResultSet;
 import org.apache.ignite.sql.SqlRow;
@@ -60,6 +62,7 @@ import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.TestInfo;
 import org.junit.jupiter.api.TestInstance;
+import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.extension.ExtendWith;
 
 /**
@@ -84,8 +87,10 @@ public abstract class ClusterPerClassIntegrationTest extends BaseIgniteAbstractT
             + "        " + DEFAULT_ROCKSDB_PROFILE_NAME + ".engine: rocksdb"
             + "  },\n"
             + "  clientConnector.port: {},\n"
+            + "  clientConnector.sendServerExceptionStackTraceToClient: true,\n"
             + "  rest.port: {},\n"
-            + "  compute.threadPoolSize: 1\n"
+            + "  compute.threadPoolSize: 1,\n"
+            + "  failureHandler.dumpThreadsOnFailure: false\n"
             + "}";
 
     /** Cluster nodes. */
@@ -101,12 +106,23 @@ public abstract class ClusterPerClassIntegrationTest extends BaseIgniteAbstractT
      * @param testInfo Test information object.
      */
     @BeforeAll
-    protected void beforeAll(TestInfo testInfo) {
-        CLUSTER = new Cluster(testInfo, WORK_DIR, getNodeBootstrapConfigTemplate());
+    protected void startCluster(TestInfo testInfo) {
+        ClusterConfiguration.Builder clusterConfiguration = ClusterConfiguration.builder(testInfo, WORK_DIR)
+                .defaultNodeBootstrapConfigTemplate(getNodeBootstrapConfigTemplate());
+
+        customizeConfiguration(clusterConfiguration);
+
+        CLUSTER = new Cluster(clusterConfiguration.build());
 
         if (initialNodes() > 0 && needInitializeCluster()) {
             CLUSTER.startAndInit(initialNodes(), cmgMetastoreNodes(), this::configureInitParameters);
         }
+    }
+
+    /**
+     * Inheritors should override this method to change configuration of the test cluster before its creation.
+     */
+    protected void customizeConfiguration(ClusterConfiguration.Builder clusterConfigurationBuilder) {
     }
 
     /**
@@ -145,7 +161,8 @@ public abstract class ClusterPerClassIntegrationTest extends BaseIgniteAbstractT
      * After all.
      */
     @AfterAll
-    void afterAll() {
+    @Timeout(60)
+    void stopCluster() {
         CLUSTER.shutdown();
     }
 
@@ -190,7 +207,7 @@ public abstract class ClusterPerClassIntegrationTest extends BaseIgniteAbstractT
      */
     protected static Table createTableOnly(String tableName, String zoneName) {
         sql(format(
-                "CREATE TABLE IF NOT EXISTS {} (id INT PRIMARY KEY, name VARCHAR, salary DOUBLE) WITH PRIMARY_ZONE='{}'",
+                "CREATE TABLE IF NOT EXISTS {} (id INT PRIMARY KEY, name VARCHAR, salary DOUBLE) ZONE \"{}\"",
                 tableName, zoneName
         ));
 
@@ -350,6 +367,10 @@ public abstract class ClusterPerClassIntegrationTest extends BaseIgniteAbstractT
         }
     }
 
+    protected List<IgniteBiTuple<Integer, Ignite>> aliveNodesWithIndices() {
+        return CLUSTER.aliveNodesWithIndices();
+    }
+
     protected static List<List<Object>> sql(String sql, Object... args) {
         return sql(null, sql, args);
     }
@@ -363,18 +384,24 @@ public abstract class ClusterPerClassIntegrationTest extends BaseIgniteAbstractT
      *
      * @param node Ignite instance to run a query.
      * @param tx Transaction to run a given query. Can be {@code null} to run within implicit transaction.
+     * @param schema Default schema.
      * @param zoneId Client time zone.
      * @param query Query to be run.
      * @param args Dynamic parameters for a given query.
      * @return List of lists, where outer list represents a rows, internal lists represents a columns.
      */
-    public static List<List<Object>> sql(Ignite node, @Nullable Transaction tx, @Nullable ZoneId zoneId, String query, Object... args) {
+    public static List<List<Object>> sql(Ignite node, @Nullable Transaction tx, @Nullable String schema, @Nullable ZoneId zoneId,
+            String query, Object... args) {
         IgniteSql sql = node.sql();
         StatementBuilder builder = sql.statementBuilder()
                 .query(query);
 
         if (zoneId != null) {
             builder.timeZoneId(zoneId);
+        }
+
+        if (schema != null) {
+            builder.defaultSchema(schema);
         }
 
         Statement statement = builder.build();
@@ -392,7 +419,7 @@ public abstract class ClusterPerClassIntegrationTest extends BaseIgniteAbstractT
     }
 
     protected static List<List<Object>> sql(int nodeIndex, @Nullable Transaction tx, @Nullable ZoneId zoneId, String sql, Object[] args) {
-        return sql(CLUSTER.node(nodeIndex), tx, zoneId, sql, args);
+        return sql(CLUSTER.node(nodeIndex), tx, null, zoneId, sql, args);
     }
 
     private static List<List<Object>> getAllResultSet(ResultSet<SqlRow> resultSet) {
@@ -503,5 +530,20 @@ public abstract class ClusterPerClassIntegrationTest extends BaseIgniteAbstractT
                 List.of("ID", "NAME", "SALARY"),
                 Stream.of(people).map(person -> new Object[]{person.id, person.name, person.salary}).toArray(Object[][]::new)
         );
+    }
+
+    /**
+     * Returns an Ignite node (a member of the cluster) by its index.
+     */
+    protected static Ignite node(int index) {
+        return CLUSTER.node(index);
+    }
+
+    protected static ClusterNode clusterNode(int index) {
+        return clusterNode(node(index));
+    }
+
+    protected static ClusterNode clusterNode(Ignite node) {
+        return unwrapIgniteImpl(node).node();
     }
 }

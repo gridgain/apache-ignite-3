@@ -35,7 +35,7 @@ import static org.mockito.Mockito.when;
 import it.unimi.dsi.fastutil.ints.Int2ObjectMap;
 import java.util.ArrayList;
 import java.util.List;
-import org.apache.ignite.internal.hlc.HybridClock;
+import org.apache.ignite.internal.hlc.ClockService;
 import org.apache.ignite.internal.hlc.HybridTimestamp;
 import org.apache.ignite.internal.network.SingleClusterNodeResolver;
 import org.apache.ignite.internal.placementdriver.PlacementDriver;
@@ -68,8 +68,8 @@ public class InternalTableImplTest extends BaseIgniteAbstractTest {
                 mock(MvTableStorage.class),
                 mock(TxStateTableStorage.class),
                 mock(ReplicaService.class),
-                mock(HybridClock.class),
-                new HybridTimestampTracker(),
+                mock(ClockService.class),
+                HybridTimestampTracker.atomicTracker(null),
                 mock(PlacementDriver.class),
                 mock(TransactionInflights.class),
                 3_000,
@@ -118,8 +118,8 @@ public class InternalTableImplTest extends BaseIgniteAbstractTest {
                 mock(MvTableStorage.class),
                 mock(TxStateTableStorage.class),
                 mock(ReplicaService.class),
-                mock(HybridClock.class),
-                new HybridTimestampTracker(),
+                mock(ClockService.class),
+                HybridTimestampTracker.atomicTracker(null),
                 mock(PlacementDriver.class),
                 mock(TransactionInflights.class),
                 3_000,

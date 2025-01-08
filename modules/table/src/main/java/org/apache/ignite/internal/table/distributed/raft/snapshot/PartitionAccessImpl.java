@@ -31,6 +31,7 @@ import org.apache.ignite.internal.lang.IgniteBiTuple;
 import org.apache.ignite.internal.lang.IgniteStringFormatter;
 import org.apache.ignite.internal.lowwatermark.LowWatermark;
 import org.apache.ignite.internal.raft.RaftGroupConfiguration;
+import org.apache.ignite.internal.raft.RaftGroupConfigurationConverter;
 import org.apache.ignite.internal.replicator.TablePartitionId;
 import org.apache.ignite.internal.schema.BinaryRow;
 import org.apache.ignite.internal.schema.BinaryRowUpgrader;
@@ -42,7 +43,6 @@ import org.apache.ignite.internal.storage.engine.MvTableStorage;
 import org.apache.ignite.internal.table.distributed.gc.GcUpdateHandler;
 import org.apache.ignite.internal.table.distributed.gc.MvGc;
 import org.apache.ignite.internal.table.distributed.index.IndexUpdateHandler;
-import org.apache.ignite.internal.table.distributed.raft.RaftGroupConfigurationConverter;
 import org.apache.ignite.internal.tx.TxMeta;
 import org.apache.ignite.internal.tx.storage.state.TxStateStorage;
 import org.apache.ignite.internal.tx.storage.state.TxStateTableStorage;
@@ -121,22 +121,22 @@ public class PartitionAccessImpl implements PartitionAccess {
 
     @Override
     public Cursor<IgniteBiTuple<UUID, TxMeta>> getAllTxMeta() {
-        return getTxStateStorage(partitionId()).scan();
+        return getTxStateStorage().scan();
     }
 
     @Override
     public void addTxMeta(UUID txId, TxMeta txMeta) {
-        getTxStateStorage(partitionId()).putForRebalance(txId, txMeta);
+        getTxStateStorage().putForRebalance(txId, txMeta);
     }
 
     @Override
     public @Nullable RowId closestRowId(RowId lowerBound) {
-        return getMvPartitionStorage(partitionId()).closestRowId(lowerBound);
+        return getMvPartitionStorage().closestRowId(lowerBound);
     }
 
     @Override
     public List<ReadResult> getAllRowVersions(RowId rowId) {
-        MvPartitionStorage mvPartitionStorage = getMvPartitionStorage(partitionId());
+        MvPartitionStorage mvPartitionStorage = getMvPartitionStorage();
 
         return mvPartitionStorage.runConsistently(locker -> {
             locker.lock(rowId);
@@ -149,14 +149,14 @@ public class PartitionAccessImpl implements PartitionAccess {
 
     @Override
     public @Nullable RaftGroupConfiguration committedGroupConfiguration() {
-        byte[] configBytes = getMvPartitionStorage(partitionId()).committedGroupConfiguration();
+        byte[] configBytes = getMvPartitionStorage().committedGroupConfiguration();
 
         return raftGroupConfigurationConverter.fromBytes(configBytes);
     }
 
     @Override
     public void addWrite(RowId rowId, @Nullable BinaryRow row, UUID txId, int commitTableId, int commitPartitionId, int catalogVersion) {
-        MvPartitionStorage mvPartitionStorage = getMvPartitionStorage(partitionId());
+        MvPartitionStorage mvPartitionStorage = getMvPartitionStorage();
 
         List<IndexIdAndTableVersion> indexIdAndTableVersionList = fullStateTransferIndexChooser.chooseForAddWrite(
                 catalogVersion,
@@ -181,7 +181,7 @@ public class PartitionAccessImpl implements PartitionAccess {
 
     @Override
     public void addWriteCommitted(RowId rowId, @Nullable BinaryRow row, HybridTimestamp commitTimestamp, int catalogVersion) {
-        MvPartitionStorage mvPartitionStorage = getMvPartitionStorage(partitionId());
+        MvPartitionStorage mvPartitionStorage = getMvPartitionStorage();
 
         List<IndexIdAndTableVersion> indexIdAndTableVersionList = fullStateTransferIndexChooser.chooseForAddWriteCommitted(
                 catalogVersion,
@@ -207,38 +207,53 @@ public class PartitionAccessImpl implements PartitionAccess {
     @Override
     public long minLastAppliedIndex() {
         return Math.min(
-                getMvPartitionStorage(partitionId()).lastAppliedIndex(),
-                getTxStateStorage(partitionId()).lastAppliedIndex()
+                getMvPartitionStorage().lastAppliedIndex(),
+                getTxStateStorage().lastAppliedIndex()
         );
     }
 
     @Override
     public long minLastAppliedTerm() {
         return Math.min(
-                getMvPartitionStorage(partitionId()).lastAppliedTerm(),
-                getTxStateStorage(partitionId()).lastAppliedTerm()
+                getMvPartitionStorage().lastAppliedTerm(),
+                getTxStateStorage().lastAppliedTerm()
         );
     }
 
     @Override
     public long maxLastAppliedIndex() {
         return Math.max(
-                getMvPartitionStorage(partitionId()).lastAppliedIndex(),
-                getTxStateStorage(partitionId()).lastAppliedIndex()
+                getMvPartitionStorage().lastAppliedIndex(),
+                getTxStateStorage().lastAppliedIndex()
         );
     }
 
     @Override
     public long maxLastAppliedTerm() {
         return Math.max(
-                getMvPartitionStorage(partitionId()).lastAppliedTerm(),
-                getTxStateStorage(partitionId()).lastAppliedTerm()
+                getMvPartitionStorage().lastAppliedTerm(),
+                getTxStateStorage().lastAppliedTerm()
         );
     }
 
     @Override
+    public long leaseStartTime() {
+        return getMvPartitionStorage().leaseStartTime();
+    }
+
+    @Override
+    public @Nullable UUID primaryReplicaNodeId() {
+        return getMvPartitionStorage().primaryReplicaNodeId();
+    }
+
+    @Override
+    public @Nullable String primaryReplicaNodeName() {
+        return getMvPartitionStorage().primaryReplicaNodeName();
+    }
+
+    @Override
     public CompletableFuture<Void> startRebalance() {
-        TxStateStorage txStateStorage = getTxStateStorage(partitionId());
+        TxStateStorage txStateStorage = getTxStateStorage();
 
         return mvGc.removeStorage(toTablePartitionId(partitionKey))
                 .thenCompose(unused -> CompletableFuture.allOf(
@@ -249,7 +264,7 @@ public class PartitionAccessImpl implements PartitionAccess {
 
     @Override
     public CompletableFuture<Void> abortRebalance() {
-        TxStateStorage txStateStorage = getTxStateStorage(partitionId());
+        TxStateStorage txStateStorage = getTxStateStorage();
 
         return CompletableFuture.allOf(
                 mvTableStorage.abortRebalancePartition(partitionId()),
@@ -258,14 +273,14 @@ public class PartitionAccessImpl implements PartitionAccess {
     }
 
     @Override
-    public CompletableFuture<Void> finishRebalance(long lastAppliedIndex, long lastAppliedTerm, RaftGroupConfiguration raftGroupConfig) {
-        TxStateStorage txStateStorage = getTxStateStorage(partitionId());
+    public CompletableFuture<Void> finishRebalance(RaftSnapshotPartitionMeta partitionMeta) {
+        TxStateStorage txStateStorage = getTxStateStorage();
 
-        byte[] configBytes = raftGroupConfigurationConverter.toBytes(raftGroupConfig);
+        byte[] configBytes = raftGroupConfigurationConverter.toBytes(partitionMeta.raftGroupConfig());
 
         return CompletableFuture.allOf(
-                mvTableStorage.finishRebalancePartition(partitionId(), lastAppliedIndex, lastAppliedTerm, configBytes),
-                txStateStorage.finishRebalance(lastAppliedIndex, lastAppliedTerm)
+                mvTableStorage.finishRebalancePartition(partitionId(), partitionMeta.toMvPartitionMeta(configBytes)),
+                txStateStorage.finishRebalance(partitionMeta.lastAppliedIndex(), partitionMeta.lastAppliedTerm())
         ).thenAccept(unused -> mvGc.addStorage(toTablePartitionId(partitionKey), gcUpdateHandler));
     }
 
@@ -276,7 +291,7 @@ public class PartitionAccessImpl implements PartitionAccess {
 
     @Override
     public void setNextRowIdToBuildIndex(Map<Integer, RowId> nextRowIdToBuildByIndexId) {
-        MvPartitionStorage mvPartitionStorage = getMvPartitionStorage(partitionId());
+        MvPartitionStorage mvPartitionStorage = getMvPartitionStorage();
 
         mvPartitionStorage.runConsistently(locker -> {
             nextRowIdToBuildByIndexId.forEach(indexUpdateHandler::setNextRowIdToBuildIndex);
@@ -290,7 +305,9 @@ public class PartitionAccessImpl implements PartitionAccess {
         lowWatermark.updateLowWatermark(newLowWatermark);
     }
 
-    private MvPartitionStorage getMvPartitionStorage(int partitionId) {
+    private MvPartitionStorage getMvPartitionStorage() {
+        int partitionId = partitionId();
+
         MvPartitionStorage mvPartitionStorage = mvTableStorage.getMvPartition(partitionId);
 
         assert mvPartitionStorage != null : IgniteStringFormatter.format("tableId={}, partitionId={}", tableId(), partitionId);
@@ -298,7 +315,9 @@ public class PartitionAccessImpl implements PartitionAccess {
         return mvPartitionStorage;
     }
 
-    private TxStateStorage getTxStateStorage(int partitionId) {
+    private TxStateStorage getTxStateStorage() {
+        int partitionId = partitionId();
+
         TxStateStorage txStateStorage = txStateTableStorage.getTxStateStorage(partitionId);
 
         assert txStateStorage != null : IgniteStringFormatter.format("tableId={}, partitionId={}", tableId(), partitionId);

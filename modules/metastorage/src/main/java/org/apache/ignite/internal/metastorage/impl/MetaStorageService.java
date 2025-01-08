@@ -25,6 +25,8 @@ import java.util.concurrent.Flow.Publisher;
 import org.apache.ignite.internal.close.ManuallyCloseable;
 import org.apache.ignite.internal.lang.ByteArray;
 import org.apache.ignite.internal.metastorage.Entry;
+import org.apache.ignite.internal.metastorage.command.response.ChecksumInfo;
+import org.apache.ignite.internal.metastorage.command.response.RevisionsInfo;
 import org.apache.ignite.internal.metastorage.dsl.Condition;
 import org.apache.ignite.internal.metastorage.dsl.Iif;
 import org.apache.ignite.internal.metastorage.dsl.Operation;
@@ -131,6 +133,16 @@ public interface MetaStorageService extends ManuallyCloseable {
      * @see Entry
      */
     CompletableFuture<Void> removeAll(Set<ByteArray> keys);
+
+    /**
+     * Removes entries by given prefix.
+     *
+     * @param prefix Prefix to remove keys by. Couldn't be {@code null}.
+     * @return Future that completes successfully when keys with given prefix are deleted or with {@link OperationTimeoutException}.
+     * @see ByteArray
+     * @see Entry
+     */
+    CompletableFuture<Void> removeByPrefix(ByteArray prefix);
 
     /**
      * Updates an entry for the given key conditionally.
@@ -248,8 +260,13 @@ public interface MetaStorageService extends ManuallyCloseable {
      */
     Publisher<Entry> prefix(ByteArray prefix, long revUpperBound);
 
+    /** Returns a future which will hold {@link RevisionsInfo current revisions} of the metastorage leader. */
+    CompletableFuture<RevisionsInfo> currentRevisions();
+
     /**
-     * Returns a future which will hold current revision of the metastorage leader.
+     * Returns information about a revision checksum on the leader.
+     *
+     * @param revision Revision of interest.
      */
-    CompletableFuture<Long> currentRevision();
+    CompletableFuture<ChecksumInfo> checksum(long revision);
 }

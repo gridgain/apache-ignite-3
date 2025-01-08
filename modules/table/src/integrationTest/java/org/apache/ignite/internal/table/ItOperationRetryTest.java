@@ -43,7 +43,6 @@ import org.apache.ignite.table.Tuple;
 import org.apache.ignite.tx.Transaction;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.TestInfo;
 
 /**
  * Tests of transaction operation retry.
@@ -55,12 +54,9 @@ public class ItOperationRetryTest extends ClusterPerTestIntegrationTest {
     private static final int PART_ID = 0;
 
     @BeforeEach
-    @Override
-    public void setup(TestInfo testInfo) throws Exception {
-        super.setup(testInfo);
-
+    public void setup() throws Exception {
         String zoneSql = "create zone test_zone with partitions=1, replicas=3, storage_profiles='" + DEFAULT_PROFILE_NAME + "'";
-        String sql = "create table " + TABLE_NAME + " (key int primary key, val varchar(20)) with primary_zone='TEST_ZONE'";
+        String sql = "create table " + TABLE_NAME + " (key int primary key, val varchar(20)) zone TEST_ZONE";
 
         cluster.doInSession(0, session -> {
             executeUpdate(zoneSql, session);

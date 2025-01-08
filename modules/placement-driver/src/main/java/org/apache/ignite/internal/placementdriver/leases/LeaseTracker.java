@@ -19,7 +19,6 @@ package org.apache.ignite.internal.placementdriver.leases;
 
 import static java.nio.ByteOrder.LITTLE_ENDIAN;
 import static java.util.Collections.emptyMap;
-import static java.util.Collections.unmodifiableMap;
 import static java.util.concurrent.CompletableFuture.allOf;
 import static java.util.concurrent.CompletableFuture.completedFuture;
 import static org.apache.ignite.internal.hlc.HybridTimestamp.MIN_VALUE;
@@ -219,7 +218,7 @@ public class LeaseTracker extends AbstractEventProducer<PrimaryReplicaEvent, Pri
                         }
                     }
 
-                    leases = new Leases(unmodifiableMap(leasesMap), leasesBytes);
+                    leases = new Leases(leasesMap, leasesBytes);
 
                     for (Lease expiredLease : expiredLeases) {
                         fireEventPrimaryReplicaExpired(event.revision(), expiredLease);
@@ -228,11 +227,6 @@ public class LeaseTracker extends AbstractEventProducer<PrimaryReplicaEvent, Pri
 
                 return allOf(fireEventFutures.toArray(CompletableFuture[]::new));
             });
-        }
-
-        @Override
-        public void onError(Throwable e) {
-            LOG.warn("Unable to process update leases event", e);
         }
     }
 
@@ -372,7 +366,7 @@ public class LeaseTracker extends AbstractEventProducer<PrimaryReplicaEvent, Pri
                 }
             });
 
-            leases = new Leases(unmodifiableMap(leasesMap), leasesBytes);
+            leases = new Leases(leasesMap, leasesBytes);
         }
 
         LOG.info("Leases cache recovered [leases={}]", leases);

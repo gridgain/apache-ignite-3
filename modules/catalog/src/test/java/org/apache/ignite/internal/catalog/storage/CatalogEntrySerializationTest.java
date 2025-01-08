@@ -54,6 +54,7 @@ import org.apache.ignite.internal.catalog.descriptors.CatalogSystemViewDescripto
 import org.apache.ignite.internal.catalog.descriptors.CatalogTableColumnDescriptor;
 import org.apache.ignite.internal.catalog.descriptors.CatalogTableDescriptor;
 import org.apache.ignite.internal.catalog.descriptors.CatalogZoneDescriptor;
+import org.apache.ignite.internal.catalog.descriptors.ConsistencyMode;
 import org.apache.ignite.internal.catalog.storage.serialization.MarshallableEntryType;
 import org.apache.ignite.internal.catalog.storage.serialization.UpdateLogMarshallerImpl;
 import org.apache.ignite.internal.testframework.BaseIgniteAbstractTest;
@@ -170,6 +171,10 @@ public class CatalogEntrySerializationTest extends BaseIgniteAbstractTest {
             case NEW_SCHEMA:
                 checkSerialization(new NewSchemaEntry(new CatalogSchemaDescriptor(
                         0, "S", new CatalogTableDescriptor[0], new CatalogIndexDescriptor[0], new CatalogSystemViewDescriptor[0], 0)));
+                break;
+
+            case DROP_SCHEMA:
+                checkSerialization(new DropSchemaEntry(1));
                 break;
 
             default:
@@ -424,7 +429,8 @@ public class CatalogEntrySerializationTest extends BaseIgniteAbstractTest {
                 2,
                 3,
                 DEFAULT_FILTER,
-                profiles
+                profiles,
+                ConsistencyMode.STRONG_CONSISTENCY
         );
     }
 

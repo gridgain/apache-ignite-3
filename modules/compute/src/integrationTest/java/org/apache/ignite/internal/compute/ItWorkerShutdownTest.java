@@ -330,7 +330,7 @@ public abstract class ItWorkerShutdownTest extends ClusterPerTestIntegrationTest
         try {
             HybridClock clock = igniteImpl.clock();
             TableImpl table = unwrapTableImpl(node.tables().table(TABLE_NAME));
-            TablePartitionId tablePartitionId = new TablePartitionId(table.tableId(), table.partition(Tuple.create(1).set("K", 1)));
+            TablePartitionId tablePartitionId = new TablePartitionId(table.tableId(), table.partitionId(Tuple.create(1).set("K", 1)));
 
             ReplicaMeta replicaMeta = igniteImpl.placementDriver().getPrimaryReplica(tablePartitionId, clock.now()).get();
             if (replicaMeta == null || replicaMeta.getLeaseholder() == null) {
@@ -380,7 +380,7 @@ public abstract class ItWorkerShutdownTest extends ClusterPerTestIntegrationTest
         // Number of replicas == number of nodes and number of partitions == 1. This gives us the majority on primary replica stop.
         // After the primary replica is stopped we still be able to select new primary replica selected.
         executeSql("CREATE ZONE TEST_ZONE WITH REPLICAS=3, PARTITIONS=1, STORAGE_PROFILES='" + DEFAULT_STORAGE_PROFILE + "'");
-        executeSql("CREATE TABLE test (k int, v int, CONSTRAINT PK PRIMARY KEY (k)) WITH PRIMARY_ZONE='TEST_ZONE'");
+        executeSql("CREATE TABLE test (k int, v int, CONSTRAINT PK PRIMARY KEY (k)) ZONE TEST_ZONE");
         executeSql("INSERT INTO test(k, v) VALUES (1, 101)");
     }
 

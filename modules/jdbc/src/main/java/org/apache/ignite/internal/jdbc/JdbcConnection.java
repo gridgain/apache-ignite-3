@@ -52,6 +52,7 @@ import java.util.Set;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executor;
+import java.util.concurrent.atomic.AtomicLong;
 import org.apache.ignite.client.BasicAuthenticator;
 import org.apache.ignite.client.IgniteClient;
 import org.apache.ignite.client.IgniteClientAuthenticator;
@@ -77,6 +78,8 @@ public class JdbcConnection implements Connection {
 
     /** Statements modification mutex. */
     private final Object stmtsMux = new Object();
+
+    private final AtomicLong tokenGenerator = new AtomicLong();
 
     /** Handler. */
     private final JdbcQueryEventHandler handler;
@@ -134,15 +137,10 @@ public class JdbcConnection implements Connection {
         netTimeout = connProps.getConnectionTimeout();
         qryTimeout = connProps.getQueryTimeout();
 
-        long reconnectThrottlingPeriod = connProps.getReconnectThrottlingPeriod();
-        int reconnectThrottlingRetries = connProps.getReconnectThrottlingRetries();
-
         try {
             client = ((TcpIgniteClient) IgniteClient.builder()
                     .addresses(addrs)
                     .connectTimeout(netTimeout)
-                    .reconnectThrottlingPeriod(reconnectThrottlingPeriod)
-                    .reconnectThrottlingRetries(reconnectThrottlingRetries)
                     .ssl(extractSslConfiguration(connProps))
                     .authenticator(extractAuthenticationConfiguration(connProps))
                     .build());
@@ -203,7 +201,6 @@ public class JdbcConnection implements Connection {
                     .enabled(true)
                     .trustStorePath(connProps.getTrustStorePath())
                     .trustStorePassword(connProps.getTrustStorePassword())
-                    .clientAuth(connProps.getClientAuth())
                     .ciphers(connProps.getCiphers())
                     .keyStorePath(connProps.getKeyStorePath())
                     .keyStorePassword(connProps.getKeyStorePassword())
@@ -952,5 +949,9 @@ public class JdbcConnection implements Connection {
      */
     public String url() {
         return connProps.getUrl();
+    }
+
+    long nextToken() {
+        return tokenGenerator.getAndIncrement();
     }
 }

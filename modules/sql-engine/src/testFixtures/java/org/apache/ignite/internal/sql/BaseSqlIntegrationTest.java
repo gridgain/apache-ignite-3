@@ -18,6 +18,7 @@
 package org.apache.ignite.internal.sql;
 
 import static org.apache.ignite.internal.TestWrappers.unwrapIgniteImpl;
+import static org.apache.ignite.internal.testframework.IgniteTestUtils.await;
 import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -28,21 +29,26 @@ import java.util.List;
 import org.apache.ignite.Ignite;
 import org.apache.ignite.internal.ClusterPerClassIntegrationTest;
 import org.apache.ignite.internal.app.IgniteImpl;
+import org.apache.ignite.internal.sql.engine.AsyncSqlCursor;
 import org.apache.ignite.internal.sql.engine.SqlQueryProcessor;
 import org.apache.ignite.internal.sql.engine.util.InjectQueryCheckerFactory;
 import org.apache.ignite.internal.sql.engine.util.QueryChecker;
 import org.apache.ignite.internal.sql.engine.util.QueryCheckerExtension;
 import org.apache.ignite.internal.sql.engine.util.QueryCheckerFactory;
+import org.apache.ignite.internal.sql.engine.util.SqlTestUtils;
 import org.apache.ignite.internal.systemview.SystemViewManagerImpl;
 import org.apache.ignite.internal.tx.HybridTimestampTracker;
 import org.apache.ignite.internal.tx.InternalTransaction;
 import org.apache.ignite.internal.tx.TxManager;
+import org.apache.ignite.internal.util.AsyncCursor.BatchedResult;
 import org.apache.ignite.sql.ColumnMetadata;
 import org.apache.ignite.sql.IgniteSql;
 import org.apache.ignite.table.Table;
 import org.apache.ignite.tx.IgniteTransactions;
+import org.hamcrest.Matcher;
 import org.jetbrains.annotations.Nullable;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.api.function.Executable;
 
 /**
  * Base class for SQL integration tests.
@@ -133,7 +139,7 @@ public abstract class BaseSqlIntegrationTest extends ClusterPerClassIntegrationT
                 "HashJoinConverter"
         ),
 
-        HASHJOIN(
+        HASH(
                 "MergeJoinConverter",
                 "JoinCommuteRule",
                 "NestedLoopJoinConverter",
@@ -253,5 +259,32 @@ public abstract class BaseSqlIntegrationTest extends ClusterPerClassIntegrationT
      */
     protected SystemViewManagerImpl systemViewManager() {
         return (SystemViewManagerImpl) unwrapIgniteImpl(CLUSTER.aliveNode()).systemViewManager();
+    }
+
+    /**
+     * Waits until the number of running queries matches the specified matcher.
+     *
+     * @param matcher Matcher to check the number of running queries.
+     * @throws AssertionError If after waiting the number of running queries still does not match the specified matcher.
+     */
+    protected void waitUntilRunningQueriesCount(Matcher<Integer> matcher) {
+        SqlTestUtils.waitUntilRunningQueriesCount(queryProcessor(), matcher);
+    }
+
+    /** An executable that retrieves the data from the specified cursor. */
+    public static class DrainCursor implements Executable {
+        private final AsyncSqlCursor<?> cursor;
+
+        public DrainCursor(AsyncSqlCursor<?> cursor) {
+            this.cursor = cursor;
+        }
+
+        @Override
+        public void execute() throws Throwable {
+            BatchedResult<?> batch;
+            do {
+                batch = await(cursor.requestNextAsync(1));
+            } while (batch.hasMore());
+        }
     }
 }

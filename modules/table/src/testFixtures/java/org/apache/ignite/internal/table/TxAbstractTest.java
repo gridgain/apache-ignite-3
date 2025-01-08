@@ -22,8 +22,8 @@ import static java.util.concurrent.CompletableFuture.completedFuture;
 import static java.util.stream.Collectors.toList;
 import static org.apache.ignite.internal.testframework.IgniteTestUtils.assertThrowsWithCause;
 import static org.apache.ignite.internal.testframework.IgniteTestUtils.assertThrowsWithCode;
+import static org.apache.ignite.internal.testframework.IgniteTestUtils.waitForCondition;
 import static org.apache.ignite.internal.testframework.matchers.CompletableFutureMatcher.willBe;
-import static org.apache.ignite.internal.testframework.matchers.CompletableFutureMatcher.willCompleteSuccessfully;
 import static org.apache.ignite.lang.ErrorGroups.Transactions.TX_ALREADY_FINISHED_ERR;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.contains;
@@ -36,7 +36,6 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
-import static org.mockito.ArgumentMatchers.any;
 
 import java.util.ArrayList;
 import java.util.Collection;
@@ -61,47 +60,27 @@ import java.util.concurrent.atomic.LongAdder;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 import java.util.function.Function;
-import org.apache.ignite.distributed.ItTxTestCluster;
+import java.util.function.Supplier;
 import org.apache.ignite.internal.configuration.testframework.ConfigurationExtension;
-import org.apache.ignite.internal.configuration.testframework.InjectConfiguration;
 import org.apache.ignite.internal.hlc.HybridClockImpl;
 import org.apache.ignite.internal.hlc.HybridTimestamp;
-import org.apache.ignite.internal.manager.ComponentContext;
-import org.apache.ignite.internal.network.ClusterService;
-import org.apache.ignite.internal.network.NodeFinder;
-import org.apache.ignite.internal.network.utils.ClusterServiceTestUtils;
-import org.apache.ignite.internal.placementdriver.ReplicaMeta;
-import org.apache.ignite.internal.raft.Loza;
-import org.apache.ignite.internal.raft.Peer;
-import org.apache.ignite.internal.raft.RaftNodeId;
-import org.apache.ignite.internal.raft.configuration.RaftConfiguration;
-import org.apache.ignite.internal.raft.server.impl.JraftServerImpl;
+import org.apache.ignite.internal.network.ClusterNodeImpl;
 import org.apache.ignite.internal.replicator.Replica;
 import org.apache.ignite.internal.replicator.ReplicaImpl;
 import org.apache.ignite.internal.replicator.ReplicaManager;
-import org.apache.ignite.internal.replicator.ReplicaService;
 import org.apache.ignite.internal.replicator.ReplicaTestUtils;
 import org.apache.ignite.internal.replicator.ReplicationGroupId;
-import org.apache.ignite.internal.replicator.TablePartitionId;
-import org.apache.ignite.internal.replicator.configuration.ReplicationConfiguration;
 import org.apache.ignite.internal.schema.BinaryRow;
-import org.apache.ignite.internal.schema.Column;
-import org.apache.ignite.internal.schema.SchemaDescriptor;
 import org.apache.ignite.internal.schema.SchemaRegistry;
-import org.apache.ignite.internal.schema.configuration.StorageUpdateConfiguration;
 import org.apache.ignite.internal.schema.marshaller.TupleMarshallerImpl;
 import org.apache.ignite.internal.schema.row.Row;
-import org.apache.ignite.internal.storage.MvPartitionStorage;
 import org.apache.ignite.internal.storage.RowId;
 import org.apache.ignite.internal.storage.impl.TestMvPartitionStorage;
 import org.apache.ignite.internal.storage.index.IndexStorage;
 import org.apache.ignite.internal.storage.index.impl.TestHashIndexStorage;
 import org.apache.ignite.internal.table.distributed.TableSchemaAwareIndexStorage;
-import org.apache.ignite.internal.table.distributed.raft.PartitionListener;
 import org.apache.ignite.internal.table.distributed.replicator.PartitionReplicaListener;
-import org.apache.ignite.internal.testframework.IgniteAbstractTest;
 import org.apache.ignite.internal.testframework.IgniteTestUtils;
-import org.apache.ignite.internal.tx.HybridTimestampTracker;
 import org.apache.ignite.internal.tx.InternalTransaction;
 import org.apache.ignite.internal.tx.Lock;
 import org.apache.ignite.internal.tx.LockException;
@@ -111,261 +90,48 @@ import org.apache.ignite.internal.tx.TxManager;
 import org.apache.ignite.internal.tx.TxPriority;
 import org.apache.ignite.internal.tx.TxState;
 import org.apache.ignite.internal.tx.TxStateMeta;
-import org.apache.ignite.internal.tx.configuration.TransactionConfiguration;
 import org.apache.ignite.internal.tx.impl.IgniteTransactionsImpl;
 import org.apache.ignite.internal.tx.impl.ReadWriteTransactionImpl;
 import org.apache.ignite.internal.tx.impl.TxManagerImpl;
 import org.apache.ignite.internal.tx.impl.VolatileTxStateMetaStorage;
 import org.apache.ignite.internal.tx.storage.state.TxStateStorage;
-import org.apache.ignite.internal.type.NativeTypes;
 import org.apache.ignite.internal.util.CollectionUtils;
 import org.apache.ignite.internal.util.Lazy;
 import org.apache.ignite.internal.util.Pair;
 import org.apache.ignite.internal.util.PendingComparableValuesTracker;
 import org.apache.ignite.lang.IgniteException;
-import org.apache.ignite.network.ClusterNode;
-import org.apache.ignite.raft.jraft.RaftGroupService;
+import org.apache.ignite.network.NetworkAddress;
 import org.apache.ignite.table.KeyValueView;
 import org.apache.ignite.table.RecordView;
 import org.apache.ignite.table.Tuple;
-import org.apache.ignite.tx.IgniteTransactions;
 import org.apache.ignite.tx.Transaction;
 import org.apache.ignite.tx.TransactionException;
 import org.apache.ignite.tx.TransactionOptions;
 import org.jetbrains.annotations.Nullable;
-import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInfo;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.api.function.Executable;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
-import org.mockito.Mockito;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
 
 /**
- * TODO asch IGNITE-15928 validate zero locks after test commit.
+ * Common tx test scenarios set. TODO asch IGNITE-15928 validate zero locks after test commit.
  */
 @ExtendWith({MockitoExtension.class, ConfigurationExtension.class})
 @MockitoSettings(strictness = Strictness.LENIENT)
-public abstract class TxAbstractTest extends IgniteAbstractTest {
-    protected static final double BALANCE_1 = 500;
-
-    protected static final double BALANCE_2 = 500;
-
-    protected static final double DELTA = 100;
-
-    protected static final String ACC_TABLE_NAME = "accounts";
-
-    protected static final String CUST_TABLE_NAME = "customers";
-
-    protected static SchemaDescriptor ACCOUNTS_SCHEMA = new SchemaDescriptor(
-            1,
-            new Column[]{new Column("accountNumber".toUpperCase(), NativeTypes.INT64, false)},
-            new Column[]{new Column("balance".toUpperCase(), NativeTypes.DOUBLE, false)}
-    );
-
-    protected static SchemaDescriptor CUSTOMERS_SCHEMA = new SchemaDescriptor(
-            1,
-            new Column[]{new Column("accountNumber".toUpperCase(), NativeTypes.INT64, false)},
-            new Column[]{new Column("name".toUpperCase(), NativeTypes.STRING, false)}
-    );
-
-    /** Accounts table id -> balance. */
-    protected TableViewInternal accounts;
-
-    /** Customers table id -> name. */
-    protected TableViewInternal customers;
-
-    protected HybridTimestampTracker timestampTracker = new HybridTimestampTracker();
-
-    protected IgniteTransactions igniteTransactions;
-
-    // TODO fsync can be turned on again after https://issues.apache.org/jira/browse/IGNITE-20195
-    @InjectConfiguration("mock: { fsync: false }")
-    protected RaftConfiguration raftConfiguration;
-
-    @InjectConfiguration
-    protected TransactionConfiguration txConfiguration;
-
-    @InjectConfiguration
-    protected StorageUpdateConfiguration storageUpdateConfiguration;
-
-    @InjectConfiguration
-    protected ReplicationConfiguration replicationConfiguration;
-
-    protected final TestInfo testInfo;
-
-    protected ItTxTestCluster txTestCluster;
-
-    /**
-     * Returns a count of nodes.
-     *
-     * @return Nodes.
-     */
-    protected abstract int nodes();
-
-    /**
-     * Returns a count of replicas.
-     *
-     * @return Replicas.
-     */
-    protected int replicas() {
-        return 1;
-    }
-
-    /**
-     * Returns {@code true} to disable collocation by using dedicated client node.
-     *
-     * @return {@code true} to disable collocation.
-     */
-    protected boolean startClient() {
-        return true;
-    }
-
+public abstract class TxAbstractTest extends TxInfrastructureTest {
     /**
      * The constructor.
      *
      * @param testInfo Test info.
      */
     public TxAbstractTest(TestInfo testInfo) {
-        this.testInfo = testInfo;
-    }
-
-    /**
-     * Initialize the test state.
-     */
-    @BeforeEach
-    public void before() throws Exception {
-        txTestCluster = new ItTxTestCluster(
-                testInfo,
-                raftConfiguration,
-                txConfiguration,
-                storageUpdateConfiguration,
-                workDir,
-                nodes(),
-                replicas(),
-                startClient(),
-                timestampTracker,
-                replicationConfiguration
-        );
-        txTestCluster.prepareCluster();
-
-        this.igniteTransactions = txTestCluster.igniteTransactions();
-
-        accounts = txTestCluster.startTable(ACC_TABLE_NAME, ACCOUNTS_SCHEMA);
-        customers = txTestCluster.startTable(CUST_TABLE_NAME, CUSTOMERS_SCHEMA);
-
-        log.info("Tables have been started");
-    }
-
-    /**
-     * Shutdowns all cluster nodes after each test.
-     *
-     * @throws Exception If failed.
-     */
-    @AfterEach
-    public void after() throws Exception {
-        txTestCluster.shutdownCluster();
-        Mockito.framework().clearInlineMocks();
-    }
-
-    /**
-     * Starts a node.
-     *
-     * @param name Node name.
-     * @param port Local port.
-     * @param nodeFinder Node finder.
-     * @return The client cluster view.
-     */
-    public static ClusterService startNode(TestInfo testInfo, String name, int port,
-            NodeFinder nodeFinder) {
-        var network = ClusterServiceTestUtils.clusterService(testInfo, port, nodeFinder);
-
-        assertThat(network.startAsync(new ComponentContext()), willCompleteSuccessfully());
-
-        return network;
-    }
-
-    /** {@inheritDoc} */
-    protected TxManager clientTxManager() {
-        return txTestCluster.clientTxManager();
-    }
-
-    /** {@inheritDoc} */
-    protected TxManager txManager(TableViewInternal t) {
-        String leaseHolder = primaryNode(t);
-
-        assertNotNull(leaseHolder, "Table primary node should not be null");
-
-        TxManager manager = txTestCluster.txManagers().get(leaseHolder);
-
-        assertNotNull(manager);
-
-        return manager;
-    }
-
-    private @Nullable String primaryNode(TableViewInternal t) {
-        CompletableFuture<ReplicaMeta> primaryReplicaFuture = txTestCluster.placementDriver().getPrimaryReplica(
-                new TablePartitionId(t.tableId(), 0),
-                txTestCluster.clocks().get(txTestCluster.localNodeName()).now());
-
-        assertThat(primaryReplicaFuture, willCompleteSuccessfully());
-
-        return primaryReplicaFuture.join().getLeaseholder();
-    }
-
-    /**
-     * Check the storage of partition is the same across all nodes. The checking is based on {@link MvPartitionStorage#lastAppliedIndex()}
-     * that is increased on all update storage operation.
-     * TODO: IGNITE-18869 The method must be updated when a proper way to compare storages will be implemented.
-     *
-     * @param table The table.
-     * @param partId Partition id.
-     * @return True if {@link MvPartitionStorage#lastAppliedIndex()} is equivalent across all nodes, false otherwise.
-     */
-    protected boolean assertPartitionsSame(TableViewInternal table, int partId) {
-        long storageIdx = 0;
-
-        for (Map.Entry<String, Loza> entry : txTestCluster.raftServers().entrySet()) {
-            Loza svc = entry.getValue();
-
-            var server = (JraftServerImpl) svc.server();
-
-            var groupId = new TablePartitionId(table.tableId(), partId);
-
-            Peer serverPeer = server.localPeers(groupId).get(0);
-
-            RaftGroupService grp = server.raftGroupService(new RaftNodeId(groupId, serverPeer));
-
-            var fsm = (JraftServerImpl.DelegatingStateMachine) grp.getRaftNode().getOptions().getFsm();
-
-            PartitionListener listener = (PartitionListener) fsm.getListener();
-
-            MvPartitionStorage storage = listener.getMvStorage();
-
-            if (storageIdx == 0) {
-                storageIdx = storage.lastAppliedIndex();
-            } else if (storageIdx != storage.lastAppliedIndex()) {
-                return false;
-            }
-        }
-
-        return true;
-    }
-
-    protected void injectFailureOnNextOperation(TableViewInternal accounts) {
-        InternalTable internalTable = accounts.internalTable();
-        ReplicaService replicaService = IgniteTestUtils.getFieldValue(internalTable, "replicaSvc");
-        Mockito.doReturn(CompletableFuture.failedFuture(new Exception())).when(replicaService).invoke((String) any(), any());
-        Mockito.doReturn(CompletableFuture.failedFuture(new Exception())).when(replicaService).invoke((ClusterNode) any(), any());
-    }
-
-    protected Collection<TxManager> txManagers() {
-        return txTestCluster.txManagers().values();
+        super(testInfo);
     }
 
     @Test
@@ -1968,7 +1734,7 @@ public abstract class TxAbstractTest extends IgniteAbstractTest {
                     }
 
                     while (!stop.get() && firstErr.get() == null) {
-                        InternalTransaction tx = clientTxManager().begin(timestampTracker);
+                        InternalTransaction tx = clientTxManager().begin(timestampTracker, false, false);
 
                         var table = accounts.recordView();
 
@@ -2054,58 +1820,6 @@ public abstract class TxAbstractTest extends IgniteAbstractTest {
         }
 
         assertEquals(total, total0, "Total amount invariant is not preserved");
-    }
-
-    /**
-     * Makes a key.
-     *
-     * @param id The id.
-     * @return The key tuple.
-     */
-    protected Tuple makeKey(long id) {
-        return Tuple.create().set("accountNumber", id);
-    }
-
-    /**
-     * Makes a tuple containing key and value.
-     *
-     * @param id The id.
-     * @param balance The balance.
-     * @return The value tuple.
-     */
-    protected Tuple makeValue(long id, double balance) {
-        return Tuple.create().set("accountNumber", id).set("balance", balance);
-    }
-
-    /**
-     * Makes a tuple containing key and value.
-     *
-     * @param id The id.
-     * @param name The name.
-     * @return The value tuple.
-     */
-    private Tuple makeValue(long id, String name) {
-        return Tuple.create().set("accountNumber", id).set("name", name);
-    }
-
-    /**
-     * Makes a value.
-     *
-     * @param balance The balance.
-     * @return The value tuple.
-     */
-    private Tuple makeValue(double balance) {
-        return Tuple.create().set("balance", balance);
-    }
-
-    /**
-     * Makes a value.
-     *
-     * @param name The name.
-     * @return The value tuple.
-     */
-    private Tuple makeValue(String name) {
-        return Tuple.create().set("name", name);
     }
 
     /**
@@ -2342,6 +2056,97 @@ public abstract class TxAbstractTest extends IgniteAbstractTest {
     }
 
     @Test
+    public void testReadOnlyTransactionAlreadyFinished() throws InterruptedException {
+        Transaction tx = igniteTransactions.begin(new TransactionOptions().readOnly(true));
+
+        tx.rollback();
+
+        RecordView accountsRv = accounts.recordView();
+
+        assertThrowsTxFinishedException(() -> accountsRv.get(tx, makeKey(1)));
+        assertThrowsTxFinishedException(() -> accountsRv.contains(tx, makeKey(1)));
+        assertThrowsTxFinishedException(() -> accountsRv.getAll(tx, List.of(makeKey(1))));
+        assertThrowsTxFinishedException(() -> accountsRv.containsAll(tx, List.of(makeKey(1))));
+        assertAsyncThrowsTxFinishedException(() -> accountsRv.getAsync(tx, makeKey(1)));
+        assertAsyncThrowsTxFinishedException(() -> accountsRv.containsAsync(tx, makeKey(1)));
+        assertAsyncThrowsTxFinishedException(() -> accountsRv.getAllAsync(tx, List.of(makeKey(1))));
+        assertAsyncThrowsTxFinishedException(() -> accountsRv.containsAllAsync(tx, List.of(makeKey(1))));
+
+        KeyValueView accountsKv = accounts.keyValueView();
+
+        assertThrowsTxFinishedException(() -> accountsKv.get(tx, makeKey(1)));
+        assertThrowsTxFinishedException(() -> accountsKv.getNullable(tx, makeKey(1)));
+        assertThrowsTxFinishedException(() -> accountsKv.getOrDefault(tx, makeKey(1), makeValue(1, BALANCE_1)));
+        assertThrowsTxFinishedException(() -> accountsKv.contains(tx, makeKey(1)));
+        assertThrowsTxFinishedException(() -> accountsKv.getAll(tx, List.of(makeKey(1))));
+        assertThrowsTxFinishedException(() -> accountsKv.containsAll(tx, List.of(makeKey(1))));
+        assertAsyncThrowsTxFinishedException(() -> accountsKv.getAsync(tx, makeKey(1)));
+        assertAsyncThrowsTxFinishedException(() -> accountsKv.getNullableAsync(tx, makeKey(1)));
+        assertAsyncThrowsTxFinishedException(() -> accountsKv.getOrDefaultAsync(tx, makeKey(1), makeValue(1, BALANCE_1)));
+        assertAsyncThrowsTxFinishedException(() -> accountsKv.getAllAsync(tx, List.of(makeKey(1))));
+        assertAsyncThrowsTxFinishedException(() -> accountsKv.containsAsync(tx, makeKey(1)));
+        assertAsyncThrowsTxFinishedException(() -> accountsKv.containsAllAsync(tx, List.of(makeKey(1))));
+
+        InternalTransaction internalTx = (InternalTransaction) tx;
+
+        assertThrowsTxFinishedException(() -> {
+            Flow.Publisher<BinaryRow> pub = accounts.internalTable().scan(
+                    0,
+                    internalTx.id(),
+                    internalTx.readTimestamp(),
+                    new ClusterNodeImpl(UUID.randomUUID(), "node", new NetworkAddress("localhost", 123)),
+                    internalTx.coordinatorId()
+            );
+
+            AtomicReference<Throwable> errorRef = new AtomicReference<>();
+
+            pub.subscribe(new SingleRequestSubscriber<>(errorRef));
+
+            assertTrue(waitForCondition(() -> errorRef.get() != null, 1_000));
+
+            throw errorRef.get();
+        });
+
+        assertThrowsTxFinishedException(() -> {
+            Flow.Publisher<BinaryRow> pub = accounts.internalTable().lookup(
+                    0,
+                    internalTx.id(),
+                    internalTx.readTimestamp(),
+                    new ClusterNodeImpl(UUID.randomUUID(), "node", new NetworkAddress("localhost", 123)),
+                    0,
+                    // Binary tuple is null for testing purposes, assuming that it wouldn't be processed anyway.
+                    null,
+                    null,
+                    internalTx.coordinatorId()
+            );
+
+            AtomicReference<Throwable> errorRef = new AtomicReference<>();
+
+            pub.subscribe(new SingleRequestSubscriber<>(errorRef));
+
+            assertTrue(waitForCondition(() -> errorRef.get() != null, 1_000));
+
+            throw errorRef.get();
+        });
+    }
+
+    private void assertThrowsTxFinishedException(Executable run) {
+        assertThrowsWithCode(TransactionException.class, TX_ALREADY_FINISHED_ERR, run, "Transaction is already finished");
+    }
+
+    private void assertAsyncThrowsTxFinishedException(Supplier<CompletableFuture<?>> run) {
+        assertThrowsTxFinishedException(() -> {
+            try {
+                run.get().join();
+            } catch (CompletionException e) {
+                throw e.getCause();
+            } catch (Exception e) {
+                throw e;
+            }
+        });
+    }
+
+    @Test
     public void testImplicit() {
         accounts.recordView().upsert(null, makeValue(1, BALANCE_1));
         assertEquals(BALANCE_1, accounts.recordView().get(null, makeKey(1)).doubleValue("balance"));
@@ -2400,13 +2205,13 @@ public abstract class TxAbstractTest extends IgniteAbstractTest {
         SchemaRegistry schemaRegistry = accounts.schemaView();
         var marshaller = new TupleMarshallerImpl(schemaRegistry.lastKnownSchema());
 
-        int partId = accounts.internalTable().partition(marshaller.marshalKey(makeKey(0)));
+        int partId = accounts.internalTable().partitionId(marshaller.marshalKey(makeKey(0)));
 
         ArrayList<Integer> keys = new ArrayList<>(10);
         keys.add(0);
 
         for (int i = 1; i < 10_000 && keys.size() < 10; i++) {
-            var p = accounts.internalTable().partition(marshaller.marshalKey(makeKey(i)));
+            var p = accounts.internalTable().partitionId(marshaller.marshalKey(makeKey(i)));
 
             if (p == partId) {
                 keys.add(i);
@@ -2564,6 +2369,32 @@ public abstract class TxAbstractTest extends IgniteAbstractTest {
             res = accountsRv.getAll(null, List.of(makeKey(1), makeKey(2)));
 
             assertThat(res, contains(null, null));
+        }
+    }
+
+    private static class SingleRequestSubscriber<T> implements Flow.Subscriber<T> {
+        private final AtomicReference<Throwable> errorRef;
+
+        private SingleRequestSubscriber(AtomicReference<Throwable> errorRef) {
+            this.errorRef = errorRef;
+        }
+
+        @Override
+        public void onSubscribe(Flow.Subscription s) {
+            s.request(1);
+        }
+
+        @Override
+        public void onNext(T item) {
+        }
+
+        @Override
+        public void onError(Throwable throwable) {
+            errorRef.set(throwable);
+        }
+
+        @Override
+        public void onComplete() {
         }
     }
 }

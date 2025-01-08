@@ -48,6 +48,7 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ForkJoinPool;
+import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeoutException;
 import java.util.stream.IntStream;
@@ -59,11 +60,11 @@ import org.apache.ignite.internal.hlc.ClockServiceImpl;
 import org.apache.ignite.internal.hlc.ClockWaiter;
 import org.apache.ignite.internal.hlc.HybridClockImpl;
 import org.apache.ignite.internal.hlc.HybridTimestamp;
+import org.apache.ignite.internal.lowwatermark.TestLowWatermark;
 import org.apache.ignite.internal.manager.ComponentContext;
 import org.apache.ignite.internal.manager.IgniteComponent;
 import org.apache.ignite.internal.metastorage.MetaStorageManager;
 import org.apache.ignite.internal.metastorage.impl.StandaloneMetaStorageManager;
-import org.apache.ignite.internal.metastorage.server.SimpleInMemoryKeyValueStorage;
 import org.apache.ignite.internal.network.ClusterNodeResolver;
 import org.apache.ignite.internal.network.ClusterService;
 import org.apache.ignite.internal.network.MessagingService;
@@ -89,6 +90,8 @@ import org.apache.ignite.internal.table.distributed.replicator.PartitionReplicaL
 import org.apache.ignite.internal.table.distributed.replicator.TransactionStateResolver;
 import org.apache.ignite.internal.table.distributed.schema.ValidationSchemasSource;
 import org.apache.ignite.internal.testframework.BaseIgniteAbstractTest;
+import org.apache.ignite.internal.testframework.ExecutorServiceExtension;
+import org.apache.ignite.internal.testframework.InjectExecutorService;
 import org.apache.ignite.internal.tx.HybridTimestampTracker;
 import org.apache.ignite.internal.tx.LockManager;
 import org.apache.ignite.internal.tx.TxManager;
@@ -111,6 +114,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 /**
  * Tests for distributed aspects of the {@link InternalTable#estimatedSize} method.
  */
+@ExtendWith(ExecutorServiceExtension.class)
 @ExtendWith(MockitoExtension.class)
 @ExtendWith(ConfigurationExtension.class)
 public class InternalTableEstimatedSizeTest extends BaseIgniteAbstractTest {
@@ -143,6 +147,9 @@ public class InternalTableEstimatedSizeTest extends BaseIgniteAbstractTest {
 
     private final List<IgniteComponent> components = new ArrayList<>();
 
+    @InjectExecutorService
+    private ScheduledExecutorService scheduledExecutor;
+
     @BeforeEach
     void setUp(
             TestInfo testInfo,
@@ -173,14 +180,11 @@ public class InternalTableEstimatedSizeTest extends BaseIgniteAbstractTest {
 
         components.add(clusterService);
 
-        var clockWaiter = new ClockWaiter(nodeName, clock);
+        var clockWaiter = new ClockWaiter(nodeName, clock, scheduledExecutor);
 
         components.add(clockWaiter);
 
-        MetaStorageManager metaStorageManager = StandaloneMetaStorageManager.create(
-                new SimpleInMemoryKeyValueStorage(nodeName),
-                clock
-        );
+        MetaStorageManager metaStorageManager = StandaloneMetaStorageManager.create(nodeName, clock);
 
         components.add(metaStorageManager);
 
@@ -201,8 +205,8 @@ public class InternalTableEstimatedSizeTest extends BaseIgniteAbstractTest {
                 tableStorage,
                 txStateTableStorage,
                 new ReplicaService(clusterService.messagingService(), clock, replicationConfiguration),
-                clock,
-                new HybridTimestampTracker(),
+                clockService,
+                HybridTimestampTracker.atomicTracker(null),
                 placementDriver,
                 new TransactionInflights(placementDriver, clockService),
                 0,
@@ -285,6 +289,11 @@ public class InternalTableEstimatedSizeTest extends BaseIgniteAbstractTest {
                     public <R> CompletableFuture<R> run(Command cmd) {
                         return nullCompletedFuture();
                     }
+
+                    @Override
+                    public <R> CompletableFuture<R> run(Command cmd, long timeoutMillis) {
+                        return nullCompletedFuture();
+                    }
                 },
                 txManager,
                 lockManager,
@@ -307,7 +316,8 @@ public class InternalTableEstimatedSizeTest extends BaseIgniteAbstractTest {
                 clusterNodeResolver,
                 remotelyTriggeredResourceRegistry,
                 schemaRegistry,
-                indexMetaStorage
+                indexMetaStorage,
+                new TestLowWatermark()
         );
     }
 

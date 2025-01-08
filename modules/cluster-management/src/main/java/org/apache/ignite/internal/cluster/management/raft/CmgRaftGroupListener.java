@@ -158,61 +158,61 @@ public class CmgRaftGroupListener implements RaftGroupListener {
 
         return cmgMessagesFactory.metaStorageInfo()
                 .metaStorageNodes(clusterState.metaStorageNodes())
-                .metastorageRepairClusterId(storageManager.getMetastorageRepairClusterId())
                 .metastorageRepairingConfigIndex(storageManager.getMetastorageRepairingConfigIndex())
                 .build();
     }
 
     @Override
     public void onWrite(Iterator<CommandClosure<WriteCommand>> iterator) {
-        if (!busyLock.enterBusy()) {
-            iterator.forEachRemaining(clo -> clo.result(new ShutdownException()));
-        }
-
-        try {
-            onWriteBusy(iterator);
-        } finally {
-            busyLock.leaveBusy();
-        }
-    }
-
-    private void onWriteBusy(Iterator<CommandClosure<WriteCommand>> iterator) {
         while (iterator.hasNext()) {
             CommandClosure<WriteCommand> clo = iterator.next();
 
-            WriteCommand command = clo.command();
+            try {
+                WriteCommand command = clo.command();
 
-            if (command instanceof InitCmgStateCommand) {
-                Serializable response = initCmgState((InitCmgStateCommand) command);
+                if (command instanceof InitCmgStateCommand) {
+                    Serializable response = initCmgState((InitCmgStateCommand) command);
 
-                clo.result(response);
-            } else if (command instanceof UpdateClusterStateCommand) {
-                UpdateClusterStateCommand updateClusterStateCommand = (UpdateClusterStateCommand) command;
-                storageManager.putClusterState(updateClusterStateCommand.clusterState());
-                clo.result(null);
-            } else if (command instanceof JoinRequestCommand) {
-                ValidationResult response = validateNode((JoinRequestCommand) command);
+                    clo.result(response);
+                } else if (command instanceof UpdateClusterStateCommand) {
+                    UpdateClusterStateCommand updateClusterStateCommand = (UpdateClusterStateCommand) command;
+                    storageManager.putClusterState(updateClusterStateCommand.clusterState());
+                    clo.result(null);
+                } else if (command instanceof JoinRequestCommand) {
+                    ValidationResult response = validateNode((JoinRequestCommand) command);
 
-                clo.result(response.isValid() ? null : new ValidationErrorResponse(response.errorDescription()));
-            } else if (command instanceof JoinReadyCommand) {
-                ValidationResult response = completeValidation((JoinReadyCommand) command);
+                    clo.result(response.isValid() ? null : new ValidationErrorResponse(response.errorDescription()));
+                } else if (command instanceof JoinReadyCommand) {
+                    ValidationResult response = completeValidation((JoinReadyCommand) command);
 
-                if (response.isValid()) {
-                    // It is valid, the topology has been changed.
+                    if (response.isValid()) {
+                        // It is valid, the topology has been changed.
+                        onLogicalTopologyChanged.accept(clo.term());
+                    }
+
+                    clo.result(response.isValid() ? null : new ValidationErrorResponse(response.errorDescription()));
+                } else if (command instanceof NodesLeaveCommand) {
+                    removeNodesFromLogicalTopology((NodesLeaveCommand) command);
+
                     onLogicalTopologyChanged.accept(clo.term());
+
+                    clo.result(null);
+                } else if (command instanceof ChangeMetaStorageInfoCommand) {
+                    changeMetastorageNodes((ChangeMetaStorageInfoCommand) command);
+
+                    clo.result(null);
                 }
+            } catch (Throwable e) {
+                LOG.error(
+                        "Unknown error while processing command [commandIndex={}, commandTerm={}, command={}]",
+                        e,
+                        clo.index(), clo.term(), clo.command()
+                );
 
-                clo.result(response.isValid() ? null : new ValidationErrorResponse(response.errorDescription()));
-            } else if (command instanceof NodesLeaveCommand) {
-                removeNodesFromLogicalTopology((NodesLeaveCommand) command);
+                clo.result(e);
 
-                onLogicalTopologyChanged.accept(clo.term());
-
-                clo.result(null);
-            } else if (command instanceof ChangeMetaStorageInfoCommand) {
-                changeMetastorageNodes((ChangeMetaStorageInfoCommand) command);
-
-                clo.result(null);
+                // Rethrowing to let JRaft know that the state machine might be broken.
+                throw e;
             }
         }
     }
@@ -322,10 +322,8 @@ public class CmgRaftGroupListener implements RaftGroupListener {
 
         storageManager.putClusterState(newState);
 
-        assert (command.metastorageRepairClusterId() == null) == (command.metastorageRepairingConfigIndex() == null)
-                : "Repair-related properties must either all be present or all be absent [command=" + command + "]";
-        if (command.metastorageRepairClusterId() != null) {
-            storageManager.saveMetastorageRepairInfo(command.metastorageRepairClusterId(), command.metastorageRepairingConfigIndex());
+        if (command.metastorageRepairingConfigIndex() != null) {
+            storageManager.saveMetastorageRepairInfo(command.metastorageRepairingConfigIndex());
         }
     }
 

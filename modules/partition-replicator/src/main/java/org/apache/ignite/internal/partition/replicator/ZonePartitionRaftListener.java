@@ -23,9 +23,7 @@ import static org.apache.ignite.internal.tx.TxState.COMMITTED;
 import java.io.Serializable;
 import java.nio.file.Path;
 import java.util.Iterator;
-import java.util.concurrent.CompletionException;
 import java.util.function.Consumer;
-import org.apache.ignite.internal.lang.IgniteInternalException;
 import org.apache.ignite.internal.logger.IgniteLogger;
 import org.apache.ignite.internal.logger.Loggers;
 import org.apache.ignite.internal.partition.replicator.network.command.FinishTxCommand;
@@ -35,15 +33,12 @@ import org.apache.ignite.internal.raft.WriteCommand;
 import org.apache.ignite.internal.raft.service.CommandClosure;
 import org.apache.ignite.internal.raft.service.RaftGroupListener;
 import org.apache.ignite.internal.tx.TransactionResult;
-import org.apache.ignite.internal.util.IgniteSpinBusyLock;
 
 /**
  * RAFT listener for the zone partition.
  */
 public class ZonePartitionRaftListener implements RaftGroupListener {
     private static final IgniteLogger LOG = Loggers.forClass(ZonePartitionRaftListener.class);
-
-    private final IgniteSpinBusyLock busyLock = new IgniteSpinBusyLock();
 
     @Override
     public void onRead(Iterator<CommandClosure<ReadCommand>> iterator) {
@@ -56,18 +51,6 @@ public class ZonePartitionRaftListener implements RaftGroupListener {
 
     @Override
     public void onWrite(Iterator<CommandClosure<WriteCommand>> iterator) {
-        if (!busyLock.enterBusy()) {
-            iterator.forEachRemaining(clo -> clo.result(new ShutdownException()));
-        }
-
-        try {
-            onWriteBusy(iterator);
-        } finally {
-            busyLock.leaveBusy();
-        }
-    }
-
-    private void onWriteBusy(Iterator<CommandClosure<WriteCommand>> iterator) {
         iterator.forEachRemaining((CommandClosure<? extends WriteCommand> clo) -> {
             Command command = clo.command();
 
@@ -81,16 +64,14 @@ public class ZonePartitionRaftListener implements RaftGroupListener {
                 } else {
                     LOG.debug("Message type " + command.getClass() + " is not supported by the zone partition RAFT listener yet");
                 }
-            } catch (IgniteInternalException e) {
-                result = e;
-            } catch (CompletionException e) {
-                result = e.getCause();
             } catch (Throwable t) {
                 LOG.error(
                         "Unknown error while processing command [commandIndex={}, commandTerm={}, command={}]",
                         t,
                         clo.index(), clo.index(), command
                 );
+
+                clo.result(t);
 
                 throw t;
             }
@@ -111,6 +92,6 @@ public class ZonePartitionRaftListener implements RaftGroupListener {
 
     @Override
     public void onShutdown() {
-        busyLock.block();
+        // No-op.
     }
 }

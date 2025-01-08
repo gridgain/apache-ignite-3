@@ -67,6 +67,7 @@ import org.apache.ignite.internal.hlc.HybridClock;
 import org.apache.ignite.internal.hlc.HybridClockImpl;
 import org.apache.ignite.internal.hlc.HybridTimestamp;
 import org.apache.ignite.internal.hlc.TestClockService;
+import org.apache.ignite.internal.lowwatermark.TestLowWatermark;
 import org.apache.ignite.internal.network.ClusterNodeResolver;
 import org.apache.ignite.internal.partition.replicator.network.PartitionReplicationMessagesFactory;
 import org.apache.ignite.internal.partition.replicator.network.replication.BinaryRowMessage;
@@ -116,6 +117,7 @@ import org.apache.ignite.internal.tx.TxState;
 import org.apache.ignite.internal.tx.TxStateMeta;
 import org.apache.ignite.internal.tx.impl.HeapLockManager;
 import org.apache.ignite.internal.tx.impl.RemotelyTriggeredResourceRegistry;
+import org.apache.ignite.internal.tx.impl.WaitDieDeadlockPreventionPolicy;
 import org.apache.ignite.internal.tx.storage.state.test.TestTxStateStorage;
 import org.apache.ignite.internal.tx.test.TestTransactionIds;
 import org.apache.ignite.internal.type.NativeTypes;
@@ -142,7 +144,7 @@ public class PartitionReplicaListenerIndexLockingTest extends IgniteAbstractTest
     private static final UUID TRANSACTION_ID = TestTransactionIds.newTransactionId();
     private static final HybridClock CLOCK = new HybridClockImpl();
     private static final ClockService CLOCK_SERVICE = new TestClockService(CLOCK);
-    private static final LockManager LOCK_MANAGER = new HeapLockManager();
+    private static final LockManager LOCK_MANAGER = lockManager();
     private static final TablePartitionId PARTITION_ID = new TablePartitionId(TABLE_ID, PART_ID);
     private static final PartitionReplicationMessagesFactory TABLE_MESSAGES_FACTORY = new PartitionReplicationMessagesFactory();
     private static final TestMvPartitionStorage TEST_MV_PARTITION_STORAGE = new TestMvPartitionStorage(PART_ID);
@@ -277,7 +279,8 @@ public class PartitionReplicaListenerIndexLockingTest extends IgniteAbstractTest
                 mock(ClusterNodeResolver.class),
                 new RemotelyTriggeredResourceRegistry(),
                 schemaManager,
-                mock(IndexMetaStorage.class)
+                mock(IndexMetaStorage.class),
+                new TestLowWatermark()
         );
 
         kvMarshaller = new ReflectionMarshallerFactory().create(schemaDescriptor, Integer.class, Integer.class);
@@ -309,6 +312,12 @@ public class PartitionReplicaListenerIndexLockingTest extends IgniteAbstractTest
         }).when(txManager).updateTxMeta(any(), any());
 
         return txManager;
+    }
+
+    private static LockManager lockManager() {
+        HeapLockManager lockManager = HeapLockManager.smallInstance();
+        lockManager.start(new WaitDieDeadlockPreventionPolicy());
+        return lockManager;
     }
 
     @BeforeEach

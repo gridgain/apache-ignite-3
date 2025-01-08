@@ -19,21 +19,24 @@ package org.apache.ignite.internal.sql.engine;
 
 import static org.apache.ignite.internal.TestWrappers.unwrapIgniteImpl;
 import static org.apache.ignite.internal.catalog.CatalogService.DEFAULT_STORAGE_PROFILE;
+import static org.apache.ignite.internal.catalog.commands.CatalogUtils.DEFAULT_CONSISTENCY_MODE;
 import static org.apache.ignite.internal.catalog.commands.CatalogUtils.DEFAULT_FILTER;
 import static org.apache.ignite.internal.catalog.commands.CatalogUtils.DEFAULT_PARTITION_COUNT;
 import static org.apache.ignite.internal.catalog.commands.CatalogUtils.DEFAULT_REPLICA_COUNT;
 import static org.apache.ignite.internal.catalog.commands.CatalogUtils.IMMEDIATE_TIMER_VALUE;
 import static org.apache.ignite.internal.catalog.commands.CatalogUtils.INFINITE_TIMER_VALUE;
+import static org.apache.ignite.internal.testframework.IgniteTestUtils.assertThrows;
 
 import java.util.Objects;
 import org.apache.ignite.internal.app.IgniteImpl;
 import org.apache.ignite.internal.catalog.Catalog;
 import org.apache.ignite.internal.catalog.CatalogManager;
+import org.apache.ignite.internal.catalog.descriptors.ConsistencyMode;
 import org.apache.ignite.internal.sql.BaseSqlIntegrationTest;
 import org.apache.ignite.internal.testframework.IgniteTestUtils;
+import org.apache.ignite.sql.SqlException;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.TestInfo;
 
 /**
  * End-to-end tests to verify zones system view.
@@ -43,11 +46,8 @@ public class ItZonesSystemViewTest extends BaseSqlIntegrationTest {
 
     private static final String ALTER_ZONE_NAME = "NEW_TEST_ZONE";
 
-    @Override
     @BeforeAll
-    protected void beforeAll(TestInfo testInfo) {
-        super.beforeAll(testInfo);
-
+    void beforeAll() {
         IgniteTestUtils.await(systemViewManager().completeRegistration());
     }
 
@@ -66,7 +66,8 @@ public class ItZonesSystemViewTest extends BaseSqlIntegrationTest {
                 IMMEDIATE_TIMER_VALUE,
                 INFINITE_TIMER_VALUE,
                 DEFAULT_FILTER,
-                true
+                true,
+                DEFAULT_CONSISTENCY_MODE.name()
         ).check();
     }
 
@@ -81,7 +82,8 @@ public class ItZonesSystemViewTest extends BaseSqlIntegrationTest {
                 3,
                 4,
                 DEFAULT_FILTER,
-                false
+                false,
+                DEFAULT_CONSISTENCY_MODE.name()
         ).check();
 
         sql("DROP ZONE " + ZONE_NAME);
@@ -98,7 +100,8 @@ public class ItZonesSystemViewTest extends BaseSqlIntegrationTest {
                 3,
                 4,
                 DEFAULT_FILTER,
-                false
+                false,
+                DEFAULT_CONSISTENCY_MODE.name()
         ).check();
 
         sql("ALTER ZONE " + ZONE_NAME + " SET REPLICAS = 100");
@@ -110,7 +113,8 @@ public class ItZonesSystemViewTest extends BaseSqlIntegrationTest {
                 3,
                 4,
                 DEFAULT_FILTER,
-                false
+                false,
+                DEFAULT_CONSISTENCY_MODE.name()
         ).check();
 
         sql("DROP ZONE " + ZONE_NAME);
@@ -127,7 +131,8 @@ public class ItZonesSystemViewTest extends BaseSqlIntegrationTest {
                 3,
                 4,
                 DEFAULT_FILTER,
-                false
+                false,
+                DEFAULT_CONSISTENCY_MODE.name()
         ).check();
 
         sql("ALTER ZONE " + ZONE_NAME + " RENAME TO " + ALTER_ZONE_NAME);
@@ -139,7 +144,8 @@ public class ItZonesSystemViewTest extends BaseSqlIntegrationTest {
                 3,
                 4,
                 DEFAULT_FILTER,
-                false
+                false,
+                DEFAULT_CONSISTENCY_MODE.name()
         ).check();
 
         assertQuery("SELECT COUNT(*) FROM SYSTEM.ZONES").returns(2L).check();
@@ -160,6 +166,71 @@ public class ItZonesSystemViewTest extends BaseSqlIntegrationTest {
         assertQuery("SELECT COUNT(*) FROM SYSTEM.ZONES").returns(1L).check();
     }
 
+    @Test
+    public void systemViewCustomConsistencyMode() {
+        sql(createZoneSql(ZONE_NAME, 1, 2, 3, 4, DEFAULT_FILTER, ConsistencyMode.HIGH_AVAILABILITY));
+
+        assertQuery(selectFromZonesSystemView(ZONE_NAME)).returns(
+                ZONE_NAME,
+                1,
+                2,
+                3,
+                4,
+                DEFAULT_FILTER,
+                false,
+                ConsistencyMode.HIGH_AVAILABILITY.name()
+        ).check();
+
+        sql("ALTER ZONE " + ZONE_NAME + " SET REPLICAS = 100");
+
+        assertQuery(selectFromZonesSystemView(ZONE_NAME)).returns(
+                ZONE_NAME,
+                1,
+                100,
+                3,
+                4,
+                DEFAULT_FILTER,
+                false,
+                ConsistencyMode.HIGH_AVAILABILITY.name()
+        ).check();
+
+        sql("DROP ZONE " + ZONE_NAME);
+    }
+
+    @Test
+    public void systemViewAlterConsistencyMode() {
+        sql(createZoneSql(ZONE_NAME, 1, 2, 3, 4, DEFAULT_FILTER));
+
+        assertQuery(selectFromZonesSystemView(ZONE_NAME)).returns(
+                ZONE_NAME,
+                1,
+                2,
+                3,
+                4,
+                DEFAULT_FILTER,
+                false,
+                DEFAULT_CONSISTENCY_MODE.name()
+        ).check();
+
+        assertThrows(
+                SqlException.class,
+                () -> sql("ALTER ZONE " + ZONE_NAME + " SET CONSISTENCY_MODE = 'HIGH_AVAILABILITY'"),
+                "CONSISTENCY_MODE");
+
+        assertQuery(selectFromZonesSystemView(ZONE_NAME)).returns(
+                ZONE_NAME,
+                1,
+                2,
+                3,
+                4,
+                DEFAULT_FILTER,
+                false,
+                DEFAULT_CONSISTENCY_MODE.name()
+        ).check();
+
+        sql("DROP ZONE " + ZONE_NAME);
+    }
+
     private static String createZoneSql(String zoneName, int partitions, int replicas, int scaleUp, int scaleDown, String filter) {
         String sqlFormat = "CREATE ZONE \"%s\" WITH "
                 + "\"PARTITIONS\" = %d, "
@@ -170,6 +241,37 @@ public class ItZonesSystemViewTest extends BaseSqlIntegrationTest {
                 + "\"STORAGE_PROFILES\" = '%s'";
 
         return String.format(sqlFormat, zoneName, partitions, replicas, scaleUp, scaleDown, filter, DEFAULT_STORAGE_PROFILE);
+    }
+
+    private static String createZoneSql(
+            String zoneName,
+            int partitions,
+            int replicas,
+            int scaleUp,
+            int scaleDown,
+            String filter,
+            ConsistencyMode consistencyMode
+    ) {
+        String sqlFormat = "CREATE ZONE \"%s\" WITH "
+                + "\"PARTITIONS\" = %d, "
+                + "\"REPLICAS\" = %d, "
+                + "\"DATA_NODES_AUTO_ADJUST_SCALE_UP\" = %d, "
+                + "\"DATA_NODES_AUTO_ADJUST_SCALE_DOWN\" = %d,"
+                + "\"DATA_NODES_FILTER\" = '%s',"
+                + "\"STORAGE_PROFILES\" = '%s',"
+                + "\"CONSISTENCY_MODE\" = '%s'";
+
+        return String.format(
+                sqlFormat,
+                zoneName,
+                partitions,
+                replicas,
+                scaleUp,
+                scaleDown,
+                filter,
+                DEFAULT_STORAGE_PROFILE,
+                consistencyMode
+        );
     }
 
     private static String selectFromZonesSystemView(String zoneName) {

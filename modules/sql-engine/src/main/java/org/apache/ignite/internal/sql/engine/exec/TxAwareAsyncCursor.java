@@ -24,6 +24,7 @@ import java.util.concurrent.CompletionException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Function;
 import org.apache.ignite.internal.lang.SqlExceptionMapperUtil;
+import org.apache.ignite.internal.sql.engine.QueryCancelledException;
 import org.apache.ignite.internal.sql.engine.tx.QueryTransactionWrapper;
 import org.apache.ignite.internal.util.AsyncCursor;
 import org.apache.ignite.internal.util.CompletableFutures;
@@ -34,22 +35,25 @@ import org.apache.ignite.internal.util.ExceptionUtils;
  *
  * @param <T> Type of the returned items.
  */
-class TxAwareAsyncCursor<T> implements AsyncDataCursor<T> {
+class TxAwareAsyncCursor<T> implements AsyncDataCursorExt<T> {
     private final AtomicBoolean closed = new AtomicBoolean(false);
     private final CompletableFuture<Void> closeResult = new CompletableFuture<>();
 
     private final QueryTransactionWrapper txWrapper;
     private final AsyncCursor<T> dataCursor;
     private final CompletableFuture<Void> firstPageReady;
+    private final Function<CancellationReason, CompletableFuture<Void>> closeHandler;
 
     TxAwareAsyncCursor(
             QueryTransactionWrapper txWrapper,
             AsyncCursor<T> dataCursor,
-            CompletableFuture<Void> firstPageReady
+            CompletableFuture<Void> firstPageReady,
+            Function<CancellationReason, CompletableFuture<Void>> closeHandler
     ) {
         this.txWrapper = txWrapper;
         this.dataCursor = dataCursor;
         this.firstPageReady = firstPageReady;
+        this.closeHandler = closeHandler;
     }
 
     @Override
@@ -70,13 +74,23 @@ class TxAwareAsyncCursor<T> implements AsyncDataCursor<T> {
     }
 
     @Override
-    public CompletableFuture<Void> closeAsync() {
+    public CompletableFuture<Void> cancelAsync(CancellationReason reason) {
         if (!closed.compareAndSet(false, true)) {
             return closeResult;
         }
 
-        dataCursor.closeAsync()
-                .thenCompose(ignored -> txWrapper.commitImplicit())
+        closeHandler.apply(reason)
+                .thenCompose(ignored -> {
+                    if (reason != CancellationReason.CLOSE) {
+                        String message = reason == CancellationReason.TIMEOUT 
+                                ? QueryCancelledException.TIMEOUT_MSG 
+                                : QueryCancelledException.CANCEL_MSG;
+
+                        return txWrapper.rollback(new QueryCancelledException(message));
+                    }
+
+                    return txWrapper.commitImplicit();
+                })
                 .whenComplete((r, e) -> {
                     if (e != null) {
                         closeResult.completeExceptionally(e);
@@ -86,6 +100,11 @@ class TxAwareAsyncCursor<T> implements AsyncDataCursor<T> {
                 });
 
         return closeResult;
+    }
+
+    @Override
+    public CompletableFuture<Void> closeAsync() {
+        return cancelAsync(CancellationReason.CLOSE);
     }
 
     @Override

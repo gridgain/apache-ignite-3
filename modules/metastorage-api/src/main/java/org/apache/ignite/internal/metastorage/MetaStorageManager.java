@@ -305,6 +305,11 @@ public interface MetaStorageManager extends IgniteComponent {
     CompletableFuture<Void> removeAll(Set<ByteArray> keys);
 
     /**
+     * Removes entries by the given prefix.
+     */
+    CompletableFuture<Void> removeByPrefix(ByteArray prefix);
+
+    /**
      * Returns a publisher for getting the latest version of an entries for the given key prefix from the metastorage leader.
      *
      * <p>Never fail with a {@link CompactedException}.</p>
@@ -414,13 +419,26 @@ public interface MetaStorageManager extends IgniteComponent {
 
     /**
      * Returns a future which completes when MetaStorage manager finished local recovery.
-     * The value of the future is the revision which must be used for state recovery by other components.
+     * The value of the future is the revisions which must be used for state recovery by other components.
      */
-    CompletableFuture<Long> recoveryFinishedFuture();
+    CompletableFuture<Revisions> recoveryFinishedFuture();
 
     /** Registers a Meta Storage revision update listener. */
     void registerRevisionUpdateListener(RevisionUpdateListener listener);
 
     /** Unregisters a Meta Storage revision update listener. */
     void unregisterRevisionUpdateListener(RevisionUpdateListener listener);
+
+    /** Registers a Meta Storage compaction revision update listener. */
+    void registerCompactionRevisionUpdateListener(CompactionRevisionUpdateListener listener);
+
+    /** Unregisters a Meta Storage compaction revision update listener. */
+    void unregisterCompactionRevisionUpdateListener(CompactionRevisionUpdateListener listener);
+
+    /**
+     * Returns the local compaction revision that was set or restored from a metastorage snapshot, {@code -1} if it has never been updated.
+     *
+     * @throws IgniteInternalException with cause {@link NodeStoppingException} if the node is in the process of stopping.
+     */
+    long getCompactionRevisionLocally();
 }

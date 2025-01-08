@@ -54,12 +54,14 @@ import org.apache.ignite.internal.testframework.BaseIgniteAbstractTest;
 import org.apache.ignite.internal.tx.Lock;
 import org.apache.ignite.internal.tx.LockException;
 import org.apache.ignite.internal.tx.LockKey;
+import org.apache.ignite.internal.tx.LockManager;
 import org.apache.ignite.internal.tx.LockMode;
 import org.apache.ignite.internal.tx.TxState;
 import org.apache.ignite.internal.tx.TxStateMeta;
 import org.apache.ignite.internal.tx.configuration.TransactionConfiguration;
 import org.apache.ignite.network.ClusterNode;
 import org.apache.ignite.network.NetworkAddress;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -87,7 +89,7 @@ public class OrphanDetectorTest extends BaseIgniteAbstractTest {
     @Mock
     private PlacementDriver placementDriver;
 
-    private final HeapLockManager lockManager = new HeapLockManager();
+    private final LockManager lockManager = lockManager();
 
     private final HybridClock clock = new HybridClockImpl();
 
@@ -102,6 +104,14 @@ public class OrphanDetectorTest extends BaseIgniteAbstractTest {
 
     private TransactionIdGenerator idGenerator;
 
+    private OrphanDetector orphanDetector;
+
+    private static LockManager lockManager() {
+        HeapLockManager lockManager = HeapLockManager.smallInstance();
+        lockManager.start(new WaitDieDeadlockPreventionPolicy());
+        return lockManager;
+    }
+
     @BeforeEach
     public void setup() {
         idGenerator = new TransactionIdGenerator(LOCAL_NODE.name().hashCode());
@@ -110,7 +120,7 @@ public class OrphanDetectorTest extends BaseIgniteAbstractTest {
 
         resolutionCount.set(0);
 
-        OrphanDetector orphanDetector = new OrphanDetector(
+        orphanDetector = new OrphanDetector(
                 topologyService,
                 replicaService,
                 placementDriverHelper,
@@ -126,6 +136,11 @@ public class OrphanDetectorTest extends BaseIgniteAbstractTest {
         txStateMetaStorage.start();
 
         orphanDetector.start(txStateMetaStorage, txConfiguration.abandonedCheckTs());
+    }
+
+    @AfterEach
+    void cleanup() {
+        orphanDetector.stop();
     }
 
     @Test

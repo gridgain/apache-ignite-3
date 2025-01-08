@@ -18,6 +18,8 @@
 package org.apache.ignite.internal.catalog.commands;
 
 import static java.util.stream.Collectors.toList;
+import static org.apache.ignite.internal.catalog.CatalogService.DEFINITION_SCHEMA;
+import static org.apache.ignite.internal.catalog.CatalogService.INFORMATION_SCHEMA;
 import static org.apache.ignite.internal.catalog.CatalogService.SYSTEM_SCHEMA_NAME;
 import static org.apache.ignite.internal.catalog.commands.DefaultValue.Type.FUNCTION_CALL;
 import static org.apache.ignite.internal.lang.IgniteStringFormatter.format;
@@ -45,6 +47,7 @@ import org.apache.ignite.internal.catalog.descriptors.CatalogStorageProfilesDesc
 import org.apache.ignite.internal.catalog.descriptors.CatalogTableColumnDescriptor;
 import org.apache.ignite.internal.catalog.descriptors.CatalogTableDescriptor;
 import org.apache.ignite.internal.catalog.descriptors.CatalogZoneDescriptor;
+import org.apache.ignite.internal.catalog.descriptors.ConsistencyMode;
 import org.apache.ignite.internal.hlc.HybridTimestamp;
 import org.apache.ignite.internal.type.NativeTypes;
 import org.apache.ignite.sql.ColumnType;
@@ -120,6 +123,8 @@ public class CatalogUtils {
      */
     public static final int DEFAULT_VARLEN_LENGTH = 2 << 15;
 
+    public static final ConsistencyMode DEFAULT_CONSISTENCY_MODE = ConsistencyMode.STRONG_CONSISTENCY;
+
     private static final Map<ColumnType, Set<ColumnType>> ALTER_COLUMN_TYPE_TRANSITIONS = new EnumMap<>(ColumnType.class);
 
     /**
@@ -142,7 +147,11 @@ public class CatalogUtils {
         FUNCTIONAL_DEFAULT_FUNCTIONS.put("RAND_UUID", ColumnType.UUID);
     }
 
-    public static final List<String> SYSTEM_SCHEMAS = List.of(SYSTEM_SCHEMA_NAME);
+    public static final Set<String> SYSTEM_SCHEMAS = Set.of(
+            SYSTEM_SCHEMA_NAME,
+            DEFINITION_SCHEMA,
+            INFORMATION_SCHEMA
+    );
 
     /** System schema names. */
     public static boolean isSystemSchema(String schemaName) {

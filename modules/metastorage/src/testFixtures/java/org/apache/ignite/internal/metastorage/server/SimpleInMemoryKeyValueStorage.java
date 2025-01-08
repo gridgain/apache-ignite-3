@@ -28,7 +28,7 @@ import static org.apache.ignite.internal.metastorage.server.KeyValueStorageUtils
 import static org.apache.ignite.internal.metastorage.server.KeyValueStorageUtils.maxRevisionIndex;
 import static org.apache.ignite.internal.metastorage.server.KeyValueStorageUtils.toUtf8String;
 import static org.apache.ignite.internal.metastorage.server.Value.TOMBSTONE;
-import static org.apache.ignite.internal.metastorage.server.raft.MetaStorageWriteHandler.IDEMPOTENT_COMMAND_PREFIX;
+import static org.apache.ignite.internal.metastorage.server.raft.MetaStorageWriteHandler.toIdempotentCommandKey;
 import static org.apache.ignite.internal.util.ArrayUtils.LONG_EMPTY_ARRAY;
 import static org.apache.ignite.internal.util.ByteUtils.toByteArray;
 import static org.apache.ignite.internal.util.CompletableFutures.nullCompletedFuture;
@@ -52,7 +52,6 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentSkipListMap;
 import org.apache.ignite.internal.failure.NoOpFailureManager;
 import org.apache.ignite.internal.hlc.HybridTimestamp;
-import org.apache.ignite.internal.lang.ByteArray;
 import org.apache.ignite.internal.metastorage.CommandId;
 import org.apache.ignite.internal.metastorage.Entry;
 import org.apache.ignite.internal.metastorage.dsl.Operation;
@@ -137,7 +136,12 @@ public class SimpleInMemoryKeyValueStorage extends AbstractKeyValueStorage {
 
     /** Constructor. */
     public SimpleInMemoryKeyValueStorage(String nodeName) {
-        super(nodeName, new NoOpFailureManager());
+        this(nodeName, new ReadOperationForCompactionTracker());
+    }
+
+    /** Constructor. */
+    public SimpleInMemoryKeyValueStorage(String nodeName, ReadOperationForCompactionTracker readOperationForCompactionTracker) {
+        super(nodeName, new NoOpFailureManager(), readOperationForCompactionTracker);
     }
 
     @Override
@@ -222,7 +226,7 @@ public class SimpleInMemoryKeyValueStorage extends AbstractKeyValueStorage {
 
         notifyWatches();
 
-        notifyRevisionUpdate();
+        notifyRevisionsUpdate();
     }
 
     @Override
@@ -282,6 +286,33 @@ public class SimpleInMemoryKeyValueStorage extends AbstractKeyValueStorage {
     }
 
     @Override
+    public void removeByPrefix(byte[] prefix, KeyValueUpdateContext context) {
+        rwLock.writeLock().lock();
+
+        try (Cursor<Entry> entryCursor = range(prefix, nextKey(prefix))) {
+            long curRev = rev + 1;
+
+            var keys = new ArrayList<byte[]>();
+
+            var vals = new ArrayList<byte[]>();
+
+            for (Entry e : entryCursor) {
+                if (e.empty() || e.tombstone()) {
+                    continue;
+                }
+
+                keys.add(e.key());
+
+                vals.add(TOMBSTONE);
+            }
+
+            doPutAll(curRev, keys, vals, context);
+        } finally {
+            rwLock.writeLock().unlock();
+        }
+    }
+
+    @Override
     public boolean invoke(
             Condition condition,
             List<Operation> success,
@@ -303,7 +334,7 @@ public class SimpleInMemoryKeyValueStorage extends AbstractKeyValueStorage {
             // In case of in-memory storage, there's no sense in "persisting" invoke result, however same persistent source operations
             // were added in order to have matching revisions count through all storages.
             ops.add(Operations.put(
-                    new ByteArray(IDEMPOTENT_COMMAND_PREFIX + commandId.toMgKeyAsString()),
+                    toIdempotentCommandKey(commandId),
                     branch ? INVOKE_RESULT_TRUE_BYTES : INVOKE_RESULT_FALSE_BYTES)
             );
 
@@ -357,10 +388,7 @@ public class SimpleInMemoryKeyValueStorage extends AbstractKeyValueStorage {
 
                     // In case of in-memory storage, there's no sense in "persisting" invoke result, however same persistent source
                     // operations were added in order to have matching revisions count through all storages.
-                    ops.add(Operations.put(
-                            new ByteArray(IDEMPOTENT_COMMAND_PREFIX + commandId.toMgKeyAsString()),
-                            branch.update().result().result())
-                    );
+                    ops.add(Operations.put(toIdempotentCommandKey(commandId), branch.update().result().result()));
 
                     for (Operation op : ops) {
                         switch (op.type()) {
@@ -455,28 +483,26 @@ public class SimpleInMemoryKeyValueStorage extends AbstractKeyValueStorage {
     }
 
     @Override
-    public void startWatches(long startRevision, OnRevisionAppliedCallback revisionCallback) {
+    public void startWatches(long startRevision, WatchEventHandlingCallback callback) {
         assert startRevision > 0 : startRevision;
 
         rwLock.readLock().lock();
 
         try {
+            watchProcessor.setWatchEventHandlingCallback(callback);
+
+            fillNotifyWatchProcessorEventsFromStorage(startRevision);
+
+            drainNotifyWatchProcessorEventsBeforeStartingWatches();
+
             areWatchesEnabled = true;
-
-            watchProcessor.setRevisionCallback(revisionCallback);
-
-            replayUpdates(startRevision);
         } finally {
             rwLock.readLock().unlock();
         }
     }
 
-    private void replayUpdates(long startRevision) {
+    private void fillNotifyWatchProcessorEventsFromStorage(long startRevision) {
         long minWatchRevision = Math.max(startRevision, watchProcessor.minWatchRevision().orElse(-1));
-
-        if (minWatchRevision <= 0) {
-            return;
-        }
 
         revsIdx.tailMap(minWatchRevision)
                 .forEach((revision, entries) -> {
@@ -486,14 +512,20 @@ public class SimpleInMemoryKeyValueStorage extends AbstractKeyValueStorage {
                         updatedEntries.add(entry);
                     });
 
-                    notifyWatches();
+                    fillNotifyWatchProcessorEventsFromUpdatedEntries();
                 });
+
+        for (long revision = startRevision; revision <= rev; revision++) {
+            HybridTimestamp time = revToTsMap.get(revision);
+
+            assert time != null : revision;
+
+            notifyWatchProcessorEventsBeforeStartingWatches.add(new UpdateOnlyRevisionEvent(revision, time));
+        }
     }
 
-    private void notifyWatches() {
-        if (!areWatchesEnabled || updatedEntries.isEmpty()) {
-            updatedEntries.clear();
-
+    private void fillNotifyWatchProcessorEventsFromUpdatedEntries() {
+        if (updatedEntries.isEmpty()) {
             return;
         }
 
@@ -502,9 +534,32 @@ public class SimpleInMemoryKeyValueStorage extends AbstractKeyValueStorage {
         HybridTimestamp ts = revToTsMap.get(revision);
         assert ts != null : revision;
 
-        watchProcessor.notifyWatches(List.copyOf(updatedEntries), ts);
+        var event = new UpdateEntriesEvent(List.copyOf(updatedEntries), ts);
+
+        addToNotifyWatchProcessorEventsBeforeStartingWatches(event);
 
         updatedEntries.clear();
+    }
+
+    private void notifyWatches() {
+        if (!areWatchesStarted()) {
+            updatedEntries.clear();
+
+            return;
+        }
+
+        long newRevision = rev;
+
+        HybridTimestamp ts = revToTsMap.get(newRevision);
+        assert ts != null : newRevision;
+
+        if (updatedEntries.isEmpty()) {
+            watchProcessor.updateOnlyRevision(newRevision, ts);
+        } else {
+            watchProcessor.notifyWatches(List.copyOf(updatedEntries), ts);
+
+            updatedEntries.clear();
+        }
     }
 
     @Override
@@ -631,6 +686,8 @@ public class SimpleInMemoryKeyValueStorage extends AbstractKeyValueStorage {
             savedCompactionRevision = snapshot.savedCompactionRevision;
             term = snapshot.term;
             index = snapshot.index;
+
+            notifyRevisionsUpdate();
         } catch (Throwable t) {
             throw new MetaStorageException(RESTORING_STORAGE_ERR, t);
         } finally {
@@ -713,7 +770,6 @@ public class SimpleInMemoryKeyValueStorage extends AbstractKeyValueStorage {
         var updatedEntry = new EntryImpl(key, val.tombstone() ? null : bytes, curRev, val.operationTimestamp());
 
         updatedEntries.add(updatedEntry);
-
     }
 
     private void doPutAll(long curRev, List<byte[]> keys, List<byte[]> bytesList, KeyValueUpdateContext context) {
@@ -745,47 +801,23 @@ public class SimpleInMemoryKeyValueStorage extends AbstractKeyValueStorage {
     }
 
     @Override
-    public void advanceSafeTime(KeyValueUpdateContext context) {
-        rwLock.writeLock().lock();
+    public void saveCompactionRevision(long revision, KeyValueUpdateContext context, boolean advanceSafeTime) {
+        savedCompactionRevision = revision;
 
-        try {
-            setIndexAndTerm(context.index, context.term);
+        setIndexAndTerm(context.index, context.term);
 
-            if (!areWatchesEnabled) {
-                return;
-            }
-
+        if (advanceSafeTime && areWatchesStarted()) {
             watchProcessor.advanceSafeTime(context.timestamp);
-        } finally {
-            rwLock.writeLock().unlock();
-        }
-    }
-
-    @Override
-    public void saveCompactionRevision(long revision, KeyValueUpdateContext context) {
-        assert revision >= 0 : revision;
-
-        rwLock.writeLock().lock();
-
-        try {
-            assertCompactionRevisionLessThanCurrent(revision, rev);
-
-            savedCompactionRevision = revision;
-
-            setIndexAndTerm(context.index, context.term);
-
-            if (!areWatchesEnabled) {
-                return;
-            }
-
-            watchProcessor.advanceSafeTime(context.timestamp);
-        } finally {
-            rwLock.writeLock().unlock();
         }
     }
 
     @Override
     public long checksum(long revision) {
+        throw new UnsupportedOperationException();
+    }
+
+    @Override
+    public ChecksumAndRevisions checksumAndRevisions(long revision) {
         throw new UnsupportedOperationException();
     }
 
@@ -852,6 +884,11 @@ public class SimpleInMemoryKeyValueStorage extends AbstractKeyValueStorage {
         return value;
     }
 
+    @Override
+    protected boolean areWatchesStarted() {
+        return areWatchesEnabled;
+    }
+
     private @Nullable Value getValueNullable(byte[] key, long revision) {
         NavigableMap<byte[], Value> valueByKey = revsIdx.get(revision);
 
@@ -895,7 +932,7 @@ public class SimpleInMemoryKeyValueStorage extends AbstractKeyValueStorage {
 
         Iterator<Entry> iterator = entries.iterator();
 
-        long readOperationId = readOperationIdGeneratorForTracker++;
+        long readOperationId = readOperationForCompactionTracker.generateReadOperationId();
         long compactionRevisionOnCreateIterator = compactionRevision;
 
         readOperationForCompactionTracker.track(readOperationId, compactionRevisionOnCreateIterator);
@@ -916,5 +953,10 @@ public class SimpleInMemoryKeyValueStorage extends AbstractKeyValueStorage {
                 return iterator.next();
             }
         };
+    }
+
+    @Override
+    public CompletableFuture<Void> flush() {
+        return nullCompletedFuture();
     }
 }

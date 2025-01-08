@@ -38,8 +38,6 @@ import java.nio.file.SimpleFileVisitor;
 import java.nio.file.StandardCopyOption;
 import java.nio.file.StandardOpenOption;
 import java.nio.file.attribute.BasicFileAttributes;
-import java.time.LocalDateTime;
-import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
@@ -59,6 +57,7 @@ import java.util.concurrent.Executor;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.IntSupplier;
@@ -70,7 +69,6 @@ import javax.management.MalformedObjectNameException;
 import javax.management.ObjectName;
 import org.apache.ignite.internal.close.ManuallyCloseable;
 import org.apache.ignite.internal.lang.IgniteInternalException;
-import org.apache.ignite.internal.lang.IgniteStringFormatter;
 import org.apache.ignite.internal.lang.NodeStoppingException;
 import org.apache.ignite.internal.logger.IgniteLogger;
 import org.apache.ignite.internal.manager.ComponentContext;
@@ -125,7 +123,7 @@ public class IgniteUtils {
     /**
      * Root package for JMX MBeans.
      */
-    private static final String JMX_MBEAN_PACKAGE = "org.apache";
+    private static final String JMX_MBEAN_PACKAGE = "org.apache.ignite";
 
     /**
      * Get JDK version.
@@ -647,34 +645,6 @@ public class IgniteUtils {
     }
 
     /**
-     * Short date format pattern for log messages in "quiet" mode. Only time is included since we don't expect "quiet" mode to be used for
-     * longer runs.
-     */
-    private static final DateTimeFormatter SHORT_DATE_FMT = DateTimeFormatter.ofPattern("HH:mm:ss");
-
-    /**
-     * Prints stack trace of the current thread to provided logger.
-     *
-     * @param log Logger.
-     * @param msg Message to print with the stack.
-     * @deprecated Calls to this method should never be committed to master.
-     */
-    @Deprecated
-    public static void dumpStack(IgniteLogger log, String msg, Object... params) {
-        String reason = "Dumping stack";
-
-        var err = new Exception(IgniteStringFormatter.format(msg, params));
-
-        if (log != null) {
-            log.warn(reason, err);
-        } else {
-            System.err.println("[" + LocalDateTime.now().format(SHORT_DATE_FMT) + "] (err) " + reason);
-
-            err.printStackTrace(System.err);
-        }
-    }
-
-    /**
      * Atomically moves or renames a file to a target file.
      *
      * @param sourcePath The path to the file to move.
@@ -1043,6 +1013,21 @@ public class IgniteUtils {
     }
 
     /**
+     * Iterates over the given collection and applies the given closure to each element using the collection element and its index.
+     *
+     * @param collection Collection.
+     * @param closure Closure to apply.
+     * @param <T> Type of collection element.
+     */
+    public static <T> void forEachIndexed(Collection<T> collection, BiConsumer<T, Integer> closure) {
+        int i = 0;
+
+        for (T t : collection) {
+            closure.accept(t, i++);
+        }
+    }
+
+    /**
      * Retries operation until it succeeds or fails with exception that is different than the given.
      *
      * @param operation Operation.
@@ -1108,7 +1093,7 @@ public class IgniteUtils {
      * Serializes collection to bytes.
      *
      * @param collection Collection.
-     * @param transform Tranform function for the collection element.
+     * @param transform Transform function for the collection element.
      * @return Byte array.
      */
     public static <T> byte[] collectionToBytes(Collection<T> collection, Function<T, byte[]> transform) {

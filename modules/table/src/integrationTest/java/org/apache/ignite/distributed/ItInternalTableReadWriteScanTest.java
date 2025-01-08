@@ -37,7 +37,7 @@ import org.junit.jupiter.api.Test;
  */
 public class ItInternalTableReadWriteScanTest extends ItAbstractInternalTableScanTest {
     /** Timestamp tracker. */
-    private static final HybridTimestampTracker HYBRID_TIMESTAMP_TRACKER = new HybridTimestampTracker();
+    private static final HybridTimestampTracker HYBRID_TIMESTAMP_TRACKER = HybridTimestampTracker.atomicTracker(null);
 
     @Override
     protected Publisher<BinaryRow> scan(int part, @Nullable InternalTransaction tx) {
@@ -71,7 +71,7 @@ public class ItInternalTableReadWriteScanTest extends ItAbstractInternalTableSca
 
     @Override
     protected InternalTransaction startTx() {
-        InternalTransaction tx = internalTbl.txManager().begin(HYBRID_TIMESTAMP_TRACKER);
+        InternalTransaction tx = internalTbl.txManager().begin(HYBRID_TIMESTAMP_TRACKER, false);
 
         TablePartitionId tblPartId = new TablePartitionId(internalTbl.tableId(), ((TablePartitionId) internalTbl.groupId()).partitionId());
 

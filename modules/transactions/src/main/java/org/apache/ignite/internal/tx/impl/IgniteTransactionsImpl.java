@@ -18,9 +18,7 @@
 package org.apache.ignite.internal.tx.impl;
 
 import java.util.concurrent.CompletableFuture;
-import org.apache.ignite.internal.hlc.HybridTimestamp;
 import org.apache.ignite.internal.tx.HybridTimestampTracker;
-import org.apache.ignite.internal.tx.InternalTransaction;
 import org.apache.ignite.internal.tx.TxManager;
 import org.apache.ignite.internal.tx.TxPriority;
 import org.apache.ignite.tx.IgniteTransactions;
@@ -47,45 +45,6 @@ public class IgniteTransactionsImpl implements IgniteTransactions {
         this.observableTimestampTracker = observableTimestampTracker;
     }
 
-    /**
-     * Updates observable timestamp.
-     *
-     * @param ts Timestamp.
-     */
-    public void updateObservableTimestamp(@Nullable HybridTimestamp ts) {
-        observableTimestampTracker.update(ts);
-    }
-
-    public HybridTimestampTracker observableTimestampTracker() {
-        return observableTimestampTracker;
-    }
-
-    /**
-     * Gets current value of observable timestamp.
-     *
-     * @return Timestamp or {@code null} if the tracker has never been updated.
-     */
-    public @Nullable HybridTimestamp observableTimestamp() {
-        return observableTimestampTracker.get();
-    }
-
-    /**
-     * Begins a transaction.
-     * TODO:IGNITE-20232 Remove this method; instead, an interface method should be used.
-     *
-     * @param options Transaction options.
-     * @param observableTimestamp Observable timestamp, applicable only for read-only transactions. Read-only transactions
-     *      can use some time to the past to avoid waiting for time that is safe for reading on non-primary replica. To do so, client
-     *      should provide this observable timestamp that is calculated according to the commit time of the latest read-write transaction,
-     *      to guarantee that read-only transaction will see the modified data.
-     * @return The started transaction.
-     */
-    public InternalTransaction begin(@Nullable TransactionOptions options, @Nullable HybridTimestamp observableTimestamp) {
-        observableTimestampTracker.update(observableTimestamp);
-
-        return (InternalTransaction) begin(options);
-    }
-
     /** {@inheritDoc} */
     @Override
     public Transaction begin(@Nullable TransactionOptions options) {
@@ -94,7 +53,7 @@ public class IgniteTransactionsImpl implements IgniteTransactions {
             throw new UnsupportedOperationException("Timeouts are not supported yet");
         }
 
-        return txManager.begin(observableTimestampTracker, options != null && options.readOnly());
+        return txManager.begin(observableTimestampTracker, false, options != null && options.readOnly());
     }
 
     /** {@inheritDoc} */
@@ -105,6 +64,6 @@ public class IgniteTransactionsImpl implements IgniteTransactions {
 
     @TestOnly
     public Transaction beginWithPriority(boolean readOnly, TxPriority priority) {
-        return txManager.begin(observableTimestampTracker, readOnly, priority);
+        return txManager.begin(observableTimestampTracker, false, readOnly, priority);
     }
 }

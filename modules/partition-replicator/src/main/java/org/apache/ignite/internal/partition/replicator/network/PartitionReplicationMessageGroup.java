@@ -32,6 +32,7 @@ import org.apache.ignite.internal.partition.replicator.network.disaster.LocalPar
 import org.apache.ignite.internal.partition.replicator.network.disaster.LocalPartitionStatesResponse;
 import org.apache.ignite.internal.partition.replicator.network.message.HasDataRequest;
 import org.apache.ignite.internal.partition.replicator.network.message.HasDataResponse;
+import org.apache.ignite.internal.partition.replicator.network.raft.PartitionSnapshotMeta;
 import org.apache.ignite.internal.partition.replicator.network.raft.SnapshotMetaRequest;
 import org.apache.ignite.internal.partition.replicator.network.raft.SnapshotMetaResponse;
 import org.apache.ignite.internal.partition.replicator.network.raft.SnapshotMvDataRequest;
@@ -42,6 +43,7 @@ import org.apache.ignite.internal.partition.replicator.network.raft.SnapshotTxDa
 import org.apache.ignite.internal.partition.replicator.network.replication.BinaryRowMessage;
 import org.apache.ignite.internal.partition.replicator.network.replication.BinaryTupleMessage;
 import org.apache.ignite.internal.partition.replicator.network.replication.BuildIndexReplicaRequest;
+import org.apache.ignite.internal.partition.replicator.network.replication.ChangePeersAndLearnersAsyncReplicaRequest;
 import org.apache.ignite.internal.partition.replicator.network.replication.GetEstimatedSizeRequest;
 import org.apache.ignite.internal.partition.replicator.network.replication.ReadOnlyDirectMultiRowReplicaRequest;
 import org.apache.ignite.internal.partition.replicator.network.replication.ReadOnlyDirectSingleRowReplicaRequest;
@@ -197,6 +199,16 @@ public interface PartitionReplicationMessageGroup {
      * Message type for {@link UpdateMinimumActiveTxBeginTimeReplicaRequest}.
      */
     short UPDATE_MINIMUM_ACTIVE_TX_TIME_REPLICA_REQUEST = 26;
+
+    /**
+     * Message type for {@link PartitionSnapshotMeta}.
+     */
+    short PARTITION_SNAPSHOT_META = 27;
+
+    /**
+     * Message type for {@link ChangePeersAndLearnersAsyncReplicaRequest}.
+     */
+    short CHANGE_PEERS_AND_LEARNERS_ASYNC_REPLICA_REQUEST = 28;
 
     /**
      * Message types for partition replicator module RAFT commands.

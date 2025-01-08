@@ -51,8 +51,10 @@ import org.apache.ignite.internal.catalog.storage.serialization.UpdateLogMarshal
 import org.apache.ignite.internal.lang.IgniteInternalException;
 import org.apache.ignite.internal.manager.ComponentContext;
 import org.apache.ignite.internal.metastorage.MetaStorageManager;
+import org.apache.ignite.internal.metastorage.Revisions;
 import org.apache.ignite.internal.metastorage.impl.StandaloneMetaStorageManager;
 import org.apache.ignite.internal.metastorage.server.KeyValueStorage;
+import org.apache.ignite.internal.metastorage.server.ReadOperationForCompactionTracker;
 import org.apache.ignite.internal.metastorage.server.SimpleInMemoryKeyValueStorage;
 import org.apache.ignite.internal.testframework.BaseIgniteAbstractTest;
 import org.apache.ignite.internal.tostring.S;
@@ -71,21 +73,23 @@ class UpdateLogImplTest extends BaseIgniteAbstractTest {
 
     private MetaStorageManager metastore;
 
+    private final ReadOperationForCompactionTracker readOperationForCompactionTracker = new ReadOperationForCompactionTracker();
+
     @BeforeEach
     void setUp() {
-        keyValueStorage = new SimpleInMemoryKeyValueStorage("test");
+        keyValueStorage = new SimpleInMemoryKeyValueStorage("test", readOperationForCompactionTracker);
 
-        metastore = StandaloneMetaStorageManager.create(keyValueStorage);
+        metastore = StandaloneMetaStorageManager.create(keyValueStorage, readOperationForCompactionTracker);
 
         keyValueStorage.start();
         assertThat(metastore.startAsync(new ComponentContext()), willCompleteSuccessfully());
+        assertThat(metastore.recoveryFinishedFuture(), willCompleteSuccessfully());
     }
 
     @AfterEach
     public void tearDown() throws Exception {
         closeAll(
-                metastore == null ? null : () -> assertThat(metastore.stopAsync(new ComponentContext()), willCompleteSuccessfully()),
-                keyValueStorage == null ? null : keyValueStorage::close
+                metastore == null ? null : () -> assertThat(metastore.stopAsync(new ComponentContext()), willCompleteSuccessfully())
         );
     }
 
@@ -226,10 +230,10 @@ class UpdateLogImplTest extends BaseIgniteAbstractTest {
 
         assertThat(metastore.stopAsync(componentContext), willCompleteSuccessfully());
 
-        metastore = StandaloneMetaStorageManager.create(keyValueStorage);
+        metastore = StandaloneMetaStorageManager.create(keyValueStorage, readOperationForCompactionTracker);
         assertThat(metastore.startAsync(componentContext), willCompleteSuccessfully());
 
-        assertThat(metastore.recoveryFinishedFuture(), willBe(recoverRevision));
+        assertThat(metastore.recoveryFinishedFuture().thenApply(Revisions::revision), willBe(recoverRevision));
     }
 
     @Test
@@ -418,7 +422,7 @@ class UpdateLogImplTest extends BaseIgniteAbstractTest {
                 serializer = new CatalogObjectSerializer<>() {
                     @Override
                     public MarshallableEntry readFrom(IgniteDataInput input) throws IOException {
-                        int length = input.readInt();
+                        int length = input.readVarIntAsInt();
                         byte[] data = input.readByteArray(length);
 
                         return ByteUtils.fromBytes(data);
@@ -428,7 +432,7 @@ class UpdateLogImplTest extends BaseIgniteAbstractTest {
                     public void writeTo(MarshallableEntry value, IgniteDataOutput output) throws IOException {
                         byte[] bytes = ByteUtils.toBytes(value);
 
-                        output.writeInt(bytes.length);
+                        output.writeVarInt(bytes.length);
                         output.writeByteArray(bytes);
                     }
                 };

@@ -37,9 +37,11 @@ import org.apache.ignite.internal.sql.engine.InternalSqlRowImpl;
 import org.apache.ignite.internal.sql.engine.QueryPrefetchCallback;
 import org.apache.ignite.internal.sql.engine.SqlQueryType;
 import org.apache.ignite.internal.sql.engine.exec.ExecutablePlan;
+import org.apache.ignite.internal.sql.engine.exec.ExecutableTable;
 import org.apache.ignite.internal.sql.engine.exec.ExecutableTableRegistry;
 import org.apache.ignite.internal.sql.engine.exec.ExecutionContext;
 import org.apache.ignite.internal.sql.engine.exec.RowHandler;
+import org.apache.ignite.internal.sql.engine.exec.exp.SqlProjection;
 import org.apache.ignite.internal.sql.engine.exec.row.RowSchema;
 import org.apache.ignite.internal.sql.engine.rel.IgniteRel;
 import org.apache.ignite.internal.sql.engine.rel.IgniteSelectCount;
@@ -93,17 +95,15 @@ public class SelectCountPlan implements ExplainablePlan, ExecutablePlan {
     }
 
     @Override
-    public <RowT> AsyncCursor<InternalSqlRow> execute(ExecutionContext<RowT> ctx, @Nullable InternalTransaction tx,
+    public <RowT> AsyncCursor<InternalSqlRow> execute(ExecutionContext<RowT> ctx, InternalTransaction ignored,
             ExecutableTableRegistry tableRegistry, @Nullable QueryPrefetchCallback firstPageReadyCallback) {
-
-        assert tx == null : "SelectCount plan can only run within implicit transaction";
-
         RelOptTable optTable = selectCountNode.getTable();
         IgniteTable igniteTable = optTable.unwrap(IgniteTable.class);
         assert igniteTable != null;
 
-        CompletableFuture<Long> countFut = tableRegistry.getTable(catalogVersion, igniteTable.id())
-                .thenCompose(execTable -> execTable.scannableTable().estimatedSize());
+        ExecutableTable execTable = tableRegistry.getTable(catalogVersion, igniteTable.id());
+
+        CompletableFuture<Long> countFut = execTable.scannableTable().estimatedSize();
 
         Executor resultExecutor = task -> ctx.execute(task::run, error -> {
             LOG.error("Unexpected error", error);
@@ -116,9 +116,7 @@ public class SelectCountPlan implements ExplainablePlan, ExecutablePlan {
         }, resultExecutor);
 
         if (firstPageReadyCallback != null) {
-            Executor executor = task -> ctx.execute(task::run, firstPageReadyCallback::onPrefetchComplete);
-
-            result.whenCompleteAsync((res, err) -> firstPageReadyCallback.onPrefetchComplete(err), executor);
+            result.whenComplete((res, err) -> firstPageReadyCallback.onPrefetchComplete(err));
         }
 
         ctx.scheduleTimeout(result);
@@ -159,7 +157,7 @@ public class SelectCountPlan implements ExplainablePlan, ExecutablePlan {
                 .build();
 
         RelDataType resultType = selectCountNode.getRowType();
-        Function<RowT, RowT> projection = ctx.expressionFactory().project(expressions, getCountType);
+        SqlProjection<RowT> projection = ctx.expressionFactory().project(expressions, getCountType);
 
         RowHandler<RowT> rowHandler = ctx.rowHandler();
         BiFunction<Integer, Object, Object> internalTypeConverter = TypeUtils.resultTypeConverter(ctx, resultType);
@@ -174,7 +172,7 @@ public class SelectCountPlan implements ExplainablePlan, ExecutablePlan {
                     .addField(rowCount)
                     .build();
 
-            RowT projectRow = projection.apply(rowCountRow);
+            RowT projectRow = projection.project(ctx, rowCountRow);
 
             return List.<InternalSqlRow>of(
                     new InternalSqlRowImpl<>(projectRow, rowHandler, internalTypeConverter)

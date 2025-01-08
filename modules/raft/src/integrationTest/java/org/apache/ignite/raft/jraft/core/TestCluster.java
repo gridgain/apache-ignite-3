@@ -41,7 +41,8 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
-import java.util.function.Consumer;
+import java.util.function.BiConsumer;
+import java.util.function.Function;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -96,23 +97,21 @@ public class TestCluster {
     private final ConcurrentMap<PeerId, RaftGroupService> serverMap = new ConcurrentHashMap<>();
     private final int electionTimeoutMs;
     private final Lock lock = new ReentrantLock();
-    private @Nullable Consumer<NodeOptions> optsClo;
+    private @Nullable BiConsumer<PeerId, NodeOptions> optsClo;
+
+    private volatile Function<PeerId, MockStateMachine> stateMachineFactory = MockStateMachine::new;
 
     /** Test info. */
     private final TestInfo testInfo;
 
-    private JRaftServiceFactory raftServiceFactory = new TestJRaftServiceFactory();
+    private Function<PeerId, JRaftServiceFactory> raftServiceFactories = peerId -> new TestJRaftServiceFactory();
 
     private LinkedHashSet<TestPeer> learners;
 
     private JraftGroupEventsListener raftGrpEvtsLsnr;
 
-    public JRaftServiceFactory getRaftServiceFactory() {
-        return this.raftServiceFactory;
-    }
-
-    public void setRaftServiceFactory(JRaftServiceFactory raftServiceFactory) {
-        this.raftServiceFactory = raftServiceFactory;
+    public void setRaftServiceFactories(Function<PeerId, JRaftServiceFactory> raftServiceFactories) {
+        this.raftServiceFactories = raftServiceFactories;
     }
 
     public LinkedHashSet<PeerId> getLearners() {
@@ -154,7 +153,7 @@ public class TestCluster {
         List<TestPeer> peers,
         LinkedHashSet<TestPeer> learners,
         int electionTimeoutMs,
-        @Nullable Consumer<NodeOptions> optsClo,
+        @Nullable BiConsumer<PeerId, NodeOptions> optsClo,
         TestInfo testInfo
     ) {
         this.name = name;
@@ -218,7 +217,7 @@ public class TestCluster {
             nodeOptions.setEnableMetrics(enableMetrics);
             nodeOptions.setSnapshotThrottle(snapshotThrottle);
             nodeOptions.setSnapshotIntervalSecs(snapshotIntervalSecs);
-            nodeOptions.setServiceFactory(this.raftServiceFactory);
+            nodeOptions.setServiceFactory(this.raftServiceFactories.apply(peer.getPeerId()));
             if (clock != null) {
                 nodeOptions.setClock(clock);
             }
@@ -243,7 +242,7 @@ public class TestCluster {
 
             nodeOptions.setElectionTimeoutStrategy(new ExponentialBackoffTimeoutStrategy());
 
-            MockStateMachine fsm = new MockStateMachine(peer.getPeerId());
+            MockStateMachine fsm = stateMachineFactory.apply(peer.getPeerId());
             nodeOptions.setFsm(fsm);
 
             nodeOptions.setRaftGrpEvtsLsnr(raftGrpEvtsLsnr);
@@ -278,7 +277,7 @@ public class TestCluster {
             assertThat(clusterService.startAsync(new ComponentContext()), willCompleteSuccessfully());
 
             if (optsClo != null)
-                optsClo.accept(nodeOptions);
+                optsClo.accept(peer.getPeerId(), nodeOptions);
 
             RaftGroupService server = new RaftGroupService(this.name, peer.getPeerId(),
                 nodeOptions, rpcServer, nodeManager) {
@@ -300,7 +299,7 @@ public class TestCluster {
 
             Node node = server.start();
 
-            this.fsms.put(peer.getPeerId(), fsm);
+            this.fsms.put(peer.getPeerId(), (MockStateMachine) nodeOptions.getFsm());
             this.nodes.add((NodeImpl) node);
             return true;
         }
@@ -609,7 +608,11 @@ public class TestCluster {
         }
     }
 
-    public void setNodeOptionsCustomizer(Consumer<NodeOptions> customizer) {
+    public void setNodeOptionsCustomizer(BiConsumer<PeerId, NodeOptions> customizer) {
         this.optsClo = customizer;
+    }
+
+    public void setStateMachineFactory(Function<PeerId, MockStateMachine> factory) {
+        this.stateMachineFactory = factory;
     }
 }

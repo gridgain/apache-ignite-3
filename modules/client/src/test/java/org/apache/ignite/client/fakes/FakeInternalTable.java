@@ -147,6 +147,8 @@ public class FakeInternalTable implements InternalTable, StreamerReceiverRunner 
     public CompletableFuture<BinaryRow> get(
             BinaryRowEx keyRow,
             HybridTimestamp readTimestamp,
+            @Nullable UUID transactionId,
+            @Nullable UUID coordinatorId,
             ClusterNode recipientNode) {
         return null;
     }
@@ -179,6 +181,8 @@ public class FakeInternalTable implements InternalTable, StreamerReceiverRunner 
     public CompletableFuture<List<BinaryRow>> getAll(
             Collection<BinaryRowEx> keyRows,
             HybridTimestamp readTimestamp,
+            @Nullable UUID transactionId,
+            @Nullable UUID coordinatorId,
             ClusterNode recipientNode
     ) {
         return null;
@@ -473,11 +477,6 @@ public class FakeInternalTable implements InternalTable, StreamerReceiverRunner 
 
     @Override public TxStateTableStorage txStateStorage() {
         return null;
-    }
-
-    @Override
-    public int partition(BinaryRowEx keyRow) {
-        return 0;
     }
 
     @Override

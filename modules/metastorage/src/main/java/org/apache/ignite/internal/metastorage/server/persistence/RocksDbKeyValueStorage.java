@@ -42,10 +42,12 @@ import static org.apache.ignite.internal.metastorage.server.persistence.StorageC
 import static org.apache.ignite.internal.metastorage.server.persistence.StorageColumnFamilyType.REVISION_TO_CHECKSUM;
 import static org.apache.ignite.internal.metastorage.server.persistence.StorageColumnFamilyType.REVISION_TO_TS;
 import static org.apache.ignite.internal.metastorage.server.persistence.StorageColumnFamilyType.TS_TO_REVISION;
-import static org.apache.ignite.internal.metastorage.server.raft.MetaStorageWriteHandler.IDEMPOTENT_COMMAND_PREFIX;
+import static org.apache.ignite.internal.metastorage.server.raft.MetaStorageWriteHandler.toIdempotentCommandKey;
 import static org.apache.ignite.internal.rocksdb.snapshot.ColumnFamilyRange.fullRange;
 import static org.apache.ignite.internal.util.ArrayUtils.LONG_EMPTY_ARRAY;
 import static org.apache.ignite.internal.util.ByteUtils.toByteArray;
+import static org.apache.ignite.internal.util.IgniteUtils.inBusyLock;
+import static org.apache.ignite.internal.util.IgniteUtils.inBusyLockAsync;
 import static org.apache.ignite.lang.ErrorGroups.Common.INTERNAL_ERR;
 import static org.apache.ignite.lang.ErrorGroups.MetaStorage.COMPACTION_ERR;
 import static org.apache.ignite.lang.ErrorGroups.MetaStorage.OP_EXECUTION_ERR;
@@ -63,16 +65,18 @@ import java.util.Collections;
 import java.util.List;
 import java.util.NoSuchElementException;
 import java.util.Objects;
+import java.util.Set;
+import java.util.TreeSet;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
+import org.apache.ignite.internal.components.NoOpLogSyncer;
 import org.apache.ignite.internal.failure.FailureManager;
 import org.apache.ignite.internal.hlc.HybridTimestamp;
-import org.apache.ignite.internal.lang.ByteArray;
-import org.apache.ignite.internal.logger.IgniteLogger;
-import org.apache.ignite.internal.logger.Loggers;
 import org.apache.ignite.internal.metastorage.CommandId;
 import org.apache.ignite.internal.metastorage.Entry;
 import org.apache.ignite.internal.metastorage.dsl.Operation;
@@ -84,23 +88,30 @@ import org.apache.ignite.internal.metastorage.exceptions.CompactedException;
 import org.apache.ignite.internal.metastorage.exceptions.MetaStorageException;
 import org.apache.ignite.internal.metastorage.impl.EntryImpl;
 import org.apache.ignite.internal.metastorage.server.AbstractKeyValueStorage;
+import org.apache.ignite.internal.metastorage.server.ChecksumAndRevisions;
 import org.apache.ignite.internal.metastorage.server.Condition;
 import org.apache.ignite.internal.metastorage.server.If;
 import org.apache.ignite.internal.metastorage.server.KeyValueStorage;
 import org.apache.ignite.internal.metastorage.server.KeyValueUpdateContext;
 import org.apache.ignite.internal.metastorage.server.MetastorageChecksum;
-import org.apache.ignite.internal.metastorage.server.OnRevisionAppliedCallback;
+import org.apache.ignite.internal.metastorage.server.NotifyWatchProcessorEvent;
+import org.apache.ignite.internal.metastorage.server.ReadOperationForCompactionTracker;
 import org.apache.ignite.internal.metastorage.server.Statement;
+import org.apache.ignite.internal.metastorage.server.UpdateEntriesEvent;
+import org.apache.ignite.internal.metastorage.server.UpdateOnlyRevisionEvent;
 import org.apache.ignite.internal.metastorage.server.Value;
+import org.apache.ignite.internal.metastorage.server.WatchEventHandlingCallback;
 import org.apache.ignite.internal.raft.IndexWithTerm;
 import org.apache.ignite.internal.rocksdb.ColumnFamily;
 import org.apache.ignite.internal.rocksdb.RocksIteratorAdapter;
 import org.apache.ignite.internal.rocksdb.RocksUtils;
+import org.apache.ignite.internal.rocksdb.flush.RocksDbFlusher;
 import org.apache.ignite.internal.rocksdb.snapshot.RocksSnapshotManager;
 import org.apache.ignite.internal.thread.NamedThreadFactory;
 import org.apache.ignite.internal.util.ArrayUtils;
 import org.apache.ignite.internal.util.ByteUtils;
 import org.apache.ignite.internal.util.Cursor;
+import org.apache.ignite.internal.util.IgniteSpinBusyLock;
 import org.apache.ignite.internal.util.IgniteUtils;
 import org.jetbrains.annotations.Nullable;
 import org.jetbrains.annotations.TestOnly;
@@ -133,8 +144,6 @@ import org.rocksdb.WriteOptions;
  * entry and the value is a {@code byte[]} that represents a {@code long[]} where every item is a revision of the storage.
  */
 public class RocksDbKeyValueStorage extends AbstractKeyValueStorage {
-    private static final IgniteLogger LOG = Loggers.forClass(RocksDbKeyValueStorage.class);
-
     /** A revision to store with system entries. */
     private static final long SYSTEM_REVISION_MARKER_VALUE = 0;
 
@@ -173,12 +182,20 @@ public class RocksDbKeyValueStorage extends AbstractKeyValueStorage {
     /** Batch size (number of keys) for storage compaction. The value is arbitrary. */
     private static final int COMPACT_BATCH_SIZE = 10;
 
+    /** Key value storage flush delay in mills. Value is taken from the example of default values of other components. */
+    private static final int KV_STORAGE_FLUSH_DELAY = 100;
+
     static {
         RocksDB.loadLibrary();
     }
 
-    /** Thread-pool for snapshot operations execution. */
-    private final ExecutorService snapshotExecutor;
+    /** Executor for storage operations. */
+    private final ExecutorService executor;
+
+    /**
+     * Scheduled executor. Needed only for asynchronous start of scheduled operations without performing blocking, long or IO operations.
+     */
+    private final ScheduledExecutorService scheduledExecutor;
 
     /** Path to the rocksdb database. */
     private final Path dbPath;
@@ -201,6 +218,8 @@ public class RocksDbKeyValueStorage extends AbstractKeyValueStorage {
     /** Revision to timestamp mapping column family. */
     private volatile ColumnFamily revisionToTs;
 
+    // TODO: https://issues.apache.org/jira/browse/IGNITE-23910 - either make checksums durable or invent another way to solve
+    // the 'divergence going unnoticed' problem.
     /** Revision to checksum mapping column family. */
     private volatile ColumnFamily revisionToChecksum;
 
@@ -228,15 +247,6 @@ public class RocksDbKeyValueStorage extends AbstractKeyValueStorage {
     private final AtomicReference<RecoveryStatus> recoveryStatus = new AtomicReference<>(RecoveryStatus.INITIAL);
 
     /**
-     * Buffer used to cache new events while an event replay is in progress. After replay finishes, the cache gets drained and is never
-     * used again.
-     *
-     * <p>Multi-threaded access is guarded by {@link #rwLock}.</p>
-     */
-    @Nullable
-    private List<UpdatedEntries> eventCache;
-
-    /**
      * Current list of updated entries.
      *
      * <p>Since this list gets read and updated only on writes (under a write lock), no extra synchronisation is needed.</p>
@@ -248,8 +258,19 @@ public class RocksDbKeyValueStorage extends AbstractKeyValueStorage {
     /** Tracks RocksDb resources that must be properly closed. */
     private List<AbstractNativeReference> rocksResources = new ArrayList<>();
 
-    /** Metastorage recovery is based on the snapshot & external log. WAL is never used for recovery, and can be safely disabled. */
-    private final WriteOptions defaultWriteOptions = new WriteOptions().setDisableWAL(true);
+    /**
+     * Write options used to write to RocksDB.
+     *
+     * <p>Access is guarded by {@link #rwLock}.
+     */
+    private WriteOptions writeOptions;
+
+    /** Multi-threaded access is guarded by {@link #rwLock}. */
+    private RocksDbFlusher flusher;
+
+    private final IgniteSpinBusyLock busyLock = new IgniteSpinBusyLock();
+
+    private final AtomicBoolean closeGuard = new AtomicBoolean();
 
     /**
      * Constructor.
@@ -257,17 +278,38 @@ public class RocksDbKeyValueStorage extends AbstractKeyValueStorage {
      * @param nodeName Node name.
      * @param dbPath RocksDB path.
      * @param failureManager Failure processor that is used to handle critical errors.
+     * @param readOperationForCompactionTracker Read operation tracker for metastorage compaction.
+     * @param scheduledExecutor Scheduled executor. Needed only for asynchronous start of scheduled operations without performing blocking,
+     *      long or IO operations.
      */
-    public RocksDbKeyValueStorage(String nodeName, Path dbPath, FailureManager failureManager) {
-        super(nodeName, failureManager);
+    public RocksDbKeyValueStorage(
+            String nodeName,
+            Path dbPath,
+            FailureManager failureManager,
+            ReadOperationForCompactionTracker readOperationForCompactionTracker,
+            ScheduledExecutorService scheduledExecutor
+    ) {
+        super(
+                nodeName,
+                failureManager,
+                readOperationForCompactionTracker
+        );
 
         this.dbPath = dbPath;
+        this.scheduledExecutor = scheduledExecutor;
 
-        this.snapshotExecutor = Executors.newFixedThreadPool(2, NamedThreadFactory.create(nodeName, "metastorage-snapshot-executor", LOG));
+        executor = Executors.newFixedThreadPool(
+                2,
+                NamedThreadFactory.create(nodeName, "metastorage-rocksdb-kv-storage-executor", log)
+        );
     }
 
     @Override
     public void start() {
+        inBusyLock(busyLock, this::startBusy);
+    }
+
+    private void startBusy() {
         rwLock.writeLock().lock();
 
         try {
@@ -276,6 +318,7 @@ public class RocksDbKeyValueStorage extends AbstractKeyValueStorage {
             createDb();
         } catch (IOException | RocksDBException e) {
             closeRocksResources();
+
             throw new MetaStorageException(STARTING_STORAGE_ERR, "Failed to start the storage", e);
         } finally {
             rwLock.writeLock().unlock();
@@ -329,6 +372,7 @@ public class RocksDbKeyValueStorage extends AbstractKeyValueStorage {
         DBOptions options = new DBOptions()
                 .setAtomicFlush(true)
                 .setCreateMissingColumnFamilies(true)
+                .setListeners(List.of(flusher.listener()))
                 .setCreateIfMissing(true);
 
         rocksResources.add(options);
@@ -337,11 +381,26 @@ public class RocksDbKeyValueStorage extends AbstractKeyValueStorage {
     }
 
     private void createDb() throws RocksDBException {
+        // Metastorage recovery is based on the snapshot & external log. WAL is never used for recovery, and can be safely disabled.
+        writeOptions = new WriteOptions().setDisableWAL(true);
+        rocksResources.add(writeOptions);
+
         List<ColumnFamilyDescriptor> descriptors = cfDescriptors();
 
         assert descriptors.size() == 5 : descriptors.size();
 
         var handles = new ArrayList<ColumnFamilyHandle>(descriptors.size());
+
+        flusher = new RocksDbFlusher(
+                "rocksdb metastorage kv storage",
+                busyLock,
+                scheduledExecutor,
+                executor,
+                () -> KV_STORAGE_FLUSH_DELAY,
+                // It is expected that the metastorage command raft log works with fsync=true.
+                new NoOpLogSyncer(),
+                () -> {}
+        );
 
         options = createDbOptions();
 
@@ -361,8 +420,10 @@ public class RocksDbKeyValueStorage extends AbstractKeyValueStorage {
 
         snapshotManager = new RocksSnapshotManager(db,
                 List.of(fullRange(data), fullRange(index), fullRange(tsToRevision), fullRange(revisionToTs), fullRange(revisionToChecksum)),
-                snapshotExecutor
+                executor
         );
+
+        flusher.init(db, handles);
 
         byte[] revision = data.get(REVISION_KEY);
 
@@ -389,6 +450,16 @@ public class RocksDbKeyValueStorage extends AbstractKeyValueStorage {
         return bytesToLong(bytes);
     }
 
+    private long checksumByRevisionOrZero(long revision) throws RocksDBException {
+        byte[] bytes = revisionToChecksum.get(longToBytes(revision));
+
+        if (bytes == null) {
+            return 0;
+        }
+
+        return bytesToLong(bytes);
+    }
+
     /**
      * Clear the RocksDB instance.
      *
@@ -403,15 +474,22 @@ public class RocksDbKeyValueStorage extends AbstractKeyValueStorage {
 
     @Override
     public void close() throws Exception {
+        if (!closeGuard.compareAndSet(false, true)) {
+            return;
+        }
+
         stopCompaction();
 
-        watchProcessor.close();
+        busyLock.block();
 
-        IgniteUtils.shutdownAndAwaitTermination(snapshotExecutor, 10, TimeUnit.SECONDS);
+        watchProcessor.close();
+        flusher.stop();
+
+        IgniteUtils.shutdownAndAwaitTermination(executor, 10, TimeUnit.SECONDS);
 
         rwLock.writeLock().lock();
         try {
-            IgniteUtils.closeAll(this::closeRocksResources, defaultWriteOptions);
+            closeRocksResources();
         } finally {
             rwLock.writeLock().unlock();
         }
@@ -428,7 +506,9 @@ public class RocksDbKeyValueStorage extends AbstractKeyValueStorage {
         rwLock.writeLock().lock();
 
         try {
-            return snapshotManager.createSnapshot(snapshotPath);
+            return snapshotManager
+                    .createSnapshot(snapshotPath)
+                    .thenCompose(unused -> flush());
         } finally {
             rwLock.writeLock().unlock();
         }
@@ -451,7 +531,7 @@ public class RocksDbKeyValueStorage extends AbstractKeyValueStorage {
                 compactionRevision = bytesToLong(compactionRevisionBytes);
             }
 
-            notifyRevisionUpdate();
+            notifyRevisionsUpdate();
         } catch (MetaStorageException e) {
             throw e;
         } catch (Exception e) {
@@ -489,7 +569,7 @@ public class RocksDbKeyValueStorage extends AbstractKeyValueStorage {
         try (WriteBatch batch = new WriteBatch()) {
             data.put(batch, INDEX_AND_TERM_KEY, longsToBytes(0, index, term));
 
-            db.write(defaultWriteOptions, batch);
+            db.write(writeOptions, batch);
         } catch (RocksDBException e) {
             throw new MetaStorageException(OP_EXECUTION_ERR, e);
         } finally {
@@ -524,7 +604,7 @@ public class RocksDbKeyValueStorage extends AbstractKeyValueStorage {
             data.put(batch, INDEX_AND_TERM_KEY, longsToBytes(0, index, term));
             data.put(batch, CONFIGURATION_KEY, configuration);
 
-            db.write(defaultWriteOptions, batch);
+            db.write(writeOptions, batch);
         } catch (RocksDBException e) {
             throw new MetaStorageException(OP_EXECUTION_ERR, e);
         } finally {
@@ -576,9 +656,14 @@ public class RocksDbKeyValueStorage extends AbstractKeyValueStorage {
     private void completeAndWriteBatch(
             WriteBatch batch, long newRev, KeyValueUpdateContext context, long newChecksum
     ) throws RocksDBException {
-        HybridTimestamp ts = context.timestamp;
-
         byte[] revisionBytes = longToBytes(newRev);
+
+        boolean sameChecksumAlreadyExists = validateNoChecksumConflict(newRev, newChecksum);
+        if (!sameChecksumAlreadyExists) {
+            revisionToChecksum.put(batch, revisionBytes, longToBytes(newChecksum));
+        }
+
+        HybridTimestamp ts = context.timestamp;
 
         data.put(batch, REVISION_KEY, revisionBytes);
 
@@ -587,12 +672,9 @@ public class RocksDbKeyValueStorage extends AbstractKeyValueStorage {
         tsToRevision.put(batch, tsBytes, revisionBytes);
         revisionToTs.put(batch, revisionBytes, tsBytes);
 
-        validateNoChecksumConflict(newRev, newChecksum);
-        revisionToChecksum.put(batch, revisionBytes, longToBytes(newChecksum));
-
         addIndexAndTermToWriteBatch(batch, context);
 
-        db.write(defaultWriteOptions, batch);
+        db.write(writeOptions, batch);
 
         rev = newRev;
         checksum.commitRound(newChecksum);
@@ -600,10 +682,10 @@ public class RocksDbKeyValueStorage extends AbstractKeyValueStorage {
 
         queueWatchEvent();
 
-        notifyRevisionUpdate();
+        notifyRevisionsUpdate();
     }
 
-    private void validateNoChecksumConflict(long newRev, long newChecksum) throws RocksDBException {
+    private boolean validateNoChecksumConflict(long newRev, long newChecksum) throws RocksDBException {
         byte[] existingChecksumBytes = revisionToChecksum.get(longToBytes(newRev));
 
         if (existingChecksumBytes != null) {
@@ -620,6 +702,8 @@ public class RocksDbKeyValueStorage extends AbstractKeyValueStorage {
                 );
             }
         }
+
+        return existingChecksumBytes != null;
     }
 
     private static byte[] hybridTsToArray(HybridTimestamp ts) {
@@ -700,6 +784,32 @@ public class RocksDbKeyValueStorage extends AbstractKeyValueStorage {
     }
 
     @Override
+    public void removeByPrefix(byte[] prefix, KeyValueUpdateContext context) {
+        rwLock.writeLock().lock();
+
+        try (
+                WriteBatch batch = new WriteBatch();
+                Cursor<Entry> entryCursor = range(prefix, nextKey(prefix))
+        ) {
+            long curRev = rev + 1;
+
+            for (Entry entry : entryCursor) {
+                byte[] key = entry.key();
+
+                if (addToBatchForRemoval(batch, key, curRev, context.timestamp)) {
+                    updateKeysIndex(batch, key, curRev);
+                }
+            }
+
+            completeAndWriteBatch(batch, curRev, context, checksum.wholeRemoveByPrefix(prefix));
+        } catch (RocksDBException e) {
+            throw new MetaStorageException(OP_EXECUTION_ERR, e);
+        } finally {
+            rwLock.writeLock().unlock();
+        }
+    }
+
+    @Override
     public boolean invoke(
             Condition condition,
             List<Operation> success,
@@ -717,10 +827,7 @@ public class RocksDbKeyValueStorage extends AbstractKeyValueStorage {
 
             List<Operation> ops = new ArrayList<>(branch ? success : failure);
 
-            ops.add(Operations.put(
-                    new ByteArray(IDEMPOTENT_COMMAND_PREFIX + commandId.toMgKeyAsString()),
-                    updateResult
-            ));
+            ops.add(Operations.put(toIdempotentCommandKey(commandId), updateResult));
 
             applyOperations(ops, context, false, updateResult);
 
@@ -758,10 +865,7 @@ public class RocksDbKeyValueStorage extends AbstractKeyValueStorage {
 
                     List<Operation> ops = new ArrayList<>(update.operations());
 
-                    ops.add(Operations.put(
-                            new ByteArray(IDEMPOTENT_COMMAND_PREFIX + commandId.toMgKeyAsString()),
-                            updateResult
-                    ));
+                    ops.add(Operations.put(toIdempotentCommandKey(commandId), updateResult));
 
                     applyOperations(ops, context, true, updateResult);
 
@@ -853,7 +957,7 @@ public class RocksDbKeyValueStorage extends AbstractKeyValueStorage {
     }
 
     @Override
-    public void startWatches(long startRevision, OnRevisionAppliedCallback revisionCallback) {
+    public void startWatches(long startRevision, WatchEventHandlingCallback callback) {
         assert startRevision > 0 : startRevision;
 
         long currentRevision;
@@ -861,7 +965,7 @@ public class RocksDbKeyValueStorage extends AbstractKeyValueStorage {
         rwLock.readLock().lock();
 
         try {
-            watchProcessor.setRevisionCallback(revisionCallback);
+            watchProcessor.setWatchEventHandlingCallback(callback);
 
             currentRevision = rev;
 
@@ -878,7 +982,22 @@ public class RocksDbKeyValueStorage extends AbstractKeyValueStorage {
         }
 
         if (currentRevision != 0) {
-            replayUpdates(startRevision, currentRevision);
+            Set<UpdateEntriesEvent> updateEntriesEvents = collectUpdateEntriesEventsFromStorage(startRevision, currentRevision);
+            Set<UpdateOnlyRevisionEvent> updateOnlyRevisionEvents = collectUpdateRevisionEventsFromStorage(startRevision, currentRevision);
+
+            rwLock.writeLock().lock();
+
+            try {
+                notifyWatchProcessorEventsBeforeStartingWatches.addAll(updateEntriesEvents);
+                // Adds events for which there were no entries updates but the revision was updated.
+                notifyWatchProcessorEventsBeforeStartingWatches.addAll(updateOnlyRevisionEvents);
+
+                drainNotifyWatchProcessorEventsBeforeStartingWatches();
+
+                recoveryStatus.set(RecoveryStatus.DONE);
+            } finally {
+                rwLock.writeLock().unlock();
+            }
         }
     }
 
@@ -1032,53 +1151,34 @@ public class RocksDbKeyValueStorage extends AbstractKeyValueStorage {
      * Adds modified entries to the watch event queue.
      */
     private void queueWatchEvent() {
-        if (updatedEntries.isEmpty()) {
-            return;
-        }
-
         switch (recoveryStatus.get()) {
             case INITIAL:
                 // Watches haven't been enabled yet, no need to queue any events, they will be replayed upon recovery.
                 updatedEntries.clear();
 
                 break;
-
             case IN_PROGRESS:
-                // Buffer the event while event replay is still in progress.
-                if (eventCache == null) {
-                    eventCache = new ArrayList<>();
-                }
-
-                eventCache.add(updatedEntries.transfer());
+                addToNotifyWatchProcessorEventsBeforeStartingWatches(updatedEntries.toNotifyWatchProcessorEvent(rev));
 
                 break;
-
             default:
-                notifyWatches();
+                updatedEntries.toNotifyWatchProcessorEvent(rev).notify(watchProcessor);
 
                 break;
         }
     }
 
-    private void notifyWatches() {
-        UpdatedEntries copy = updatedEntries.transfer();
-
-        assert copy.ts != null;
-        watchProcessor.notifyWatches(copy.updatedEntries, copy.ts);
-    }
-
-    private void replayUpdates(long lowerRevision, long upperRevision) {
+    private Set<UpdateEntriesEvent> collectUpdateEntriesEventsFromStorage(long lowerRevision, long upperRevision) {
         long minWatchRevision = Math.max(lowerRevision, watchProcessor.minWatchRevision().orElse(-1));
 
-        if (minWatchRevision == -1 || minWatchRevision > upperRevision) {
-            // No events to replay, we can start processing more recent events from the event queue.
-            finishReplay();
-
-            return;
+        if (minWatchRevision > upperRevision) {
+            return Set.of();
         }
 
         var updatedEntries = new ArrayList<Entry>();
         HybridTimestamp ts = null;
+
+        var events = new TreeSet<UpdateEntriesEvent>();
 
         try (
                 var upperBound = new Slice(longToBytes(upperRevision + 1));
@@ -1101,7 +1201,11 @@ public class RocksDbKeyValueStorage extends AbstractKeyValueStorage {
 
                         assert ts != null : revision;
 
-                        watchProcessor.notifyWatches(updatedEntriesCopy, ts);
+                        var event = new UpdateEntriesEvent(updatedEntriesCopy, ts);
+
+                        boolean added = events.add(event);
+
+                        assert added : event;
 
                         updatedEntries.clear();
 
@@ -1125,15 +1229,53 @@ public class RocksDbKeyValueStorage extends AbstractKeyValueStorage {
                 throw new MetaStorageException(OP_EXECUTION_ERR, e);
             }
 
-            // Notify about the events left after finishing the loop above.
+            // Adds event left after finishing the loop above.
             if (!updatedEntries.isEmpty()) {
                 assert ts != null;
 
-                watchProcessor.notifyWatches(updatedEntries, ts);
+                var event = new UpdateEntriesEvent(updatedEntries, ts);
+
+                boolean added = events.add(event);
+
+                assert added : event;
             }
         }
 
-        finishReplay();
+        return events;
+    }
+
+    private Set<UpdateOnlyRevisionEvent> collectUpdateRevisionEventsFromStorage(long lowerRevision, long upperRevision) {
+        var events = new TreeSet<UpdateOnlyRevisionEvent>();
+
+        try (
+                var upperBound = new Slice(longToBytes(upperRevision + 1));
+                var options = new ReadOptions().setIterateUpperBound(upperBound);
+                RocksIterator it = revisionToTs.newIterator(options)
+        ) {
+            it.seek(longToBytes(lowerRevision));
+
+            for (; it.isValid(); it.next()) {
+                byte[] rocksKey = it.key();
+                byte[] rocksValue = it.value();
+
+                long revision = bytesToLong(rocksKey);
+                HybridTimestamp time = hybridTimestamp(bytesToLong(rocksValue));
+
+                UpdateOnlyRevisionEvent event = new UpdateOnlyRevisionEvent(revision, time);
+
+                boolean added = events.add(event);
+
+                assert added : event;
+
+                try {
+                    it.status();
+                } catch (RocksDBException e) {
+                    throw new MetaStorageException(OP_EXECUTION_ERR, e);
+                }
+            }
+        }
+
+        return events;
     }
 
     @Override
@@ -1181,28 +1323,6 @@ public class RocksDbKeyValueStorage extends AbstractKeyValueStorage {
         }
     }
 
-    private void finishReplay() {
-        // Take the lock to drain the event cache and prevent new events from being cached. Since event notification is asynchronous,
-        // this lock shouldn't be held for long.
-        rwLock.writeLock().lock();
-
-        try {
-            if (eventCache != null) {
-                eventCache.forEach(entries -> {
-                    assert entries.ts != null;
-
-                    watchProcessor.notifyWatches(entries.updatedEntries, entries.ts);
-                });
-
-                eventCache = null;
-            }
-
-            recoveryStatus.set(RecoveryStatus.DONE);
-        } finally {
-            rwLock.writeLock().unlock();
-        }
-    }
-
     @TestOnly
     public Path getDbPath() {
         return dbPath;
@@ -1246,45 +1366,29 @@ public class RocksDbKeyValueStorage extends AbstractKeyValueStorage {
 
             return transferredValue;
         }
-    }
 
-    @Override
-    public void advanceSafeTime(KeyValueUpdateContext context) {
-        rwLock.writeLock().lock();
+        NotifyWatchProcessorEvent toNotifyWatchProcessorEvent(long newRevision) {
+            UpdatedEntries copy = transfer();
 
-        try {
-            setIndexAndTerm(context.index, context.term);
-
-            if (recoveryStatus.get() == RecoveryStatus.DONE) {
-                watchProcessor.advanceSafeTime(context.timestamp);
-            }
-        } finally {
-            rwLock.writeLock().unlock();
+            return copy.updatedEntries.isEmpty() ? new UpdateOnlyRevisionEvent(newRevision, copy.ts)
+                    : new UpdateEntriesEvent(copy.updatedEntries, copy.ts);
         }
     }
 
     @Override
-    public void saveCompactionRevision(long revision, KeyValueUpdateContext context) {
-        assert revision >= 0 : revision;
-
-        rwLock.writeLock().lock();
-
+    protected void saveCompactionRevision(long revision, KeyValueUpdateContext context, boolean advanceSafeTime) {
         try (WriteBatch batch = new WriteBatch()) {
-            assertCompactionRevisionLessThanCurrent(revision, rev);
-
             data.put(batch, COMPACTION_REVISION_KEY, longToBytes(revision));
 
             addIndexAndTermToWriteBatch(batch, context);
 
-            db.write(defaultWriteOptions, batch);
+            db.write(writeOptions, batch);
 
-            if (recoveryStatus.get() == RecoveryStatus.DONE) {
+            if (advanceSafeTime && areWatchesStarted()) {
                 watchProcessor.advanceSafeTime(context.timestamp);
             }
         } catch (Throwable t) {
             throw new MetaStorageException(COMPACTION_ERR, "Error saving compaction revision: " + revision, t);
-        } finally {
-            rwLock.writeLock().unlock();
         }
     }
 
@@ -1304,11 +1408,47 @@ public class RocksDbKeyValueStorage extends AbstractKeyValueStorage {
     }
 
     @Override
-    public void clear() {
-        // There's no way to easily remove all data from RocksDB, so we need to re-create it from scratch.
-        closeRocksResources();
+    public ChecksumAndRevisions checksumAndRevisions(long revision) {
+        rwLock.readLock().lock();
 
         try {
+            return new ChecksumAndRevisions(
+                    checksumByRevisionOrZero(revision),
+                    minChecksummedRevisionOrZero(),
+                    rev
+            );
+        } catch (RocksDBException e) {
+            throw new MetaStorageException(INTERNAL_ERR, "Cannot get checksum by revision: " + revision, e);
+        } finally {
+            rwLock.readLock().unlock();
+        }
+    }
+
+    private long minChecksummedRevisionOrZero() throws RocksDBException {
+        try (
+                var options = new ReadOptions().setTailing(true);
+                RocksIterator it = revisionToChecksum.newIterator(options)
+        ) {
+            it.seekToFirst();
+
+            if (it.isValid()) {
+                return bytesToLong(it.key());
+            } else {
+                it.status();
+
+                return 0;
+            }
+        }
+    }
+
+    @Override
+    public void clear() {
+        rwLock.readLock().lock();
+
+        try {
+            // There's no way to easily remove all data from RocksDB, so we need to re-create it from scratch.
+            closeRocksResources();
+
             destroyRocksDb();
 
             this.rev = 0;
@@ -1319,6 +1459,8 @@ public class RocksDbKeyValueStorage extends AbstractKeyValueStorage {
             createDb();
         } catch (Exception e) {
             throw new MetaStorageException(RESTORING_STORAGE_ERR, "Failed to restore snapshot", e);
+        } finally {
+            rwLock.readLock().unlock();
         }
     }
 
@@ -1380,7 +1522,7 @@ public class RocksDbKeyValueStorage extends AbstractKeyValueStorage {
                         }
                     }
 
-                    db.write(defaultWriteOptions, batch);
+                    db.write(writeOptions, batch);
                 } finally {
                     rwLock.writeLock().unlock();
                 }
@@ -1433,6 +1575,11 @@ public class RocksDbKeyValueStorage extends AbstractKeyValueStorage {
         return value;
     }
 
+    @Override
+    protected boolean areWatchesStarted() {
+        return recoveryStatus.get() == RecoveryStatus.DONE;
+    }
+
     private @Nullable Value getValueForOperationNullable(byte[] key, long revision) {
         try {
             byte[] valueBytes = data.get(keyToRocksKey(revision, key));
@@ -1464,7 +1611,7 @@ public class RocksDbKeyValueStorage extends AbstractKeyValueStorage {
 
         iterator.seek(keyFrom);
 
-        long readOperationId = readOperationIdGeneratorForTracker++;
+        long readOperationId = readOperationForCompactionTracker.generateReadOperationId();
         long compactionRevisionBeforeCreateCursor = compactionRevision;
 
         readOperationForCompactionTracker.track(readOperationId, compactionRevision);
@@ -1543,5 +1690,10 @@ public class RocksDbKeyValueStorage extends AbstractKeyValueStorage {
 
     private void addIndexAndTermToWriteBatch(WriteBatch batch, KeyValueUpdateContext context) throws RocksDBException {
         data.put(batch, INDEX_AND_TERM_KEY, longsToBytes(0, context.index, context.term));
+    }
+
+    @Override
+    public CompletableFuture<Void> flush() {
+        return inBusyLockAsync(busyLock, () -> flusher.awaitFlush(true));
     }
 }

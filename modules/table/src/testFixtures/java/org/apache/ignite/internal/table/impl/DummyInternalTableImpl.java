@@ -60,6 +60,7 @@ import org.apache.ignite.internal.network.ClusterService;
 import org.apache.ignite.internal.network.NetworkMessage;
 import org.apache.ignite.internal.network.SingleClusterNodeResolver;
 import org.apache.ignite.internal.network.TopologyService;
+import org.apache.ignite.internal.network.serialization.MessageSerializer;
 import org.apache.ignite.internal.placementdriver.PlacementDriver;
 import org.apache.ignite.internal.placementdriver.ReplicaMeta;
 import org.apache.ignite.internal.placementdriver.TestPlacementDriver;
@@ -77,6 +78,7 @@ import org.apache.ignite.internal.replicator.TablePartitionId;
 import org.apache.ignite.internal.replicator.listener.ReplicaListener;
 import org.apache.ignite.internal.replicator.message.PrimaryReplicaChangeCommand;
 import org.apache.ignite.internal.replicator.message.ReplicaMessagesFactory;
+import org.apache.ignite.internal.replicator.message.TimestampAwareReplicaResponse;
 import org.apache.ignite.internal.schema.BinaryRow;
 import org.apache.ignite.internal.schema.BinaryRowConverter;
 import org.apache.ignite.internal.schema.BinaryRowEx;
@@ -117,7 +119,7 @@ import org.apache.ignite.internal.tx.storage.state.test.TestTxStateTableStorage;
 import org.apache.ignite.internal.tx.test.TestLocalRwTxCounter;
 import org.apache.ignite.internal.util.Lazy;
 import org.apache.ignite.internal.util.PendingComparableValuesTracker;
-import org.apache.ignite.internal.util.PendingIndependentComparableValuesTracker;
+import org.apache.ignite.internal.util.SafeTimeValuesTracker;
 import org.apache.ignite.network.ClusterNode;
 import org.apache.ignite.network.NetworkAddress;
 import org.apache.ignite.tx.TransactionException;
@@ -157,7 +159,7 @@ public class DummyInternalTableImpl extends InternalTableImpl {
     private final ReplicationGroupId groupId;
 
     /** The thread updates safe time on the dummy replica. */
-    private final PendingComparableValuesTracker<HybridTimestamp, Void> safeTime;
+    private final SafeTimeValuesTracker safeTime;
 
     private final Object raftServiceMutex = new Object();
 
@@ -211,7 +213,7 @@ public class DummyInternalTableImpl extends InternalTableImpl {
                 false,
                 null,
                 schema,
-                new HybridTimestampTracker(),
+                HybridTimestampTracker.atomicTracker(null),
                 placementDriver,
                 storageUpdateConfiguration,
                 txConfiguration,
@@ -255,7 +257,7 @@ public class DummyInternalTableImpl extends InternalTableImpl {
                 mock(MvTableStorage.class),
                 new TestTxStateTableStorage(),
                 replicaSvc,
-                CLOCK,
+                CLOCK_SERVICE,
                 tracker,
                 placementDriver,
                 transactionInflights,
@@ -292,6 +294,45 @@ public class DummyInternalTableImpl extends InternalTableImpl {
                         return replicaListener.invoke(invocationOnMock.getArgument(1), nodeId).thenApply(ReplicaResult::result);
                     })
                     .when(replicaSvc).invoke(anyString(), any());
+
+            lenient()
+                    .doAnswer(invocationOnMock -> {
+                        ClusterNode node = invocationOnMock.getArgument(0);
+
+                        return replicaListener.invoke(invocationOnMock.getArgument(1), node.id())
+                                .thenApply(r -> new TimestampAwareReplicaResponse() {
+                                    @Override
+                                    public @Nullable Object result() {
+                                        return r.result();
+                                    }
+
+                                    @Override
+                                    public @Nullable HybridTimestamp timestamp() {
+                                        return CLOCK.now();
+                                    }
+
+                                    @Override
+                                    public MessageSerializer<NetworkMessage> serializer() {
+                                        return null;
+                                    }
+
+                                    @Override
+                                    public short messageType() {
+                                        return 0;
+                                    }
+
+                                    @Override
+                                    public short groupType() {
+                                        return 0;
+                                    }
+
+                                    @Override
+                                    public NetworkMessage clone() {
+                                        return null;
+                                    }
+                                });
+                    })
+                    .when(replicaSvc).invokeRaw(any(ClusterNode.class), any());
         }
 
         AtomicLong raftIndex = new AtomicLong(1);
@@ -329,7 +370,14 @@ public class DummyInternalTableImpl extends InternalTableImpl {
                                     res.complete(r);
                                 }
                             }
+
+                            @Override
+                            public void patch(HybridTimestamp safeTs) {
+                                command().patch(safeTs);
+                            }
                         };
+
+                        clo.patch(CLOCK.now());
 
                         try {
                             partitionListener.onWrite(List.of(clo).iterator());
@@ -361,7 +409,7 @@ public class DummyInternalTableImpl extends InternalTableImpl {
 
         IndexLocker pkLocker = new HashIndexLocker(indexId, true, this.txManager.lockManager(), row2Tuple);
 
-        safeTime = new PendingIndependentComparableValuesTracker<>(HybridTimestamp.MIN_VALUE);
+        safeTime = new SafeTimeValuesTracker(HybridTimestamp.MIN_VALUE);
 
         PartitionDataStorage partitionDataStorage = new TestPartitionDataStorage(tableId, PART_ID, mvPartStorage);
         TableIndexStoragesSupplier indexes = createTableIndexStoragesSupplier(Map.of(pkStorage.get().id(), pkStorage.get()));
@@ -413,7 +461,8 @@ public class DummyInternalTableImpl extends InternalTableImpl {
                 mock(ClusterNodeResolver.class),
                 resourcesRegistry,
                 schemaManager,
-                mock(IndexMetaStorage.class)
+                mock(IndexMetaStorage.class),
+                new TestLowWatermark()
         );
 
         partitionListener = new PartitionListener(
@@ -425,7 +474,6 @@ public class DummyInternalTableImpl extends InternalTableImpl {
                 new PendingComparableValuesTracker<>(0L),
                 catalogService,
                 schemaManager,
-                CLOCK_SERVICE,
                 mock(IndexMetaStorage.class),
                 LOCAL_NODE.id(),
                 mock(MinimumRequiredTimeCollectorService.class)
@@ -514,7 +562,7 @@ public class DummyInternalTableImpl extends InternalTableImpl {
                 txConfiguration,
                 clusterService,
                 replicaSvc,
-                new HeapLockManager(),
+                HeapLockManager.smallInstance(),
                 CLOCK_SERVICE,
                 new TransactionIdGenerator(0xdeadbeef),
                 placementDriver,
@@ -538,13 +586,7 @@ public class DummyInternalTableImpl extends InternalTableImpl {
 
     /** {@inheritDoc} */
     @Override
-    public int partition(BinaryRowEx keyRow) {
-        return 0;
-    }
-
-    /** {@inheritDoc} */
-    @Override
-    public CompletableFuture<ClusterNode> evaluateReadOnlyRecipientNode(int partId) {
+    public CompletableFuture<ClusterNode> evaluateReadOnlyRecipientNode(int partId, @Nullable HybridTimestamp readTimestamp) {
         return completedFuture(LOCAL_NODE);
     }
 

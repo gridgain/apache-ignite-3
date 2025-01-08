@@ -47,13 +47,17 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import java.nio.file.Path;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ScheduledExecutorService;
 import org.apache.ignite.internal.catalog.CatalogManager;
 import org.apache.ignite.internal.failure.NoOpFailureManager;
 import org.apache.ignite.internal.lang.RunnableX;
 import org.apache.ignite.internal.manager.ComponentContext;
 import org.apache.ignite.internal.metastorage.MetaStorageManager;
 import org.apache.ignite.internal.metastorage.impl.StandaloneMetaStorageManager;
+import org.apache.ignite.internal.metastorage.server.ReadOperationForCompactionTracker;
 import org.apache.ignite.internal.metastorage.server.persistence.RocksDbKeyValueStorage;
+import org.apache.ignite.internal.testframework.ExecutorServiceExtension;
+import org.apache.ignite.internal.testframework.InjectExecutorService;
 import org.apache.ignite.internal.testframework.WorkDirectory;
 import org.apache.ignite.internal.testframework.WorkDirectoryExtension;
 import org.apache.ignite.internal.util.IgniteUtils;
@@ -62,17 +66,29 @@ import org.junit.jupiter.api.extension.ExtendWith;
 
 /** For testing recovery of {@link IndexMetaStorage}. */
 @ExtendWith(WorkDirectoryExtension.class)
+@ExtendWith(ExecutorServiceExtension.class)
 public class IndexMetaStorageRecoveryTest extends BaseIndexMetaStorageTest {
     @WorkDirectory
     private Path workDir;
+
+    @InjectExecutorService
+    private ScheduledExecutorService scheduledExecutorService;
 
     private final TestUpdateHandlerInterceptor interceptor = new TestUpdateHandlerInterceptor();
 
     @Override
     MetaStorageManager createMetastore() {
-        var keyValueStorage = new RocksDbKeyValueStorage(NODE_NAME, workDir, new NoOpFailureManager());
+        var readOperationForCompactionTracker = new ReadOperationForCompactionTracker();
 
-        return StandaloneMetaStorageManager.create(keyValueStorage);
+        var keyValueStorage = new RocksDbKeyValueStorage(
+                NODE_NAME,
+                workDir,
+                new NoOpFailureManager(),
+                readOperationForCompactionTracker,
+                scheduledExecutorService
+        );
+
+        return StandaloneMetaStorageManager.create(keyValueStorage, readOperationForCompactionTracker);
     }
 
     @Override
@@ -498,7 +514,10 @@ public class IndexMetaStorageRecoveryTest extends BaseIndexMetaStorageTest {
 
         createComponents();
 
-        assertThat(startAsync(componentContext, metastore, catalogManager), willCompleteSuccessfully());
+        assertThat(startAsync(componentContext, metastore), willCompleteSuccessfully());
+        assertThat(metastore.recoveryFinishedFuture(), willCompleteSuccessfully());
+
+        assertThat(startAsync(componentContext, catalogManager), willCompleteSuccessfully());
 
         assertThat(metastore.deployWatches(), willCompleteSuccessfully());
 

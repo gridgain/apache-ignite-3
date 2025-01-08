@@ -17,8 +17,11 @@
 
 package org.apache.ignite.internal.metastorage.server;
 
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.zip.Checksum;
+import org.apache.ignite.internal.metastorage.command.RemoveByPrefixCommand;
 import org.apache.ignite.raft.jraft.util.CRC64;
 
 /**
@@ -133,7 +136,12 @@ public class MetastorageChecksum {
      * @param keys Keys.
      */
     public long wholeRemoveAll(List<byte[]> keys) {
-        return checksumWholeOperation(Op.REMOVE_ALL, () -> updateForRemoveAll(keys));
+        // Sort keys to get stable checksums independent from the order of keys (as the effect to the storage is the same even if
+        // key order is different).
+        List<byte[]> sortedKeys = new ArrayList<>(keys);
+        sortedKeys.sort(Arrays::compare);
+
+        return checksumWholeOperation(Op.REMOVE_ALL, () -> updateForRemoveAll(sortedKeys));
     }
 
     private void updateForRemoveAll(List<byte[]> keys) {
@@ -141,6 +149,15 @@ public class MetastorageChecksum {
         for (byte[] key : keys) {
             updateForRemove(key);
         }
+    }
+
+    /**
+     * Calculates a checksum for a {@link RemoveByPrefixCommand}.
+     *
+     * @param prefix prefix.
+     */
+    public long wholeRemoveByPrefix(byte[] prefix) {
+        return checksumWholeOperation(Op.REMOVE_BY_PREFIX, () -> updateWithBytes(prefix));
     }
 
     /**
@@ -202,7 +219,8 @@ public class MetastorageChecksum {
         REMOVE(3),
         REMOVE_ALL(4),
         SINGLE_INVOKE(5),
-        MULTI_INVOKE(6);
+        MULTI_INVOKE(6),
+        REMOVE_BY_PREFIX(7);
 
         private final int code;
 

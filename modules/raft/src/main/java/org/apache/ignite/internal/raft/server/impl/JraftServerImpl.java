@@ -34,6 +34,7 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Queue;
 import java.util.Set;
@@ -72,9 +73,7 @@ import org.apache.ignite.internal.raft.storage.LogStorageFactory;
 import org.apache.ignite.internal.raft.storage.impl.IgniteJraftServiceFactory;
 import org.apache.ignite.internal.raft.storage.impl.StripeAwareLogManager.Stripe;
 import org.apache.ignite.internal.replicator.ReplicationGroupId;
-import org.apache.ignite.internal.thread.IgniteThread;
 import org.apache.ignite.internal.thread.IgniteThreadFactory;
-import org.apache.ignite.internal.util.ThreadUtils;
 import org.apache.ignite.internal.util.IgniteUtils;
 import org.apache.ignite.raft.jraft.Closure;
 import org.apache.ignite.raft.jraft.Iterator;
@@ -88,7 +87,6 @@ import org.apache.ignite.raft.jraft.core.FSMCallerImpl.ApplyTask;
 import org.apache.ignite.raft.jraft.core.FSMCallerImpl.IApplyTask;
 import org.apache.ignite.raft.jraft.core.NodeImpl.ILogEntryAndClosure;
 import org.apache.ignite.raft.jraft.core.NodeImpl.LogEntryAndClosure;
-import org.apache.ignite.raft.jraft.core.ReadOnlyServiceImpl;
 import org.apache.ignite.raft.jraft.core.ReadOnlyServiceImpl.ReadIndexEvent;
 import org.apache.ignite.raft.jraft.core.SharedEvent;
 import org.apache.ignite.raft.jraft.core.StateMachineAdapter;
@@ -463,16 +461,7 @@ public class JraftServerImpl implements RaftServer {
     }
 
     public static Path getServerDataPath(Path basePath, RaftNodeId nodeId) {
-        return basePath.resolve(nodeIdStr(nodeId));
-    }
-
-    private static String nodeIdStr(RaftNodeId nodeId) {
-        return String.join(
-                "_",
-                nodeId.groupId().toString(),
-                nodeId.peer().consistentId(),
-                String.valueOf(nodeId.peer().idx())
-        );
+        return basePath.resolve(nodeId.nodeIdStringForStorage());
     }
 
     @Override
@@ -509,7 +498,11 @@ public class JraftServerImpl implements RaftServer {
             // Thread pools are shared by all raft groups.
             NodeOptions nodeOptions = opts.copy();
 
-            nodeOptions.setLogUri(nodeIdStr(nodeId));
+            // When a new election starts on a node, it has local physical time higher than last generated safe ts
+            // because we wait out the clock skew.
+            nodeOptions.setElectionTimeoutMs(Math.max(nodeOptions.getElectionTimeoutMs(), groupOptions.maxClockSkew()));
+
+            nodeOptions.setLogUri(nodeId.nodeIdStringForStorage());
 
             Path serverDataPath = serverDataPathForNodeId(nodeId, groupOptions);
 
@@ -606,26 +599,34 @@ public class JraftServerImpl implements RaftServer {
 
     @Override
     public boolean stopRaftNodes(ReplicationGroupId groupId) {
-        return nodes.entrySet().removeIf(e -> {
+        Set<RaftGroupService> servicesToStop = new HashSet<>();
+
+        boolean removed = nodes.entrySet().removeIf(e -> {
             RaftNodeId nodeId = e.getKey();
             RaftGroupService service = e.getValue();
 
             if (nodeId.groupId().equals(groupId)) {
-                service.shutdown();
+                servicesToStop.add(service);
 
                 return true;
             } else {
                 return false;
             }
         });
+
+        for (RaftGroupService service : servicesToStop) {
+            service.shutdown();
+        }
+
+        return removed;
     }
 
     @Override
     public void destroyRaftNodeStorages(RaftNodeId nodeId, RaftGroupOptions groupOptions) {
         // TODO: IGNITE-23079 - improve on what we do if it was not possible to destroy any of the storages.
         try {
-            String uri = nodeIdStr(nodeId);
-            groupOptions.getLogStorageFactory().destroyLogStorage(uri);
+            String logUri = nodeId.nodeIdStringForStorage();
+            groupOptions.getLogStorageFactory().destroyLogStorage(logUri);
         } finally {
             Path serverDataPath = serverDataPathForNodeId(nodeId, groupOptions);
 

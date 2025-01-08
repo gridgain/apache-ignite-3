@@ -17,9 +17,11 @@
 
 package org.apache.ignite.internal.partitiondistribution;
 
+import static java.util.Collections.emptyList;
 import static java.util.Objects.nonNull;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.ArrayList;
@@ -27,22 +29,20 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
-import org.apache.ignite.internal.logger.IgniteLogger;
-import org.apache.ignite.internal.logger.Loggers;
-import org.apache.ignite.internal.util.ByteUtils;
-import org.apache.ignite.network.ClusterNode;
+import java.util.stream.Stream;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 
 /**
  * Test for Rendezvous distribution function.
  */
 public class RendezvousDistributionFunctionTest {
-    /** The logger. */
-    private static final IgniteLogger LOG = Loggers.forClass(RendezvousDistributionFunctionTest.class);
-
     /** Distribution deviation ratio. */
     public static final double DISTRIBUTION_DEVIATION_RATIO = 0.2;
 
@@ -60,9 +60,10 @@ public class RendezvousDistributionFunctionTest {
 
         int ideal = (parts * replicas) / nodeCount;
 
-        List<List<String>> assignment = RendezvousDistributionFunction.assignPartitions(
+        List<Set<Assignment>> assignment = RendezvousDistributionFunction.assignPartitions(
                 nodes,
                 parts,
+                replicas,
                 replicas,
                 false,
                 null
@@ -72,12 +73,12 @@ public class RendezvousDistributionFunctionTest {
 
         int part = 0;
 
-        for (List<String> partNodes : assignment) {
-            for (String node : partNodes) {
-                ArrayList<Integer> nodeParts = assignmentByNode.get(node);
+        for (Set<Assignment> partNodes : assignment) {
+            for (Assignment node : partNodes) {
+                ArrayList<Integer> nodeParts = assignmentByNode.get(node.consistentId());
 
                 if (nodeParts == null) {
-                    assignmentByNode.put(node, nodeParts = new ArrayList<>());
+                    assignmentByNode.put(node.consistentId(), nodeParts = new ArrayList<>());
                 }
 
                 nodeParts.add(part);
@@ -100,39 +101,60 @@ public class RendezvousDistributionFunctionTest {
         }
     }
 
+    @ParameterizedTest
+    @MethodSource("distributionWithLearnersArguments")
+    public void testDistributionWithLearners(int nodeCount, int partitions, int replicas, int consensusReplicas) {
+        List<String> nodes = prepareNetworkTopology(nodeCount);
+
+        DistributionAlgorithm distributionAlgorithm = new RendezvousDistributionFunction();
+
+        List<Set<Assignment>> assignments = distributionAlgorithm
+                .assignPartitions(nodes, emptyList(), partitions, replicas, consensusReplicas);
+
+        for (int p = 0; p < partitions; p++) {
+            Set<Assignment> a = assignments.get(p);
+            assertEquals(replicas, a.size());
+            assertEquals(consensusReplicas, a.stream().filter(Assignment::isPeer).count());
+        }
+
+        List<Set<Assignment>> allAssignments = distributionAlgorithm
+                .assignPartitions(nodes, emptyList(), 1, replicas, consensusReplicas);
+
+        Set<Assignment> partitionAssignments = allAssignments.get(0);
+
+        assertEquals(replicas, partitionAssignments.size());
+        assertEquals(consensusReplicas, partitionAssignments.stream().filter(Assignment::isPeer).count());
+    }
+
+    private static Stream<Arguments> distributionWithLearnersArguments() {
+        List<Arguments> arg = new ArrayList<>();
+
+        for (Integer nodes : List.of(1, 2, 3, 4, 5, 7, 10, 20, 50, 100)) {
+            for (Integer partitions : List.of(1, 10, 25, 50, 100)) {
+                for (Integer replicas : List.of(1, 2, 3, 4, 5, 7, 10, 50, 100)) {
+                    for (Integer consensusReplicas : List.of(1, 2, 3, 5, 7, 100)) {
+                        if (replicas <= nodes && consensusReplicas <= replicas) {
+                            arg.add(Arguments.of(nodes, partitions, replicas, consensusReplicas));
+                        }
+                    }
+                }
+            }
+        }
+
+        return arg.stream();
+    }
+
+    @Test
+    public void testConsensusGroupSizeValidation() {
+        DistributionAlgorithm distributionAlgorithm = new RendezvousDistributionFunction();
+
+        assertThrows(AssertionError.class, () -> distributionAlgorithm.assignPartitions(prepareNetworkTopology(3), emptyList(), 1, 3, 4));
+    }
+
     private List<String> prepareNetworkTopology(int nodes) {
         return IntStream.range(0, nodes)
                 .mapToObj(i -> "Node " + i)
                 .collect(Collectors.toUnmodifiableList());
-    }
-
-    @Test
-    public void serializeAssignment() {
-        int nodeCount = 50;
-
-        int parts = 10_000;
-
-        int replicas = 4;
-
-        List<String> nodes = prepareNetworkTopology(nodeCount);
-
-        assertTrue(parts > nodeCount, "Partitions should be more than nodes");
-
-        List<List<String>> assignment = RendezvousDistributionFunction.assignPartitions(
-                nodes,
-                parts,
-                replicas,
-                false,
-                null
-        );
-
-        byte[] assignmentBytes = ByteUtils.toBytes(assignment);
-
-        LOG.info("Assignment is serialized successfully [bytes={}]", assignmentBytes.length);
-
-        List<List<ClusterNode>> deserializedAssignment = (List<List<ClusterNode>>) ByteUtils.fromBytes(assignmentBytes);
-
-        assertEquals(assignment, deserializedAssignment);
     }
 
     /**

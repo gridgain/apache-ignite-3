@@ -17,16 +17,19 @@
 
 package org.apache.ignite.internal.metrics.exporters;
 
+import java.util.UUID;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Supplier;
 import org.apache.ignite.internal.logger.IgniteLogger;
 import org.apache.ignite.internal.logger.Loggers;
 import org.apache.ignite.internal.metrics.MetricProvider;
 import org.apache.ignite.internal.metrics.exporters.configuration.ExporterView;
 import org.apache.ignite.internal.thread.NamedThreadFactory;
 import org.apache.ignite.internal.util.IgniteUtils;
+import org.jetbrains.annotations.Nullable;
 
 /**
  * Base class for push metrics exporters, according to terminology from {@link MetricExporter} docs.
@@ -43,28 +46,42 @@ public abstract class PushMetricExporter<CfgT extends ExporterView> extends Basi
     /** Export scheduler. */
     private ScheduledExecutorService scheduler;
 
-    /** {@inheritDoc} */
+    private long period;
+
     @Override
-    public synchronized void start(MetricProvider metricProvider, CfgT conf) {
-        super.start(metricProvider, conf);
+    public synchronized void start(MetricProvider metricProvider, CfgT conf, Supplier<UUID> clusterIdSupplier, String nodeName) {
+        super.start(metricProvider, conf, clusterIdSupplier, nodeName);
 
-        scheduler =
-                Executors.newSingleThreadScheduledExecutor(new NamedThreadFactory("metrics-exporter-" + name(), log));
+        scheduler = Executors.newSingleThreadScheduledExecutor(new NamedThreadFactory("metrics-exporter-" + name(), log));
 
-        fut = scheduler.scheduleWithFixedDelay(() -> {
-            try {
-                report();
-            } catch (Throwable th) {
-                log.error("Metrics export error. "
-                        + "This exporter will be stopped [class=" + getClass() + ",name=" + name() + ']', th);
-
-                throw th;
-            }
-        }, period(), period(), TimeUnit.MILLISECONDS);
-
+        reconfigure(conf);
     }
 
-    /** {@inheritDoc} */
+    @Override
+    public synchronized void reconfigure(@Nullable CfgT newVal) {
+        super.reconfigure(newVal);
+
+        long newPeriod = period();
+
+        if (period != newPeriod) {
+            if (fut != null) {
+                fut.cancel(false);
+            }
+
+            period = newPeriod;
+
+            fut = scheduler.scheduleWithFixedDelay(() -> {
+                try {
+                    report();
+                } catch (Throwable th) {
+                    log.error("Metrics export error. This exporter will be stopped [class=" + getClass() + ",name=" + name() + ']', th);
+
+                    throw th;
+                }
+            }, newPeriod, newPeriod, TimeUnit.MILLISECONDS);
+        }
+    }
+
     @Override
     public synchronized void stop() {
         if (fut != null) {

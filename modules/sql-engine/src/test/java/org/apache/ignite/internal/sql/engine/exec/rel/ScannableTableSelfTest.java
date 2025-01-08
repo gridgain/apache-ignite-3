@@ -245,8 +245,8 @@ public class ScannableTableSelfTest extends BaseIgniteAbstractTest {
 
         for (Bound leftBound : Bound.values()) {
             for (Bound rightBound : Bound.values()) {
-                params.add(Arguments.of(NoOpTransaction.readOnly("RO"), leftBound, rightBound));
-                params.add(Arguments.of(NoOpTransaction.readWrite("RW"), leftBound, rightBound));
+                params.add(Arguments.of(NoOpTransaction.readOnly("RO", false), leftBound, rightBound));
+                params.add(Arguments.of(NoOpTransaction.readWrite("RW", false), leftBound, rightBound));
             }
         }
 
@@ -573,8 +573,8 @@ public class ScannableTableSelfTest extends BaseIgniteAbstractTest {
 
     private static Stream<Arguments> transactions() {
         return Stream.of(
-                Arguments.of(Named.of("Read-only transaction", NoOpTransaction.readOnly("RO"))),
-                Arguments.of(Named.of("Read-write transaction", NoOpTransaction.readWrite("RW")))
+                Arguments.of(Named.of("Read-only transaction", NoOpTransaction.readOnly("RO", false))),
+                Arguments.of(Named.of("Read-write transaction", NoOpTransaction.readWrite("RW", false)))
         );
     }
 
@@ -584,13 +584,13 @@ public class ScannableTableSelfTest extends BaseIgniteAbstractTest {
 
         final TestInput input;
 
-        final RowCollectingTableRwoConverter rowConverter;
+        final RowCollectingTableRowConverter rowConverter;
 
         BitSet requiredFields;
 
         Tester(TestInput input) {
             this.input = input;
-            rowConverter = new RowCollectingTableRwoConverter(input);
+            rowConverter = new RowCollectingTableRowConverter(input);
             scannableTable = new ScannableTableImpl(internalTable, rf -> rowConverter);
         }
 
@@ -805,13 +805,13 @@ public class ScannableTableSelfTest extends BaseIgniteAbstractTest {
     }
 
     // Collects rows received from an input source.
-    static class RowCollectingTableRwoConverter implements TableRowConverter {
+    static class RowCollectingTableRowConverter implements TableRowConverter {
 
         final TestInput testInput;
 
         final List<BinaryRow> converted = new ArrayList<>();
 
-        RowCollectingTableRwoConverter(TestInput testData) {
+        RowCollectingTableRowConverter(TestInput testData) {
             this.testInput = testData;
         }
 
@@ -845,9 +845,9 @@ public class ScannableTableSelfTest extends BaseIgniteAbstractTest {
 
         final AtomicReference<Throwable> err = new AtomicReference<>();
 
-        final RowCollectingTableRwoConverter rowConverter;
+        final RowCollectingTableRowConverter rowConverter;
 
-        ResultCollector(Publisher<?> input, RowCollectingTableRwoConverter rowConverter) {
+        ResultCollector(Publisher<?> input, RowCollectingTableRowConverter rowConverter) {
             this.input = input;
             this.rowConverter = rowConverter;
 

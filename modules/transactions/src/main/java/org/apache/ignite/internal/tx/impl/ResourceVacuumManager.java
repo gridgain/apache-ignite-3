@@ -26,10 +26,12 @@ import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import org.apache.ignite.internal.lang.IgniteSystemProperties;
 import org.apache.ignite.internal.logger.IgniteLogger;
 import org.apache.ignite.internal.logger.Loggers;
+import org.apache.ignite.internal.lowwatermark.LowWatermark;
 import org.apache.ignite.internal.manager.ComponentContext;
 import org.apache.ignite.internal.manager.IgniteComponent;
 import org.apache.ignite.internal.network.ClusterNodeResolver;
@@ -71,6 +73,9 @@ public class ResourceVacuumManager implements IgniteComponent {
 
     private final TxManager txManager;
 
+    private volatile ScheduledFuture<?> vacuumOperationFuture;
+    private volatile ScheduledFuture<?> broadcastClosedTransactionsFuture;
+
     /**
      * Constructor.
      *
@@ -80,6 +85,7 @@ public class ResourceVacuumManager implements IgniteComponent {
      * @param messagingService Messaging service.
      * @param transactionInflights Transaction inflights.
      * @param txManager Transactional manager.
+     * @param lowWatermark Low watermark.
      */
     public ResourceVacuumManager(
             String nodeName,
@@ -87,7 +93,8 @@ public class ResourceVacuumManager implements IgniteComponent {
             TopologyService topologyService,
             MessagingService messagingService,
             TransactionInflights transactionInflights,
-            TxManager txManager
+            TxManager txManager,
+            LowWatermark lowWatermark
     ) {
         this.resourceRegistry = resourceRegistry;
         this.clusterNodeResolver = topologyService;
@@ -100,8 +107,12 @@ public class ResourceVacuumManager implements IgniteComponent {
                 messagingService,
                 transactionInflights
         );
-        this.finishedTransactionBatchRequestHandler =
-                new FinishedTransactionBatchRequestHandler(messagingService, resourceRegistry, resourceVacuumExecutor);
+        this.finishedTransactionBatchRequestHandler = new FinishedTransactionBatchRequestHandler(
+                messagingService,
+                resourceRegistry,
+                lowWatermark,
+                resourceVacuumExecutor
+        );
 
         this.txManager = txManager;
     }
@@ -109,14 +120,14 @@ public class ResourceVacuumManager implements IgniteComponent {
     @Override
     public CompletableFuture<Void> startAsync(ComponentContext componentContext) {
         if (resourceVacuumIntervalMilliseconds > 0) {
-            resourceVacuumExecutor.scheduleAtFixedRate(
+            vacuumOperationFuture = resourceVacuumExecutor.scheduleAtFixedRate(
                     this::runVacuumOperations,
                     0,
                     resourceVacuumIntervalMilliseconds,
                     TimeUnit.MILLISECONDS
             );
 
-            resourceVacuumExecutor.scheduleAtFixedRate(
+            broadcastClosedTransactionsFuture = resourceVacuumExecutor.scheduleAtFixedRate(
                     finishedReadOnlyTransactionTracker::broadcastClosedTransactions,
                     0,
                     resourceVacuumIntervalMilliseconds,
@@ -132,6 +143,14 @@ public class ResourceVacuumManager implements IgniteComponent {
     @Override
     public CompletableFuture<Void> stopAsync(ComponentContext componentContext) {
         busyLock.block();
+
+        if (vacuumOperationFuture != null) {
+            vacuumOperationFuture.cancel(false);
+        }
+
+        if (broadcastClosedTransactionsFuture != null) {
+            broadcastClosedTransactionsFuture.cancel(false);
+        }
 
         shutdownAndAwaitTermination(resourceVacuumExecutor, 10, TimeUnit.SECONDS);
 

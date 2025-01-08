@@ -20,16 +20,22 @@ package org.apache.ignite.internal.catalog;
 import static java.util.concurrent.CompletableFuture.allOf;
 import static org.apache.ignite.internal.catalog.CatalogService.DEFAULT_STORAGE_PROFILE;
 import static org.apache.ignite.internal.testframework.IgniteTestUtils.await;
+import static org.apache.ignite.internal.testframework.IgniteTestUtils.runAsync;
 import static org.apache.ignite.internal.testframework.IgniteTestUtils.waitForCondition;
+import static org.apache.ignite.internal.testframework.matchers.CompletableFutureMatcher.willCompleteSuccessfully;
 import static org.apache.ignite.internal.util.CompletableFutures.falseCompletedFuture;
 import static org.apache.ignite.internal.util.CompletableFutures.nullCompletedFuture;
 import static org.apache.ignite.internal.util.CompletableFutures.trueCompletedFuture;
+import static org.hamcrest.MatcherAssert.assertThat;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 import org.apache.ignite.internal.catalog.commands.AlterTableAddColumnCommand;
 import org.apache.ignite.internal.catalog.commands.AlterTableDropColumnCommand;
 import org.apache.ignite.internal.catalog.commands.AlterZoneCommand;
@@ -56,11 +62,13 @@ import org.apache.ignite.internal.hlc.HybridClock;
 import org.apache.ignite.internal.hlc.HybridTimestamp;
 import org.apache.ignite.internal.hlc.TestClockService;
 import org.apache.ignite.internal.lang.IgniteInternalException;
+import org.apache.ignite.internal.logger.IgniteLogger;
+import org.apache.ignite.internal.logger.Loggers;
 import org.apache.ignite.internal.manager.ComponentContext;
 import org.apache.ignite.internal.metastorage.MetaStorageManager;
 import org.apache.ignite.internal.metastorage.impl.StandaloneMetaStorageManager;
-import org.apache.ignite.internal.metastorage.server.SimpleInMemoryKeyValueStorage;
 import org.apache.ignite.internal.sql.SqlCommon;
+import org.apache.ignite.internal.thread.NamedThreadFactory;
 import org.apache.ignite.internal.util.IgniteUtils;
 import org.apache.ignite.lang.ErrorGroups.Common;
 import org.apache.ignite.sql.ColumnType;
@@ -68,6 +76,8 @@ import org.jetbrains.annotations.Nullable;
 
 /** Utilities for working with the catalog in tests. */
 public class CatalogTestUtils {
+    private static final IgniteLogger LOG = Loggers.forClass(CatalogTestUtils.class);
+
     /**
      * Creates a test implementation of {@link CatalogManager}.
      *
@@ -77,17 +87,21 @@ public class CatalogTestUtils {
      * @param clock Hybrid clock.
      */
     public static CatalogManager createTestCatalogManager(String nodeName, HybridClock clock) {
-        StandaloneMetaStorageManager metastore = StandaloneMetaStorageManager.create(new SimpleInMemoryKeyValueStorage(nodeName), clock);
+        StandaloneMetaStorageManager metastore = StandaloneMetaStorageManager.create(nodeName, clock);
 
-        var clockWaiter = new ClockWaiter(nodeName, clock);
+        ScheduledExecutorService scheduledExecutor = createScheduledExecutorService(nodeName);
+
+        var clockWaiter = new ClockWaiter(nodeName, clock, scheduledExecutor);
 
         ClockService clockService = new TestClockService(clock, clockWaiter);
 
         return new CatalogManagerImpl(new UpdateLogImpl(metastore), clockService) {
             @Override
             public CompletableFuture<Void> startAsync(ComponentContext componentContext) {
+                assertThat(metastore.startAsync(componentContext), willCompleteSuccessfully());
+                assertThat(metastore.recoveryFinishedFuture(), willCompleteSuccessfully());
+
                 return allOf(
-                        metastore.startAsync(componentContext),
                         clockWaiter.startAsync(componentContext),
                         super.startAsync(componentContext)
                 ).thenComposeAsync(unused -> metastore.deployWatches(), componentContext.executor());
@@ -106,6 +120,7 @@ public class CatalogTestUtils {
                 return IgniteUtils.stopAsync(
                         () -> super.stopAsync(componentContext),
                         () -> clockWaiter.stopAsync(componentContext),
+                        () -> shutdownAsync(scheduledExecutor),
                         () -> metastore.stopAsync(componentContext)
                 );
             }
@@ -122,7 +137,7 @@ public class CatalogTestUtils {
      * @param clock Hybrid clock.
      */
     public static CatalogManager createTestCatalogManager(String nodeName, ClockWaiter clockWaiter, HybridClock clock) {
-        StandaloneMetaStorageManager metastore = StandaloneMetaStorageManager.create(new SimpleInMemoryKeyValueStorage(nodeName));
+        StandaloneMetaStorageManager metastore = StandaloneMetaStorageManager.create(nodeName);
 
         return new CatalogManagerImpl(new UpdateLogImpl(metastore), new TestClockService(clock, clockWaiter)) {
             @Override
@@ -175,7 +190,9 @@ public class CatalogTestUtils {
      * @param metastore Meta storage manager.
      */
     public static CatalogManager createTestCatalogManager(String nodeName, HybridClock clock, MetaStorageManager metastore) {
-        var clockWaiter = new ClockWaiter(nodeName, clock);
+        ScheduledExecutorService scheduledExecutor = createScheduledExecutorService(nodeName);
+
+        var clockWaiter = new ClockWaiter(nodeName, clock, scheduledExecutor);
 
         return new CatalogManagerImpl(new UpdateLogImpl(metastore), new TestClockService(clock, clockWaiter)) {
             @Override
@@ -194,7 +211,8 @@ public class CatalogTestUtils {
             public CompletableFuture<Void> stopAsync(ComponentContext componentContext) {
                 return IgniteUtils.stopAsync(
                         () -> super.stopAsync(componentContext),
-                        () -> clockWaiter.stopAsync(componentContext)
+                        () -> clockWaiter.stopAsync(componentContext),
+                        () -> shutdownAsync(scheduledExecutor)
                 );
             }
         };
@@ -215,7 +233,9 @@ public class CatalogTestUtils {
             MetaStorageManager metastore,
             UpdateHandlerInterceptor interceptor
     ) {
-        var clockWaiter = new ClockWaiter(nodeName, clock);
+        ScheduledExecutorService scheduledExecutor = createScheduledExecutorService(nodeName);
+
+        var clockWaiter = new ClockWaiter(nodeName, clock, scheduledExecutor);
 
         UpdateLogImpl updateLog = new UpdateLogImpl(metastore) {
             @Override
@@ -243,7 +263,8 @@ public class CatalogTestUtils {
             public CompletableFuture<Void> stopAsync(ComponentContext componentContext) {
                 return IgniteUtils.stopAsync(
                         () -> super.stopAsync(componentContext),
-                        () -> clockWaiter.stopAsync(componentContext)
+                        () -> clockWaiter.stopAsync(componentContext),
+                        () -> shutdownAsync(scheduledExecutor)
                 );
             }
         };
@@ -263,7 +284,9 @@ public class CatalogTestUtils {
      * @return An instance of {@link CatalogManager catalog manager}.
      */
     public static CatalogManager createCatalogManagerWithTestUpdateLog(String nodeName, HybridClock clock) {
-        var clockWaiter = new ClockWaiter(nodeName, clock);
+        ScheduledExecutorService scheduledExecutor = createScheduledExecutorService(nodeName);
+
+        var clockWaiter = new ClockWaiter(nodeName, clock, scheduledExecutor);
 
         return new CatalogManagerImpl(new TestUpdateLog(clock), new TestClockService(clock, clockWaiter)) {
             @Override
@@ -282,7 +305,8 @@ public class CatalogTestUtils {
             public CompletableFuture<Void> stopAsync(ComponentContext componentContext) {
                 return IgniteUtils.stopAsync(
                         () -> super.stopAsync(componentContext),
-                        () -> clockWaiter.stopAsync(componentContext)
+                        () -> clockWaiter.stopAsync(componentContext),
+                        () -> shutdownAsync(scheduledExecutor)
                 );
             }
         };
@@ -591,5 +615,15 @@ public class CatalogTestUtils {
     /** Test command failure. */
     public static class TestCommandFailure extends RuntimeException {
         private static final long serialVersionUID = -6123535862914825943L;
+    }
+
+    private static ScheduledExecutorService createScheduledExecutorService(String nodeName) {
+        return Executors.newSingleThreadScheduledExecutor(
+                NamedThreadFactory.create(nodeName, "catalog-utils-scheduled-executor", LOG)
+        );
+    }
+
+    private static CompletableFuture<Void> shutdownAsync(ScheduledExecutorService scheduledExecutorService) {
+        return runAsync(() -> IgniteUtils.shutdownAndAwaitTermination(scheduledExecutorService, 10, TimeUnit.SECONDS));
     }
 }

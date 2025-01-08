@@ -49,7 +49,7 @@ import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ForkJoinPool;
-import java.util.function.LongFunction;
+import java.util.concurrent.ScheduledExecutorService;
 import org.apache.ignite.internal.catalog.Catalog;
 import org.apache.ignite.internal.catalog.CatalogManager;
 import org.apache.ignite.internal.catalog.descriptors.CatalogTableDescriptor;
@@ -61,7 +61,9 @@ import org.apache.ignite.internal.lowwatermark.TestLowWatermark;
 import org.apache.ignite.internal.manager.ComponentContext;
 import org.apache.ignite.internal.marshaller.ReflectionMarshallersProvider;
 import org.apache.ignite.internal.metastorage.impl.MetaStorageManagerImpl;
+import org.apache.ignite.internal.metastorage.impl.MetaStorageRevisionListenerRegistry;
 import org.apache.ignite.internal.metastorage.impl.StandaloneMetaStorageManager;
+import org.apache.ignite.internal.metastorage.server.ReadOperationForCompactionTracker;
 import org.apache.ignite.internal.metastorage.server.persistence.RocksDbKeyValueStorage;
 import org.apache.ignite.internal.schema.SchemaManager;
 import org.apache.ignite.internal.sql.SqlCommon;
@@ -75,9 +77,13 @@ import org.apache.ignite.internal.table.distributed.PartitionSet;
 import org.apache.ignite.internal.table.distributed.TableManager;
 import org.apache.ignite.internal.table.distributed.schema.ConstantSchemaVersions;
 import org.apache.ignite.internal.testframework.BaseIgniteAbstractTest;
+import org.apache.ignite.internal.testframework.ExecutorServiceExtension;
+import org.apache.ignite.internal.testframework.InjectExecutorService;
 import org.apache.ignite.internal.testframework.WorkDirectory;
 import org.apache.ignite.internal.testframework.WorkDirectoryExtension;
+import org.apache.ignite.internal.tx.LockManager;
 import org.apache.ignite.internal.tx.impl.HeapLockManager;
+import org.apache.ignite.internal.tx.impl.WaitDieDeadlockPreventionPolicy;
 import org.apache.ignite.sql.IgniteSql;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -86,11 +92,15 @@ import org.junit.jupiter.api.extension.ExtendWith;
 
 /** Test class to verify {@link IndexManager}. */
 @ExtendWith(WorkDirectoryExtension.class)
+@ExtendWith(ExecutorServiceExtension.class)
 public class IndexManagerTest extends BaseIgniteAbstractTest {
     private final HybridClock clock = new HybridClockImpl();
 
     @WorkDirectory
     private Path workDir;
+
+    @InjectExecutorService
+    private ScheduledExecutorService scheduledExecutorService;
 
     private TableManager mockTableManager;
 
@@ -104,7 +114,7 @@ public class IndexManagerTest extends BaseIgniteAbstractTest {
 
     private final Map<Integer, TableViewInternal> tableViewInternalByTableId = new ConcurrentHashMap<>();
 
-    private TestLowWatermark lowWatermark = new TestLowWatermark();
+    private final TestLowWatermark lowWatermark = new TestLowWatermark();
 
     @BeforeEach
     public void setUp() {
@@ -144,15 +154,17 @@ public class IndexManagerTest extends BaseIgniteAbstractTest {
 
     @Test
     void testDestroyIndex() {
+        TableViewInternal tableViewInternal = tableViewInternalByTableId.get(tableId());
+
+        when(tableViewInternal.internalTable().storage().destroyIndex(anyInt()))
+                .thenReturn(nullCompletedFuture());
+
         createIndex(TABLE_NAME, INDEX_NAME);
 
-        int tableId = tableId();
         int indexId = indexId();
 
         dropIndex(INDEX_NAME);
         assertThat(fireDestroyEvent(), willCompleteSuccessfully());
-
-        TableViewInternal tableViewInternal = tableViewInternalByTableId.get(tableId);
 
         verify(tableViewInternal).unregisterIndex(indexId);
         verify(tableViewInternal.internalTable().storage()).destroyIndex(indexId);
@@ -201,12 +213,18 @@ public class IndexManagerTest extends BaseIgniteAbstractTest {
 
         return spy(new TableImpl(
                 internalTable,
-                new HeapLockManager(),
+                lockManager(),
                 new ConstantSchemaVersions(1),
                 marshallers,
                 mock(IgniteSql.class),
                 table.primaryKeyIndexId()
         ));
+    }
+
+    private static LockManager lockManager() {
+        HeapLockManager lockManager = HeapLockManager.smallInstance();
+        lockManager.start(new WaitDieDeadlockPreventionPolicy());
+        return lockManager;
     }
 
     private int tableId() {
@@ -218,7 +236,17 @@ public class IndexManagerTest extends BaseIgniteAbstractTest {
     }
 
     private void createAndStartComponents() {
-        metaStorageManager = StandaloneMetaStorageManager.create(new RocksDbKeyValueStorage(NODE_NAME, workDir, new NoOpFailureManager()));
+        var readOperationForCompactionTracker = new ReadOperationForCompactionTracker();
+
+        var storage = new RocksDbKeyValueStorage(
+                NODE_NAME,
+                workDir,
+                new NoOpFailureManager(),
+                readOperationForCompactionTracker,
+                scheduledExecutorService
+        );
+
+        metaStorageManager = StandaloneMetaStorageManager.create(storage, clock, readOperationForCompactionTracker);
 
         catalogManager = createTestCatalogManager(NODE_NAME, clock, metaStorageManager);
 
@@ -227,13 +255,20 @@ public class IndexManagerTest extends BaseIgniteAbstractTest {
                 mockTableManager,
                 catalogManager,
                 ForkJoinPool.commonPool(),
-                (LongFunction<CompletableFuture<?>> function) -> metaStorageManager.registerRevisionUpdateListener(function::apply),
+                new MetaStorageRevisionListenerRegistry(metaStorageManager),
                 lowWatermark
         );
 
+        ComponentContext context = new ComponentContext();
+
         assertThat(
-                startAsync(new ComponentContext(), metaStorageManager, catalogManager, indexManager)
-                        .thenCompose(unused -> metaStorageManager.recoveryFinishedFuture())
+                startAsync(context, metaStorageManager)
+                        .thenCompose(unused -> metaStorageManager.recoveryFinishedFuture()),
+                willCompleteSuccessfully()
+        );
+
+        assertThat(
+                startAsync(context, catalogManager, indexManager)
                         .thenCompose(unused -> metaStorageManager.notifyRevisionUpdateListenerOnStart())
                         .thenCompose(unused -> metaStorageManager.deployWatches()),
                 willCompleteSuccessfully()

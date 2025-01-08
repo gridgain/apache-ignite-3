@@ -40,7 +40,6 @@ import static org.apache.ignite.internal.table.distributed.index.MetaIndexStatus
 import static org.apache.ignite.internal.table.distributed.index.MetaIndexStatus.REMOVED;
 import static org.apache.ignite.internal.table.distributed.index.MetaIndexStatus.statusOnRemoveIndex;
 import static org.apache.ignite.internal.util.ByteUtils.intToBytesKeepingOrder;
-import static org.apache.ignite.internal.util.ByteUtils.toBytes;
 import static org.apache.ignite.internal.util.CollectionUtils.difference;
 import static org.apache.ignite.internal.util.CompletableFutures.falseCompletedFuture;
 import static org.apache.ignite.internal.util.CompletableFutures.nullCompletedFuture;
@@ -80,8 +79,9 @@ import org.apache.ignite.internal.manager.ComponentContext;
 import org.apache.ignite.internal.manager.IgniteComponent;
 import org.apache.ignite.internal.metastorage.Entry;
 import org.apache.ignite.internal.metastorage.MetaStorageManager;
-import org.apache.ignite.internal.util.ByteUtils;
+import org.apache.ignite.internal.metastorage.Revisions;
 import org.apache.ignite.internal.util.Cursor;
+import org.apache.ignite.internal.versioned.VersionedSerialization;
 import org.jetbrains.annotations.Nullable;
 
 /**
@@ -399,17 +399,17 @@ public class IndexMetaStorage implements IgniteComponent {
     }
 
     private Map<Integer, IndexMeta> readAllFromMetastoreOnRecovery() {
-        CompletableFuture<Long> recoveryFinishedFuture = metaStorageManager.recoveryFinishedFuture();
+        CompletableFuture<Revisions> recoveryFinishedFuture = metaStorageManager.recoveryFinishedFuture();
 
         assert recoveryFinishedFuture.isDone();
 
-        long recoveryRevision = recoveryFinishedFuture.join();
+        long recoveryRevision = recoveryFinishedFuture.join().revision();
 
         try (Cursor<Entry> cursor = metaStorageManager.prefixLocally(ByteArray.fromString(INDEX_META_VALUE_KEY_PREFIX), recoveryRevision)) {
             return cursor.stream()
                     .map(Entry::value)
                     .filter(Objects::nonNull)
-                    .map(entryBytes -> (IndexMeta) ByteUtils.fromBytes(entryBytes))
+                    .map(entryBytes -> VersionedSerialization.fromBytes(entryBytes, IndexMetaSerializer.INSTANCE))
                     .collect(toMap(IndexMeta::indexId, Function.identity()));
         }
     }
@@ -446,7 +446,7 @@ public class IndexMetaStorage implements IgniteComponent {
                 value(versionKey).lt(versionValue),
                 List.of(
                         put(versionKey, versionValue),
-                        put(indexMetaValueKey(newMeta), toBytes(newMeta))
+                        put(indexMetaValueKey(newMeta), VersionedSerialization.toBytes(newMeta, IndexMetaSerializer.INSTANCE))
                 ),
                 List.of(noop())
         );

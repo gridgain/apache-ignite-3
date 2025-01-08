@@ -20,10 +20,7 @@ package org.apache.ignite.internal.metrics.exporters.log;
 import com.google.auto.service.AutoService;
 import java.util.Comparator;
 import java.util.stream.StreamSupport;
-import org.apache.ignite.internal.logger.IgniteLogger;
-import org.apache.ignite.internal.logger.Loggers;
 import org.apache.ignite.internal.metrics.Metric;
-import org.apache.ignite.internal.metrics.MetricProvider;
 import org.apache.ignite.internal.metrics.MetricSet;
 import org.apache.ignite.internal.metrics.exporters.MetricExporter;
 import org.apache.ignite.internal.metrics.exporters.PushMetricExporter;
@@ -37,21 +34,9 @@ import org.apache.ignite.internal.util.CollectionUtils;
 public class LogPushExporter extends PushMetricExporter<LogPushExporterView> {
     public static final String EXPORTER_NAME = "logPush";
 
-    private IgniteLogger log;
-
-    private long period;
-
-    @Override
-    public void start(MetricProvider metricsProvider, LogPushExporterView configuration) {
-        period = configuration.period();
-        log = Loggers.forClass(LogPushExporter.class);
-
-        super.start(metricsProvider, configuration);
-    }
-
     @Override
     protected long period() {
-        return period;
+        return configuration().period();
     }
 
     @Override
@@ -78,13 +63,5 @@ public class LogPushExporter extends PushMetricExporter<LogPushExporterView> {
     @Override
     public String name() {
         return EXPORTER_NAME;
-    }
-
-    @Override
-    public void addMetricSet(MetricSet metricSet) {
-    }
-
-    @Override
-    public void removeMetricSet(String metricSetName) {
     }
 }

@@ -17,17 +17,22 @@
 
 package org.apache.ignite.internal.client.proto;
 
-import static org.apache.ignite.internal.client.proto.ComputeJobType.MARSHALLED_CUSTOM;
-import static org.apache.ignite.internal.client.proto.ComputeJobType.MARSHALLED_POJO;
-import static org.apache.ignite.internal.client.proto.ComputeJobType.MARSHALLED_TUPLE;
-import static org.apache.ignite.internal.client.proto.ComputeJobType.NATIVE;
-import static org.apache.ignite.internal.client.proto.pojo.PojoConverter.toTuple;
+import static org.apache.ignite.internal.compute.ComputeJobDataType.MARSHALLED_CUSTOM;
+import static org.apache.ignite.internal.compute.ComputeJobDataType.NATIVE;
+import static org.apache.ignite.internal.compute.ComputeJobDataType.POJO;
+import static org.apache.ignite.internal.compute.ComputeJobDataType.TUPLE;
+import static org.apache.ignite.internal.compute.ComputeJobDataType.TUPLE_COLLECTION;
+import static org.apache.ignite.internal.compute.PojoConverter.toTuple;
 
+import java.nio.ByteBuffer;
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.Set;
 import java.util.stream.Collectors;
+import org.apache.ignite.internal.binarytuple.BinaryTupleBuilder;
 import org.apache.ignite.internal.binarytuple.inlineschema.TupleWithSchemaMarshalling;
-import org.apache.ignite.internal.client.proto.pojo.PojoConversionException;
+import org.apache.ignite.internal.compute.ComputeJobDataHolder;
+import org.apache.ignite.internal.compute.PojoConversionException;
 import org.apache.ignite.marshalling.Marshaller;
 import org.apache.ignite.marshalling.MarshallingException;
 import org.apache.ignite.sql.ColumnType;
@@ -63,7 +68,13 @@ public final class ClientComputeJobPacker {
      * @param <T> Result type.
      */
     public static <T> void packJobResult(@Nullable T res, @Nullable Marshaller<T, byte[]> marshaller, ClientMessagePacker packer) {
-        pack(res, marshaller, packer);
+        if (res instanceof ComputeJobDataHolder) {
+            ComputeJobDataHolder resultDataHolder = (ComputeJobDataHolder) res;
+            packer.packInt(resultDataHolder.type().id());
+            packer.packBinary(resultDataHolder.data());
+        } else {
+            pack(res, marshaller, packer);
+        }
     }
 
     /** Packs object in the format: | typeId | value |. */
@@ -74,7 +85,7 @@ public final class ClientComputeJobPacker {
         }
 
         if (marshaller != null) {
-            packer.packInt(MARSHALLED_CUSTOM);
+            packer.packInt(MARSHALLED_CUSTOM.id());
             byte[] marshalled = marshaller.marshal(obj);
 
             if (marshalled == null) {
@@ -87,25 +98,54 @@ public final class ClientComputeJobPacker {
         }
 
         if (obj instanceof Tuple) {
-            packer.packInt(MARSHALLED_TUPLE);
+            packer.packInt(TUPLE.id());
 
             packTuple((Tuple) obj, packer);
             return;
         }
 
+        if (obj instanceof Collection) {
+            Collection<?> col = (Collection<?>) obj;
+
+            packer.packInt(TUPLE_COLLECTION.id());
+
+            // Pack entire collection into a single binary blob.
+            BinaryTupleBuilder tupleBuilder = new BinaryTupleBuilder(col.size());
+
+            for (Object el : col) {
+                if (el == null) {
+                    tupleBuilder.appendNull();
+                    continue;
+                }
+
+                if (!(el instanceof Tuple)) {
+                    throw new MarshallingException("Can't pack collection: expected Tuple, but got " + el.getClass(), null);
+                }
+
+                tupleBuilder.appendBytes(TupleWithSchemaMarshalling.marshal((Tuple) el));
+            }
+
+            ByteBuffer binTupleBytes = tupleBuilder.build();
+            packer.packBinaryHeader(Integer.BYTES + binTupleBytes.remaining());
+            packer.writeIntRawLittleEndian(col.size());
+            packer.writePayload(binTupleBytes);
+
+            return;
+        }
+
         if (isNativeType(obj.getClass())) {
-            packer.packInt(NATIVE);
+            packer.packInt(NATIVE.id());
 
             packer.packObjectAsBinaryTuple(obj);
             return;
         }
 
         try {
-            packer.packInt(MARSHALLED_POJO);
+            packer.packInt(POJO.id());
 
             packTuple(toTuple(obj), packer);
         } catch (PojoConversionException e) {
-            throw new MarshallingException("Can't pack object", e);
+            throw new MarshallingException("Can't pack object: " + obj, e);
         }
     }
 

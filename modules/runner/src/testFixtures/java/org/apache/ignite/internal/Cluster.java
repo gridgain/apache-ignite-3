@@ -17,10 +17,10 @@
 
 package org.apache.ignite.internal;
 
+import static java.util.Collections.nCopies;
 import static java.util.stream.Collectors.joining;
 import static java.util.stream.Collectors.toList;
 import static org.apache.ignite.internal.TestWrappers.unwrapIgniteImpl;
-import static org.apache.ignite.internal.testframework.IgniteTestUtils.testNodeName;
 import static org.apache.ignite.internal.testframework.IgniteTestUtils.waitForCondition;
 import static org.apache.ignite.internal.testframework.matchers.CompletableFutureMatcher.willCompleteSuccessfully;
 import static org.apache.ignite.internal.testframework.matchers.CompletableFutureMatcher.willSucceedIn;
@@ -31,9 +31,9 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
 
-import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
@@ -52,6 +52,7 @@ import org.apache.ignite.Ignite;
 import org.apache.ignite.IgniteServer;
 import org.apache.ignite.InitParameters;
 import org.apache.ignite.InitParametersBuilder;
+import org.apache.ignite.internal.lang.IgniteBiTuple;
 import org.apache.ignite.internal.lang.IgniteStringFormatter;
 import org.apache.ignite.internal.logger.IgniteLogger;
 import org.apache.ignite.internal.logger.Loggers;
@@ -71,50 +72,17 @@ import org.apache.ignite.sql.IgniteSql;
 import org.apache.ignite.sql.ResultSet;
 import org.apache.ignite.sql.SqlRow;
 import org.jetbrains.annotations.Nullable;
-import org.junit.jupiter.api.TestInfo;
 
 /**
  * Cluster of nodes used for testing.
  */
-@SuppressWarnings("resource")
 public class Cluster {
     private static final IgniteLogger LOG = Loggers.forClass(Cluster.class);
 
-    /** Base port number. */
-    private static final int BASE_PORT = 3344;
-
-    public static final int BASE_CLIENT_PORT = 10800;
-
-    public static final int BASE_HTTP_PORT = 10300;
-
-    private static final int BASE_HTTPS_PORT = 10400;
-
-    /** Timeout for SQL queries (in milliseconds). */
-    private static final int QUERY_TIMEOUT_MS = 10_000;
-
-    /** Default nodes bootstrap configuration pattern. */
-    private static final String DEFAULT_NODE_BOOTSTRAP_CFG = "ignite {\n"
-            + "  \"network\": {\n"
-            + "    \"port\":{},\n"
-            + "    \"nodeFinder\":{\n"
-            + "      \"netClusterNodes\": [ {} ]\n"
-            + "    }\n"
-            + "  },\n"
-            + "  clientConnector: { port:{} }\n"
-            + "  rest: {\n"
-            + "    port: {},\n"
-            + "    ssl.port: {}\n"
-            + "  }\n"
-            + "}";
-
-    private final TestInfo testInfo;
-
-    private final Path workDir;
-
-    private final String defaultNodeBootstrapConfigTemplate;
+    private final ClusterConfiguration clusterConfiguration;
 
     /** Embedded nodes. */
-    private final List<IgniteServer> igniteServers = new ArrayList<>();
+    private final List<IgniteServer> igniteServers = new CopyOnWriteArrayList<>();
 
     /** Cluster nodes. */
     private final List<Ignite> nodes = new CopyOnWriteArrayList<>();
@@ -133,21 +101,17 @@ public class Cluster {
     private final Set<Integer> knockedOutNodesIndices = new ConcurrentHashSet<>();
 
     /**
-     * Creates a new cluster with a default bootstrap config.
+     * Creates a new cluster.
      */
-    public Cluster(TestInfo testInfo, Path workDir) {
-        this(testInfo, workDir, DEFAULT_NODE_BOOTSTRAP_CFG);
+    public Cluster(ClusterConfiguration clusterConfiguration) {
+        this.clusterConfiguration = clusterConfiguration;
     }
 
     /**
-     * Creates a new cluster with the given bootstrap config.
+     * Starts the cluster with the given number of nodes and initializes it.
+     *
+     * @param nodeCount Number of nodes in the cluster.
      */
-    public Cluster(TestInfo testInfo, Path workDir, String defaultNodeBootstrapConfigTemplate) {
-        this.testInfo = testInfo;
-        this.workDir = workDir;
-        this.defaultNodeBootstrapConfigTemplate = defaultNodeBootstrapConfigTemplate;
-    }
-
     public void startAndInit(int nodeCount) {
         startAndInit(nodeCount, new int[] { 0 });
     }
@@ -180,7 +144,7 @@ public class Cluster {
      * @param initParametersConfigurator Configure {@link InitParameters} before initializing the cluster.
      */
     public void startAndInit(int nodeCount, int[] cmgNodes, Consumer<InitParametersBuilder> initParametersConfigurator) {
-        startAndInit(nodeCount, cmgNodes, defaultNodeBootstrapConfigTemplate, initParametersConfigurator);
+        startAndInit(nodeCount, cmgNodes, clusterConfiguration.defaultNodeBootstrapConfigTemplate(), initParametersConfigurator);
     }
 
     /**
@@ -231,7 +195,7 @@ public class Cluster {
 
         InitParametersBuilder builder = InitParameters.builder()
                 .metaStorageNodes(metaStorageAndCmgNodes)
-                .clusterName("cluster");
+                .clusterName(clusterConfiguration.clusterName());
 
         initParametersConfigurator.accept(builder);
 
@@ -251,7 +215,7 @@ public class Cluster {
      * @return Started server and its registration future.
      */
     public ServerRegistration startEmbeddedNode(int nodeIndex) {
-        return startEmbeddedNode(nodeIndex, defaultNodeBootstrapConfigTemplate);
+        return startEmbeddedNode(nodeIndex, clusterConfiguration.defaultNodeBootstrapConfigTemplate());
     }
 
     /**
@@ -266,15 +230,22 @@ public class Cluster {
 
         String config = IgniteStringFormatter.format(
                 nodeBootstrapConfigTemplate,
-                BASE_PORT + nodeIndex,
+                port(nodeIndex),
                 seedAddressesString(),
-                BASE_CLIENT_PORT + nodeIndex,
+                clusterConfiguration.baseClientPort() + nodeIndex,
                 httpPort(nodeIndex),
-                BASE_HTTPS_PORT + nodeIndex
+                clusterConfiguration.baseHttpsPort() + nodeIndex
         );
 
-        IgniteServer node = TestIgnitionManager.start(nodeName, config, workDir.resolve(nodeName));
-        setListAtIndex(igniteServers, nodeIndex, node);
+        IgniteServer node = TestIgnitionManager.start(
+                nodeName,
+                config,
+                clusterConfiguration.workDir().resolve(clusterConfiguration.clusterName()).resolve(nodeName)
+        );
+
+        synchronized (igniteServers) {
+            setListAtIndex(igniteServers, nodeIndex, node);
+        }
 
         CompletableFuture<Void> registrationFuture = node.waitForInitAsync().thenRun(() -> {
             synchronized (nodes) {
@@ -283,7 +254,6 @@ public class Cluster {
 
             if (stopped) {
                 // Make sure we stop even a node that finished starting after the cluster has been stopped.
-
                 node.shutdown();
             }
         });
@@ -297,25 +267,31 @@ public class Cluster {
      * @param nodeIndex Index of the node of interest.
      */
     public String nodeName(int nodeIndex) {
-        return testNodeName(testInfo, nodeIndex);
+        return clusterConfiguration.nodeNamingStrategy().nodeName(clusterConfiguration, nodeIndex);
+    }
+
+    public int port(int nodeIndex) {
+        return clusterConfiguration.basePort() + nodeIndex;
     }
 
     /**
      * Returns HTTP port by index.
      */
     public int httpPort(int nodeIndex) {
-        return BASE_HTTP_PORT + nodeIndex;
+        return clusterConfiguration.baseHttpPort() + nodeIndex;
     }
 
     private static <T> void setListAtIndex(List<T> list, int i, T element) {
-        while (list.size() < i) {
-            list.add(null);
+        if (list.size() < i) {
+            list.addAll(nCopies(i - list.size(), null));
         }
 
         if (list.size() < i + 1) {
             list.add(element);
         } else {
-            list.set(i, element);
+            T prev = list.set(i, element);
+
+            assert prev == null : String.format("Found previous value %s at index %d", prev, i);
         }
     }
 
@@ -326,7 +302,7 @@ public class Cluster {
                 : Math.max(Math.max(initialClusterSize, nodes.size()), 1);
 
         return IntStream.range(0, seedsCount)
-                .map(index -> BASE_PORT + index)
+                .map(this::port)
                 .mapToObj(port -> "\"localhost:" + port + '\"')
                 .collect(joining(", "));
     }
@@ -353,6 +329,13 @@ public class Cluster {
     }
 
     /**
+     * Returns an Ignite node (a member of the cluster) by its index.
+     */
+    public @Nullable Ignite nullableNode(int index) {
+        return nodes.get(index);
+    }
+
+    /**
      * Returns a node that is not stopped and not knocked out (so it can be used to interact with the cluster).
      */
     public Ignite aliveNode() {
@@ -365,6 +348,17 @@ public class Cluster {
     }
 
     /**
+     * Returns all alive nodes and their corresponding indexes.
+     */
+    public List<IgniteBiTuple<Integer, Ignite>> aliveNodesWithIndices() {
+        return IntStream.range(0, nodes.size())
+                .filter(index -> nodes.get(index) != null)
+                .filter(index -> !knockedOutNodesIndices.contains(index))
+                .mapToObj(index -> new IgniteBiTuple<>(index, nodes.get(index)))
+                .collect(toList());
+    }
+
+    /**
      * Starts a new node with the given index.
      *
      * @param index Node index.
@@ -372,7 +366,7 @@ public class Cluster {
      *     is not initialized, the node is returned in a state in which it is ready to join the cluster).
      */
     public Ignite startNode(int index) {
-        return startNode(index, defaultNodeBootstrapConfigTemplate);
+        return startNode(index, clusterConfiguration.defaultNodeBootstrapConfigTemplate());
     }
 
     /**
@@ -393,27 +387,18 @@ public class Cluster {
         return newIgniteNode;
     }
 
-    private void checkNodeIndex(int index) {
-        if (index < 0) {
-            throw new IllegalArgumentException("Index cannot be negative");
-        }
-        if (index >= nodes.size()) {
-            throw new IllegalArgumentException("Cluster only contains " + nodes.size() + " nodes, but node with index "
-                    + index + " was tried to be accessed");
-        }
-    }
-
     /**
      * Stops a node by index.
      *
      * @param index Node index in the cluster.
      */
     public void stopNode(int index) {
-        checkNodeIndex(index);
+        IgniteServer server = igniteServers.set(index, null);
 
-        igniteServers.get(index).shutdown();
+        if (server != null) {
+            server.shutdown();
+        }
 
-        igniteServers.set(index, null);
         nodes.set(index, null);
     }
 
@@ -513,7 +498,20 @@ public class Cluster {
     public void shutdown() {
         stopped = true;
 
-        igniteServers.parallelStream().filter(Objects::nonNull).forEach(IgniteServer::shutdown);
+        List<IgniteServer> serversToStop = new ArrayList<>(igniteServers);
+
+        List<String> serverNames = serversToStop.stream()
+                .filter(Objects::nonNull)
+                .map(IgniteServer::name)
+                .collect(toList());
+        LOG.info("Shutting the cluster down [nodes={}]", serverNames);
+
+        Collections.fill(igniteServers, null);
+        Collections.fill(nodes, null);
+
+        serversToStop.parallelStream().filter(Objects::nonNull).forEach(IgniteServer::shutdown);
+
+        LOG.info("Shut the cluster down");
     }
 
     /**

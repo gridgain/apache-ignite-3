@@ -26,6 +26,7 @@ import org.apache.ignite.internal.type.NativeTypes;
  *
  * <p>These constants is just shortcuts for variable length types to use in tests.
  */
+@SuppressWarnings("WeakerAccess")
 public final class Types {
 
     public static final NativeType DECIMAL_1_0 = NativeTypes.decimalOf(1, 0);
@@ -73,6 +74,7 @@ public final class Types {
     public static final NativeType DECIMAL_9_7 = NativeTypes.decimalOf(9, 7);
 
     public static final NativeType DECIMAL_10_0 = NativeTypes.decimalOf(10, 0);
+    public static final NativeType DECIMAL_10_1 = NativeTypes.decimalOf(10, 1);
     public static final NativeType DECIMAL_10_3 = NativeTypes.decimalOf(10, 3);
     public static final NativeType DECIMAL_10_4 = NativeTypes.decimalOf(10, 4);
     public static final NativeType DECIMAL_10_6 = NativeTypes.decimalOf(10, 6);
@@ -134,6 +136,8 @@ public final class Types {
     public static final NativeType DECIMAL_18_16 = NativeTypes.decimalOf(18, 16);
 
     public static final NativeType DECIMAL_19_0 = NativeTypes.decimalOf(19, 0);
+    public static final NativeType DECIMAL_19_1 = NativeTypes.decimalOf(19, 1);
+    public static final NativeType DECIMAL_19_3 = NativeTypes.decimalOf(19, 3);
     public static final NativeType DECIMAL_19_6 = NativeTypes.decimalOf(19, 6);
     public static final NativeType DECIMAL_19_16 = NativeTypes.decimalOf(19, 16);
 
@@ -188,7 +192,11 @@ public final class Types {
 
     public static final NativeType TIMESTAMP_WLTZ_3 = NativeTypes.timestamp(3);
 
+    public static final NativeType VARCHAR_1 = NativeTypes.stringOf(1);
+    public static final NativeType VARCHAR_3 = NativeTypes.stringOf(3);
+    public static final NativeType VARCHAR_5 = NativeTypes.stringOf(5);
     public static final NativeType VARCHAR_128 = NativeTypes.stringOf(128);
+    public static final NativeType VARCHAR_DEFAULT = NativeTypes.stringOf(-1);
 
     public static final NativeType VARBINARY_128 = NativeTypes.blobOf(128);
 

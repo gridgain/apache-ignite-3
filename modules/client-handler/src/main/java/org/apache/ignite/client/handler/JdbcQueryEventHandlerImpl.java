@@ -20,15 +20,21 @@ package org.apache.ignite.client.handler;
 import static org.apache.ignite.internal.jdbc.proto.IgniteQueryErrorCode.UNKNOWN;
 import static org.apache.ignite.internal.sql.engine.SqlQueryType.DML;
 import static org.apache.ignite.internal.util.ArrayUtils.OBJECT_EMPTY_ARRAY;
+import static org.apache.ignite.internal.util.CompletableFutures.allOf;
 import static org.apache.ignite.internal.util.CompletableFutures.nullCompletedFuture;
 import static org.apache.ignite.lang.ErrorGroups.Client.CONNECTION_ERR;
 
 import it.unimi.dsi.fastutil.ints.IntArrayList;
 import java.sql.Statement;
 import java.time.ZoneId;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.Function;
 import org.apache.ignite.client.handler.requests.jdbc.JdbcMetadataCatalog;
 import org.apache.ignite.client.handler.requests.jdbc.JdbcQueryCursor;
 import org.apache.ignite.internal.jdbc.proto.JdbcQueryEventHandler;
@@ -46,6 +52,7 @@ import org.apache.ignite.internal.jdbc.proto.event.JdbcMetaSchemasRequest;
 import org.apache.ignite.internal.jdbc.proto.event.JdbcMetaSchemasResult;
 import org.apache.ignite.internal.jdbc.proto.event.JdbcMetaTablesRequest;
 import org.apache.ignite.internal.jdbc.proto.event.JdbcMetaTablesResult;
+import org.apache.ignite.internal.jdbc.proto.event.JdbcQueryCancelResult;
 import org.apache.ignite.internal.jdbc.proto.event.JdbcQueryExecuteRequest;
 import org.apache.ignite.internal.jdbc.proto.event.JdbcQuerySingleResult;
 import org.apache.ignite.internal.jdbc.proto.event.Response;
@@ -58,9 +65,12 @@ import org.apache.ignite.internal.sql.engine.QueryProperty;
 import org.apache.ignite.internal.sql.engine.SqlQueryType;
 import org.apache.ignite.internal.sql.engine.property.SqlProperties;
 import org.apache.ignite.internal.sql.engine.property.SqlPropertiesHelper;
+import org.apache.ignite.internal.tx.HybridTimestampTracker;
 import org.apache.ignite.internal.tx.InternalTransaction;
-import org.apache.ignite.internal.tx.impl.IgniteTransactionsImpl;
-import org.apache.ignite.tx.IgniteTransactions;
+import org.apache.ignite.internal.tx.TxManager;
+import org.apache.ignite.internal.util.AsyncCursor.BatchedResult;
+import org.apache.ignite.lang.CancelHandle;
+import org.apache.ignite.lang.CancellationToken;
 import org.jetbrains.annotations.Nullable;
 
 /**
@@ -71,7 +81,13 @@ public class JdbcQueryEventHandlerImpl extends JdbcHandlerBase implements JdbcQu
     private static final Set<SqlQueryType> SELECT_STATEMENT_QUERIES = Set.of(SqlQueryType.QUERY, SqlQueryType.EXPLAIN);
 
     /** {@link SqlQueryType}s allowed in JDBC update statements. **/
-    private static final Set<SqlQueryType> UPDATE_STATEMENT_QUERIES = Set.of(DML, SqlQueryType.DDL);
+    private static final Set<SqlQueryType> UPDATE_STATEMENT_QUERIES = Set.of(DML, SqlQueryType.DDL, SqlQueryType.KILL);
+
+    /**
+     * Observation timestamp tracker.
+     * TODO: IGNITE-24053 Remove this after the issue will be fixed.
+     * */
+    private final HybridTimestampTracker timestampTracker = HybridTimestampTracker.atomicTracker(null);
 
     /** Sql query processor. */
     private final QueryProcessor processor;
@@ -79,8 +95,8 @@ public class JdbcQueryEventHandlerImpl extends JdbcHandlerBase implements JdbcQu
     /** Jdbc metadata info. */
     private final JdbcMetadataCatalog meta;
 
-    /** Ignite transactions API. */
-    private final IgniteTransactionsImpl igniteTransactions;
+    /** Transaction manager. */
+    private final TxManager txManager;
 
     /**
      * Constructor.
@@ -88,19 +104,19 @@ public class JdbcQueryEventHandlerImpl extends JdbcHandlerBase implements JdbcQu
      * @param processor Processor.
      * @param meta JdbcMetadataInfo.
      * @param resources Client resources.
-     * @param igniteTransactions Ignite transactions API.
+     * @param txManager Transaction manager.
      */
     public JdbcQueryEventHandlerImpl(
             QueryProcessor processor,
             JdbcMetadataCatalog meta,
             ClientResourceRegistry resources,
-            IgniteTransactionsImpl igniteTransactions
+            TxManager txManager
     ) {
         super(resources);
 
         this.processor = processor;
         this.meta = meta;
-        this.igniteTransactions = igniteTransactions;
+        this.txManager = txManager;
     }
 
     /** {@inheritDoc} */
@@ -108,7 +124,7 @@ public class JdbcQueryEventHandlerImpl extends JdbcHandlerBase implements JdbcQu
     public CompletableFuture<JdbcConnectResult> connect(ZoneId timeZoneId) {
         try {
             JdbcConnectionContext connectionContext = new JdbcConnectionContext(
-                    igniteTransactions,
+                    txManager,
                     timeZoneId
             );
 
@@ -141,7 +157,10 @@ public class JdbcQueryEventHandlerImpl extends JdbcHandlerBase implements JdbcQu
                     "Connection is broken"));
         }
 
-        InternalTransaction tx = req.autoCommit() ? null : connectionContext.getOrStartTransaction();
+        long correlationToken = req.correlationToken();
+        CancellationToken token = connectionContext.registerExecution(correlationToken);
+
+        InternalTransaction tx = req.autoCommit() ? null : connectionContext.getOrStartTransaction(timestampTracker);
 
         JdbcStatementType reqStmtType = req.getStmtType();
         boolean multiStatement = req.multiStatement();
@@ -152,14 +171,21 @@ public class JdbcQueryEventHandlerImpl extends JdbcHandlerBase implements JdbcQu
 
         CompletableFuture<AsyncSqlCursor<InternalSqlRow>> result = processor.queryAsync(
                 properties,
-                igniteTransactions.observableTimestampTracker(),
+                timestampTracker,
                 tx,
+                token,
                 req.sqlQuery(),
                 req.arguments() == null ? OBJECT_EMPTY_ARRAY : req.arguments()
         );
 
+        doWhenAllCursorsComplete(result, () -> connectionContext.deregisterExecution(correlationToken));
+
         return result.thenCompose(cursor -> createJdbcResult(new JdbcQueryCursor<>(req.maxRows(), cursor), req.pageSize()))
-                .exceptionally(t -> createErrorResult("Exception while executing query [query=" + req.sqlQuery() + "]", t, null));
+                .exceptionally(t -> createErrorResult("Exception while executing query.", t, null));
+    }
+
+    public HybridTimestampTracker getTimestampTracker() {
+        return timestampTracker;
     }
 
     private static SqlProperties createProperties(
@@ -201,7 +227,9 @@ public class JdbcQueryEventHandlerImpl extends JdbcHandlerBase implements JdbcQu
             return CompletableFuture.completedFuture(new JdbcBatchExecuteResult(Response.STATUS_FAILED, "Connection is broken"));
         }
 
-        InternalTransaction tx = req.autoCommit() ? null : connectionContext.getOrStartTransaction();
+        InternalTransaction tx = req.autoCommit() ? null : connectionContext.getOrStartTransaction(timestampTracker);
+        long correlationToken = req.correlationToken();
+        CancellationToken token = connectionContext.registerExecution(correlationToken);
         var queries = req.queries();
         var counters = new IntArrayList(req.queries().size());
         var tail = CompletableFuture.completedFuture(counters);
@@ -210,17 +238,18 @@ public class JdbcQueryEventHandlerImpl extends JdbcHandlerBase implements JdbcQu
         for (String query : queries) {
             tail = tail.thenCompose(list -> executeAndCollectUpdateCount(
                     connectionContext,
-                    tx, query,
+                    tx,
+                    token,
+                    query,
                     OBJECT_EMPTY_ARRAY,
-                    queryTimeoutMillis
-            ).thenApply(cnt -> {
-                list.add(cnt > Integer.MAX_VALUE ? Statement.SUCCESS_NO_INFO : cnt.intValue());
-
-                return list;
-            }));
+                    queryTimeoutMillis,
+                    list
+            ));
         }
 
         return tail.handle((ignored, t) -> {
+            connectionContext.deregisterExecution(correlationToken);
+
             if (t != null) {
                 return handleBatchException(t, queries.get(counters.size()), counters.toIntArray());
             }
@@ -239,22 +268,23 @@ public class JdbcQueryEventHandlerImpl extends JdbcHandlerBase implements JdbcQu
             return CompletableFuture.completedFuture(new JdbcBatchExecuteResult(Response.STATUS_FAILED, "Connection is broken"));
         }
 
-        InternalTransaction tx = req.autoCommit() ? null : connectionContext.getOrStartTransaction();
+        InternalTransaction tx = req.autoCommit() ? null : connectionContext.getOrStartTransaction(timestampTracker);
+        long correlationToken = req.correlationToken();
+        CancellationToken token = connectionContext.registerExecution(correlationToken);
         var argList = req.getArgs();
         var counters = new IntArrayList(req.getArgs().size());
         var tail = CompletableFuture.completedFuture(counters);
         long timeoutMillis = req.queryTimeoutMillis();
 
         for (Object[] args : argList) {
-            tail = tail.thenCompose(list -> executeAndCollectUpdateCount(connectionContext, tx, req.getQuery(), args, timeoutMillis)
-                    .thenApply(cnt -> {
-                        list.add(cnt > Integer.MAX_VALUE ? Statement.SUCCESS_NO_INFO : cnt.intValue());
-
-                        return list;
-                    }));
+            tail = tail.thenCompose(list -> executeAndCollectUpdateCount(
+                    connectionContext, tx, token, req.getQuery(), args, timeoutMillis, list
+            ));
         }
 
         return tail.handle((ignored, t) -> {
+            connectionContext.deregisterExecution(correlationToken);
+
             if (t != null) {
                 return handleBatchException(t, req.getQuery(), counters.toIntArray());
             }
@@ -263,13 +293,15 @@ public class JdbcQueryEventHandlerImpl extends JdbcHandlerBase implements JdbcQu
         });
     }
 
-    private CompletableFuture<Long> executeAndCollectUpdateCount(
+    private CompletableFuture<IntArrayList> executeAndCollectUpdateCount(
             JdbcConnectionContext context,
             @Nullable InternalTransaction tx,
+            CancellationToken token,
             String sql,
             Object[] arg,
-            long timeoutMillis) {
-
+            long timeoutMillis,
+            IntArrayList resultUpdateCounters
+    ) {
         if (!context.valid()) {
             return CompletableFuture.failedFuture(new IgniteInternalException(CONNECTION_ERR, "Connection is closed"));
         }
@@ -278,17 +310,40 @@ public class JdbcQueryEventHandlerImpl extends JdbcHandlerBase implements JdbcQu
 
         CompletableFuture<AsyncSqlCursor<InternalSqlRow>> result = processor.queryAsync(
                 properties,
-                igniteTransactions.observableTimestampTracker(),
+                timestampTracker,
                 tx,
+                token,
                 sql,
                 arg == null ? OBJECT_EMPTY_ARRAY : arg
         );
 
-        return result.thenCompose(cursor -> cursor.requestNextAsync(1))
-                .thenApply(batch -> (Long) batch.items().get(0).get(0));
+        return result.thenCompose(cursor -> cursor.requestNextAsync(1)
+                .thenApply(batch -> {
+                    int updateCounter = handleBatchResult(cursor.queryType(), batch);
+
+                    resultUpdateCounters.add(updateCounter);
+
+                    return resultUpdateCounters;
+                }));
     }
 
-    private JdbcBatchExecuteResult handleBatchException(Throwable e, String query, int[] counters) {
+    private static int handleBatchResult(SqlQueryType type, BatchedResult<InternalSqlRow> result) {
+        switch (type) {
+            case DDL:
+            case KILL:
+                return Statement.SUCCESS_NO_INFO;
+            case DML:
+                Long updateCounts = (Long) result.items().get(0).get(0);
+
+                assert updateCounts != null : "Invalid DML result";
+
+                return updateCounts > Integer.MAX_VALUE ? Statement.SUCCESS_NO_INFO : updateCounts.intValue();
+            default:
+                throw new IllegalStateException("Unexpected query type: " + type);
+        }
+    }
+
+    private static JdbcBatchExecuteResult handleBatchException(Throwable e, String query, int[] counters) {
         String msg = getErrorMessage(e);
 
         String error;
@@ -346,22 +401,44 @@ public class JdbcQueryEventHandlerImpl extends JdbcHandlerBase implements JdbcQu
         });
     }
 
+    /** {@inheritDoc} */
+    @Override
+    public CompletableFuture<JdbcQueryCancelResult> cancelAsync(long connectionId, long correlationToken) {
+        JdbcConnectionContext connectionContext;
+
+        try {
+            connectionContext = resources.get(connectionId).get(JdbcConnectionContext.class);
+        } catch (IgniteInternalCheckedException exception) {
+            return CompletableFuture.completedFuture(new JdbcQueryCancelResult(Response.STATUS_FAILED, "Connection is broken"));
+        }
+
+        return connectionContext.cancelExecution(correlationToken).handle((ignored, t) -> {
+            if (t != null) {
+                return new JdbcQueryCancelResult(Response.STATUS_FAILED, t.getMessage());
+            }
+
+            return new JdbcQueryCancelResult();
+        });
+    }
+
     static class JdbcConnectionContext {
         private final AtomicBoolean closed = new AtomicBoolean();
 
         private final Object mux = new Object();
 
-        private final IgniteTransactions igniteTransactions;
+        private final TxManager txManager;
 
         private final ZoneId timeZoneId;
+
+        private final ConcurrentMap<Long, CancelHandle> cancelHandles = new ConcurrentHashMap<>();
 
         private @Nullable InternalTransaction tx;
 
         JdbcConnectionContext(
-                IgniteTransactions igniteTransactions,
+                TxManager txManager,
                 ZoneId timeZoneId
         ) {
-            this.igniteTransactions = igniteTransactions;
+            this.txManager = txManager;
             this.timeZoneId = timeZoneId;
         }
 
@@ -374,10 +451,11 @@ public class JdbcQueryEventHandlerImpl extends JdbcHandlerBase implements JdbcQu
          *
          * <p>NOTE: this method is not thread-safe and should only be called by a single thread.
          *
+         * @param timestampProvider Observation timestamp provider.
          * @return Transaction associated with the current connection.
          */
-        InternalTransaction getOrStartTransaction() {
-            return tx == null ? tx = (InternalTransaction) igniteTransactions.begin() : tx;
+        InternalTransaction getOrStartTransaction(HybridTimestampTracker timestampProvider) {
+            return tx == null ? tx = txManager.begin(timestampProvider, false) : tx;
         }
 
         /**
@@ -413,5 +491,57 @@ public class JdbcQueryEventHandlerImpl extends JdbcHandlerBase implements JdbcQu
                 finishTransactionAsync(false);
             }
         }
+
+        CancellationToken registerExecution(long token) {
+            CancelHandle handle = CancelHandle.create();
+
+            CancelHandle previousHandle = cancelHandles.putIfAbsent(token, handle);
+
+            assert previousHandle == null;
+
+            return handle.token();
+        }
+
+        void deregisterExecution(long token) {
+            cancelHandles.remove(token);
+        }
+
+        CompletableFuture<Void> cancelExecution(long token) {
+            CancelHandle handle = cancelHandles.remove(token);
+
+            if (handle == null) {
+                return nullCompletedFuture();
+            }
+
+            return handle.cancelAsync();
+        }
+    }
+
+    private void doWhenAllCursorsComplete(
+            CompletableFuture<AsyncSqlCursor<InternalSqlRow>> cursorFuture, Runnable action
+    ) {
+        List<CompletableFuture<?>> dependency = new ArrayList<>();
+        var cursorChainTraverser = new Function<AsyncSqlCursor<?>, CompletableFuture<AsyncSqlCursor<?>>>() {
+            @Override
+            public CompletableFuture<AsyncSqlCursor<?>> apply(AsyncSqlCursor<?> cursor) {
+                dependency.add(cursor.onClose());
+
+                if (cursor.hasNextResult()) {
+                    return cursor.nextResult().thenCompose(this);
+                }
+
+                return allOf(dependency)
+                        .thenRun(action)
+                        .thenApply(ignored -> cursor);
+            }
+        };
+
+        cursorFuture
+                .thenCompose(cursorChainTraverser)
+                .exceptionally(ex -> {
+                    action.run();
+
+                    return null;
+                });
     }
 }

@@ -35,6 +35,7 @@ import static org.mockito.Mockito.spy;
 import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Consumer;
 import org.apache.ignite.internal.catalog.commands.ColumnParams;
@@ -61,16 +62,19 @@ import org.apache.ignite.internal.hlc.TestClockService;
 import org.apache.ignite.internal.manager.ComponentContext;
 import org.apache.ignite.internal.metastorage.MetaStorageManager;
 import org.apache.ignite.internal.metastorage.impl.StandaloneMetaStorageManager;
-import org.apache.ignite.internal.metastorage.server.SimpleInMemoryKeyValueStorage;
 import org.apache.ignite.internal.sql.SqlCommon;
 import org.apache.ignite.internal.testframework.BaseIgniteAbstractTest;
+import org.apache.ignite.internal.testframework.ExecutorServiceExtension;
+import org.apache.ignite.internal.testframework.InjectExecutorService;
 import org.jetbrains.annotations.Nullable;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.extension.ExtendWith;
 
 /**
  * Base class for testing the {@link CatalogManager}.
  */
+@ExtendWith(ExecutorServiceExtension.class)
 public abstract class BaseCatalogManagerTest extends BaseIgniteAbstractTest {
     private static final String NODE_NAME = "test";
 
@@ -82,6 +86,9 @@ public abstract class BaseCatalogManagerTest extends BaseIgniteAbstractTest {
     protected static final String INDEX_NAME_2 = "myIndex2";
 
     protected final HybridClock clock = new HybridClockImpl();
+
+    @InjectExecutorService
+    private ScheduledExecutorService scheduledExecutor;
 
     ClockWaiter clockWaiter;
 
@@ -102,10 +109,10 @@ public abstract class BaseCatalogManagerTest extends BaseIgniteAbstractTest {
         delayDuration.set(CatalogManagerImpl.DEFAULT_DELAY_DURATION);
         partitionIdleSafeTimePropagationPeriod.set(CatalogManagerImpl.DEFAULT_PARTITION_IDLE_SAFE_TIME_PROPAGATION_PERIOD);
 
-        metastore = StandaloneMetaStorageManager.create(new SimpleInMemoryKeyValueStorage(NODE_NAME));
+        metastore = StandaloneMetaStorageManager.create(NODE_NAME, clock);
 
         updateLog = spy(new UpdateLogImpl(metastore));
-        clockWaiter = spy(new ClockWaiter(NODE_NAME, clock));
+        clockWaiter = spy(new ClockWaiter(NODE_NAME, clock, scheduledExecutor));
 
         clockService = new TestClockService(clock, clockWaiter);
 
@@ -116,7 +123,11 @@ public abstract class BaseCatalogManagerTest extends BaseIgniteAbstractTest {
                 partitionIdleSafeTimePropagationPeriod::get
         );
 
-        assertThat(startAsync(new ComponentContext(), metastore, clockWaiter, manager), willCompleteSuccessfully());
+        ComponentContext context = new ComponentContext();
+        assertThat(startAsync(context, metastore), willCompleteSuccessfully());
+        assertThat(metastore.recoveryFinishedFuture(), willCompleteSuccessfully());
+
+        assertThat(startAsync(context, clockWaiter, manager), willCompleteSuccessfully());
 
         assertThat("Watches were not deployed", metastore.deployWatches(), willCompleteSuccessfully());
 
@@ -182,10 +193,11 @@ public abstract class BaseCatalogManagerTest extends BaseIgniteAbstractTest {
             @Nullable List<String> indexColumns,
             @Nullable List<CatalogColumnCollation> columnsCollations
     ) {
-        return createSortedIndexCommand(TABLE_NAME, indexName, unique, indexColumns, columnsCollations);
+        return createSortedIndexCommand(SqlCommon.DEFAULT_SCHEMA_NAME, TABLE_NAME, indexName, unique, indexColumns, columnsCollations);
     }
 
     protected static CatalogCommand createSortedIndexCommand(
+            String schemaName,
             String tableName,
             String indexName,
             boolean unique,
@@ -193,7 +205,7 @@ public abstract class BaseCatalogManagerTest extends BaseIgniteAbstractTest {
             @Nullable List<CatalogColumnCollation> columnsCollations
     ) {
         return CreateSortedIndexCommand.builder()
-                .schemaName(SqlCommon.DEFAULT_SCHEMA_NAME)
+                .schemaName(schemaName)
                 .tableName(tableName)
                 .indexName(indexName)
                 .unique(unique)
@@ -216,11 +228,23 @@ public abstract class BaseCatalogManagerTest extends BaseIgniteAbstractTest {
             List<String> primaryKeys,
             @Nullable List<String> colocationColumns
     ) {
-        return createTableCommandBuilder(tableName, columns, primaryKeys, colocationColumns)
+        return createTableCommand(SqlCommon.DEFAULT_SCHEMA_NAME, tableName, columns, primaryKeys, colocationColumns);
+    }
+
+    protected static CatalogCommand createTableCommand(
+            String schemaName,
+            String tableName,
+            List<ColumnParams> columns,
+            List<String> primaryKeys,
+            @Nullable List<String> colocationColumns
+    ) {
+        return createTableCommandBuilder(schemaName, tableName, columns, primaryKeys, colocationColumns)
                 .build();
     }
 
-    protected static CreateTableCommandBuilder createTableCommandBuilder(String tableName,
+    protected static CreateTableCommandBuilder createTableCommandBuilder(
+            String schemaName,
+            String tableName,
             List<ColumnParams> columns,
             List<String> primaryKeys, @Nullable List<String> colocationColumns) {
 
@@ -229,7 +253,7 @@ public abstract class BaseCatalogManagerTest extends BaseIgniteAbstractTest {
                 .build();
 
         return CreateTableCommand.builder()
-                .schemaName(SqlCommon.DEFAULT_SCHEMA_NAME)
+                .schemaName(schemaName)
                 .tableName(tableName)
                 .columns(columns)
                 .primaryKey(primaryKey)

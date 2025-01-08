@@ -32,6 +32,7 @@ import java.util.Random;
 import java.util.stream.Stream;
 import org.apache.ignite.internal.sql.BaseSqlIntegrationTest;
 import org.apache.ignite.internal.sql.engine.hint.IgniteHint;
+import org.apache.ignite.internal.sql.engine.type.IgniteTypeSystem;
 import org.apache.ignite.internal.sql.engine.util.HintUtils;
 import org.apache.ignite.internal.sql.engine.util.QueryChecker;
 import org.apache.ignite.internal.testframework.WithSystemProperty;
@@ -68,7 +69,7 @@ public class ItAggregatesTest extends BaseSqlIntegrationTest {
         createAndPopulateTable();
 
         sql("CREATE ZONE test_zone with replicas=2, partitions=10, storage_profiles='" + DEFAULT_STORAGE_PROFILE + "'");
-        sql("CREATE TABLE test (id INT PRIMARY KEY, grp0 INT, grp1 INT, val0 INT, val1 INT) WITH PRIMARY_ZONE='TEST_ZONE'");
+        sql("CREATE TABLE test (id INT PRIMARY KEY, grp0 INT, grp1 INT, val0 INT, val1 INT) ZONE TEST_ZONE");
         sql("CREATE TABLE test_one_col_idx (pk INT PRIMARY KEY, col0 INT)");
 
         for (int i = 0; i < ROWS; i++) {
@@ -331,7 +332,7 @@ public class ItAggregatesTest extends BaseSqlIntegrationTest {
 
         assertQuery(sql)
                 .disableRules("HashJoinConverter", "MergeJoinConverter")
-                .matches(QueryChecker.matches(".*Exchange.*Join.*Colocated.*Aggregate.*"))
+                .matches(QueryChecker.matches(".*Join.*Exchange.*Scan.*Exchange.*Colocated.*Aggregate.*"))
                 .returns("val0", 50L)
                 .returns("val1", 50L)
                 .check();
@@ -555,6 +556,7 @@ public class ItAggregatesTest extends BaseSqlIntegrationTest {
                 .check();
     }
 
+    @SuppressWarnings("BigDecimalMethodWithoutRoundingCalled")
     @ParameterizedTest
     @MethodSource("provideRules")
     public void testAvg(String[] rules) {
@@ -571,6 +573,13 @@ public class ItAggregatesTest extends BaseSqlIntegrationTest {
                 + "FROM numbers")
                 .disableRules(rules)
                 .returns(avgDec, avgDec, avgDec, avgDec, avgDouble, avgDouble, avgDec, avgDec, avgDecBigScale)
+                .check();
+
+        assertQuery("SELECT AVG(int_col) FILTER (WHERE smallint_col % 2 = 0)" 
+                + "           , AVG(int_col) FILTER (WHERE smallint_col % 2 = 1)" 
+                + "        FROM numbers")
+                .disableRules(rules)
+                .returns(new BigDecimal(2).setScale(16), new BigDecimal(1).setScale(16))
                 .check();
 
         sql("DELETE FROM numbers");
@@ -627,7 +636,7 @@ public class ItAggregatesTest extends BaseSqlIntegrationTest {
 
         BigDecimal avg = numbers.stream()
                 .reduce(new BigDecimal("0.00"), BigDecimal::add)
-                .divide(BigDecimal.valueOf(numbers.size()), 16, RoundingMode.HALF_UP);
+                .divide(BigDecimal.valueOf(numbers.size()), 16, IgniteTypeSystem.INSTANCE.roundingMode());
 
         for (String[] rules : makePermutations(DISABLED_RULES)) {
             assertQuery("SELECT AVG(int_col), AVG(dec10_2_col) FROM numbers")

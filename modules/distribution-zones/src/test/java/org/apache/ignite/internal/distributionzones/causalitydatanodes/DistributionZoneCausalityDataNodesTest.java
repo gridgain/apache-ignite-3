@@ -30,7 +30,9 @@ import static org.apache.ignite.internal.catalog.events.CatalogEvent.ZONE_DROP;
 import static org.apache.ignite.internal.cluster.management.topology.LogicalTopologyImpl.LOGICAL_TOPOLOGY_KEY;
 import static org.apache.ignite.internal.distributionzones.DistributionZonesTestUtil.assertDataNodesFromManager;
 import static org.apache.ignite.internal.distributionzones.DistributionZonesTestUtil.assertValueInStorage;
-import static org.apache.ignite.internal.distributionzones.DistributionZonesUtil.DISTRIBUTION_ZONE_DATA_NODES_VALUE_PREFIX;
+import static org.apache.ignite.internal.distributionzones.DistributionZonesUtil.DISTRIBUTION_ZONE_DATA_NODES_VALUE_PREFIX_BYTES;
+import static org.apache.ignite.internal.distributionzones.DistributionZonesUtil.deserializeDataNodesMap;
+import static org.apache.ignite.internal.distributionzones.DistributionZonesUtil.deserializeLogicalTopologySet;
 import static org.apache.ignite.internal.distributionzones.DistributionZonesUtil.zoneDataNodesKey;
 import static org.apache.ignite.internal.distributionzones.DistributionZonesUtil.zonesDataNodesPrefix;
 import static org.apache.ignite.internal.distributionzones.DistributionZonesUtil.zonesLogicalTopologyKey;
@@ -40,13 +42,15 @@ import static org.apache.ignite.internal.distributionzones.rebalance.RebalanceUt
 import static org.apache.ignite.internal.testframework.IgniteTestUtils.assertThrowsWithCause;
 import static org.apache.ignite.internal.testframework.IgniteTestUtils.waitForCondition;
 import static org.apache.ignite.internal.testframework.matchers.CompletableFutureMatcher.willCompleteSuccessfully;
-import static org.apache.ignite.internal.util.ByteUtils.fromBytes;
 import static org.apache.ignite.internal.util.ByteUtils.toByteArray;
 import static org.apache.ignite.internal.util.CompletableFutures.falseCompletedFuture;
 import static org.apache.ignite.internal.util.CompletableFutures.nullCompletedFuture;
 import static org.apache.ignite.internal.util.IgniteUtils.startsWith;
 import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.Matchers.empty;
+import static org.hamcrest.Matchers.is;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
 import static org.mockito.ArgumentMatchers.argThat;
@@ -81,7 +85,6 @@ import org.apache.ignite.internal.lang.IgniteBiTuple;
 import org.apache.ignite.internal.manager.ComponentContext;
 import org.apache.ignite.internal.metastorage.Entry;
 import org.apache.ignite.internal.metastorage.EntryEvent;
-import org.apache.ignite.internal.metastorage.WatchEvent;
 import org.apache.ignite.internal.metastorage.WatchListener;
 import org.apache.ignite.internal.metastorage.server.If;
 import org.apache.ignite.internal.metastorage.server.raft.MetaStorageWriteHandler;
@@ -668,7 +671,7 @@ public class DistributionZoneCausalityDataNodesTest extends BaseDistributionZone
         assertValueInStorage(
                 metaStorageManager,
                 zoneDataNodesKey(zoneId),
-                (v) -> DistributionZonesUtil.dataNodes(fromBytes(v)).stream().map(Node::nodeName).collect(toSet()),
+                (v) -> DistributionZonesUtil.dataNodes(deserializeDataNodesMap(v)).stream().map(Node::nodeName).collect(toSet()),
                 ONE_NODE_NAME,
                 TIMEOUT
         );
@@ -722,7 +725,7 @@ public class DistributionZoneCausalityDataNodesTest extends BaseDistributionZone
         assertValueInStorage(
                 metaStorageManager,
                 zoneDataNodesKey(zoneId),
-                (v) -> DistributionZonesUtil.dataNodes(fromBytes(v)).stream().map(Node::nodeName).collect(toSet()),
+                (v) -> DistributionZonesUtil.dataNodes(deserializeDataNodesMap(v)).stream().map(Node::nodeName).collect(toSet()),
                 TWO_NODES_NAMES,
                 TIMEOUT
         );
@@ -1026,6 +1029,77 @@ public class DistributionZoneCausalityDataNodesTest extends BaseDistributionZone
         checkDataNodesRepeated(expectedDataNodesOnTopologyUpdateEvent, expectedDataNodesAfterTimersAreExpired, false);
     }
 
+    /**
+     * Tests that Distribution Zone Manager stores logical topology update history.
+     */
+    @Test
+    void testLogicalTopologyUpdateHistoryIsStored() throws Exception {
+        createZone(ZONE_NAME, 1, 1, null);
+
+        Set<LogicalNode> newTopology = new HashSet<>();
+
+        newTopology.add(NODE_0);
+        long topologyRevisionOneAdded = putNodeInLogicalTopologyAndGetRevision(NODE_0, newTopology);
+        waitForCondition(() -> metaStorageManager.appliedRevision() >= topologyRevisionOneAdded, TIMEOUT);
+
+        newTopology.add(NODE_1);
+        long topologyRevisionTwoAdded = putNodeInLogicalTopologyAndGetRevision(NODE_1, newTopology);
+        waitForCondition(() -> metaStorageManager.appliedRevision() >= topologyRevisionTwoAdded, TIMEOUT);
+
+        newTopology.remove(NODE_1);
+        long topologyRevisionOneRemoved = removeNodeInLogicalTopologyAndGetRevision(Set.of(NODE_1), newTopology);
+        waitForCondition(() -> metaStorageManager.appliedRevision() >= topologyRevisionOneRemoved, TIMEOUT);
+
+        int zoneId = getZoneId(ZONE_NAME);
+
+        assertDataNodesFromManager(
+                distributionZoneManager,
+                metaStorageManager::appliedRevision,
+                catalogManager::latestCatalogVersion,
+                zoneId,
+                ONE_NODE,
+                TIMEOUT
+        );
+
+        assertEquals(ONE_NODE_NAME, nodeNames(distributionZoneManager.logicalTopology(topologyRevisionOneAdded)));
+        assertEquals(TWO_NODES_NAMES, nodeNames(distributionZoneManager.logicalTopology(topologyRevisionTwoAdded)));
+        assertEquals(ONE_NODE_NAME, nodeNames(distributionZoneManager.logicalTopology(topologyRevisionOneRemoved)));
+    }
+
+    /**
+     * Tests logical topology param handling.
+     */
+    @Test
+    void testLogicalTopologyParams() throws Exception {
+        createZone(ZONE_NAME, 1, 1, null);
+
+        Set<LogicalNode> newTopology = new HashSet<>();
+
+        newTopology.add(NODE_0);
+        long topologyRevision = putNodeInLogicalTopologyAndGetRevision(NODE_0, newTopology);
+        waitForCondition(() -> metaStorageManager.appliedRevision() >= topologyRevision, TIMEOUT);
+
+        // topologyRevision is at least 2 as there have been other revision updates.
+        assertTrue(topologyRevision > 2);
+        // We need this check to make sure that the topology is empty if requested with a revision = (0, topologyRevision-1];
+
+        Set<NodeWithAttributes> topologyBeforeAddingNodes = distributionZoneManager.logicalTopology(topologyRevision - 1);
+        assertThat(topologyBeforeAddingNodes, is(empty()));
+
+        // Same for revision = 0.
+        Set<NodeWithAttributes> topology0 = distributionZoneManager.logicalTopology(0);
+        assertThat(topology0, is(empty()));
+
+        // Exactly one node should be present in the topology at revision = topologyRevision.
+        assertEquals(ONE_NODE_NAME, nodeNames(distributionZoneManager.logicalTopology(topologyRevision)));
+
+        // Same topology for the revision > topologyRevision.
+        assertEquals(ONE_NODE_NAME, nodeNames(distributionZoneManager.logicalTopology(topologyRevision + 1)));
+
+        // Fails if revision is negative (invalid).
+        assertThrows(AssertionError.class, () -> distributionZoneManager.logicalTopology(-1));
+    }
+
     private void checkDataNodesRepeated(
             Map<Integer, Set<String>> expectedDataNodesOnTopologyUpdateEvent,
             Map<Integer, Set<String>> expectedDataNodesAfterTimersAreExpired,
@@ -1130,38 +1204,31 @@ public class DistributionZoneCausalityDataNodesTest extends BaseDistributionZone
             AtomicBoolean reached,
             Map<Integer, Set<String>> expectedDataNodes
     ) {
-        return new WatchListener() {
-            @Override
-            public CompletableFuture<Void> onUpdate(WatchEvent evt) {
-                for (EntryEvent event : evt.entryEvents()) {
-                    Entry e = event.newEntry();
+        return evt -> {
+            for (EntryEvent event : evt.entryEvents()) {
+                Entry e = event.newEntry();
 
-                    if (Arrays.equals(e.key(), zonesLogicalTopologyVersionKey().bytes())) {
-                        topologyUpdateRevision.set(e.revision());
-                    }
+                if (Arrays.equals(e.key(), zonesLogicalTopologyVersionKey().bytes())) {
+                    topologyUpdateRevision.set(e.revision());
                 }
-
-                assertTrue(topologyUpdateRevision.get() > 0);
-
-                return CompletableFuture.runAsync(() -> {
-                    try {
-                        // Check that data nodes values are changed according to scale up and down timers.
-                        // Data nodes from the meta storage manager and topology augmentation maps are used to calculate current data nodes.
-                        checkDataNodes(topologyUpdateRevision.get(), expectedDataNodes);
-
-                        // Check that data nodes values are not changed in the meta storage.
-                        checkThatDataNodesIsNotChangedInMetastorage(expectedDataNodes.keySet());
-
-                        reached.set(true);
-                    } catch (Exception e) {
-                        fail();
-                    }
-                }).thenRun(latch::countDown).thenApply(ignored -> null);
             }
 
-            @Override
-            public void onError(Throwable e) {
-            }
+            assertTrue(topologyUpdateRevision.get() > 0);
+
+            return CompletableFuture.runAsync(() -> {
+                try {
+                    // Check that data nodes values are changed according to scale up and down timers.
+                    // Data nodes from the meta storage manager and topology augmentation maps are used to calculate current data nodes.
+                    checkDataNodes(topologyUpdateRevision.get(), expectedDataNodes);
+
+                    // Check that data nodes values are not changed in the meta storage.
+                    checkThatDataNodesIsNotChangedInMetastorage(expectedDataNodes.keySet());
+
+                    reached.set(true);
+                } catch (Exception e) {
+                    fail();
+                }
+            }).thenRun(latch::countDown).thenApply(ignored -> null);
         };
     }
 
@@ -1170,7 +1237,7 @@ public class DistributionZoneCausalityDataNodesTest extends BaseDistributionZone
             assertValueInStorage(
                     metaStorageManager,
                     zoneDataNodesKey(zoneId),
-                    (v) -> DistributionZonesUtil.dataNodes(fromBytes(v)).stream().map(Node::nodeName).collect(toSet()),
+                    (v) -> DistributionZonesUtil.dataNodes(deserializeDataNodesMap(v)).stream().map(Node::nodeName).collect(toSet()),
                     TWO_NODES_NAMES,
                     TIMEOUT
             );
@@ -1200,7 +1267,7 @@ public class DistributionZoneCausalityDataNodesTest extends BaseDistributionZone
             assertValueInStorage(
                     metaStorageManager,
                     zoneDataNodesKey(entry.getKey()),
-                    (v) -> DistributionZonesUtil.dataNodes(fromBytes(v)).stream().map(Node::nodeName).collect(toSet()),
+                    (v) -> DistributionZonesUtil.dataNodes(deserializeDataNodesMap(v)).stream().map(Node::nodeName).collect(toSet()),
                     entry.getValue(),
                     TIMEOUT
             );
@@ -1421,36 +1488,33 @@ public class DistributionZoneCausalityDataNodesTest extends BaseDistributionZone
      * @return Watch listener.
      */
     private WatchListener createMetastorageTopologyListener() {
-        return new WatchListener() {
-            @Override
-            public CompletableFuture<Void> onUpdate(WatchEvent evt) {
-                Set<NodeWithAttributes> newLogicalTopology = null;
+        return evt -> {
+            Set<NodeWithAttributes> newLogicalTopology = null;
 
-                long revision = 0;
+            long revision = 0;
 
-                for (EntryEvent event : evt.entryEvents()) {
-                    Entry e = event.newEntry();
+            for (EntryEvent event : evt.entryEvents()) {
+                Entry e = event.newEntry();
 
-                    if (Arrays.equals(e.key(), zonesLogicalTopologyVersionKey().bytes())) {
-                        revision = e.revision();
-                    } else if (Arrays.equals(e.key(), zonesLogicalTopologyKey().bytes())) {
-                        newLogicalTopology = fromBytes(e.value());
-                    }
+                if (Arrays.equals(e.key(), zonesLogicalTopologyVersionKey().bytes())) {
+                    revision = e.revision();
+                } else if (Arrays.equals(e.key(), zonesLogicalTopologyKey().bytes())) {
+                    newLogicalTopology = deserializeLogicalTopologySet(e.value());
                 }
-
-                Set<String> nodeNames = newLogicalTopology.stream().map(NodeWithAttributes::nodeName).collect(toSet());
-
-                if (topologyRevisions.containsKey(nodeNames)) {
-                    topologyRevisions.remove(nodeNames).complete(revision);
-                }
-
-                return nullCompletedFuture();
             }
 
-            @Override
-            public void onError(Throwable e) {
+            Set<String> nodeNames = nodeNames(newLogicalTopology);
+
+            if (topologyRevisions.containsKey(nodeNames)) {
+                topologyRevisions.remove(nodeNames).complete(revision);
             }
+
+            return nullCompletedFuture();
         };
+    }
+
+    private static Set<String> nodeNames(Set<NodeWithAttributes> newLogicalTopology) {
+        return newLogicalTopology.stream().map(NodeWithAttributes::nodeName).collect(toSet());
     }
 
     /**
@@ -1460,46 +1524,39 @@ public class DistributionZoneCausalityDataNodesTest extends BaseDistributionZone
      * @return Watch listener.
      */
     private WatchListener createMetastorageDataNodesListener() {
-        return new WatchListener() {
-            @Override
-            public CompletableFuture<Void> onUpdate(WatchEvent evt) {
+        return evt -> {
 
-                int zoneId = 0;
+            int zoneId = 0;
 
-                Set<Node> newDataNodes = null;
+            Set<Node> newDataNodes = null;
 
-                long revision = 0;
+            long revision = 0;
 
-                for (EntryEvent event : evt.entryEvents()) {
-                    Entry e = event.newEntry();
+            for (EntryEvent event : evt.entryEvents()) {
+                Entry e = event.newEntry();
 
-                    if (startsWith(e.key(), zoneDataNodesKey().bytes())) {
-                        revision = e.revision();
+                if (startsWith(e.key(), zoneDataNodesKey().bytes())) {
+                    revision = e.revision();
 
-                        zoneId = extractZoneId(e.key(), DISTRIBUTION_ZONE_DATA_NODES_VALUE_PREFIX);
+                    zoneId = extractZoneId(e.key(), DISTRIBUTION_ZONE_DATA_NODES_VALUE_PREFIX_BYTES);
 
-                        byte[] dataNodesBytes = e.value();
+                    byte[] dataNodesBytes = e.value();
 
-                        if (dataNodesBytes != null) {
-                            newDataNodes = DistributionZonesUtil.dataNodes(fromBytes(dataNodesBytes));
-                        } else {
-                            newDataNodes = emptySet();
-                        }
+                    if (dataNodesBytes != null) {
+                        newDataNodes = DistributionZonesUtil.dataNodes(deserializeDataNodesMap(dataNodesBytes));
+                    } else {
+                        newDataNodes = emptySet();
                     }
                 }
-
-                Set<String> nodeNames = newDataNodes.stream().map(Node::nodeName).collect(toSet());
-
-                IgniteBiTuple<Integer, Set<String>> zoneDataNodesKey = new IgniteBiTuple<>(zoneId, nodeNames);
-
-                completeRevisionFuture(zoneDataNodesRevisions.remove(zoneDataNodesKey), revision);
-
-                return nullCompletedFuture();
             }
 
-            @Override
-            public void onError(Throwable e) {
-            }
+            Set<String> nodeNames = newDataNodes.stream().map(Node::nodeName).collect(toSet());
+
+            IgniteBiTuple<Integer, Set<String>> zoneDataNodesKey = new IgniteBiTuple<>(zoneId, nodeNames);
+
+            completeRevisionFuture(zoneDataNodesRevisions.remove(zoneDataNodesKey), revision);
+
+            return nullCompletedFuture();
         };
     }
 

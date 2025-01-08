@@ -21,6 +21,8 @@ import org.apache.calcite.rel.type.RelDataType;
 import org.apache.calcite.rel.type.RelDataTypeFactory;
 import org.apache.calcite.rex.RexBuilder;
 import org.apache.calcite.rex.RexNode;
+import org.apache.calcite.sql.type.SqlTypeName;
+import org.apache.calcite.util.NlsString;
 import org.apache.ignite.internal.sql.engine.type.IgniteCustomType;
 import org.apache.ignite.internal.sql.engine.type.IgniteTypeFactory;
 import org.jetbrains.annotations.Nullable;
@@ -53,6 +55,25 @@ public class IgniteRexBuilder extends RexBuilder {
             // IgniteCustomType: Not comparable types are not supported.
             assert value instanceof Comparable : "Not comparable IgniteCustomType:" + type + ". value: " + value;
             return makeLiteral((Comparable<?>) value, type, type.getSqlTypeName());
+        } else if (value != null && type.getSqlTypeName() == SqlTypeName.CHAR) {
+            if (type.isNullable()) {
+                RelDataType typeNotNull =
+                        typeFactory.createTypeWithNullability(type, false);
+                if (allowCast) {
+                    RexNode literalNotNull = makeLiteral(value, typeNotNull, allowCast);
+                    return makeAbstractCast(type, literalNotNull, false);
+                }
+            }
+
+            NlsString string;
+            if (value instanceof NlsString) {
+                string = (NlsString) value;
+            } else {
+                assert type.getCharset() != null : type + ".getCharset() must not be null";
+                string = new NlsString((String) value, type.getCharset().name(), type.getCollation());
+            }
+
+            return makeCharLiteral(string);
         } else {
             return super.makeLiteral(value, type, allowCast, trim);
         }

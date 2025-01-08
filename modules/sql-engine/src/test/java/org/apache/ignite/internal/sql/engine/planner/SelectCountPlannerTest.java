@@ -44,6 +44,7 @@ import org.apache.ignite.internal.sql.engine.prepare.ExplainPlan;
 import org.apache.ignite.internal.sql.engine.prepare.QueryPlan;
 import org.apache.ignite.internal.sql.engine.prepare.SelectCountPlan;
 import org.apache.ignite.internal.sql.engine.tx.QueryTransactionContext;
+import org.apache.ignite.internal.sql.engine.util.Commons;
 import org.apache.ignite.internal.testframework.SystemPropertiesExtension;
 import org.apache.ignite.internal.testframework.WithSystemProperty;
 import org.junit.jupiter.api.AfterAll;
@@ -78,6 +79,8 @@ public class SelectCountPlannerTest extends AbstractPlannerTest {
 
     @AfterEach
     void clearCatalog() {
+        Commons.resetFastQueryOptimizationFlag();
+
         int version = CLUSTER.catalogManager().latestCatalogVersion();
 
         List<CatalogCommand> commands = new ArrayList<>();
@@ -347,7 +350,7 @@ public class SelectCountPlannerTest extends AbstractPlannerTest {
         }
 
         {
-            NoOpTransaction tx = NoOpTransaction.readWrite("RW");
+            NoOpTransaction tx = NoOpTransaction.readWrite("RW", false);
             QueryTransactionContext txContext = ExplicitTxContext.fromTx(tx);
 
             ExplainPlan plan = (ExplainPlan) node.prepare("EXPLAIN PLAN FOR SELECT count(*) FROM test", txContext);
@@ -355,7 +358,7 @@ public class SelectCountPlannerTest extends AbstractPlannerTest {
         }
 
         {
-            NoOpTransaction tx = NoOpTransaction.readOnly("RO");
+            NoOpTransaction tx = NoOpTransaction.readOnly("RO", false);
             QueryTransactionContext txContext = ExplicitTxContext.fromTx(tx);
 
             ExplainPlan plan = (ExplainPlan) node.prepare("EXPLAIN PLAN FOR SELECT count(*) FROM test", txContext);

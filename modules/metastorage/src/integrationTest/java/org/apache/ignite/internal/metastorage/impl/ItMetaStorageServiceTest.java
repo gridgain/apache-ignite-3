@@ -186,6 +186,8 @@ public class ItMetaStorageServiceTest extends BaseIgniteAbstractTest {
 
         private final KeyValueStorage mockStorage;
 
+        private final HybridClock clock;
+
         private final ClusterTimeImpl clusterTime;
 
         private RaftGroupService metaStorageRaftService;
@@ -199,7 +201,7 @@ public class ItMetaStorageServiceTest extends BaseIgniteAbstractTest {
         Node(ClusterService clusterService, RaftConfiguration raftConfiguration, Path dataPath) {
             this.clusterService = clusterService;
 
-            HybridClock clock = new HybridClockImpl();
+            clock = new HybridClockImpl();
 
             ComponentWorkingDir workingDir = new ComponentWorkingDir(dataPath.resolve(name()));
 
@@ -237,7 +239,7 @@ public class ItMetaStorageServiceTest extends BaseIgniteAbstractTest {
                     clusterService.nodeName(),
                     metaStorageRaftService,
                     new IgniteSpinBusyLock(),
-                    clusterTime,
+                    clock,
                     () -> clusterService.topologyService().localMember().id()
             );
         }
@@ -255,7 +257,7 @@ public class ItMetaStorageServiceTest extends BaseIgniteAbstractTest {
 
             assert peer != null;
 
-            var listener = new MetaStorageListener(mockStorage, clusterTime);
+            var listener = new MetaStorageListener(mockStorage, clock, clusterTime);
 
             var raftNodeId = new RaftNodeId(MetastorageGroupId.INSTANCE, peer);
 
@@ -520,6 +522,24 @@ public class ItMetaStorageServiceTest extends BaseIgniteAbstractTest {
         for (int i = 0; i < expKeys.size(); i++) {
             assertArrayEquals(expKeys.get(i), keysCaptor.getValue().get(i));
         }
+    }
+
+    /**
+     * Tests {@link MetaStorageService#removeByPrefix(ByteArray)}.
+     *
+     * @throws Exception If failed.
+     */
+    @Test
+    public void testRemoveByPrefix() throws Exception {
+        Node node = prepareNodes(1).get(0);
+
+        startNodes();
+
+        ByteArray prefix = new ByteArray(new byte[]{1});
+
+        doNothing().when(node.mockStorage).removeByPrefix(eq(prefix.bytes()), any());
+
+        node.metaStorageService.removeByPrefix(prefix).get();
     }
 
     /**

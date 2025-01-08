@@ -63,24 +63,6 @@ public class ArrayRowHandler implements RowHandler<Object[]> {
 
     /** {@inheritDoc} */
     @Override
-    public Object[] concat(Object[] left, Object[] right) {
-        return ArrayUtils.concat(left, right);
-    }
-
-    /** {@inheritDoc} */
-    @Override
-    public Object[] map(Object[] row, int[] mapping) {
-        Object[] newRow = new Object[mapping.length];
-
-        for (int i = 0; i < mapping.length; i++) {
-            newRow[i] = row[mapping[i]];
-        }
-
-        return newRow;
-    }
-
-    /** {@inheritDoc} */
-    @Override
     public int columnCount(Object[] row) {
         return row.length;
     }
@@ -151,6 +133,32 @@ public class ArrayRowHandler implements RowHandler<Object[]> {
                 }
 
                 return row;
+            }
+
+            /** {@inheritDoc} */
+            @Override
+            public RowSchema rowSchema() {
+                return rowSchema;
+            }
+
+            @Override
+            public Object[] map(Object[] row, int[] mapping) {
+                assert mapping.length == rowSchema.fields().size();
+                Object[] newRow = new Object[mapping.length];
+
+                for (int i = 0; i < mapping.length; i++) {
+                    newRow[i] = row[mapping[i]];
+                }
+
+                return newRow;
+            }
+
+            /** {@inheritDoc} */
+            @Override
+            public Object[] concat(Object[] left, Object[] right) {
+                assert left.length + right.length == schemaLen;
+
+                return ArrayUtils.concat(left, right);
             }
         };
     }

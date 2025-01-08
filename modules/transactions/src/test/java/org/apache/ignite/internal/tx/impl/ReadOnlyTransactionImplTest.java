@@ -44,9 +44,10 @@ class ReadOnlyTransactionImplTest extends BaseIgniteAbstractTest {
 
         var tx = new ReadOnlyTransactionImpl(
                 txManager,
-                new HybridTimestampTracker(),
+                HybridTimestampTracker.atomicTracker(null),
                 txId,
                 new UUID(1, 2),
+                false,
                 readTimestamp,
                 new CompletableFuture<>()
         );

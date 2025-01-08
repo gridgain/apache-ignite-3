@@ -32,13 +32,13 @@ import static org.apache.ignite.internal.metastorage.dsl.Operations.ops;
 import static org.apache.ignite.internal.metastorage.dsl.Operations.put;
 import static org.apache.ignite.internal.metastorage.dsl.Operations.remove;
 import static org.apache.ignite.internal.util.ByteUtils.bytesToLongKeepingOrder;
-import static org.apache.ignite.internal.util.ByteUtils.fromBytes;
 import static org.apache.ignite.internal.util.ByteUtils.longToBytesKeepingOrder;
 import static org.apache.ignite.internal.util.ByteUtils.uuidToBytes;
 
 import com.jayway.jsonpath.Configuration;
 import com.jayway.jsonpath.JsonPath;
 import com.jayway.jsonpath.Option;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
@@ -63,7 +63,6 @@ import org.apache.ignite.internal.metastorage.dsl.SimpleCondition;
 import org.apache.ignite.internal.metastorage.dsl.Update;
 import org.apache.ignite.internal.thread.NamedThreadFactory;
 import org.apache.ignite.internal.thread.StripedScheduledThreadPoolExecutor;
-import org.apache.ignite.internal.util.ByteUtils;
 import org.jetbrains.annotations.Nullable;
 import org.jetbrains.annotations.TestOnly;
 
@@ -79,6 +78,9 @@ public class DistributionZonesUtil {
 
     /** Key prefix for zone's data nodes. */
     public static final String DISTRIBUTION_ZONE_DATA_NODES_VALUE_PREFIX = DISTRIBUTION_ZONE_DATA_NODES_PREFIX + "value.";
+
+    public static final byte[] DISTRIBUTION_ZONE_DATA_NODES_VALUE_PREFIX_BYTES =
+            DISTRIBUTION_ZONE_DATA_NODES_VALUE_PREFIX.getBytes(StandardCharsets.UTF_8);
 
     /** Key prefix for zone's scale up change trigger key. */
     private static final String DISTRIBUTION_ZONE_SCALE_UP_CHANGE_TRIGGER_PREFIX =
@@ -151,6 +153,26 @@ public class DistributionZonesUtil {
             new ByteArray(DISTRIBUTION_ZONE_DATA_NODES_PREFIX);
 
     /**
+     * Internal property that determines partition group members reset timeout after the partition group majority loss.
+     *
+     * <p>Default value is {@link #PARTITION_DISTRIBUTION_RESET_TIMEOUT_DEFAULT_VALUE}.</p>
+     */
+    public static final String PARTITION_DISTRIBUTION_RESET_TIMEOUT = "partitionDistributionResetTimeout";
+
+    /** Default value for the {@link #PARTITION_DISTRIBUTION_RESET_TIMEOUT}. */
+    static final int PARTITION_DISTRIBUTION_RESET_TIMEOUT_DEFAULT_VALUE = 0;
+
+    /**
+     * Internal property that determines delay between unsuccessful trial of a rebalance and a new trial, ms.
+     *
+     * <p>Default value is {@link #REBALANCE_RETRY_DELAY_DEFAULT}.</p>
+     */
+    public static final String REBALANCE_RETRY_DELAY_MS = "rebalanceRetryDelay";
+
+    /** Default value for the {@link #REBALANCE_RETRY_DELAY_MS}. */
+    public static final int REBALANCE_RETRY_DELAY_DEFAULT = 200;
+
+    /**
      * ByteArray representation of {@link DistributionZonesUtil#DISTRIBUTION_ZONE_DATA_NODES_VALUE_PREFIX}.
      *
      * @param zoneId Zone id.
@@ -166,7 +188,7 @@ public class DistributionZonesUtil {
      * @return ByteArray representation.
      */
     public static ByteArray zoneDataNodesKey() {
-        return new ByteArray(DISTRIBUTION_ZONE_DATA_NODES_VALUE_PREFIX);
+        return new ByteArray(DISTRIBUTION_ZONE_DATA_NODES_VALUE_PREFIX_BYTES);
     }
 
     /**
@@ -428,7 +450,10 @@ public class DistributionZonesUtil {
         List<Operation> operations = new ArrayList<>();
 
         operations.add(put(zonesLogicalTopologyVersionKey(), longToBytesKeepingOrder(logicalTopology.version())));
-        operations.add(put(zonesLogicalTopologyKey(), ByteUtils.toBytes(topologyFromCmg)));
+        operations.add(put(
+                zonesLogicalTopologyKey(),
+                LogicalTopologySetSerializer.serialize(topologyFromCmg)
+        ));
         if (updateClusterId) {
             operations.add(put(zonesLogicalTopologyClusterIdKey(), uuidToBytes(logicalTopology.clusterId())));
         }
@@ -466,7 +491,19 @@ public class DistributionZonesUtil {
 
     @Nullable
     public static Set<Node> parseDataNodes(byte[] dataNodesBytes) {
-        return dataNodesBytes == null ? null : dataNodes(fromBytes(dataNodesBytes));
+        return dataNodesBytes == null ? null : dataNodes(deserializeDataNodesMap(dataNodesBytes));
+    }
+
+    public static Map<Node, Integer> deserializeDataNodesMap(byte[] bytes) {
+        return DataNodesMapSerializer.deserialize(bytes);
+    }
+
+    public static Set<NodeWithAttributes> deserializeLogicalTopologySet(byte[] bytes) {
+        return LogicalTopologySetSerializer.deserialize(bytes);
+    }
+
+    public static Map<UUID, NodeWithAttributes> deserializeNodesAttributes(byte[] bytes) {
+        return NodesAttributesSerializer.deserialize(bytes);
     }
 
     /**
@@ -477,7 +514,7 @@ public class DistributionZonesUtil {
      */
     static Map<Node, Integer> extractDataNodes(Entry dataNodesEntry) {
         if (!dataNodesEntry.empty()) {
-            return fromBytes(dataNodesEntry.value());
+            return deserializeDataNodesMap(dataNodesEntry.value());
         } else {
             return emptyMap();
         }

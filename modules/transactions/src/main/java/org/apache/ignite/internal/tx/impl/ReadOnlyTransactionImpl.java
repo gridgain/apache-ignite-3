@@ -18,6 +18,8 @@
 package org.apache.ignite.internal.tx.impl;
 
 import static org.apache.ignite.internal.util.CompletableFutures.nullCompletedFuture;
+import static org.apache.ignite.lang.ErrorGroups.Transactions.TX_COMMIT_ERR;
+import static org.apache.ignite.lang.ErrorGroups.Transactions.TX_ROLLBACK_ERR;
 
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
@@ -31,15 +33,12 @@ import org.apache.ignite.network.ClusterNode;
 /**
  * The read-only implementation of an internal transaction.
  */
-class ReadOnlyTransactionImpl extends IgniteAbstractTransactionImpl {
+public class ReadOnlyTransactionImpl extends IgniteAbstractTransactionImpl {
     /** The read timestamp. */
     private final HybridTimestamp readTimestamp;
 
     /** Prevents double finish of the transaction. */
     private final AtomicBoolean finishGuard = new AtomicBoolean();
-
-    /** The tracker is used to track an observable timestamp. */
-    private final HybridTimestampTracker observableTsTracker;
 
     /** Transaction future. */
     private final CompletableFuture<Void> txFuture;
@@ -51,6 +50,7 @@ class ReadOnlyTransactionImpl extends IgniteAbstractTransactionImpl {
      * @param observableTsTracker Observable timestamp tracker.
      * @param id The id.
      * @param txCoordinatorId Transaction coordinator inconsistent ID.
+     * @param implicit True for an implicit transaction, false for an ordinary one.
      * @param readTimestamp The read timestamp.
      */
     ReadOnlyTransactionImpl(
@@ -58,13 +58,13 @@ class ReadOnlyTransactionImpl extends IgniteAbstractTransactionImpl {
             HybridTimestampTracker observableTsTracker,
             UUID id,
             UUID txCoordinatorId,
+            boolean implicit,
             HybridTimestamp readTimestamp,
             CompletableFuture<Void> txFuture
     ) {
-        super(txManager, id, txCoordinatorId);
+        super(txManager, observableTsTracker, id, txCoordinatorId, implicit);
 
         this.readTimestamp = readTimestamp;
-        this.observableTsTracker = observableTsTracker;
         this.txFuture = txFuture;
     }
 
@@ -107,12 +107,25 @@ class ReadOnlyTransactionImpl extends IgniteAbstractTransactionImpl {
     }
 
     @Override
-    protected CompletableFuture<Void> finish(boolean commit) {
-        return finish(commit, readTimestamp);
+    public CompletableFuture<Void> commitAsync() {
+        return TransactionsExceptionMapperUtil.convertToPublicFuture(
+                finish(true, readTimestamp, false),
+                TX_COMMIT_ERR
+        );
     }
 
     @Override
-    public CompletableFuture<Void> finish(boolean commit, HybridTimestamp executionTimestamp) {
+    public CompletableFuture<Void> rollbackAsync() {
+        return TransactionsExceptionMapperUtil.convertToPublicFuture(
+                finish(false, readTimestamp, false),
+                TX_ROLLBACK_ERR
+        );
+    }
+
+    @Override
+    public CompletableFuture<Void> finish(boolean commit, HybridTimestamp executionTimestamp, boolean full) {
+        assert !full : "Read-only transactions cannot be full.";
+
         if (!finishGuard.compareAndSet(false, true)) {
             return nullCompletedFuture();
         }
@@ -124,5 +137,10 @@ class ReadOnlyTransactionImpl extends IgniteAbstractTransactionImpl {
         ((TxManagerImpl) txManager).completeReadOnlyTransactionFuture(new TxIdAndTimestamp(readTimestamp, id()));
 
         return txFuture;
+    }
+
+    @Override
+    public boolean isFinishingOrFinished() {
+        return finishGuard.get();
     }
 }

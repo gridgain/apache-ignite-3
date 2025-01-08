@@ -25,8 +25,8 @@ import static org.apache.ignite.lang.ErrorGroups.Transactions.TX_COMMIT_ERR;
 import static org.apache.ignite.lang.ErrorGroups.Transactions.TX_ROLLBACK_ERR;
 
 import java.util.UUID;
-import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
+import org.apache.ignite.internal.tx.HybridTimestampTracker;
 import org.apache.ignite.internal.tx.InternalTransaction;
 import org.apache.ignite.internal.tx.TxManager;
 import org.apache.ignite.internal.tx.TxState;
@@ -44,22 +44,38 @@ public abstract class IgniteAbstractTransactionImpl implements InternalTransacti
     /** The transaction manager. */
     protected final TxManager txManager;
 
+    /** The tracker is used to track an observable timestamp. */
+    protected final HybridTimestampTracker observableTsTracker;
+
     /**
      * Transaction coordinator inconsistent ID.
      */
     private final UUID coordinatorId;
+
+    /** Implicit transaction flag. */
+    private final boolean implicit;
 
     /**
      * The constructor.
      *
      * @param txManager The tx manager.
      * @param id The id.
+     * @param observableTsTracker Observation timestamp tracker.
      * @param coordinatorId Transaction coordinator inconsistent ID.
+     * @param implicit True for an implicit transaction, false for an ordinary one.
      */
-    public IgniteAbstractTransactionImpl(TxManager txManager, UUID id, UUID coordinatorId) {
+    public IgniteAbstractTransactionImpl(
+            TxManager txManager,
+            HybridTimestampTracker observableTsTracker,
+            UUID id,
+            UUID coordinatorId,
+            boolean implicit
+    ) {
         this.txManager = txManager;
+        this.observableTsTracker = observableTsTracker;
         this.id = id;
         this.coordinatorId = coordinatorId;
+        this.implicit = implicit;
     }
 
     /** {@inheritDoc} */
@@ -76,6 +92,11 @@ public abstract class IgniteAbstractTransactionImpl implements InternalTransacti
     @Override
     public UUID coordinatorId() {
         return coordinatorId;
+    }
+
+    @Override
+    public boolean implicit() {
+        return implicit;
     }
 
     /** {@inheritDoc} */
@@ -102,12 +123,6 @@ public abstract class IgniteAbstractTransactionImpl implements InternalTransacti
 
     /** {@inheritDoc} */
     @Override
-    public CompletableFuture<Void> commitAsync() {
-        return TransactionsExceptionMapperUtil.convertToPublicFuture(finish(true), TX_COMMIT_ERR);
-    }
-
-    /** {@inheritDoc} */
-    @Override
     public void rollback() throws TransactionException {
         try {
             rollbackAsync().get();
@@ -119,21 +134,6 @@ public abstract class IgniteAbstractTransactionImpl implements InternalTransacti
             throw withCause(TransactionException::new, TX_ROLLBACK_ERR, e);
         }
     }
-
-    /** {@inheritDoc} */
-    @Override
-    public CompletableFuture<Void> rollbackAsync() {
-        return TransactionsExceptionMapperUtil.convertToPublicFuture(finish(false), TX_ROLLBACK_ERR);
-    }
-
-    /**
-     * Finishes a transaction. A finish of a completed or ending transaction has no effect
-     * and always succeeds when the transaction is completed.
-     *
-     * @param commit {@code true} to commit, false to rollback.
-     * @return The future.
-     */
-    protected abstract CompletableFuture<Void> finish(boolean commit);
 
     // TODO: remove after IGNITE-22721 gets resolved.
     private static Throwable tryToCopyExceptionWithCause(ExecutionException exception) {

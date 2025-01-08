@@ -39,7 +39,7 @@ import io.micronaut.test.extensions.junit5.annotation.MicronautTest;
 import jakarta.inject.Inject;
 import java.util.Set;
 import org.apache.ignite.Ignite;
-import org.apache.ignite.internal.Cluster;
+import org.apache.ignite.internal.ClusterConfiguration;
 import org.apache.ignite.internal.ClusterPerClassIntegrationTest;
 import org.apache.ignite.internal.rest.api.recovery.RestartPartitionsRequest;
 import org.junit.jupiter.api.BeforeAll;
@@ -48,7 +48,7 @@ import org.junit.jupiter.api.Test;
 /** Test for disaster recovery restart partitions command. */
 @MicronautTest
 public class ItDisasterRecoveryControllerRestartPartitionsTest extends ClusterPerClassIntegrationTest {
-    private static final String NODE_URL = "http://localhost:" + Cluster.BASE_HTTP_PORT;
+    private static final String NODE_URL = "http://localhost:" + ClusterConfiguration.DEFAULT_BASE_HTTP_PORT;
 
     private static final String FIRST_ZONE = "first_ZONE";
 
@@ -65,7 +65,7 @@ public class ItDisasterRecoveryControllerRestartPartitionsTest extends ClusterPe
     @BeforeAll
     public void setUp() {
         sql(String.format("CREATE ZONE \"%s\" WITH storage_profiles='%s'", FIRST_ZONE, DEFAULT_AIPERSIST_PROFILE_NAME));
-        sql(String.format("CREATE TABLE PUBLIC.\"%s\" (id INT PRIMARY KEY, val INT) WITH PRIMARY_ZONE = '%s'", TABLE_NAME,
+        sql(String.format("CREATE TABLE PUBLIC.\"%s\" (id INT PRIMARY KEY, val INT) ZONE \"%s\"", TABLE_NAME,
                 FIRST_ZONE));
     }
 

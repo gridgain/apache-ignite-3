@@ -21,12 +21,14 @@ import static org.apache.ignite.internal.util.CompletableFutures.trueCompletedFu
 import java.net.ConnectException;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ConcurrentHashMap;import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executor;
 import java.util.concurrent.ExecutorService;
+import org.apache.ignite.internal.lang.NodeStoppingException;
 import org.apache.ignite.internal.logger.IgniteLogger;
 import org.apache.ignite.internal.logger.Loggers;
 import org.apache.ignite.internal.raft.PeerUnavailableException;
+import org.apache.ignite.internal.util.ExceptionUtils;
 import org.apache.ignite.network.ClusterNode;
 import org.apache.ignite.internal.network.TopologyEventHandler;
 import org.apache.ignite.raft.jraft.Status;
@@ -45,7 +47,6 @@ import org.apache.ignite.raft.jraft.rpc.RpcRequests.ErrorResponse;
 import org.apache.ignite.raft.jraft.rpc.RpcResponseClosure;
 import org.apache.ignite.raft.jraft.util.Utils;
 import org.apache.ignite.raft.jraft.util.concurrent.ConcurrentHashSet;
-import org.apache.ignite.raft.jraft.util.internal.ThrowUtil;
 
 /**
  * Abstract RPC client service based.
@@ -56,6 +57,8 @@ public abstract class AbstractClientService implements ClientService, TopologyEv
     protected volatile RpcClient rpcClient;
     protected ExecutorService rpcExecutor;
     protected RpcOptions rpcOptions;
+
+    private Set<PeerId> deadPeers = ConcurrentHashMap.newKeySet();
 
     /**
      * The set of pinged consistent IDs.
@@ -121,7 +124,11 @@ public abstract class AbstractClientService implements ClientService, TopologyEv
 
             LOG.error("Interrupted while connecting to {}, exception: {}.", peerId, e.getMessage());
         } catch (ExecutionException e) {
-            LOG.error("Fail to connect {}, exception: {}.", peerId, e.getMessage());
+            if (!deadPeers.contains(peerId)) {
+                deadPeers.add(peerId);
+
+                LOG.error("Fail to connect {}, exception: {}.", peerId, e.getMessage());
+            }
         }
 
         return false;
@@ -152,6 +159,8 @@ public abstract class AbstractClientService implements ClientService, TopologyEv
 
             if (resp != null && resp.errorCode() == 0) {
                 readyConsistentIds.add(peerId.getConsistentId());
+
+                deadPeers.remove(peerId);
 
                 return true;
             } else {
@@ -225,13 +234,12 @@ public abstract class AbstractClientService implements ClientService, TopologyEv
                         }
                     }
                     else {
-                        if (ThrowUtil.hasCause(err, null, PeerUnavailableException.class, ConnectException.class))
+                        if (ExceptionUtils.hasCauseOrSuppressed(err, PeerUnavailableException.class, ConnectException.class))
                             readyConsistentIds.remove(peerId.getConsistentId()); // Force logical reconnect.
 
                         if (done != null) {
                             try {
-                                done.run(new Status(err instanceof InvokeTimeoutException ? RaftError.ETIMEDOUT
-                                    : RaftError.EINTERNAL, "RPC exception:" + err.getMessage()));
+                                done.run(new Status(errorCodeByException(err), "RPC exception:" + err.getMessage()));
                             }
                             catch (final Throwable t) {
                                 LOG.error("Fail to run RpcResponseClosure, the request is {}.", t, request);
@@ -264,6 +272,14 @@ public abstract class AbstractClientService implements ClientService, TopologyEv
         }
 
         return future;
+    }
+
+    private static RaftError errorCodeByException(Throwable err) {
+        if (ExceptionUtils.hasCauseOrSuppressed(err, NodeStoppingException.class)) {
+            return RaftError.ESHUTDOWN;
+        }
+
+        return err instanceof InvokeTimeoutException ? RaftError.ETIMEDOUT : RaftError.EINTERNAL;
     }
 
     private static Status handleErrorResponse(final ErrorResponse eResp) {

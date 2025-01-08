@@ -21,8 +21,7 @@ import static io.micronaut.http.HttpRequest.DELETE;
 import static io.micronaut.http.HttpRequest.PUT;
 import static io.micronaut.http.HttpStatus.CONFLICT;
 import static io.micronaut.http.HttpStatus.NOT_FOUND;
-import static org.apache.ignite.internal.TestWrappers.unwrapIgniteImpl;
-import static org.apache.ignite.internal.rest.matcher.MicronautHttpResponseMatcher.isProblemResponse;
+import static org.apache.ignite.internal.rest.matcher.MicronautHttpResponseMatcher.assertThrowsProblem;
 import static org.apache.ignite.internal.rest.matcher.ProblemMatcher.isProblem;
 import static org.apache.ignite.internal.rest.matcher.RestJobStateMatcher.canceled;
 import static org.apache.ignite.internal.rest.matcher.RestJobStateMatcher.completed;
@@ -30,13 +29,11 @@ import static org.apache.ignite.internal.rest.matcher.RestJobStateMatcher.execut
 import static org.apache.ignite.internal.rest.matcher.RestJobStateMatcher.queued;
 import static org.awaitility.Awaitility.await;
 import static org.hamcrest.MatcherAssert.assertThat;
-import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import io.micronaut.core.type.Argument;
 import io.micronaut.http.HttpRequest;
 import io.micronaut.http.client.HttpClient;
 import io.micronaut.http.client.annotation.Client;
-import io.micronaut.http.client.exceptions.HttpClientResponseException;
 import io.micronaut.test.extensions.junit5.annotation.MicronautTest;
 import jakarta.inject.Inject;
 import java.util.Collection;
@@ -70,42 +67,19 @@ public class ItComputeControllerTest extends ClusterPerClassIntegrationTest {
 
     @Inject
     @Client("http://localhost:10300" + COMPUTE_URL)
-    HttpClient client0;
-
-    @Inject
-    @Client("http://localhost:10301" + COMPUTE_URL)
-    HttpClient client1;
-
-    @Inject
-    @Client("http://localhost:10303" + COMPUTE_URL)
-    HttpClient client2;
-
-    @Override
-    protected String getNodeBootstrapConfigTemplate() {
-        return "ignite {\n"
-                + "  network: {\n"
-                + "    port: {},\n"
-                + "    nodeFinder: {\n"
-                + "      netClusterNodes: [ {} ]\n"
-                + "    }\n"
-                + "  },\n"
-                + "  clientConnector: { port:{} },\n"
-                + "  rest.port: {},\n"
-                + "  compute.threadPoolSize: 1 \n"
-                + "}";
-    }
+    HttpClient client;
 
     @AfterEach
     void tearDown() {
         // Cancel all jobs.
-        getJobStates(client0).values().stream()
+        getJobStates(client).values().stream()
                 .filter(it -> it.finishTime() == null)
                 .map(JobState::id)
-                .forEach(jobId -> cancelJob(client0, jobId));
+                .forEach(jobId -> cancelJob(client, jobId));
 
         // Wait for all jobs to complete.
         await().until(() -> {
-            Collection<JobState> states = getJobStates(client0).values();
+            Collection<JobState> states = getJobStates(client).values();
 
             for (JobState state : states) {
                 if (state.finishTime() == null) {
@@ -129,15 +103,11 @@ public class ItComputeControllerTest extends ClusterPerClassIntegrationTest {
         UUID remoteJobId = remoteExecution.idAsync().join();
 
         await().untilAsserted(() -> {
-            Map<UUID, JobState> states = getJobStates(client0);
+            Map<UUID, JobState> states = getJobStates(client);
 
             assertThat(states.get(localJobId), executing(localJobId));
             assertThat(states.get(remoteJobId), executing(remoteJobId));
         });
-    }
-
-    private static ClusterNode clusterNode(Ignite ignite) {
-        return unwrapIgniteImpl(ignite).node();
     }
 
     @Test
@@ -148,11 +118,11 @@ public class ItComputeControllerTest extends ClusterPerClassIntegrationTest {
 
         UUID jobId = execution.idAsync().join();
 
-        await().until(() -> getJobState(client0, jobId), executing(jobId));
+        await().until(() -> getJobState(client, jobId), executing(jobId));
 
         unblockJob();
 
-        await().until(() -> getJobState(client0, jobId), completed(jobId));
+        await().until(() -> getJobState(client, jobId), completed(jobId));
     }
 
     @Test
@@ -163,25 +133,21 @@ public class ItComputeControllerTest extends ClusterPerClassIntegrationTest {
 
         UUID jobId = execution.idAsync().join();
 
-        await().until(() -> getJobState(client0, jobId), executing(jobId));
+        await().until(() -> getJobState(client, jobId), executing(jobId));
 
         unblockJob();
 
-        await().until(() -> getJobState(client0, jobId), completed(jobId));
+        await().until(() -> getJobState(client, jobId), completed(jobId));
     }
 
     @Test
     void shouldReturnProblemIfStateOfNonExistingJob() {
         UUID jobId = UUID.randomUUID();
 
-        HttpClientResponseException httpClientResponseException = assertThrows(
-                HttpClientResponseException.class,
-                () -> getJobState(client0, jobId)
-        );
-
-        assertThat(
-                httpClientResponseException.getResponse(),
-                isProblemResponse(NOT_FOUND, isProblem().withDetail("Compute job not found [jobId=" + jobId + "]"))
+        assertThrowsProblem(
+                () -> getJobState(client, jobId),
+                NOT_FOUND,
+                isProblem().withDetail("Compute job not found [jobId=" + jobId + "]")
         );
     }
 
@@ -193,11 +159,11 @@ public class ItComputeControllerTest extends ClusterPerClassIntegrationTest {
 
         UUID jobId = execution.idAsync().join();
 
-        await().until(() -> getJobState(client0, jobId), executing(jobId));
+        await().until(() -> getJobState(client, jobId), executing(jobId));
 
-        cancelJob(client0, jobId);
+        cancelJob(client, jobId);
 
-        await().until(() -> getJobState(client0, jobId), canceled(jobId, true));
+        await().until(() -> getJobState(client, jobId), canceled(jobId, true));
     }
 
     @Test
@@ -208,25 +174,21 @@ public class ItComputeControllerTest extends ClusterPerClassIntegrationTest {
 
         UUID jobId = execution.idAsync().join();
 
-        await().until(() -> getJobState(client0, jobId), executing(jobId));
+        await().until(() -> getJobState(client, jobId), executing(jobId));
 
-        cancelJob(client0, jobId);
+        cancelJob(client, jobId);
 
-        await().until(() -> getJobState(client0, jobId), canceled(jobId, true));
+        await().until(() -> getJobState(client, jobId), canceled(jobId, true));
     }
 
     @Test
     void shouldReturnProblemIfCancelNonExistingJob() {
         UUID jobId = UUID.randomUUID();
 
-        HttpClientResponseException httpClientResponseException = assertThrows(
-                HttpClientResponseException.class,
-                () -> cancelJob(client0, jobId)
-        );
-
-        assertThat(
-                httpClientResponseException.getResponse(),
-                isProblemResponse(NOT_FOUND, isProblem().withDetail("Compute job not found [jobId=" + jobId + "]"))
+        assertThrowsProblem(
+                () -> cancelJob(client, jobId),
+                NOT_FOUND,
+                isProblem().withDetail("Compute job not found [jobId=" + jobId + "]")
         );
     }
 
@@ -238,21 +200,16 @@ public class ItComputeControllerTest extends ClusterPerClassIntegrationTest {
 
         UUID jobId = execution.idAsync().join();
 
-        await().until(() -> getJobState(client0, jobId), executing(jobId));
+        await().until(() -> getJobState(client, jobId), executing(jobId));
 
         unblockJob();
 
-        await().until(() -> getJobState(client0, jobId), completed(jobId));
+        await().until(() -> getJobState(client, jobId), completed(jobId));
 
-        HttpClientResponseException httpClientResponseException = assertThrows(
-                HttpClientResponseException.class,
-                () -> cancelJob(client0, jobId)
-        );
-
-        assertThat(
-                httpClientResponseException.getResponse(),
-                isProblemResponse(CONFLICT, isProblem()
-                        .withDetail("Compute job has an illegal status [jobId=" + jobId + ", status=COMPLETED]"))
+        assertThrowsProblem(
+                () -> cancelJob(client, jobId),
+                CONFLICT,
+                isProblem().withDetail("Compute job has an illegal status [jobId=" + jobId + ", status=COMPLETED]")
         );
     }
 
@@ -266,15 +223,15 @@ public class ItComputeControllerTest extends ClusterPerClassIntegrationTest {
 
         UUID jobId = execution.idAsync().join();
 
-        await().until(() -> getJobState(client0, jobId), executing(jobId));
+        await().until(() -> getJobState(client, jobId), executing(jobId));
 
         JobExecution<String> execution2 = runBlockingJob(entryNode, nodes);
 
         UUID jobId2 = execution2.idAsync().join();
 
-        await().until(() -> getJobState(client0, jobId2), queued(jobId2));
+        await().until(() -> getJobState(client, jobId2), queued(jobId2));
 
-        updatePriority(client0, jobId2, 1);
+        updatePriority(client, jobId2, 1);
     }
 
     @Test
@@ -287,29 +244,25 @@ public class ItComputeControllerTest extends ClusterPerClassIntegrationTest {
 
         UUID jobId = execution.idAsync().join();
 
-        await().until(() -> getJobState(client0, jobId), executing(jobId));
+        await().until(() -> getJobState(client, jobId), executing(jobId));
 
         JobExecution<String> execution2 = runBlockingJob(entryNode, nodes);
 
         UUID jobId2 = execution2.idAsync().join();
 
-        await().until(() -> getJobState(client0, jobId2), queued(jobId2));
+        await().until(() -> getJobState(client, jobId2), queued(jobId2));
 
-        updatePriority(client0, jobId2, 1);
+        updatePriority(client, jobId2, 1);
     }
 
     @Test
     void shouldReturnProblemIfUpdatePriorityOfNonExistingJob() {
         UUID jobId = UUID.randomUUID();
 
-        HttpClientResponseException httpClientResponseException = assertThrows(
-                HttpClientResponseException.class,
-                () -> updatePriority(client0, jobId, 1)
-        );
-
-        assertThat(
-                httpClientResponseException.getResponse(),
-                isProblemResponse(NOT_FOUND, isProblem().withDetail("Compute job not found [jobId=" + jobId + "]"))
+        assertThrowsProblem(
+                () -> updatePriority(client, jobId, 1),
+                NOT_FOUND,
+                isProblem().withDetail("Compute job not found [jobId=" + jobId + "]")
         );
     }
 
@@ -323,17 +276,12 @@ public class ItComputeControllerTest extends ClusterPerClassIntegrationTest {
 
         UUID jobId = execution.idAsync().join();
 
-        await().until(() -> getJobState(client0, jobId), executing(jobId));
+        await().until(() -> getJobState(client, jobId), executing(jobId));
 
-        HttpClientResponseException httpClientResponseException = assertThrows(
-                HttpClientResponseException.class,
-                () -> updatePriority(client0, jobId, 1)
-        );
-
-        assertThat(
-                httpClientResponseException.getResponse(),
-                isProblemResponse(CONFLICT, isProblem()
-                        .withDetail("Compute job has an illegal status [jobId=" + jobId + ", status=EXECUTING]"))
+        assertThrowsProblem(
+                () -> updatePriority(client, jobId, 1),
+                CONFLICT,
+                isProblem().withDetail("Compute job has an illegal status [jobId=" + jobId + ", status=EXECUTING]")
         );
     }
 
@@ -347,21 +295,16 @@ public class ItComputeControllerTest extends ClusterPerClassIntegrationTest {
 
         UUID jobId = execution.idAsync().join();
 
-        await().until(() -> getJobState(client0, jobId), executing(jobId));
+        await().until(() -> getJobState(client, jobId), executing(jobId));
 
         unblockJob();
 
-        await().until(() -> getJobState(client0, jobId), completed(jobId));
+        await().until(() -> getJobState(client, jobId), completed(jobId));
 
-        HttpClientResponseException httpClientResponseException = assertThrows(
-                HttpClientResponseException.class,
-                () -> updatePriority(client0, jobId, 1)
-        );
-
-        assertThat(
-                httpClientResponseException.getResponse(),
-                isProblemResponse(CONFLICT, isProblem()
-                        .withDetail("Compute job has an illegal status [jobId=" + jobId + ", status=COMPLETED]"))
+        assertThrowsProblem(
+                () -> updatePriority(client, jobId, 1),
+                CONFLICT,
+                isProblem().withDetail("Compute job has an illegal status [jobId=" + jobId + ", status=COMPLETED]")
         );
     }
 

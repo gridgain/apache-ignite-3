@@ -19,7 +19,6 @@ package org.apache.ignite.internal.partitiondistribution;
 
 import static java.util.Collections.unmodifiableSet;
 
-import java.io.Serializable;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
@@ -29,20 +28,17 @@ import java.util.Set;
 import org.apache.ignite.internal.hlc.HybridTimestamp;
 import org.apache.ignite.internal.tostring.IgniteToStringInclude;
 import org.apache.ignite.internal.tostring.S;
-import org.apache.ignite.internal.util.ByteUtils;
+import org.apache.ignite.internal.versioned.VersionedSerialization;
 import org.jetbrains.annotations.Contract;
 import org.jetbrains.annotations.Nullable;
 
 /**
  * Class that encapsulates a set of nodes and its metadata.
  */
-public class Assignments implements Serializable {
-    /** Serial version UID. */
-    private static final long serialVersionUID = -59553172012153869L;
-
+public class Assignments {
     /** Empty assignments. */
     public static final Assignments EMPTY =
-            new Assignments(Collections.emptySet(), false, HybridTimestamp.NULL_HYBRID_TIMESTAMP);
+            new Assignments(Collections.emptySet(), false, HybridTimestamp.NULL_HYBRID_TIMESTAMP, false);
 
     /** Set of nodes. */
     @IgniteToStringInclude
@@ -59,14 +55,23 @@ public class Assignments implements Serializable {
     private final long timestamp;
 
     /**
+     * This assignment was created in the second phase of reset.
+     * See GroupUpdateRequest javadoc for details.
+     */
+    private final boolean fromReset;
+
+    /**
      * Constructor.
      */
-    private Assignments(Collection<Assignment> nodes, boolean force, long timestamp) {
+    private Assignments(Collection<Assignment> nodes, boolean force, long timestamp, boolean fromReset) {
         // A set of nodes must be a HashSet in order for serialization to produce stable results,
         // that could be compared as byte arrays.
         this.nodes = nodes instanceof HashSet ? ((HashSet<Assignment>) nodes) : new HashSet<>(nodes);
         this.force = force;
         this.timestamp = timestamp;
+        this.fromReset = fromReset;
+
+        assert !(force && fromReset) : "Only one flag can be set from 'force' and 'fromReset'.";
     }
 
     /**
@@ -75,7 +80,16 @@ public class Assignments implements Serializable {
      * @param nodes Set of nodes.
      */
     public static Assignments of(Set<Assignment> nodes, long timestamp) {
-        return new Assignments(nodes, false, timestamp);
+        return new Assignments(nodes, false, timestamp, false);
+    }
+
+    /**
+     * Creates a new instance.
+     *
+     * @param nodes Set of nodes.
+     */
+    public static Assignments of(Set<Assignment> nodes, long timestamp, boolean fromReset) {
+        return new Assignments(nodes, false, timestamp, fromReset);
     }
 
     /**
@@ -84,7 +98,7 @@ public class Assignments implements Serializable {
      * @param nodes Array of nodes.
      */
     public static Assignments of(long timestamp, Assignment... nodes) {
-        return new Assignments(Arrays.asList(nodes), false, timestamp);
+        return new Assignments(Arrays.asList(nodes), false, timestamp, false);
     }
 
     /**
@@ -94,7 +108,7 @@ public class Assignments implements Serializable {
      * @see #force()
      */
     public static Assignments forced(Set<Assignment> nodes, long timestamp) {
-        return new Assignments(nodes, true, timestamp);
+        return new Assignments(nodes, true, timestamp, false);
     }
 
     /**
@@ -111,6 +125,13 @@ public class Assignments implements Serializable {
      */
     public boolean force() {
         return force;
+    }
+
+    /**
+     * Returns {@code true} if this assignment was created in the second phase of reset.
+     */
+    public boolean fromReset() {
+        return fromReset;
     }
 
     /**
@@ -140,7 +161,7 @@ public class Assignments implements Serializable {
      * Serializes the instance into an array of bytes.
      */
     public byte[] toBytes() {
-        return ByteUtils.toBytes(this);
+        return VersionedSerialization.toBytes(this, AssignmentsSerializer.INSTANCE);
     }
 
     /**
@@ -149,7 +170,16 @@ public class Assignments implements Serializable {
      * @see #toBytes()
      */
     public static byte[] toBytes(Set<Assignment> assignments, long timestamp) {
-        return new Assignments(assignments, false, timestamp).toBytes();
+        return new Assignments(assignments, false, timestamp, false).toBytes();
+    }
+
+    /**
+     * Serializes assignments into an array of bytes.
+     *
+     * @see #toBytes()
+     */
+    public static byte[] toBytes(Set<Assignment> assignments, long timestamp, boolean fromReset) {
+        return new Assignments(assignments, false, timestamp, fromReset).toBytes();
     }
 
     /**
@@ -158,7 +188,7 @@ public class Assignments implements Serializable {
     @Nullable
     @Contract("null -> null; !null -> !null")
     public static Assignments fromBytes(byte @Nullable [] bytes) {
-        return bytes == null ? null : ByteUtils.fromBytes(bytes);
+        return bytes == null ? null : VersionedSerialization.fromBytes(bytes, AssignmentsSerializer.INSTANCE);
     }
 
     @Override
@@ -176,13 +206,14 @@ public class Assignments implements Serializable {
         }
 
         Assignments that = (Assignments) o;
-        return force == that.force && nodes.equals(that.nodes);
+        return force == that.force && nodes.equals(that.nodes) && fromReset == that.fromReset;
     }
 
     @Override
     public int hashCode() {
         int result = nodes.hashCode();
         result = 31 * result + Boolean.hashCode(force);
+        result = 31 * result + Boolean.hashCode(fromReset);
         return result;
     }
 

@@ -56,9 +56,13 @@ import org.apache.ignite.internal.logger.Loggers;
 import org.apache.ignite.internal.manager.ComponentContext;
 import org.apache.ignite.internal.network.MessagingService;
 import org.apache.ignite.internal.network.TopologyService;
+import org.apache.ignite.internal.systemview.api.SystemView;
+import org.apache.ignite.internal.systemview.api.SystemViewProvider;
 import org.apache.ignite.internal.thread.NamedThreadFactory;
 import org.apache.ignite.internal.util.IgniteSpinBusyLock;
 import org.apache.ignite.internal.util.IgniteUtils;
+import org.apache.ignite.lang.CancelHandleHelper;
+import org.apache.ignite.lang.CancellationToken;
 import org.apache.ignite.network.ClusterNode;
 import org.jetbrains.annotations.Nullable;
 import org.jetbrains.annotations.TestOnly;
@@ -66,7 +70,7 @@ import org.jetbrains.annotations.TestOnly;
 /**
  * Implementation of {@link ComputeComponent}.
  */
-public class ComputeComponentImpl implements ComputeComponent {
+public class ComputeComponentImpl implements ComputeComponent, SystemViewProvider {
     private static final IgniteLogger LOG = Loggers.forClass(ComputeComponentImpl.class);
 
     /** Busy lock to stop synchronously. */
@@ -90,6 +94,8 @@ public class ComputeComponentImpl implements ComputeComponent {
     private final ExecutionManager executionManager;
 
     private final ExecutorService failoverExecutor;
+
+    private final ComputeViewProvider computeViewProvider = new ComputeViewProvider();
 
     /**
      * Creates a new instance.
@@ -120,6 +126,7 @@ public class ComputeComponentImpl implements ComputeComponent {
             ExecutionOptions options,
             List<DeploymentUnit> units,
             String jobClassName,
+            @Nullable CancellationToken cancellationToken,
             I arg
     ) {
         if (!busyLock.enterBusy()) {
@@ -129,8 +136,10 @@ public class ComputeComponentImpl implements ComputeComponent {
         }
 
         try {
+            CompletableFuture<JobContext> classLoaderFut = jobContextManager.acquireClassLoader(units);
+
             CompletableFuture<JobExecutionInternal<R>> future =
-                    mapClassLoaderExceptions(jobContextManager.acquireClassLoader(units), jobClassName)
+                    mapClassLoaderExceptions(classLoaderFut, jobClassName)
                             .thenApply(context -> {
                                 JobExecutionInternal<R> execution = execJob(context, options, jobClassName, arg);
                                 execution.resultAsync().whenComplete((result, e) -> context.close());
@@ -139,8 +148,16 @@ public class ComputeComponentImpl implements ComputeComponent {
                             });
 
             inFlightFutures.registerFuture(future);
+            inFlightFutures.registerFuture(classLoaderFut);
 
             JobExecution<R> result = new DelegatingJobExecution<>(future);
+
+            if (cancellationToken != null) {
+                CancelHandleHelper.addCancelAction(cancellationToken, classLoaderFut);
+                CancelHandleHelper.addCancelAction(cancellationToken, future);
+                CancelHandleHelper.addCancelAction(cancellationToken, result::cancelAsync, result.resultAsync());
+            }
+
             result.idAsync().thenAccept(jobId -> executionManager.addExecution(jobId, result));
             return result;
         } finally {
@@ -188,6 +205,7 @@ public class ComputeComponentImpl implements ComputeComponent {
             ClusterNode remoteNode,
             List<DeploymentUnit> units,
             String jobClassName,
+            @Nullable CancellationToken cancellationToken,
             T arg
     ) {
         if (!busyLock.enterBusy()) {
@@ -204,6 +222,11 @@ public class ComputeComponentImpl implements ComputeComponent {
             inFlightFutures.registerFuture(resultFuture);
 
             JobExecution<R> result = new RemoteJobExecution<>(remoteNode, jobIdFuture, resultFuture, inFlightFutures, messaging);
+
+            if (cancellationToken != null) {
+                CancelHandleHelper.addCancelAction(cancellationToken, result::cancelAsync, result.resultAsync());
+            }
+
             jobIdFuture.thenAccept(jobId -> executionManager.addExecution(jobId, result));
             return result;
         } finally {
@@ -218,12 +241,13 @@ public class ComputeComponentImpl implements ComputeComponent {
             List<DeploymentUnit> units,
             String jobClassName,
             ExecutionOptions options,
-            T arg
+            @Nullable CancellationToken cancellationToken,
+            @Nullable T arg
     ) {
         JobExecution<R> result = (JobExecution<R>) new ComputeJobFailover<>(
                 this, logicalTopologyService, topologyService,
                 remoteNode, nextWorkerSelector, failoverExecutor, units,
-                jobClassName, options, arg
+                jobClassName, options, cancellationToken, arg
         ).failSafeExecute();
 
         result.idAsync().thenAccept(jobId -> executionManager.addExecution(jobId, result));
@@ -271,6 +295,7 @@ public class ComputeComponentImpl implements ComputeComponent {
         executor.start();
         messaging.start(this::executeLocally);
         executionManager.start();
+        computeViewProvider.init(executionManager);
 
         return nullCompletedFuture();
     }
@@ -288,6 +313,7 @@ public class ComputeComponentImpl implements ComputeComponent {
         executionManager.stop();
         messaging.stop();
         executor.stop();
+        computeViewProvider.stop();
         IgniteUtils.shutdownAndAwaitTermination(failoverExecutor, 10, TimeUnit.SECONDS);
 
         return nullCompletedFuture();
@@ -320,5 +346,10 @@ public class ComputeComponentImpl implements ComputeComponent {
     @TestOnly
     ExecutionManager executionManager() {
         return executionManager;
+    }
+
+    @Override
+    public List<SystemView<?>> systemViews() {
+        return List.of(computeViewProvider.get());
     }
 }

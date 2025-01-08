@@ -33,6 +33,7 @@ import org.apache.ignite.IgniteServer;
 import org.apache.ignite.InitParameters;
 import org.apache.ignite.internal.app.IgniteImpl;
 import org.apache.ignite.internal.catalog.commands.CatalogUtils;
+import org.apache.ignite.internal.failure.handlers.configuration.StopNodeOrHaltFailureHandlerConfigurationSchema;
 import org.apache.ignite.internal.lang.IgniteStringFormatter;
 import org.apache.ignite.internal.sql.engine.property.SqlPropertiesHelper;
 import org.apache.ignite.internal.testframework.TestIgnitionManager;
@@ -40,6 +41,7 @@ import org.apache.ignite.internal.util.IgniteUtils;
 import org.apache.ignite.table.RecordView;
 import org.apache.ignite.table.Tuple;
 import org.intellij.lang.annotations.Language;
+import org.jetbrains.annotations.Nullable;
 import org.openjdk.jmh.annotations.Param;
 import org.openjdk.jmh.annotations.Scope;
 import org.openjdk.jmh.annotations.Setup;
@@ -71,8 +73,13 @@ public class AbstractMultiNodeBenchmark {
     protected static Ignite publicIgnite;
     protected static IgniteImpl igniteImpl;
 
-    @Param({"false", "true"})
+    @Param({"false"})
     private boolean fsync;
+
+    @Nullable
+    protected String clusterConfiguration() {
+        return "";
+    }
 
     /**
      * Starts ignite node and creates table {@link #TABLE_NAME}.
@@ -90,13 +97,11 @@ public class AbstractMultiNodeBenchmark {
 
             getAllFromCursor(
                     await(queryEngine.queryAsync(
-                            SqlPropertiesHelper.emptyProperties(), igniteImpl.observableTimeTracker(), null, createZoneStatement
+                            SqlPropertiesHelper.emptyProperties(), igniteImpl.observableTimeTracker(), null, null, createZoneStatement
                     ))
             );
 
             createTable(TABLE_NAME);
-
-            Thread.sleep(2000);
         } catch (Throwable th) {
             nodeTearDown();
 
@@ -134,11 +139,11 @@ public class AbstractMultiNodeBenchmark {
             createTableStatement += "\nCOLOCATE BY (" + String.join(", ", colocationKeys) + ")";
         }
 
-        createTableStatement += "\nWITH primary_zone='" + ZONE_NAME + "'";
+        createTableStatement += "\nZONE " + ZONE_NAME;
 
         getAllFromCursor(
                 await(igniteImpl.queryEngine().queryAsync(
-                        SqlPropertiesHelper.emptyProperties(), igniteImpl.observableTimeTracker(), null, createTableStatement
+                        SqlPropertiesHelper.emptyProperties(), igniteImpl.observableTimeTracker(), null, null, createTableStatement
                 ))
         );
     }
@@ -200,7 +205,12 @@ public class AbstractMultiNodeBenchmark {
                 + "  clientConnector: { port:{} },\n"
                 + "  rest.port: {},\n"
                 + "  raft.fsync = " + fsync() + ",\n"
-                + "  system.partitionsLogPath = \"" + logPath() + "\""
+                + "  system.partitionsLogPath = \"" + logPath() + "\",\n"
+                + "  failureHandler.handler: {\n"
+                + "      type: \"" + StopNodeOrHaltFailureHandlerConfigurationSchema.TYPE + "\",\n"
+                + "      tryStop: true,\n"
+                + "      timeoutMillis: 60000,\n" // 1 minute for graceful shutdown
+                + "  },\n"
                 + "}";
 
         for (int i = 0; i < nodes(); i++) {
@@ -215,9 +225,15 @@ public class AbstractMultiNodeBenchmark {
 
         String metaStorageNodeName = nodeName(BASE_PORT);
 
+        @Language("HOCON")
+        String clusterCfg = "ignite {\n"
+                + clusterConfiguration() + "\n"
+                + "}";
+
         InitParameters initParameters = InitParameters.builder()
                 .metaStorageNodeNames(metaStorageNodeName)
                 .clusterName("cluster")
+                .clusterConfiguration(clusterCfg)
                 .build();
 
         TestIgnitionManager.init(igniteServers.get(0), initParameters);

@@ -27,7 +27,7 @@ import org.apache.calcite.plan.RelOptUtil;
 import org.apache.calcite.rel.core.JoinRelType;
 import org.apache.calcite.rel.type.RelDataType;
 import org.apache.ignite.internal.sql.engine.exec.ExecutionContext;
-import org.apache.ignite.internal.sql.engine.exec.RowHandler;
+import org.apache.ignite.internal.sql.engine.exec.RowHandler.RowFactory;
 import org.apache.ignite.internal.sql.engine.exec.row.RowSchema;
 import org.jetbrains.annotations.Nullable;
 
@@ -38,22 +38,22 @@ import org.jetbrains.annotations.Nullable;
 public abstract class NestedLoopJoinNode<RowT> extends AbstractRightMaterializedJoinNode<RowT> {
     protected final BiPredicate<RowT, RowT> cond;
 
-    protected final RowHandler<RowT> handler;
+    final RowFactory<RowT> outputRowFactory;
 
     final List<RowT> rightMaterialized = new ArrayList<>(inBufSize);
 
     /**
-     * Constructor.
-     * TODO Documentation https://issues.apache.org/jira/browse/IGNITE-15859
+     * Creates NestedLoopJoinNode.
      *
      * @param ctx  Execution context.
      * @param cond Join expression.
+     * @param outputRowFactory Output row factory.
      */
-    NestedLoopJoinNode(ExecutionContext<RowT> ctx, BiPredicate<RowT, RowT> cond) {
+    NestedLoopJoinNode(ExecutionContext<RowT> ctx, BiPredicate<RowT, RowT> cond, RowFactory<RowT> outputRowFactory) {
         super(ctx);
 
         this.cond = cond;
-        handler = ctx.rowHandler();
+        this.outputRowFactory = outputRowFactory;
     }
 
     /** {@inheritDoc} */
@@ -81,43 +81,57 @@ public abstract class NestedLoopJoinNode<RowT> extends AbstractRightMaterialized
     }
 
     /**
-     * Create.
-     * TODO Documentation https://issues.apache.org/jira/browse/IGNITE-15859
+     * Create NestedLoopJoinNode for requested join operator type.
+     *
+     * @param ctx Execution context.
+     * @param outputRowType Output row type.
+     * @param leftRowType Row type of the left source.
+     * @param rightRowType Row type of the right source.
+     * @param joinType Join operator type.
+     * @param cond Join condition predicate.
      */
-    public static <RowT> NestedLoopJoinNode<RowT> create(ExecutionContext<RowT> ctx, RelDataType outputRowType,
-            RelDataType leftRowType, RelDataType rightRowType, JoinRelType joinType, BiPredicate<RowT, RowT> cond) {
+    public static <RowT> NestedLoopJoinNode<RowT> create(
+            ExecutionContext<RowT> ctx,
+            RelDataType outputRowType,
+            RelDataType leftRowType,
+            RelDataType rightRowType,
+            JoinRelType joinType,
+            BiPredicate<RowT, RowT> cond
+    ) {
+        RowSchema leftRowSchema = rowSchemaFromRelTypes(RelOptUtil.getFieldTypeList(leftRowType));
+        RowSchema rightRowSchema = rowSchemaFromRelTypes(RelOptUtil.getFieldTypeList(rightRowType));
+        RowSchema outputSchema = rowSchemaFromRelTypes(RelOptUtil.getFieldTypeList(outputRowType));
+
+        RowFactory<RowT> outputRowFactory = ctx.rowHandler().factory(outputSchema);
+
         switch (joinType) {
             case INNER:
-                return new InnerJoin<>(ctx, cond);
+                return new InnerJoin<>(ctx, cond, outputRowFactory);
 
             case LEFT: {
-                RowSchema rightRowSchema = rowSchemaFromRelTypes(RelOptUtil.getFieldTypeList(rightRowType));
-                RowHandler.RowFactory<RowT> rightRowFactory = ctx.rowHandler().factory(rightRowSchema);
+                RowFactory<RowT> rightRowFactory = ctx.rowHandler().factory(rightRowSchema);
 
-                return new LeftJoin<>(ctx, cond, rightRowFactory);
+                return new LeftJoin<>(ctx, cond, outputRowFactory, rightRowFactory);
             }
 
             case RIGHT: {
-                RowSchema leftRowSchema = rowSchemaFromRelTypes(RelOptUtil.getFieldTypeList(leftRowType));
-                RowHandler.RowFactory<RowT> leftRowFactory = ctx.rowHandler().factory(leftRowSchema);
+                RowFactory<RowT> leftRowFactory = ctx.rowHandler().factory(leftRowSchema);
 
-                return new RightJoin<>(ctx, cond, leftRowFactory);
+                return new RightJoin<>(ctx, cond, outputRowFactory, leftRowFactory);
             }
 
             case FULL: {
-                RowSchema leftRowSchema = rowSchemaFromRelTypes(RelOptUtil.getFieldTypeList(leftRowType));
-                RowSchema rightRowSchema = rowSchemaFromRelTypes(RelOptUtil.getFieldTypeList(rightRowType));
-                RowHandler.RowFactory<RowT> leftRowFactory = ctx.rowHandler().factory(leftRowSchema);
-                RowHandler.RowFactory<RowT> rightRowFactory = ctx.rowHandler().factory(rightRowSchema);
+                RowFactory<RowT> leftRowFactory = ctx.rowHandler().factory(leftRowSchema);
+                RowFactory<RowT> rightRowFactory = ctx.rowHandler().factory(rightRowSchema);
 
-                return new FullOuterJoin<>(ctx, cond, leftRowFactory, rightRowFactory);
+                return new FullOuterJoin<>(ctx, cond, outputRowFactory, leftRowFactory, rightRowFactory);
             }
 
             case SEMI:
-                return new SemiJoin<>(ctx, cond);
+                return new SemiJoin<>(ctx, cond, outputRowFactory);
 
             case ANTI:
-                return new AntiJoin<>(ctx, cond);
+                return new AntiJoin<>(ctx, cond, outputRowFactory);
 
             default:
                 throw new IllegalStateException("Join type \"" + joinType + "\" is not supported yet");
@@ -128,14 +142,14 @@ public abstract class NestedLoopJoinNode<RowT> extends AbstractRightMaterialized
         private int rightIdx;
 
         /**
-         * Constructor.
-         * TODO Documentation https://issues.apache.org/jira/browse/IGNITE-15859
+         * Creates NestedLoopJoinNode for INNER JOIN operator.
          *
-         * @param ctx  Execution context.
+         * @param ctx Execution context.
          * @param cond Join expression.
+         * @param outputRowFactory Output row factory.
          */
-        private InnerJoin(ExecutionContext<RowT> ctx, BiPredicate<RowT, RowT> cond) {
-            super(ctx, cond);
+        private InnerJoin(ExecutionContext<RowT> ctx, BiPredicate<RowT, RowT> cond, RowFactory<RowT> outputRowFactory) {
+            super(ctx, cond, outputRowFactory);
         }
 
         /** {@inheritDoc} */
@@ -164,7 +178,7 @@ public abstract class NestedLoopJoinNode<RowT> extends AbstractRightMaterialized
                             }
 
                             requested--;
-                            RowT row = handler.concat(left, rightMaterialized.get(rightIdx - 1));
+                            RowT row = outputRowFactory.concat(left, rightMaterialized.get(rightIdx - 1));
                             downstream().push(row);
                         }
 
@@ -188,6 +202,7 @@ public abstract class NestedLoopJoinNode<RowT> extends AbstractRightMaterialized
 
             if (requested > 0 && waitingLeft == NOT_WAITING && waitingRight == NOT_WAITING && left == null && leftInBuf.isEmpty()) {
                 requested = 0;
+                rightMaterialized.clear();
                 downstream().end();
             }
         }
@@ -195,7 +210,7 @@ public abstract class NestedLoopJoinNode<RowT> extends AbstractRightMaterialized
 
     private static class LeftJoin<RowT> extends NestedLoopJoinNode<RowT> {
         /** Right row factory. */
-        private final RowHandler.RowFactory<RowT> rightRowFactory;
+        private final RowFactory<RowT> rightRowFactory;
 
         /** Whether current left row was matched or not. */
         private boolean matched;
@@ -203,19 +218,20 @@ public abstract class NestedLoopJoinNode<RowT> extends AbstractRightMaterialized
         private int rightIdx;
 
         /**
-         * Constructor.
-         * TODO Documentation https://issues.apache.org/jira/browse/IGNITE-15859
+         * Creates NestedLoopJoinNode for LEFT OUTER JOIN operator.
          *
-         * @param ctx  Execution context.
+         * @param ctx Execution context.
          * @param cond Join expression.
+         * @param outputRowFactory Output row factory.
          * @param rightRowFactory Right row factory.
          */
         private LeftJoin(
                 ExecutionContext<RowT> ctx,
                 BiPredicate<RowT, RowT> cond,
-                RowHandler.RowFactory<RowT> rightRowFactory
+                RowFactory<RowT> outputRowFactory,
+                RowFactory<RowT> rightRowFactory
         ) {
-            super(ctx, cond);
+            super(ctx, cond, outputRowFactory);
 
             this.rightRowFactory = rightRowFactory;
         }
@@ -251,7 +267,7 @@ public abstract class NestedLoopJoinNode<RowT> extends AbstractRightMaterialized
                             requested--;
                             matched = true;
 
-                            RowT row = handler.concat(left, rightMaterialized.get(rightIdx - 1));
+                            RowT row = outputRowFactory.concat(left, rightMaterialized.get(rightIdx - 1));
                             downstream().push(row);
                         }
 
@@ -262,7 +278,7 @@ public abstract class NestedLoopJoinNode<RowT> extends AbstractRightMaterialized
                                 requested--;
                                 wasPushed = true;
 
-                                downstream().push(handler.concat(left, rightRowFactory.create()));
+                                downstream().push(outputRowFactory.concat(left, rightRowFactory.create()));
                             }
 
                             if (matched || wasPushed) {
@@ -286,6 +302,7 @@ public abstract class NestedLoopJoinNode<RowT> extends AbstractRightMaterialized
 
             if (requested > 0 && waitingLeft == NOT_WAITING && waitingRight == NOT_WAITING && left == null && leftInBuf.isEmpty()) {
                 requested = 0;
+                rightMaterialized.clear();
                 downstream().end();
             }
         }
@@ -293,7 +310,7 @@ public abstract class NestedLoopJoinNode<RowT> extends AbstractRightMaterialized
 
     private static class RightJoin<RowT> extends NestedLoopJoinNode<RowT> {
         /** Left row factory. */
-        private final RowHandler.RowFactory<RowT> leftRowFactory;
+        private final RowFactory<RowT> leftRowFactory;
 
         private @Nullable BitSet rightNotMatchedIndexes;
 
@@ -302,19 +319,20 @@ public abstract class NestedLoopJoinNode<RowT> extends AbstractRightMaterialized
         private int rightIdx;
 
         /**
-         * Constructor.
-         * TODO Documentation https://issues.apache.org/jira/browse/IGNITE-15859
+         * Creates NestedLoopJoinNode for RIGHT OUTER JOIN operator.
          *
-         * @param ctx  Execution context.
+         * @param ctx Execution context.
          * @param cond Join expression.
+         * @param outputRowFactory Output row factory.
          * @param leftRowFactory Left row factory.
          */
         private RightJoin(
                 ExecutionContext<RowT> ctx,
                 BiPredicate<RowT, RowT> cond,
-                RowHandler.RowFactory<RowT> leftRowFactory
+                RowFactory<RowT> outputRowFactory,
+                RowFactory<RowT> leftRowFactory
         ) {
-            super(ctx, cond);
+            super(ctx, cond, outputRowFactory);
 
             this.leftRowFactory = leftRowFactory;
         }
@@ -358,7 +376,7 @@ public abstract class NestedLoopJoinNode<RowT> extends AbstractRightMaterialized
                             requested--;
                             rightNotMatchedIndexes.clear(rightIdx - 1);
 
-                            RowT joined = handler.concat(left, right);
+                            RowT joined = outputRowFactory.concat(left, right);
                             downstream().push(joined);
                         }
 
@@ -386,7 +404,7 @@ public abstract class NestedLoopJoinNode<RowT> extends AbstractRightMaterialized
                             break;
                         }
 
-                        RowT row = handler.concat(leftRowFactory.create(), rightMaterialized.get(lastPushedInd));
+                        RowT row = outputRowFactory.concat(leftRowFactory.create(), rightMaterialized.get(lastPushedInd));
 
                         rightNotMatchedIndexes.clear(lastPushedInd);
 
@@ -413,6 +431,7 @@ public abstract class NestedLoopJoinNode<RowT> extends AbstractRightMaterialized
             if (requested > 0 && waitingLeft == NOT_WAITING && waitingRight == NOT_WAITING && left == null
                     && leftInBuf.isEmpty() && rightNotMatchedIndexes.isEmpty()) {
                 requested = 0;
+                rightMaterialized.clear();
                 downstream().end();
             }
         }
@@ -420,10 +439,10 @@ public abstract class NestedLoopJoinNode<RowT> extends AbstractRightMaterialized
 
     private static class FullOuterJoin<RowT> extends NestedLoopJoinNode<RowT> {
         /** Left row factory. */
-        private final RowHandler.RowFactory<RowT> leftRowFactory;
+        private final RowFactory<RowT> leftRowFactory;
 
         /** Right row factory. */
-        private final RowHandler.RowFactory<RowT> rightRowFactory;
+        private final RowFactory<RowT> rightRowFactory;
 
         /** Whether current left row was matched or not. */
         private boolean leftMatched;
@@ -435,21 +454,22 @@ public abstract class NestedLoopJoinNode<RowT> extends AbstractRightMaterialized
         private int rightIdx;
 
         /**
-         * Constructor.
-         * TODO Documentation https://issues.apache.org/jira/browse/IGNITE-15859
+         * Creates NestedLoopJoinNode for FULL OUTER JOIN operator.
          *
-         * @param ctx  Execution context.
+         * @param ctx Execution context.
          * @param cond Join expression.
+         * @param outputRowFactory Output row factory.
          * @param leftRowFactory Left row factory.
          * @param rightRowFactory Right row factory.
          */
         private FullOuterJoin(
                 ExecutionContext<RowT> ctx,
                 BiPredicate<RowT, RowT> cond,
-                RowHandler.RowFactory<RowT> leftRowFactory,
-                RowHandler.RowFactory<RowT> rightRowFactory
+                RowFactory<RowT> outputRowFactory,
+                RowFactory<RowT> leftRowFactory,
+                RowFactory<RowT> rightRowFactory
         ) {
-            super(ctx, cond);
+            super(ctx, cond, outputRowFactory);
 
             this.leftRowFactory = leftRowFactory;
             this.rightRowFactory = rightRowFactory;
@@ -498,7 +518,7 @@ public abstract class NestedLoopJoinNode<RowT> extends AbstractRightMaterialized
                             leftMatched = true;
                             rightNotMatchedIndexes.clear(rightIdx - 1);
 
-                            RowT joined = handler.concat(left, right);
+                            RowT joined = outputRowFactory.concat(left, right);
                             downstream().push(joined);
                         }
 
@@ -509,7 +529,7 @@ public abstract class NestedLoopJoinNode<RowT> extends AbstractRightMaterialized
                                 requested--;
                                 wasPushed = true;
 
-                                downstream().push(handler.concat(left, rightRowFactory.create()));
+                                downstream().push(outputRowFactory.concat(left, rightRowFactory.create()));
                             }
 
                             if (leftMatched || wasPushed) {
@@ -537,7 +557,7 @@ public abstract class NestedLoopJoinNode<RowT> extends AbstractRightMaterialized
                             break;
                         }
 
-                        RowT row = handler.concat(leftRowFactory.create(), rightMaterialized.get(lastPushedInd));
+                        RowT row = outputRowFactory.concat(leftRowFactory.create(), rightMaterialized.get(lastPushedInd));
 
                         rightNotMatchedIndexes.clear(lastPushedInd);
 
@@ -564,6 +584,7 @@ public abstract class NestedLoopJoinNode<RowT> extends AbstractRightMaterialized
             if (requested > 0 && waitingLeft == NOT_WAITING && waitingRight == NOT_WAITING && left == null
                     && leftInBuf.isEmpty() && rightNotMatchedIndexes.isEmpty()) {
                 requested = 0;
+                rightMaterialized.clear();
                 downstream().end();
             }
         }
@@ -573,14 +594,14 @@ public abstract class NestedLoopJoinNode<RowT> extends AbstractRightMaterialized
         private int rightIdx;
 
         /**
-         * Constructor.
-         * TODO Documentation https://issues.apache.org/jira/browse/IGNITE-15859
+         * Creates NestedLoopJoinNode for SEMI JOIN operator.
          *
          * @param ctx  Execution context.
          * @param cond Join expression.
+         * @param outputRowFactory Output row factory.
          */
-        private SemiJoin(ExecutionContext<RowT> ctx, BiPredicate<RowT, RowT> cond) {
-            super(ctx, cond);
+        private SemiJoin(ExecutionContext<RowT> ctx, BiPredicate<RowT, RowT> cond, RowFactory<RowT> outputRowFactory) {
+            super(ctx, cond, outputRowFactory);
         }
 
         /** {@inheritDoc} */
@@ -632,6 +653,7 @@ public abstract class NestedLoopJoinNode<RowT> extends AbstractRightMaterialized
 
             if (requested > 0 && waitingLeft == NOT_WAITING && waitingRight == NOT_WAITING && left == null
                     && leftInBuf.isEmpty()) {
+                rightMaterialized.clear();
                 downstream().end();
                 requested = 0;
             }
@@ -642,14 +664,14 @@ public abstract class NestedLoopJoinNode<RowT> extends AbstractRightMaterialized
         private int rightIdx;
 
         /**
-         * Constructor.
-         * TODO Documentation https://issues.apache.org/jira/browse/IGNITE-15859
+         * Creates NestedLoopJoinNode for ANTI JOIN operator.
          *
          * @param ctx  Execution context.
          * @param cond Join expression.
+         * @param outputRowFactory Output row factory.
          */
-        private AntiJoin(ExecutionContext<RowT> ctx, BiPredicate<RowT, RowT> cond) {
-            super(ctx, cond);
+        private AntiJoin(ExecutionContext<RowT> ctx, BiPredicate<RowT, RowT> cond, RowFactory<RowT> outputRowFactory) {
+            super(ctx, cond, outputRowFactory);
         }
 
         @Override
@@ -703,6 +725,7 @@ public abstract class NestedLoopJoinNode<RowT> extends AbstractRightMaterialized
 
             if (requested > 0 && waitingLeft == NOT_WAITING && waitingRight == NOT_WAITING && left == null && leftInBuf.isEmpty()) {
                 requested = 0;
+                rightMaterialized.clear();
                 downstream().end();
             }
         }

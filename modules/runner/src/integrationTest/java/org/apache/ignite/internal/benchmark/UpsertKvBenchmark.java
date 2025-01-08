@@ -20,8 +20,8 @@ package org.apache.ignite.internal.benchmark;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.apache.ignite.internal.lang.IgniteSystemProperties;
 import org.apache.ignite.internal.metrics.DistributionMetric;
 import org.apache.ignite.internal.metrics.MetricSet;
@@ -67,6 +67,10 @@ public class UpsertKvBenchmark extends AbstractMultiNodeBenchmark {
     @Param({"8"})
     private int partitionCount;
 
+    private static final AtomicInteger COUNTER = new AtomicInteger();
+
+    private static final ThreadLocal<Integer> GEN = ThreadLocal.withInitial(() -> COUNTER.getAndIncrement() * 20_000_000);
+
     @Override
     public void nodeSetUp() throws Exception {
         System.setProperty(IgniteSystemProperties.IGNITE_USE_SHARED_EVENT_LOOP, "true");
@@ -97,10 +101,6 @@ public class UpsertKvBenchmark extends AbstractMultiNodeBenchmark {
         super.nodeTearDown();
     }
 
-    private int nextId() {
-        return ThreadLocalRandom.current().nextInt();
-    }
-
     /**
      * Benchmark for KV upsert via embedded client.
      */
@@ -120,23 +120,23 @@ public class UpsertKvBenchmark extends AbstractMultiNodeBenchmark {
         kvView.put(null, Tuple.create().set("ycsb_key", nextId()), tuple);
     }
 
+    private int nextId() {
+        int cur = GEN.get() + 1;
+        GEN.set(cur);
+        return cur;
+    }
+
     /**
      * Benchmark's entry point.
      */
     public static void main(String[] args) throws RunnerException {
         Options opt = new OptionsBuilder()
                 .include(".*" + UpsertKvBenchmark.class.getSimpleName() + ".*")
-                //.jvmArgsAppend("-Djmh.executor=VIRTUAL")
-                //.addProfiler(JavaFlightRecorderProfiler.class, "configName=profile.jfc")
+                // .jvmArgsAppend("-Djmh.executor=VIRTUAL")
+                // .addProfiler(JavaFlightRecorderProfiler.class, "configName=profile.jfc")
                 .build();
 
         new Runner(opt).run();
-    }
-
-    @Override
-    protected String logPath() {
-        return "";
-        //return "c:/work/db";
     }
 
     @Override

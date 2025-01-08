@@ -20,6 +20,7 @@ package org.apache.ignite.internal.metastorage.impl;
 import static java.nio.charset.StandardCharsets.UTF_8;
 import static java.util.concurrent.CompletableFuture.completedFuture;
 import static java.util.stream.Collectors.toList;
+import static org.apache.ignite.internal.metastorage.impl.StandaloneMetaStorageManager.configureCmgManagerToStartMetastorage;
 import static org.apache.ignite.internal.network.utils.ClusterServiceTestUtils.clusterService;
 import static org.apache.ignite.internal.testframework.IgniteTestUtils.runAsync;
 import static org.apache.ignite.internal.testframework.flow.TestFlowUtils.subscribeToList;
@@ -48,6 +49,8 @@ import java.util.List;
 import java.util.Set;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ForkJoinPool;
+import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Function;
@@ -71,12 +74,11 @@ import org.apache.ignite.internal.manager.IgniteComponent;
 import org.apache.ignite.internal.metastorage.Entry;
 import org.apache.ignite.internal.metastorage.MetaStorageManager;
 import org.apache.ignite.internal.metastorage.RevisionUpdateListener;
-import org.apache.ignite.internal.metastorage.WatchEvent;
-import org.apache.ignite.internal.metastorage.WatchListener;
 import org.apache.ignite.internal.metastorage.configuration.MetaStorageConfiguration;
 import org.apache.ignite.internal.metastorage.dsl.Conditions;
 import org.apache.ignite.internal.metastorage.dsl.Operations;
 import org.apache.ignite.internal.metastorage.server.KeyValueStorage;
+import org.apache.ignite.internal.metastorage.server.ReadOperationForCompactionTracker;
 import org.apache.ignite.internal.metastorage.server.persistence.RocksDbKeyValueStorage;
 import org.apache.ignite.internal.metastorage.server.time.ClusterTime;
 import org.apache.ignite.internal.metrics.NoOpMetricManager;
@@ -90,7 +92,9 @@ import org.apache.ignite.internal.raft.client.TopologyAwareRaftGroupServiceFacto
 import org.apache.ignite.internal.raft.configuration.RaftConfiguration;
 import org.apache.ignite.internal.raft.storage.LogStorageFactory;
 import org.apache.ignite.internal.raft.util.SharedLogStorageFactoryUtils;
+import org.apache.ignite.internal.testframework.ExecutorServiceExtension;
 import org.apache.ignite.internal.testframework.IgniteAbstractTest;
+import org.apache.ignite.internal.testframework.InjectExecutorService;
 import org.apache.ignite.internal.util.Cursor;
 import org.apache.ignite.network.NetworkAddress;
 import org.apache.ignite.raft.jraft.rpc.ReadActionRequest;
@@ -110,6 +114,7 @@ import org.mockito.ArgumentCaptor;
  * Integration tests for {@link MetaStorageManagerImpl}.
  */
 @ExtendWith(ConfigurationExtension.class)
+@ExtendWith(ExecutorServiceExtension.class)
 public class ItMetaStorageManagerImplTest extends IgniteAbstractTest {
     private static final ByteArray FOO_KEY = new ByteArray("foo");
 
@@ -129,6 +134,11 @@ public class ItMetaStorageManagerImplTest extends IgniteAbstractTest {
 
     @InjectConfiguration
     private RaftConfiguration raftConfiguration;
+
+    @InjectExecutorService
+    private ScheduledExecutorService scheduledExecutorService;
+
+    private final ReadOperationForCompactionTracker readOperationForCompactionTracker = new ReadOperationForCompactionTracker();
 
     @BeforeEach
     void setUp(
@@ -166,6 +176,7 @@ public class ItMetaStorageManagerImplTest extends IgniteAbstractTest {
         when(cmgManager.metaStorageInfo()).thenReturn(completedFuture(
                 new CmgMessagesFactory().metaStorageInfo().metaStorageNodes(Set.of(clusterService.nodeName())).build()
         ));
+        configureCmgManagerToStartMetastorage(cmgManager);
 
         ComponentWorkingDir metastorageWorkDir = new ComponentWorkingDir(workDir.resolve("metastorage"));
 
@@ -178,7 +189,10 @@ public class ItMetaStorageManagerImplTest extends IgniteAbstractTest {
         storage = new RocksDbKeyValueStorage(
                 clusterService.nodeName(),
                 metastorageWorkDir.dbPath(),
-                new NoOpFailureManager());
+                new NoOpFailureManager(),
+                readOperationForCompactionTracker,
+                scheduledExecutorService
+        );
 
         metaStorageManager = new MetaStorageManagerImpl(
                 clusterService,
@@ -190,7 +204,8 @@ public class ItMetaStorageManagerImplTest extends IgniteAbstractTest {
                 topologyAwareRaftGroupServiceFactory,
                 new NoOpMetricManager(),
                 metaStorageConfiguration,
-                msRaftConfigurer
+                msRaftConfigurer,
+                readOperationForCompactionTracker
         );
 
         assertThat(
@@ -280,7 +295,9 @@ public class ItMetaStorageManagerImplTest extends IgniteAbstractTest {
                 new NoOpMetricManager(),
                 mock(MetastorageRepairStorage.class),
                 mock(MetastorageRepair.class),
-                RaftGroupOptionsConfigurer.EMPTY
+                RaftGroupOptionsConfigurer.EMPTY,
+                readOperationForCompactionTracker,
+                ForkJoinPool.commonPool()
         );
 
         assertThat(metaStorageManager.stopAsync(new ComponentContext()), willCompleteSuccessfully());
@@ -321,20 +338,13 @@ public class ItMetaStorageManagerImplTest extends IgniteAbstractTest {
         AtomicBoolean watchCompleted = new AtomicBoolean(false);
         CompletableFuture<HybridTimestamp> watchEventTsFuture = new CompletableFuture<>();
 
-        metaStorageManager.registerExactWatch(FOO_KEY, new WatchListener() {
-            @Override
-            public CompletableFuture<Void> onUpdate(WatchEvent event) {
-                watchEventTsFuture.complete(event.timestamp());
+        metaStorageManager.registerExactWatch(FOO_KEY, event -> {
+            watchEventTsFuture.complete(event.timestamp());
 
-                // The future will set the flag and complete after 300ms to allow idle safe time mechanism (which ticks each 100ms)
-                // to advance SafeTime (if there is still a bug for which this test is written).
-                return waitFor(300, TimeUnit.MILLISECONDS)
-                        .whenComplete((res, ex) -> watchCompleted.set(true));
-            }
-
-            @Override
-            public void onError(Throwable e) {
-            }
+            // The future will set the flag and complete after 300ms to allow idle safe time mechanism (which ticks each 100ms)
+            // to advance SafeTime (if there is still a bug for which this test is written).
+            return waitFor(300, TimeUnit.MILLISECONDS)
+                    .whenComplete((res, ex) -> watchCompleted.set(true));
         });
 
         metaStorageManager.put(FOO_KEY, VALUE);
@@ -351,15 +361,15 @@ public class ItMetaStorageManagerImplTest extends IgniteAbstractTest {
 
     @Test
     void testReadOperationsFutureWithoutReadOperations() {
-        assertTrue(metaStorageManager.readOperationsFuture(0).isDone());
-        assertTrue(metaStorageManager.readOperationsFuture(1).isDone());
+        assertTrue(readOperationForCompactionTracker.collect(0).isDone());
+        assertTrue(readOperationForCompactionTracker.collect(1).isDone());
     }
 
     /**
-     * Tests {@link MetaStorageManagerImpl#readOperationsFuture} as expected in use.
+     * Tests tracking only read operations from the leader, local reads must be tracked by the {@link KeyValueStorage} itself.
      * <ul>
      *     <li>Creates read operations from the leader and local ones.</li>
-     *     <li>Set a new compaction revision via {@link MetaStorageManagerImpl#setCompactionRevisionLocally}.</li>
+     *     <li>Set a new compaction revision via {@link KeyValueStorage#setCompactionRevision}.</li>
      *     <li>Wait for the completion of read operations on the new compaction revision.</li>
      * </ul>
      *
@@ -381,9 +391,9 @@ public class ItMetaStorageManagerImplTest extends IgniteAbstractTest {
 
         assertThat(startSendReadActionRequestFuture, willCompleteSuccessfully());
 
-        metaStorageManager.setCompactionRevisionLocally(1);
+        storage.setCompactionRevision(1);
 
-        CompletableFuture<Void> readOperationsFuture = metaStorageManager.readOperationsFuture(1);
+        CompletableFuture<Void> readOperationsFuture = readOperationForCompactionTracker.collect(1);
         assertFalse(readOperationsFuture.isDone());
 
         getLocallyCursor.close();
@@ -395,8 +405,8 @@ public class ItMetaStorageManagerImplTest extends IgniteAbstractTest {
     }
 
     /**
-     * Tests that read operations from the leader and local ones created after {@link MetaStorageManagerImpl#setCompactionRevisionLocally}
-     * will not affect future from {@link MetaStorageManagerImpl#readOperationsFuture} on a new compaction revision.
+     * Tests that read operations from the leader and local ones created after {@link KeyValueStorage#setCompactionRevision}
+     * will not affect future from {@link ReadOperationForCompactionTracker#collect} on a new compaction revision.
      *
      * <p>Due to the difficulty of testing all reading from leader methods at once, we test each of them separately.</p>
      */
@@ -406,7 +416,7 @@ public class ItMetaStorageManagerImplTest extends IgniteAbstractTest {
         assertThat(metaStorageManager.put(FOO_KEY, VALUE), willCompleteSuccessfully());
         assertThat(metaStorageManager.put(FOO_KEY, VALUE), willCompleteSuccessfully());
 
-        metaStorageManager.setCompactionRevisionLocally(1);
+        storage.setCompactionRevision(1);
 
         var startSendReadActionRequestFuture = new CompletableFuture<Void>();
         var continueSendReadActionRequestFuture = new CompletableFuture<Void>();
@@ -418,7 +428,7 @@ public class ItMetaStorageManagerImplTest extends IgniteAbstractTest {
 
         assertThat(startSendReadActionRequestFuture, willCompleteSuccessfully());
 
-        assertTrue(metaStorageManager.readOperationsFuture(1).isDone());
+        assertTrue(readOperationForCompactionTracker.collect(1).isDone());
 
         getLocallyCursor.close();
 

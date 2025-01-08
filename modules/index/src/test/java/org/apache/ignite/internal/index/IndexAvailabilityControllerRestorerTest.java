@@ -49,18 +49,23 @@ import static org.mockito.Mockito.when;
 
 import java.nio.file.Path;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ScheduledExecutorService;
 import org.apache.ignite.internal.catalog.CatalogManager;
 import org.apache.ignite.internal.failure.NoOpFailureManager;
 import org.apache.ignite.internal.hlc.HybridClock;
 import org.apache.ignite.internal.hlc.HybridClockImpl;
 import org.apache.ignite.internal.manager.ComponentContext;
+import org.apache.ignite.internal.metastorage.Revisions;
 import org.apache.ignite.internal.metastorage.impl.MetaStorageManagerImpl;
 import org.apache.ignite.internal.metastorage.impl.StandaloneMetaStorageManager;
 import org.apache.ignite.internal.metastorage.server.KeyValueStorage;
+import org.apache.ignite.internal.metastorage.server.ReadOperationForCompactionTracker;
 import org.apache.ignite.internal.metastorage.server.persistence.RocksDbKeyValueStorage;
 import org.apache.ignite.internal.network.ClusterService;
 import org.apache.ignite.internal.network.TopologyService;
 import org.apache.ignite.internal.testframework.BaseIgniteAbstractTest;
+import org.apache.ignite.internal.testframework.ExecutorServiceExtension;
+import org.apache.ignite.internal.testframework.InjectExecutorService;
 import org.apache.ignite.internal.testframework.WorkDirectory;
 import org.apache.ignite.internal.testframework.WorkDirectoryExtension;
 import org.apache.ignite.network.ClusterNode;
@@ -71,9 +76,13 @@ import org.junit.jupiter.api.extension.ExtendWith;
 
 /** For {@link IndexAvailabilityController} testing on node recovery. */
 @ExtendWith(WorkDirectoryExtension.class)
+@ExtendWith(ExecutorServiceExtension.class)
 public class IndexAvailabilityControllerRestorerTest extends BaseIgniteAbstractTest {
     @WorkDirectory
     private Path workDir;
+
+    @InjectExecutorService
+    private ScheduledExecutorService scheduledExecutorService;
 
     private final HybridClock clock = new HybridClockImpl();
 
@@ -89,17 +98,34 @@ public class IndexAvailabilityControllerRestorerTest extends BaseIgniteAbstractT
 
     @BeforeEach
     void setUp() throws Exception {
-        keyValueStorage = new RocksDbKeyValueStorage(NODE_NAME, workDir, new NoOpFailureManager());
+        var readOperationForCompactionTracker = new ReadOperationForCompactionTracker();
 
-        metaStorageManager = StandaloneMetaStorageManager.create(keyValueStorage);
+        keyValueStorage = new RocksDbKeyValueStorage(
+                NODE_NAME,
+                workDir,
+                new NoOpFailureManager(),
+                readOperationForCompactionTracker,
+                scheduledExecutorService
+        );
+
+        metaStorageManager = StandaloneMetaStorageManager.create(keyValueStorage, clock, readOperationForCompactionTracker);
 
         catalogManager = createTestCatalogManager(NODE_NAME, clock, metaStorageManager);
 
-        assertThat(startAsync(new ComponentContext(), metaStorageManager, catalogManager), willCompleteSuccessfully());
+        startMetastorageAndCatalog();
 
         deployWatches();
 
         createTable(catalogManager, TABLE_NAME, COLUMN_NAME);
+    }
+
+    private void startMetastorageAndCatalog() {
+        ComponentContext context = new ComponentContext();
+
+        assertThat(startAsync(context, metaStorageManager), willCompleteSuccessfully());
+        assertThat(metaStorageManager.recoveryFinishedFuture(), willCompleteSuccessfully());
+
+        assertThat(startAsync(context, catalogManager), willCompleteSuccessfully());
     }
 
     @AfterEach
@@ -205,13 +231,21 @@ public class IndexAvailabilityControllerRestorerTest extends BaseIgniteAbstractT
                         () -> assertThat(metaStorageManager.stopAsync(componentContext), willCompleteSuccessfully())
         );
 
-        keyValueStorage = new RocksDbKeyValueStorage(NODE_NAME, workDir, new NoOpFailureManager());
+        var readOperationForCompactionTracker = new ReadOperationForCompactionTracker();
 
-        metaStorageManager = StandaloneMetaStorageManager.create(keyValueStorage);
+        keyValueStorage = new RocksDbKeyValueStorage(
+                NODE_NAME,
+                workDir,
+                new NoOpFailureManager(),
+                readOperationForCompactionTracker,
+                scheduledExecutorService
+        );
+
+        metaStorageManager = StandaloneMetaStorageManager.create(keyValueStorage, clock, readOperationForCompactionTracker);
 
         catalogManager = spy(createTestCatalogManager(NODE_NAME, clock, metaStorageManager));
 
-        assertThat(startAsync(new ComponentContext(), metaStorageManager, catalogManager), willCompleteSuccessfully());
+        startMetastorageAndCatalog();
     }
 
     private void deployWatches() throws Exception {
@@ -227,11 +261,11 @@ public class IndexAvailabilityControllerRestorerTest extends BaseIgniteAbstractT
 
         controller = new IndexAvailabilityController(catalogManager, metaStorageManager, mock(IndexBuilder.class));
 
-        CompletableFuture<Long> metastoreRecoveryFuture = metaStorageManager.recoveryFinishedFuture();
+        CompletableFuture<Revisions> metastoreRecoveryFuture = metaStorageManager.recoveryFinishedFuture();
 
-        assertThat(metastoreRecoveryFuture, willBe(greaterThan(0L)));
+        assertThat(metastoreRecoveryFuture.thenApply(Revisions::revision), willBe(greaterThan(0L)));
 
-        controller.start(metastoreRecoveryFuture.join());
+        controller.start(metastoreRecoveryFuture.join().revision());
     }
 
     private void setLocalNodeToClusterService(ClusterNode clusterNode) {

@@ -33,6 +33,7 @@ import java.nio.file.Path;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.regex.Pattern;
 import java.util.stream.IntStream;
@@ -53,6 +54,7 @@ import org.apache.ignite.internal.testframework.TestIgnitionManager;
 import org.apache.ignite.internal.testframework.WithSystemProperty;
 import org.apache.ignite.internal.testframework.WorkDirectory;
 import org.apache.ignite.internal.testframework.WorkDirectoryExtension;
+import org.apache.ignite.internal.tx.impl.ResourceVacuumManager;
 import org.apache.ignite.internal.util.CollectionUtils;
 import org.apache.ignite.internal.util.IgniteUtils;
 import org.apache.ignite.sql.IgniteSql;
@@ -65,6 +67,7 @@ import org.junit.jupiter.api.DynamicNode;
 import org.junit.jupiter.api.DynamicTest;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.TestFactory;
+import org.junit.jupiter.api.TestInfo;
 import org.junit.jupiter.api.extension.ExtendWith;
 
 /**
@@ -137,10 +140,12 @@ import org.junit.jupiter.api.extension.ExtendWith;
  *
  * @see <a href="https://www.sqlite.org/sqllogictest/doc/trunk/about.wiki">Extended format documentation.</a>
  */
-@Tag(value = "sqllogic")
+@Tag("sqllogic")
 @ExtendWith({SystemPropertiesExtension.class, WorkDirectoryExtension.class})
 @WithSystemProperty(key = "IMPLICIT_PK_ENABLED", value = "true")
-@SqlLogicTestEnvironment(scriptsRoot = "src/integrationTest/sql")
+// The following is to make sure we unlock LWM on data nodes promptly so that dropped tables are destroyed fast.
+@WithSystemProperty(key = ResourceVacuumManager.RESOURCE_VACUUM_INTERVAL_MILLISECONDS_PROPERTY, value = "1000")
+@SqlLogicTestEnvironment(scriptsRoot = "src/integrationTest/sql/group1")
 public class ItSqlLogicTest extends BaseIgniteAbstractTest {
     private static final String SQL_LOGIC_TEST_INCLUDE_SLOW = "SQL_LOGIC_TEST_INCLUDE_SLOW";
 
@@ -207,8 +212,8 @@ public class ItSqlLogicTest extends BaseIgniteAbstractTest {
     private static boolean INCLUDE_SLOW;
 
     @BeforeAll
-    static void init() {
-        config();
+    static void init(TestInfo info) {
+        config(info.getTestClass());
 
         startNodes();
     }
@@ -302,8 +307,8 @@ public class ItSqlLogicTest extends BaseIgniteAbstractTest {
         }
     }
 
-    private static void config() {
-        SqlLogicTestEnvironment env = ItSqlLogicTest.class.getAnnotation(SqlLogicTestEnvironment.class);
+    private static void config(Optional<Class<?>> testClass) {
+        SqlLogicTestEnvironment env = testClass.orElse(ItSqlLogicTest.class).getAnnotation(SqlLogicTestEnvironment.class);
 
         assert env != null;
         assert !Strings.isNullOrEmpty(env.scriptsRoot());
@@ -346,8 +351,8 @@ public class ItSqlLogicTest extends BaseIgniteAbstractTest {
                 .clusterName("cluster")
                 .clusterConfiguration("ignite {"
                         + "metaStorage.idleSyncTimeInterval: " + METASTORAGE_IDLE_SYNC_TIME_INTERVAL_MS + ",\n"
-                        + "gc.lowWatermark.dataAvailabilityTime: 1010,\n"
-                        + "gc.lowWatermark.updateInterval: 3000,\n"
+                        + "gc.lowWatermark.dataAvailabilityTime: 5000,\n"
+                        + "gc.lowWatermark.updateInterval: 1000,\n"
                         + "metrics.exporters.logPush.exporterName: logPush,\n"
                         + "metrics.exporters.logPush.period: 5000\n"
                         + "}")

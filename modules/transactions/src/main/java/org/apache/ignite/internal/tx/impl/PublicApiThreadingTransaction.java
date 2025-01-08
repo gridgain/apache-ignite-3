@@ -127,6 +127,21 @@ public class PublicApiThreadingTransaction implements InternalTransaction, Wrapp
     }
 
     @Override
+    public boolean implicit() {
+        return transaction.implicit();
+    }
+
+    @Override
+    public CompletableFuture<Void> finish(boolean commit, HybridTimestamp executionTimestamp, boolean full) {
+        return transaction.finish(commit, executionTimestamp, full);
+    }
+
+    @Override
+    public boolean isFinishingOrFinished() {
+        return transaction.isFinishingOrFinished();
+    }
+
+    @Override
     public <T> T unwrap(Class<T> classToUnwrap) {
         return classToUnwrap.cast(transaction);
     }

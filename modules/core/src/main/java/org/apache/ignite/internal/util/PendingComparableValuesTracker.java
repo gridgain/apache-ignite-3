@@ -40,9 +40,7 @@ import org.jetbrains.annotations.Nullable;
  * ability to wait for certain value, see {@link #waitFor(Comparable)}.
  */
 public class PendingComparableValuesTracker<T extends Comparable<T>, R> implements ManuallyCloseable {
-    private static IgniteLogger LOG = Loggers.forClass(PendingComparableValuesTracker.class);
-
-    private static final VarHandle CURRENT;
+    protected static final VarHandle CURRENT;
 
     private static final VarHandle CLOSE_GUARD;
 
@@ -60,16 +58,16 @@ public class PendingComparableValuesTracker<T extends Comparable<T>, R> implemen
 
     /** Current value along with associated result. */
     @SuppressWarnings("FieldMayBeFinal") // Changed through CURRENT VarHandle.
-    private volatile Map.Entry<T, @Nullable R> current;
+    protected volatile Map.Entry<T, @Nullable R> current;
 
     /** Prevents double closing. */
     @SuppressWarnings("unused")
     private volatile boolean closeGuard;
 
     /** Busy lock to close synchronously. */
-    private final StripedCompositeReadWriteLock busyLock = new StripedCompositeReadWriteLock(32);
+    private final IgniteStripedReadWriteLock busyLock = new IgniteStripedReadWriteLock();
 
-    private final Comparator<Map.Entry<T, @Nullable R>> comparator;
+    protected final Comparator<Map.Entry<T, @Nullable R>> comparator;
 
     /**
      * Constructor with initial value.
@@ -92,7 +90,7 @@ public class PendingComparableValuesTracker<T extends Comparable<T>, R> implemen
      */
     public void update(T newValue, @Nullable R futureResult) {
         while (true) {
-            if (!busyLock.readLock().tryLock()) {
+            if (!enterBusy()) {
                 throw new TrackerClosedException();
             }
 
@@ -110,7 +108,7 @@ public class PendingComparableValuesTracker<T extends Comparable<T>, R> implemen
                     break;
                 }
             } finally {
-                busyLock.readLock().unlock();
+                leaveBusy();
             }
         }
     }
@@ -124,22 +122,22 @@ public class PendingComparableValuesTracker<T extends Comparable<T>, R> implemen
      * @param valueToWait Value to wait.
      */
     public CompletableFuture<R> waitFor(T valueToWait) {
-        if (!busyLock.readLock().tryLock()) {
+        if (!enterBusy()) {
             return failedFuture(new TrackerClosedException());
         }
 
         try {
-            Entry<T, @Nullable R> tmp = current;
+            Entry<T, @Nullable R> currentKeyValue = current;
 
-            if (tmp.getKey().compareTo(valueToWait) >= 0) {
-                return completedFuture(tmp.getValue());
+            if (currentKeyValue.getKey().compareTo(valueToWait) >= 0) {
+                return completedFuture(currentKeyValue.getValue());
             }
 
             LOG.warn("Wait for schema!");
 
             return addNewWaiter(valueToWait);
         } finally {
-            busyLock.readLock().unlock();
+            leaveBusy();
         }
     }
 
@@ -149,14 +147,14 @@ public class PendingComparableValuesTracker<T extends Comparable<T>, R> implemen
      * @throws TrackerClosedException if the tracker is closed.
      */
     public T current() {
-        if (!busyLock.readLock().tryLock()) {
+        if (!enterBusy()) {
             throw new TrackerClosedException();
         }
 
         try {
             return current.getKey();
         } finally {
-            busyLock.readLock().unlock();
+            leaveBusy();
         }
     }
 
@@ -166,7 +164,7 @@ public class PendingComparableValuesTracker<T extends Comparable<T>, R> implemen
             return;
         }
 
-        busyLock.writeLock().lock();
+        blockBusy();
 
         TrackerClosedException trackerClosedException = new TrackerClosedException();
 
@@ -208,5 +206,17 @@ public class PendingComparableValuesTracker<T extends Comparable<T>, R> implemen
     /** Returns true if this tracker contains no waiters. */
     public boolean isEmpty() {
         return valueFutures.isEmpty();
+    }
+
+    protected final boolean enterBusy() {
+        return !busyLock.isWriteLockedByCurrentThread() && busyLock.readLock().tryLock();
+    }
+
+    protected final void leaveBusy() {
+        busyLock.readLock().unlock();
+    }
+
+    private void blockBusy() {
+        busyLock.writeLock().lock();
     }
 }

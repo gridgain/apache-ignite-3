@@ -28,7 +28,7 @@ import java.io.StringWriter;
 import java.io.Writer;
 import java.util.List;
 import java.util.Set;
-import org.apache.ignite.internal.Cluster;
+import org.apache.ignite.internal.ClusterConfiguration;
 import org.apache.ignite.internal.ClusterPerClassIntegrationTest;
 import org.apache.ignite.internal.cli.call.connect.ConnectCall;
 import org.apache.ignite.internal.cli.call.connect.ConnectCallInput;
@@ -67,9 +67,9 @@ public abstract class CliIntegrationTest extends ClusterPerClassIntegrationTest 
     };
 
     /** Correct ignite jdbc url. */
-    protected static final String JDBC_URL = "jdbc:ignite:thin://127.0.0.1:" + Cluster.BASE_CLIENT_PORT;
+    protected static final String JDBC_URL = "jdbc:ignite:thin://127.0.0.1:" + ClusterConfiguration.DEFAULT_BASE_CLIENT_PORT;
 
-    protected static final String NODE_URL = "http://localhost:" + Cluster.BASE_HTTP_PORT;
+    protected static final String NODE_URL = "http://localhost:" + ClusterConfiguration.DEFAULT_BASE_HTTP_PORT;
 
     @Inject
     private ConfigDefaultValueProvider configDefaultValueProvider;
@@ -165,6 +165,15 @@ public abstract class CliIntegrationTest extends ClusterPerClassIntegrationTest 
         assertExitCodeIs(0);
     }
 
+    protected void assertExitCodeIsError() {
+        assertExitCodeIs(errorExitCode());
+    }
+
+    // REPL mode has no exit code for error, override this method in tests for repl commands.
+    protected int errorExitCode() {
+        return 1;
+    }
+
     protected void assertOutputIsNotEmpty() {
         assertThat(sout.toString())
                 .as("Expected command output not to be empty")
@@ -189,6 +198,12 @@ public abstract class CliIntegrationTest extends ClusterPerClassIntegrationTest 
                 .contains(expectedOutput);
     }
 
+    protected void assertOutputHasLineCount(int expectedLineCount) {
+        assertThat(sout.toString())
+                .as("Expected command output to has " + expectedLineCount + " lines but was " + sout.toString())
+                .hasLineCount(expectedLineCount);
+    }
+
     protected void assertOutputContainsAnyIgnoringCase(Set<String> expectedOutput) {
         CharSequence[] expectedUpperCase = expectedOutput.stream().map(String::toUpperCase).toArray(CharSequence[]::new);
 
@@ -198,7 +213,6 @@ public abstract class CliIntegrationTest extends ClusterPerClassIntegrationTest 
     }
 
     protected void assertOutputContainsAny(Set<String> expectedOutput) {
-
         assertThat(sout.toString())
                 .as("Expected command output to contain any of: " + expectedOutput + " but was " + sout.toString())
                 .containsAnyOf(expectedOutput.toArray(CharSequence[]::new));
@@ -270,6 +284,12 @@ public abstract class CliIntegrationTest extends ClusterPerClassIntegrationTest 
         assertThat(serr.toString())
                 .as("Expected command error output to contain: " + expectedErrOutput)
                 .contains(expectedErrOutput);
+    }
+
+    protected void assertErrOutputDoesNotContain(String expectedOutput) {
+        assertThat(serr.toString())
+                .as("Expected command error output to not contain: " + expectedOutput + " but was " + serr.toString())
+                .doesNotContain(expectedOutput);
     }
 
     protected void setConfigProperty(CliConfigKeys key, String value) {

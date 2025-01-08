@@ -25,6 +25,7 @@ description = 'ignite-core'
 dependencies {
     implementation libs.jetbrains.annotations
     implementation libs.fastutil.core
+    implementation libs.caffeine
     implementation project(':ignite-api')
 
     testAnnotationProcessor libs.auto.service
@@ -56,5 +57,6 @@ test {
         //Don't run parametrized tests from inner static classes which should not run.
         excludeTestsMatching "*VariableSourceTest\$*"
         excludeTestsMatching "*WorkDirectoryExtensionTest\$*"
+        excludeTestsMatching "*ExecutorServiceExtensionTest\$*"
     }
 }

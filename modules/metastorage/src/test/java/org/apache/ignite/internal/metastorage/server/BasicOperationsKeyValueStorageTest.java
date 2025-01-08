@@ -30,8 +30,10 @@ import static org.apache.ignite.internal.metastorage.dsl.Operations.remove;
 import static org.apache.ignite.internal.metastorage.server.KeyValueUpdateContext.kvContext;
 import static org.apache.ignite.internal.testframework.matchers.CompletableFutureMatcher.willBe;
 import static org.apache.ignite.internal.testframework.matchers.CompletableFutureMatcher.willCompleteSuccessfully;
+import static org.apache.ignite.internal.testframework.matchers.CompletableFutureMatcher.willSucceedFast;
 import static org.apache.ignite.internal.util.CompletableFutures.nullCompletedFuture;
 import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.is;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -79,6 +81,8 @@ import org.apache.ignite.internal.util.Cursor;
 import org.jetbrains.annotations.Nullable;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 
 /**
  * Tests for key-value storage implementations.
@@ -632,6 +636,59 @@ public abstract class BasicOperationsKeyValueStorageTest extends AbstractKeyValu
         assertNotNull(e4);
         assertFalse(e4.tombstone());
         assertTrue(e4.empty());
+    }
+
+    @Test
+    public void removeByPrefix() {
+        byte[] key1 = key(1);
+        byte[] val1 = keyValue(1, 1);
+
+        byte[] key2 = key(2);
+        byte[] val21 = keyValue(2, 21);
+        byte[] val22 = keyValue(2, 22);
+
+        byte[] key3 = key(3);
+        byte[] val31 = keyValue(3, 31);
+
+        byte[] key4 = key(4);
+
+        // Regular put.
+        putToMs(key1, val1);
+
+        // Rewrite.
+        putToMs(key2, val21);
+        putToMs(key2, val22);
+
+        // Remove. Tombstone must not be removed again.
+        putToMs(key3, val31);
+        removeFromMs(key3);
+
+        byte[] keyAfterPrefix = storage.nextKey(PREFIX_BYTES);
+        byte[] keyAnotherPrefix = "another-prefix".getBytes(UTF_8);
+
+        // These keys mustn't be removed as they don't have given prefix.
+        putToMs(keyAnotherPrefix, val1);
+        putToMs(keyAfterPrefix, val1);
+
+        long revisionBeforeRemove = storage.revision();
+
+        removeByPrefixFromMs(PREFIX_BYTES);
+
+        Collection<Entry> entries = storage.getAll(List.of(key1, key2, key3, key4, keyAnotherPrefix, keyAfterPrefix));
+
+        assertEquals(6, entries.size());
+
+        Map<ByteArray, Entry> map = entries.stream().collect(Collectors.toMap(e -> new ByteArray(e.key()), identity()));
+
+        // Values with another prefixes must not change.
+        assertValue(map.get(new ByteArray(keyAnotherPrefix)), val1);
+        assertValue(map.get(new ByteArray(keyAfterPrefix)), val1);
+
+        // Test regular put value.
+        assertIsTombstoneWithRevision(map.get(new ByteArray(key1)), revisionBeforeRemove + 1);
+
+        // Test rewritten value.
+        assertIsTombstoneWithRevision(map.get(new ByteArray(key1)), revisionBeforeRemove + 1);
     }
 
     @Test
@@ -1611,32 +1668,14 @@ public abstract class BasicOperationsKeyValueStorageTest extends AbstractKeyValu
 
         long appliedRevision = storage.revision();
 
-        storage.startWatches(1, new OnRevisionAppliedCallback() {
-            @Override
-            public void onSafeTimeAdvanced(HybridTimestamp newSafeTime) {
-                // No-op.
-            }
-
-            @Override
-            public void onRevisionApplied(long revision) {
-                // No-op.
-            }
-        });
+        storage.startWatches(1, new WatchEventHandlingCallback() {});
 
         CompletableFuture<byte[]> fut = new CompletableFuture<>();
 
-        storage.watchExact(key(0), appliedRevision + 1, new WatchListener() {
-            @Override
-            public CompletableFuture<Void> onUpdate(WatchEvent event) {
-                fut.complete(event.entryEvent().newEntry().value());
+        storage.watchExact(key(0), appliedRevision + 1, event -> {
+            fut.complete(event.entryEvent().newEntry().value());
 
-                return nullCompletedFuture();
-            }
-
-            @Override
-            public void onError(Throwable e) {
-                fut.completeExceptionally(e);
-            }
+            return nullCompletedFuture();
         });
 
         byte[] newValue = keyValue(0, 1);
@@ -1938,15 +1977,13 @@ public abstract class BasicOperationsKeyValueStorageTest extends AbstractKeyValu
         storage.watchExact(key, 1, mockListener2);
         storage.watchExact(key, 1, mockListener3);
 
-        OnRevisionAppliedCallback mockCallback = mock(OnRevisionAppliedCallback.class);
+        WatchEventHandlingCallback mockCallback = mock(WatchEventHandlingCallback.class);
 
         storage.startWatches(1, mockCallback);
 
         putToMs(key, value);
 
         verify(mockListener1, timeout(10_000)).onUpdate(any());
-
-        verify(mockListener2, timeout(10_000)).onError(exception);
 
         verify(mockListener3, timeout(10_000)).onUpdate(any());
 
@@ -2205,6 +2242,48 @@ public abstract class BasicOperationsKeyValueStorageTest extends AbstractKeyValu
         assertThrows(CompactedException.class, () -> storage.revisionByTimestamp(hybridTimestamp(2)));
     }
 
+    @ParameterizedTest
+    @EnumSource(UpdateRevisionOperation.class)
+    void testNotifyUpdateRevisionForOperationAfterStartWatches(UpdateRevisionOperation updateRevisionOperation) {
+        var revisionUpdateListener = new TestRevisionUpdateListener();
+        storage.registerRevisionUpdateListener(revisionUpdateListener);
+
+        var watchEventHandlingCallback = new TestWatchEventHandlingCallback();
+        storage.startWatches(1, watchEventHandlingCallback);
+
+        storage.put(key(0), keyValue(0, 1), kvContext(hybridTimestamp(10)));
+
+        long revision = storage.revision();
+        long newRevision = revision + 1;
+
+        updateRevisionOperation.execute(storage);
+
+        assertThat(storage.revision(), equalTo(newRevision));
+        assertThat(revisionUpdateListener.get(newRevision), willSucceedFast());
+        assertThat(watchEventHandlingCallback.get(newRevision), willSucceedFast());
+    }
+
+    @ParameterizedTest
+    @EnumSource(UpdateRevisionOperation.class)
+    void testNotifyUpdateRevisionForOperationBeforeStartWatches(UpdateRevisionOperation updateRevisionOperation) {
+        var revisionUpdateListener = new TestRevisionUpdateListener();
+        storage.registerRevisionUpdateListener(revisionUpdateListener);
+
+        storage.put(key(0), keyValue(0, 1), kvContext(hybridTimestamp(10)));
+
+        long revision = storage.revision();
+        long newRevision = revision + 1;
+
+        updateRevisionOperation.execute(storage);
+
+        var watchEventHandlingCallback = new TestWatchEventHandlingCallback();
+        storage.startWatches(1, watchEventHandlingCallback);
+
+        assertThat(storage.revision(), equalTo(newRevision));
+        assertThat(revisionUpdateListener.get(newRevision), willSucceedFast());
+        assertThat(watchEventHandlingCallback.get(newRevision), willSucceedFast());
+    }
+
     private CompletableFuture<Void> watchExact(
             byte[] key, long revision, int expectedNumCalls, BiConsumer<WatchEvent, Integer> testCondition
     ) {
@@ -2230,43 +2309,25 @@ public abstract class BasicOperationsKeyValueStorageTest extends AbstractKeyValu
 
         var resultFuture = new CompletableFuture<Void>();
 
-        watchMethod.accept(new WatchListener() {
-            @Override
-            public CompletableFuture<Void> onUpdate(WatchEvent event) {
-                try {
-                    var curState = state.incrementAndGet();
+        watchMethod.accept(event -> {
+            try {
+                var curState = state.incrementAndGet();
 
-                    testCondition.accept(event, curState);
+                testCondition.accept(event, curState);
 
-                    if (curState == expectedNumCalls) {
-                        resultFuture.complete(null);
-                    }
-
-                    return nullCompletedFuture();
-                } catch (Exception e) {
-                    resultFuture.completeExceptionally(e);
+                if (curState == expectedNumCalls) {
+                    resultFuture.complete(null);
                 }
 
                 return nullCompletedFuture();
-            }
-
-            @Override
-            public void onError(Throwable e) {
+            } catch (Exception e) {
                 resultFuture.completeExceptionally(e);
             }
+
+            return nullCompletedFuture();
         });
 
-        storage.startWatches(1, new OnRevisionAppliedCallback() {
-            @Override
-            public void onSafeTimeAdvanced(HybridTimestamp newSafeTime) {
-                // No-op.
-            }
-
-            @Override
-            public void onRevisionApplied(long revision) {
-                // No-op.
-            }
-        });
+        storage.startWatches(1, new WatchEventHandlingCallback() {});
 
         return resultFuture;
     }
@@ -2285,6 +2346,10 @@ public abstract class BasicOperationsKeyValueStorageTest extends AbstractKeyValu
 
     void removeAllFromMs(List<byte[]> keys) {
         storage.removeAll(keys, kvContext(MIN_VALUE));
+    }
+
+    void removeByPrefixFromMs(byte[] prefix) {
+        storage.removeByPrefix(prefix, kvContext(MIN_VALUE));
     }
 
     private boolean invokeOnMs(Condition condition, List<Operation> success, List<Operation> failure) {
@@ -2325,7 +2390,21 @@ public abstract class BasicOperationsKeyValueStorageTest extends AbstractKeyValu
         assertEquals(List.of(timestamps), collectTimestamps(storage.getAll(keys, revUpperBound)));
     }
 
-    private static CommandId createCommandId() {
+    private static void assertIsTombstoneWithRevision(Entry entry, long expectedRevision) {
+        assertNotNull(entry);
+        assertEquals(expectedRevision, entry.revision());
+        assertTrue(entry.tombstone());
+        assertFalse(entry.empty());
+    }
+
+    private static void assertValue(Entry entry, byte[] expectedValue) {
+        assertNotNull(entry);
+        assertFalse(entry.empty());
+        assertFalse(entry.tombstone());
+        assertArrayEquals(expectedValue, entry.value());
+    }
+
+    static CommandId createCommandId() {
         return new CommandIdGenerator(UUID::randomUUID).newId();
     }
 }

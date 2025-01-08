@@ -19,9 +19,8 @@ package org.apache.ignite.internal.metastorage.impl;
 
 import static java.util.Collections.emptySet;
 import static java.util.Objects.requireNonNull;
-import static java.util.concurrent.CompletableFuture.allOf;
-import static java.util.concurrent.CompletableFuture.completedFuture;
 import static java.util.concurrent.CompletableFuture.failedFuture;
+import static java.util.function.Function.identity;
 import static org.apache.ignite.internal.util.CompletableFutures.nullCompletedFuture;
 import static org.apache.ignite.internal.util.IgniteUtils.cancelOrConsume;
 import static org.apache.ignite.internal.util.IgniteUtils.inBusyLock;
@@ -36,16 +35,17 @@ import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.Executor;
 import java.util.concurrent.Flow.Publisher;
 import java.util.concurrent.Flow.Subscriber;
 import java.util.concurrent.Flow.Subscription;
+import java.util.concurrent.ForkJoinPool;
 import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
-import java.util.function.LongConsumer;
 import java.util.function.Supplier;
 import org.apache.ignite.internal.cluster.management.ClusterManagementGroupManager;
+import org.apache.ignite.internal.cluster.management.ClusterState;
 import org.apache.ignite.internal.cluster.management.MetaStorageInfo;
 import org.apache.ignite.internal.cluster.management.topology.api.LogicalTopologyService;
 import org.apache.ignite.internal.disaster.system.message.ResetClusterMessage;
@@ -61,11 +61,13 @@ import org.apache.ignite.internal.lang.NodeStoppingException;
 import org.apache.ignite.internal.logger.IgniteLogger;
 import org.apache.ignite.internal.logger.Loggers;
 import org.apache.ignite.internal.manager.ComponentContext;
+import org.apache.ignite.internal.metastorage.CompactionRevisionUpdateListener;
 import org.apache.ignite.internal.metastorage.Entry;
-import org.apache.ignite.internal.metastorage.MetaStorageCompactionManager;
 import org.apache.ignite.internal.metastorage.MetaStorageManager;
 import org.apache.ignite.internal.metastorage.RevisionUpdateListener;
+import org.apache.ignite.internal.metastorage.Revisions;
 import org.apache.ignite.internal.metastorage.WatchListener;
+import org.apache.ignite.internal.metastorage.command.CompactionCommand;
 import org.apache.ignite.internal.metastorage.configuration.MetaStorageConfiguration;
 import org.apache.ignite.internal.metastorage.dsl.Condition;
 import org.apache.ignite.internal.metastorage.dsl.Iif;
@@ -74,8 +76,8 @@ import org.apache.ignite.internal.metastorage.dsl.StatementResult;
 import org.apache.ignite.internal.metastorage.impl.raft.MetaStorageSnapshotStorageFactory;
 import org.apache.ignite.internal.metastorage.metrics.MetaStorageMetricSource;
 import org.apache.ignite.internal.metastorage.server.KeyValueStorage;
-import org.apache.ignite.internal.metastorage.server.OnRevisionAppliedCallback;
 import org.apache.ignite.internal.metastorage.server.ReadOperationForCompactionTracker;
+import org.apache.ignite.internal.metastorage.server.WatchEventHandlingCallback;
 import org.apache.ignite.internal.metastorage.server.raft.MetaStorageListener;
 import org.apache.ignite.internal.metastorage.server.raft.MetastorageGroupId;
 import org.apache.ignite.internal.metastorage.server.time.ClusterTime;
@@ -115,7 +117,7 @@ import org.jetbrains.annotations.TestOnly;
  *     <li>Providing corresponding Meta storage service proxy interface</li>
  * </ul>
  */
-public class MetaStorageManagerImpl implements MetaStorageManager, MetastorageGroupMaintenance, MetaStorageCompactionManager {
+public class MetaStorageManagerImpl implements MetaStorageManager, MetastorageGroupMaintenance {
     private static final IgniteLogger LOG = Loggers.forClass(MetaStorageManagerImpl.class);
 
     private final ClusterService clusterService;
@@ -133,6 +135,8 @@ public class MetaStorageManagerImpl implements MetaStorageManager, MetastorageGr
     /** Actual storage for Meta storage. */
     private final KeyValueStorage storage;
 
+    private final HybridClock clock;
+
     /** Busy lock to stop synchronously. */
     private final IgniteSpinBusyLock busyLock = new IgniteSpinBusyLock();
 
@@ -140,10 +144,10 @@ public class MetaStorageManagerImpl implements MetaStorageManager, MetastorageGr
     private final AtomicBoolean isStopped = new AtomicBoolean();
 
     /**
-     * Future which completes when MetaStorage manager finished local recovery. The value of the future is the revision which must be used
+     * Future which completes when MetaStorage manager finished local recovery. The value of the future is the revisions which must be used
      * for state recovery by other components.
      */
-    private final CompletableFuture<Long> recoveryFinishedFuture = new CompletableFuture<>();
+    private final CompletableFuture<Revisions> recoveryFinishedFuture = new CompletableFuture<>();
 
     /**
      * Future that gets completed after {@link #deployWatches} method has been called.
@@ -160,6 +164,8 @@ public class MetaStorageManagerImpl implements MetaStorageManager, MetastorageGr
 
     private final MetastorageRepairStorage metastorageRepairStorage;
     private final MetastorageRepair metastorageRepair;
+
+    private final Executor ioExecutor;
 
     private volatile long appliedRevision = 0;
 
@@ -193,10 +199,11 @@ public class MetaStorageManagerImpl implements MetaStorageManager, MetastorageGr
     private final AtomicReference<IndexWithTerm> lastHandledIndexWithTerm = new AtomicReference<>(new IndexWithTerm(0, 0));
 
     /** Tracks only reads from the leader, local reads are tracked by the storage itself. */
-    private final ReadOperationForCompactionTracker readOperationFromLeaderForCompactionTracker = new ReadOperationForCompactionTracker();
+    private final ReadOperationForCompactionTracker readOperationFromLeaderForCompactionTracker;
 
-    /** Read operation ID generator for {@link #readOperationIdGeneratorForTracker}. */
-    private final AtomicLong readOperationIdGeneratorForTracker = new AtomicLong();
+    private final MetastorageDivergencyValidator divergencyValidator = new MetastorageDivergencyValidator();
+
+    private final RecoveryRevisionsListenerImpl recoveryRevisionsListener;
 
     /**
      * The constructor.
@@ -209,6 +216,8 @@ public class MetaStorageManagerImpl implements MetaStorageManager, MetastorageGr
      * @param clock A hybrid logical clock.
      * @param metricManager Metric manager.
      * @param raftGroupOptionsConfigurer Configures MS RAFT options.
+     * @param readOperationForCompactionTracker Read operation tracker for metastorage compaction.
+     * @param ioExecutor Executor to which I/O operations can be offloaded from network threads.
      */
     public MetaStorageManagerImpl(
             ClusterService clusterService,
@@ -221,13 +230,16 @@ public class MetaStorageManagerImpl implements MetaStorageManager, MetastorageGr
             MetricManager metricManager,
             MetastorageRepairStorage metastorageRepairStorage,
             MetastorageRepair metastorageRepair,
-            RaftGroupOptionsConfigurer raftGroupOptionsConfigurer
+            RaftGroupOptionsConfigurer raftGroupOptionsConfigurer,
+            ReadOperationForCompactionTracker readOperationForCompactionTracker,
+            Executor ioExecutor
     ) {
         this.clusterService = clusterService;
         this.raftMgr = raftMgr;
         this.cmgMgr = cmgMgr;
         this.logicalTopologyService = logicalTopologyService;
         this.storage = storage;
+        this.clock = clock;
         this.clusterTime = new ClusterTimeImpl(clusterService.nodeName(), busyLock, clock);
         this.metaStorageMetricSource = new MetaStorageMetricSource(clusterTime);
         this.topologyAwareRaftGroupServiceFactory = topologyAwareRaftGroupServiceFactory;
@@ -235,8 +247,13 @@ public class MetaStorageManagerImpl implements MetaStorageManager, MetastorageGr
         this.metastorageRepairStorage = metastorageRepairStorage;
         this.metastorageRepair = metastorageRepair;
         this.raftGroupOptionsConfigurer = raftGroupOptionsConfigurer;
+        this.readOperationFromLeaderForCompactionTracker = readOperationForCompactionTracker;
+        this.ioExecutor = ioExecutor;
 
         learnerManager = new MetaStorageLearnerManager(busyLock, logicalTopologyService, metaStorageSvcFut);
+
+        recoveryRevisionsListener = new RecoveryRevisionsListenerImpl(busyLock, recoveryFinishedFuture);
+        storage.setRecoveryRevisionsListener(recoveryRevisionsListener);
     }
 
     /**
@@ -264,9 +281,43 @@ public class MetaStorageManagerImpl implements MetaStorageManager, MetastorageGr
                 clock,
                 topologyAwareRaftGroupServiceFactory,
                 metricManager,
+                configuration,
+                raftGroupOptionsConfigurer,
+                new ReadOperationForCompactionTracker()
+        );
+    }
+
+    /**
+     * Constructor for tests, that allows to pass Meta Storage configuration.
+     */
+    @TestOnly
+    public MetaStorageManagerImpl(
+            ClusterService clusterService,
+            ClusterManagementGroupManager cmgMgr,
+            LogicalTopologyService logicalTopologyService,
+            RaftManager raftMgr,
+            KeyValueStorage storage,
+            HybridClock clock,
+            TopologyAwareRaftGroupServiceFactory topologyAwareRaftGroupServiceFactory,
+            MetricManager metricManager,
+            MetaStorageConfiguration configuration,
+            RaftGroupOptionsConfigurer raftGroupOptionsConfigurer,
+            ReadOperationForCompactionTracker tracker
+    ) {
+        this(
+                clusterService,
+                cmgMgr,
+                logicalTopologyService,
+                raftMgr,
+                storage,
+                clock,
+                topologyAwareRaftGroupServiceFactory,
+                metricManager,
                 new NoOpMetastorageRepairStorage(),
                 (nodes, mgReplicationFactor) -> nullCompletedFuture(),
-                raftGroupOptionsConfigurer
+                raftGroupOptionsConfigurer,
+                tracker,
+                ForkJoinPool.commonPool()
         );
 
         configure(configuration);
@@ -277,86 +328,131 @@ public class MetaStorageManagerImpl implements MetaStorageManager, MetastorageGr
         electionListeners.add(listener);
     }
 
-    private CompletableFuture<Long> recover(MetaStorageService service) {
-        if (!busyLock.enterBusy()) {
-            return failedFuture(new NodeStoppingException());
+    private CompletableFuture<?> recover(MetaStorageService service) {
+        return inBusyLockAsync(busyLock, () -> {
+            service.currentRevisions()
+                    .thenAccept(targetRevisions -> {
+                        assert targetRevisions != null;
+
+                        LOG.info("Performing MetaStorage recovery: [from={}, to={}]", storage.revisions(), targetRevisions);
+
+                        recoveryRevisionsListener.setTargetRevisions(targetRevisions.toRevisions());
+                    }).whenComplete((res, throwable) -> {
+                        if (throwable != null) {
+                            recoveryFinishedFuture.completeExceptionally(throwable);
+                        }
+                    });
+
+            return recoveryFinishedFuture
+                    .thenAccept(revisions -> {
+                        long recoveryRevision = revisions.revision();
+
+                        appliedRevision = recoveryRevision;
+
+                        if (recoveryRevision > 0) {
+                            clusterTime.updateSafeTime(storage.timestampByRevision(recoveryRevision));
+                        }
+                    })
+                    .whenComplete((revisions, throwable) -> {
+                        storage.setRecoveryRevisionsListener(null);
+
+                        if (throwable != null) {
+                            LOG.info("Recovery failed", throwable);
+                        } else {
+                            LOG.info("Finished MetaStorage recovery");
+                        }
+                    });
+        });
+    }
+
+    private CompletableFuture<MetaStorageServiceImpl> reenterIfNeededAndInitializeMetaStorage(
+            MetaStorageInfo metaStorageInfo,
+            UUID currentClusterId
+    ) {
+        return CompletableFuture.supplyAsync(() -> {
+            // Doing it in I/O executor because we do blocking reads here, and we can originally be in a network thread.
+            if (thisNodeDidNotWitnessMetaStorageRepair(metaStorageInfo, currentClusterId)) {
+                return tryReenteringMetastorage(metaStorageInfo.metaStorageNodes(), currentClusterId)
+                        .thenCompose(unused -> initializeMetastorage(metaStorageInfo));
+            } else {
+                return initializeMetastorage(metaStorageInfo);
+            }
+        }, ioExecutor).thenCompose(identity());
+    }
+
+    /**
+     * Returns whether this node did not witness a Metastorage Repair in the current cluster incarnation. 'Did not witness' here means
+     * that the node neither participated in the repair (that is, provided information about its Metastorage group index+term to the repair
+     * conductor) nor it was migrated to the repaired cluster after the repair and passed through Metastorage vaidation (for divergence)
+     * and re-entry procedure.
+     *
+     * @param metaStorageInfo Information about Metastorage.
+     * @param currentClusterId Current cluster ID.
+     */
+    private boolean thisNodeDidNotWitnessMetaStorageRepair(MetaStorageInfo metaStorageInfo, UUID currentClusterId) {
+        UUID locallyWitnessedRepairClusterId = metastorageRepairStorage.readWitnessedMetastorageRepairClusterId();
+
+        return metaStorageInfo.metastorageRepairedInThisClusterIncarnation()
+                && !Objects.equals(locallyWitnessedRepairClusterId, currentClusterId);
+    }
+
+    private CompletableFuture<Void> tryReenteringMetastorage(Set<String> metastorageNodes, UUID currentClusterId) {
+        LOG.info("Trying to reenter Metastorage group");
+
+        return validateMetastorageForDivergence(metastorageNodes)
+                .thenRunAsync(() -> prepareMetaStorageReentry(currentClusterId), ioExecutor);
+    }
+
+    private CompletableFuture<Void> validateMetastorageForDivergence(Set<String> metastorageNodes) {
+        long localRevision = storage.revision();
+
+        if (localRevision == 0) {
+            // No revisions, so local Metastorage could not diverge.
+            return nullCompletedFuture();
         }
+
+        long localChecksum = storage.checksum(localRevision);
+
+        return doWithOneOffRaftGroupService(PeersAndLearners.fromConsistentIds(metastorageNodes), raftClient -> {
+            return createMetaStorageService(raftClient).checksum(localRevision)
+                    .thenAccept(leaderChecksumInfo -> {
+                        LOG.info(
+                                "Validating Metastorage for divergence [localRevision={}, localChecksum={}, leaderChecksumInfo={}",
+                                localRevision, localChecksum, leaderChecksumInfo
+                        );
+
+                        divergencyValidator.validate(localRevision, localChecksum, leaderChecksumInfo);
+
+                        LOG.info("Metastorage did not diverge, proceeding");
+                    });
+        });
+    }
+
+    private void prepareMetaStorageReentry(UUID currentClusterId) {
+        LOG.info("Preparing storages for reentry [clusterId={}]", currentClusterId);
 
         try {
-            service.currentRevision().whenComplete((targetRevision, throwable) -> {
-                if (throwable != null) {
-                    recoveryFinishedFuture.completeExceptionally(throwable);
-
-                    return;
-                }
-
-                LOG.info("Performing MetaStorage recovery from revision {} to {}", storage.revision(), targetRevision);
-
-                assert targetRevision != null;
-
-                listenForRecovery(targetRevision);
-            }).whenComplete((res, ex) -> {
-                if (ex != null) {
-                    LOG.info("Recovery failed", ex);
-
-                    recoveryFinishedFuture.completeExceptionally(ex);
-                }
-            });
-
-            return recoveryFinishedFuture;
-        } finally {
-            busyLock.leaveBusy();
-        }
-    }
-
-    private void listenForRecovery(long targetRevision) {
-        LongConsumer listener = storageRevision -> {
-            if (!busyLock.enterBusy()) {
-                recoveryFinishedFuture.completeExceptionally(new NodeStoppingException());
-
-                return;
-            }
-
-            try {
-                if (storageRevision < targetRevision) {
-                    return;
-                }
-
-                storage.setRecoveryRevisionListener(null);
-
-                finishRecovery(targetRevision);
-            } finally {
-                busyLock.leaveBusy();
-            }
-        };
-
-        storage.setRecoveryRevisionListener(listener);
-
-        // Storage might be already up-to-date, so check here manually after setting the listener.
-        listener.accept(storage.revision());
-    }
-
-    private void finishRecovery(long targetRevision) {
-        appliedRevision = targetRevision;
-
-        if (targetRevision > 0) {
-            clusterTime.updateSafeTime(storage.timestampByRevision(targetRevision));
-        }
-
-        if (recoveryFinishedFuture.complete(targetRevision)) {
-            LOG.info("Finished MetaStorage recovery");
-        }
-    }
-
-    private CompletableFuture<MetaStorageServiceImpl> initializeMetaStorage(MetaStorageInfo metaStorageInfo) {
-        try {
-            if (thisNodeDidNotWitnessMetaStorageRepair(metaStorageInfo)) {
-                prepareMetaStorageReentry(metaStorageInfo);
-            }
+            destroyRaftAndStateMachineStorages();
         } catch (NodeStoppingException e) {
-            return failedFuture(e);
+            throw new RuntimeException(e);
         }
 
+        saveWitnessedMetastorageRepairClusterIdLocally(currentClusterId);
+    }
+
+    private void destroyRaftAndStateMachineStorages() throws NodeStoppingException {
+        raftMgr.destroyRaftNodeStorages(raftNodeId(), raftGroupOptionsConfigurer);
+
+        storage.clear();
+    }
+
+    private void saveWitnessedMetastorageRepairClusterIdLocally(UUID currentClusterId) {
+        assert currentClusterId != null;
+
+        metastorageRepairStorage.saveWitnessedMetastorageRepairClusterId(currentClusterId);
+    }
+
+    private CompletableFuture<MetaStorageServiceImpl> initializeMetastorage(MetaStorageInfo metaStorageInfo) {
         String thisNodeName = clusterService.nodeName();
         var disruptorConfig = new RaftNodeDisruptorConfiguration("metastorage", 1);
 
@@ -369,50 +465,22 @@ public class MetaStorageManagerImpl implements MetaStorageManager, MetastorageGr
             return failedFuture(e);
         }
 
-        raftNodeStarted.complete(null);
-
         return localRaftServiceFuture
                 .thenApply(raftService -> {
                     raftServiceFuture.complete(raftService);
 
-                    return new MetaStorageServiceImpl(
-                            thisNodeName,
-                            raftService,
-                            busyLock,
-                            clusterTime,
-                            () -> clusterService.topologyService().localMember().id());
+                    return createMetaStorageService(raftService);
                 });
     }
 
-    private boolean thisNodeDidNotWitnessMetaStorageRepair(MetaStorageInfo metaStorageInfo) {
-        UUID repairClusterIdInCmg = metaStorageInfo.metastorageRepairClusterId();
-        UUID locallyWitnessedRepairClusterId = metastorageRepairStorage.readWitnessedMetastorageRepairClusterId();
-
-        return repairClusterIdInCmg != null && !Objects.equals(locallyWitnessedRepairClusterId, repairClusterIdInCmg);
-    }
-
-    private void prepareMetaStorageReentry(MetaStorageInfo metaStorageInfo) throws NodeStoppingException {
-        destroyRaftAndStateMachineStorages();
-        saveWitnessedMetastorageRepairClusterIdLocally(metaStorageInfo);
-    }
-
-    private void destroyRaftAndStateMachineStorages() throws NodeStoppingException {
-        raftMgr.destroyRaftNodeStorages(raftNodeId(), raftGroupOptionsConfigurer);
-
-        storage.clear();
-
-        // Here, we must destroy the storage, but it's already destroyed in the beginning of the startAsync() method (in its own #start()).
-        // Just to make sure this is maintained, we add an assertion.
-        assert storage.revision() == 0 : "It's expected that the storage is destroyed at startup, but now it's not (revision is "
-                + storage.revision() + "; if the flow has changed, this assertion has to be changed to actual storage destruction.";
-    }
-
-    private void saveWitnessedMetastorageRepairClusterIdLocally(MetaStorageInfo metaStorageInfo) {
-        UUID repairClusterId = metaStorageInfo.metastorageRepairClusterId();
-
-        assert repairClusterId != null;
-
-        metastorageRepairStorage.saveWitnessedMetastorageRepairClusterId(repairClusterId);
+    private MetaStorageServiceImpl createMetaStorageService(RaftGroupService raftService) {
+        return new MetaStorageServiceImpl(
+                clusterService.nodeName(),
+                raftService,
+                busyLock,
+                clock,
+                () -> clusterService.topologyService().localMember().id()
+        );
     }
 
     private CompletableFuture<? extends RaftGroupService> startVotingNode(
@@ -443,30 +511,58 @@ public class MetaStorageManagerImpl implements MetaStorageManager, MetastorageGr
             Peer localPeer,
             MetaStorageInfo metaStorageInfo,
             RaftNodeDisruptorConfiguration disruptorConfig
-    ) throws NodeStoppingException {
+    ) {
         MetaStorageConfiguration localMetaStorageConfiguration = metaStorageConfiguration;
-
         assert localMetaStorageConfiguration != null : "Meta Storage configuration has not been set";
 
-        MetaStorageListener raftListener = new MetaStorageListener(storage, clusterTime, this::onConfigurationCommitted);
+        CompletableFuture<TopologyAwareRaftGroupService> serviceFuture = CompletableFuture.supplyAsync(() -> {
+            TopologyAwareRaftGroupService service = startRaftNodeItself(configuration, localPeer, metaStorageInfo, disruptorConfig);
 
-        TopologyAwareRaftGroupService service = raftMgr.startRaftGroupNodeAndWaitNodeReady(
-                raftNodeId(localPeer),
-                configuration,
-                raftListener,
-                RaftGroupEventsListener.noopLsnr,
-                disruptorConfig,
-                topologyAwareRaftGroupServiceFactory,
-                options -> {
-                    raftGroupOptionsConfigurer.configure(options);
+            raftNodeStarted.complete(null);
 
-                    RaftGroupOptions groupOptions = (RaftGroupOptions) options;
-                    groupOptions.externallyEnforcedConfigIndex(metaStorageInfo.metastorageRepairingConfigIndex());
-                    groupOptions.snapshotStorageFactory(new MetaStorageSnapshotStorageFactory(storage));
-                }
-        );
+            return service;
+        }, ioExecutor);
 
-        LeaderElectionListener leaderElectionListener = new MetaStorageLeaderElectionListener(
+        return serviceFuture.thenApply(service -> {
+            service.subscribeLeader(createLeaderElectionListener(localMetaStorageConfiguration));
+            return service;
+        });
+    }
+
+    private TopologyAwareRaftGroupService startRaftNodeItself(
+            PeersAndLearners configuration,
+            Peer localPeer,
+            MetaStorageInfo metaStorageInfo,
+            RaftNodeDisruptorConfiguration disruptorConfig
+    ) {
+        MetaStorageListener raftListener = new MetaStorageListener(storage, clock, clusterTime, this::onConfigurationCommitted);
+
+        try {
+            return raftMgr.startRaftGroupNodeAndWaitNodeReady(
+                    raftNodeId(localPeer),
+                    configuration,
+                    raftListener,
+                    RaftGroupEventsListener.noopLsnr,
+                    disruptorConfig,
+                    topologyAwareRaftGroupServiceFactory,
+                    options -> {
+                        raftGroupOptionsConfigurer.configure(options);
+
+                        RaftGroupOptions groupOptions = (RaftGroupOptions) options;
+                        groupOptions.externallyEnforcedConfigIndex(metaStorageInfo.metastorageRepairingConfigIndex());
+                        groupOptions.snapshotStorageFactory(new MetaStorageSnapshotStorageFactory(storage));
+                    }
+            );
+        } catch (NodeStoppingException e) {
+            throw ExceptionUtils.sneakyThrow(e);
+        }
+    }
+
+    private LeaderElectionListener createLeaderElectionListener(MetaStorageConfiguration localMetaStorageConfiguration) {
+        // We use the "deployWatchesFuture" to guarantee that the Configuration Manager will be started
+        // when the underlying code tries to read Meta Storage configuration. This is a consequence of having a circular
+        // dependency between these two components.
+        return new MetaStorageLeaderElectionListener(
                 busyLock,
                 clusterService,
                 logicalTopologyService,
@@ -480,16 +576,6 @@ public class MetaStorageManagerImpl implements MetaStorageManager, MetastorageGr
                 electionListeners,
                 this::peersChangeStateExists
         );
-
-        return completedFuture(service)
-                .thenAccept(s -> s.subscribeLeader(leaderElectionListener))
-                .handle((v, e) -> {
-                    if (e != null) {
-                        LOG.error("Unable to register MetaStorageLeaderElectionListener", e);
-                    }
-
-                    return service;
-                });
     }
 
     private boolean peersChangeStateExists() {
@@ -610,16 +696,23 @@ public class MetaStorageManagerImpl implements MetaStorageManager, MetastorageGr
     public CompletableFuture<Void> startAsync(ComponentContext componentContext) {
         storage.start();
 
+        // Safe because we haven't started raft nodes yet and so no one has to update storage locally.
+        recoveryRevisionsListener.onUpdate(storage.revisions());
+
         cmgMgr.metaStorageInfo()
-                .thenCompose(metaStorageInfo -> {
-                    LOG.info("Metastorage info on start is {}", metaStorageInfo);
+                .thenCombine(cmgMgr.clusterState(), MetaStorageInfoAndClusterState::new)
+                .thenCompose(infoAndState -> {
+                    LOG.info("Metastorage info on start is {}", infoAndState.metaStorageInfo);
 
                     if (!busyLock.enterBusy()) {
                         return failedFuture(new NodeStoppingException());
                     }
 
                     try {
-                        return initializeMetaStorage(metaStorageInfo);
+                        return reenterIfNeededAndInitializeMetaStorage(
+                                infoAndState.metaStorageInfo,
+                                infoAndState.clusterState.clusterTag().clusterId()
+                        );
                     } finally {
                         busyLock.leaveBusy();
                     }
@@ -723,8 +816,8 @@ public class MetaStorageManagerImpl implements MetaStorageManager, MetastorageGr
 
         try {
             return recoveryFinishedFuture
-                    .thenAccept(revision -> inBusyLock(busyLock, () -> {
-                        storage.startWatches(revision + 1, new OnRevisionAppliedCallback() {
+                    .thenAccept(revisions -> inBusyLock(busyLock, () -> {
+                        storage.startWatches(revisions.revision() + 1, new WatchEventHandlingCallback() {
                             @Override
                             public void onSafeTimeAdvanced(HybridTimestamp newSafeTime) {
                                 MetaStorageManagerImpl.this.onSafeTimeAdvanced(newSafeTime);
@@ -802,11 +895,6 @@ public class MetaStorageManagerImpl implements MetaStorageManager, MetastorageGr
         );
     }
 
-    /**
-     * Inserts or updates an entry with the given key and the given value.
-     *
-     * @see MetaStorageService#put(ByteArray, byte[])
-     */
     @Override
     public CompletableFuture<Void> put(ByteArray key, byte[] val) {
         if (!busyLock.enterBusy()) {
@@ -820,11 +908,6 @@ public class MetaStorageManagerImpl implements MetaStorageManager, MetastorageGr
         }
     }
 
-    /**
-     * Inserts or updates entries with given keys and given values.
-     *
-     * @see MetaStorageService#putAll(Map)
-     */
     @Override
     public CompletableFuture<Void> putAll(Map<ByteArray, byte[]> vals) {
         if (!busyLock.enterBusy()) {
@@ -838,11 +921,6 @@ public class MetaStorageManagerImpl implements MetaStorageManager, MetastorageGr
         }
     }
 
-    /**
-     * Removes an entry for the given key.
-     *
-     * @see MetaStorageService#remove(ByteArray)
-     */
     @Override
     public CompletableFuture<Void> remove(ByteArray key) {
         if (!busyLock.enterBusy()) {
@@ -856,11 +934,6 @@ public class MetaStorageManagerImpl implements MetaStorageManager, MetastorageGr
         }
     }
 
-    /**
-     * Removes entries for given keys.
-     *
-     * @see MetaStorageService#removeAll(Set)
-     */
     @Override
     public CompletableFuture<Void> removeAll(Set<ByteArray> keys) {
         if (!busyLock.enterBusy()) {
@@ -869,6 +942,19 @@ public class MetaStorageManagerImpl implements MetaStorageManager, MetastorageGr
 
         try {
             return metaStorageSvcFut.thenCompose(svc -> svc.removeAll(keys));
+        } finally {
+            busyLock.leaveBusy();
+        }
+    }
+
+    @Override
+    public CompletableFuture<Void> removeByPrefix(ByteArray prefix) {
+        if (!busyLock.enterBusy()) {
+            return failedFuture(new NodeStoppingException());
+        }
+
+        try {
+            return metaStorageSvcFut.thenCompose(svc -> svc.removeByPrefix(prefix));
         } finally {
             busyLock.leaveBusy();
         }
@@ -930,7 +1016,7 @@ public class MetaStorageManagerImpl implements MetaStorageManager, MetastorageGr
 
     @Override
     public Publisher<Entry> prefix(ByteArray keyPrefix) {
-        return prefix(keyPrefix, MetaStorageManager.LATEST_REVISION);
+        return prefix(keyPrefix, LATEST_REVISION);
     }
 
     @Override
@@ -977,7 +1063,7 @@ public class MetaStorageManagerImpl implements MetaStorageManager, MetastorageGr
     }
 
     @Override
-    public CompletableFuture<Long> recoveryFinishedFuture() {
+    public CompletableFuture<Revisions> recoveryFinishedFuture() {
         return recoveryFinishedFuture;
     }
 
@@ -1071,17 +1157,27 @@ public class MetaStorageManagerImpl implements MetaStorageManager, MetastorageGr
 
     @Override
     public void registerRevisionUpdateListener(RevisionUpdateListener listener) {
-        storage.registerRevisionUpdateListener(listener);
+        inBusyLock(busyLock, () -> storage.registerRevisionUpdateListener(listener));
     }
 
     @Override
     public void unregisterRevisionUpdateListener(RevisionUpdateListener listener) {
-        storage.unregisterRevisionUpdateListener(listener);
+        inBusyLock(busyLock, () -> storage.unregisterRevisionUpdateListener(listener));
     }
 
-    /** Explicitly notifies revision update listeners. */
+    @Override
+    public void registerCompactionRevisionUpdateListener(CompactionRevisionUpdateListener listener) {
+        inBusyLock(busyLock, () -> storage.registerCompactionRevisionUpdateListener(listener));
+    }
+
+    @Override
+    public void unregisterCompactionRevisionUpdateListener(CompactionRevisionUpdateListener listener) {
+        inBusyLock(busyLock, () -> storage.unregisterCompactionRevisionUpdateListener(listener));
+    }
+
+    /** Explicitly notifies revisions update listeners. */
     public CompletableFuture<Void> notifyRevisionUpdateListenerOnStart() {
-        return recoveryFinishedFuture.thenCompose(storage::notifyRevisionUpdateListenerOnStart);
+        return recoveryFinishedFuture.thenApply(Revisions::revision).thenCompose(storage::notifyRevisionUpdateListenerOnStart);
     }
 
     /**
@@ -1128,33 +1224,17 @@ public class MetaStorageManagerImpl implements MetaStorageManager, MetastorageGr
     }
 
     @Override
-    public void compactLocally(long revision) {
-        inBusyLock(busyLock, () -> storage.compact(revision));
-    }
-
-    @Override
-    public void setCompactionRevisionLocally(long revision) {
-        inBusyLock(busyLock, () -> storage.setCompactionRevision(revision));
-    }
-
-    @Override
     public long getCompactionRevisionLocally() {
         return inBusyLock(busyLock, storage::getCompactionRevision);
     }
 
-    @Override
-    public CompletableFuture<Void> readOperationsFuture(long compactionRevisionExcluded) {
-        return inBusyLock(
-                busyLock,
-                () -> allOf(
-                        readOperationFromLeaderForCompactionTracker.collect(compactionRevisionExcluded),
-                        storage.readOperationsFuture(compactionRevisionExcluded)
-                )
-        );
+    @TestOnly
+    public KeyValueStorage storage() {
+        return storage;
     }
 
     private <T> CompletableFuture<T> withTrackReadOperationFromLeaderFuture(Supplier<CompletableFuture<T>> readFromLeader) {
-        long readOperationId = readOperationIdGeneratorForTracker.getAndIncrement();
+        long readOperationId = readOperationFromLeaderForCompactionTracker.generateReadOperationId();
         long compactionRevision = storage.getCompactionRevision();
 
         readOperationFromLeaderForCompactionTracker.track(readOperationId, compactionRevision);
@@ -1171,7 +1251,7 @@ public class MetaStorageManagerImpl implements MetaStorageManager, MetastorageGr
     }
 
     private Publisher<Entry> withTrackReadOperationFromLeaderPublisher(Supplier<Publisher<Entry>> readFromLeader) {
-        long readOperationId = readOperationIdGeneratorForTracker.getAndIncrement();
+        long readOperationId = readOperationFromLeaderForCompactionTracker.generateReadOperationId();
         long compactionRevision = storage.getCompactionRevision();
 
         readOperationFromLeaderForCompactionTracker.track(readOperationId, compactionRevision);
@@ -1221,5 +1301,25 @@ public class MetaStorageManagerImpl implements MetaStorageManager, MetastorageGr
 
             throw t;
         }
+    }
+
+    private static class MetaStorageInfoAndClusterState {
+        private final MetaStorageInfo metaStorageInfo;
+        private final ClusterState clusterState;
+
+        private MetaStorageInfoAndClusterState(MetaStorageInfo metaStorageInfo, ClusterState clusterState) {
+            this.metaStorageInfo = metaStorageInfo;
+            this.clusterState = clusterState;
+        }
+    }
+
+    /**
+     * Sends command {@link CompactionCommand} to the leader.
+     *
+     * @param compactionRevision New metastorage compaction revision.
+     * @return Pending operation future.
+     */
+    CompletableFuture<Void> sendCompactionCommand(long compactionRevision) {
+        return inBusyLockAsync(busyLock, () -> metaStorageSvcFut.thenCompose(svc -> svc.sendCompactionCommand(compactionRevision)));
     }
 }
