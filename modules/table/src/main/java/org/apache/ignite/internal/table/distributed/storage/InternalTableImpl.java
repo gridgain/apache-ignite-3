@@ -43,7 +43,6 @@ import static org.apache.ignite.internal.partition.replicator.network.replicatio
 import static org.apache.ignite.internal.partition.replicator.network.replication.RequestType.RW_UPSERT_ALL;
 import static org.apache.ignite.internal.replicator.message.ReplicaMessageUtils.toTablePartitionIdMessage;
 import static org.apache.ignite.internal.table.distributed.storage.RowBatch.allResultFutures;
-import static org.apache.ignite.internal.tracing.Instrumentation.measure;
 import static org.apache.ignite.internal.util.CompletableFutures.completedOrFailedFuture;
 import static org.apache.ignite.internal.util.CompletableFutures.emptyListCompletedFuture;
 import static org.apache.ignite.internal.util.CompletableFutures.nullCompletedFuture;
@@ -335,7 +334,7 @@ public class InternalTableImpl implements InternalTable {
 
         InternalTransaction actualTx = startImplicitRwTxIfNeeded(tx);
 
-        int partId = measure(()->partitionId(row), "determinePartition");
+        int partId = partitionId(row);
 
         TablePartitionId partGroupId = new TablePartitionId(tableId, partId);
 
@@ -625,7 +624,7 @@ public class InternalTableImpl implements InternalTable {
     ) {
         assert !tx.isReadOnly() : format("Tracking invoke is available only for read-write transactions [tx={}].", tx);
 
-        ReplicaRequest request = measure(() -> mapFunc.apply(primaryReplicaAndConsistencyToken.get2()), "prepareRequest");
+        ReplicaRequest request = mapFunc.apply(primaryReplicaAndConsistencyToken.get2());
 
         boolean write = request instanceof SingleRowReplicaRequest && ((SingleRowReplicaRequest) request).requestType() != RW_GET
                 || request instanceof MultipleRowReplicaRequest && ((MultipleRowReplicaRequest) request).requestType() != RW_GET_ALL
@@ -732,7 +731,7 @@ public class InternalTableImpl implements InternalTable {
             }
 
             if (e != null) {
-                return measure(() -> tx0.rollbackAsync(), "exceptionallyRollbackTx").handle((ignored, err) -> {
+                return tx0.rollbackAsync().handle((ignored, err) -> {
                     if (err != null) {
                         e.addSuppressed(err);
                     }
@@ -741,7 +740,7 @@ public class InternalTableImpl implements InternalTable {
                 }); // Preserve failed state.
             } else {
                 if (autoCommit) {
-                    return measure(() -> tx0.commitAsync().thenApply(ignored -> r), "autoCommitTx");
+                    return tx0.commitAsync().thenApply(ignored -> r);
                 } else {
                     return completedFuture(r);
                 }
@@ -1980,7 +1979,7 @@ public class InternalTableImpl implements InternalTable {
             IgniteBiTuple<ClusterNode, Long> enlistState = new IgniteBiTuple<>(getClusterNode(replicaMeta),
                     enlistmentConsistencyToken(replicaMeta));
 
-            measure(() -> tx.enlist(partGroupId, enlistState), "enlist");
+            tx.enlist(partGroupId, enlistState);
 
             return enlistState;
         };

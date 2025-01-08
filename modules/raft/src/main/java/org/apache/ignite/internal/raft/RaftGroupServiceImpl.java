@@ -67,7 +67,6 @@ import org.apache.ignite.internal.raft.configuration.RaftConfiguration;
 import org.apache.ignite.internal.raft.service.LeaderWithTerm;
 import org.apache.ignite.internal.raft.service.RaftGroupService;
 import org.apache.ignite.internal.replicator.ReplicationGroupId;
-import org.apache.ignite.internal.tracing.Instrumentation;
 import org.apache.ignite.internal.util.IgniteSpinBusyLock;
 import org.apache.ignite.network.ClusterNode;
 import org.apache.ignite.raft.jraft.RaftMessagesFactory;
@@ -493,7 +492,7 @@ public class RaftGroupServiceImpl implements RaftGroupService {
         Function<Peer, ActionRequest> requestFactory;
 
         if (cmd instanceof WriteCommand) {
-            byte[] commandBytes = Instrumentation.measure(() -> commandsMarshaller.marshall(cmd), "marshallCommand");
+            byte[] commandBytes = commandsMarshaller.marshall(cmd);
 
             requestFactory = targetPeer -> factory.writeActionRequest()
                     .groupId(groupId)

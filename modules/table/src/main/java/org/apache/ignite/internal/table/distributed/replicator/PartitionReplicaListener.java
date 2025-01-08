@@ -39,7 +39,6 @@ import static org.apache.ignite.internal.table.distributed.replicator.RemoteReso
 import static org.apache.ignite.internal.table.distributed.replicator.ReplicatorUtils.beginRwTxTs;
 import static org.apache.ignite.internal.table.distributed.replicator.ReplicatorUtils.latestIndexDescriptorInBuildingStatus;
 import static org.apache.ignite.internal.table.distributed.replicator.ReplicatorUtils.rwTxActiveCatalogVersion;
-import static org.apache.ignite.internal.tracing.Instrumentation.measure;
 import static org.apache.ignite.internal.tx.TransactionIds.beginTimestamp;
 import static org.apache.ignite.internal.tx.TxState.ABANDONED;
 import static org.apache.ignite.internal.tx.TxState.ABORTED;
@@ -473,7 +472,7 @@ public class PartitionReplicaListener implements ReplicaListener {
 
     @Override
     public CompletableFuture<ReplicaResult> invoke(ReplicaRequest request, UUID senderId) {
-        return measure(() -> ensureReplicaIsPrimary(request), "ensureReplicaIsPrimary")
+        return ensureReplicaIsPrimary(request)
                 .thenCompose(res -> processRequest(request, res.get1(), senderId, res.get2()))
                 .thenApply(res -> {
                     if (res instanceof ReplicaResult) {
@@ -1996,7 +1995,7 @@ public class PartitionReplicaListener implements ReplicaListener {
 
         assert pkLocker != null;
 
-        CompletableFuture<Void> lockFut = measure(() -> pkLocker.locksForLookupByKey(txId, pk), "locksForLookupByKey");
+        CompletableFuture<Void> lockFut = pkLocker.locksForLookupByKey(txId, pk);
 
         Supplier<CompletableFuture<T>> sup = () -> {
             boolean cursorClosureSetUp = false;
@@ -2031,7 +2030,7 @@ public class PartitionReplicaListener implements ReplicaListener {
             UUID txId,
             IgniteTriFunction<@Nullable RowId, @Nullable BinaryRow, @Nullable HybridTimestamp, CompletableFuture<T>> action
     ) {
-        if (!measure(() -> cursor.hasNext(), "pkIndexCursorNext")) {
+        if (!cursor.hasNext()) {
             return action.apply(null, null, null);
         }
 
@@ -3045,18 +3044,18 @@ public class PartitionReplicaListener implements ReplicaListener {
                 });
             }
             case RW_UPSERT: {
-                return resolveRowByPk(measure(() -> extractPk(searchRow), "extractPk"), txId, (rowId, row, lastCommitTime) -> {
+                return resolveRowByPk(extractPk(searchRow), txId, (rowId, row, lastCommitTime) -> {
                     boolean insert = rowId == null;
 
                     RowId rowId0 = insert ? new RowId(partId(), RowIdGenerator.next()) : rowId;
 
                     CompletableFuture<IgniteBiTuple<RowId, Collection<Lock>>> lockFut = insert
-                            ? measure(() -> takeLocksForInsert(searchRow, rowId0, txId), "takeLocksForInsert")
-                            : measure(() -> takeLocksForUpdate(searchRow, rowId0, txId), "takeLocksForUpdate");
+                            ? takeLocksForInsert(searchRow, rowId0, txId)
+                            : takeLocksForUpdate(searchRow, rowId0, txId);
 
                     return lockFut
                             .thenCompose(rowIdLock -> validateWriteAgainstSchemaAfterTakingLocks(request.transactionId())
-                                    .thenCompose(catalogVersion -> measure(() -> awaitCleanup(rowId, catalogVersion), "awaitCleanup"))
+                                    .thenCompose(catalogVersion -> awaitCleanup(rowId, catalogVersion))
                                     .thenCompose(
                                             catalogVersion -> applyUpdateCommand(
                                                     request,
@@ -3180,7 +3179,7 @@ public class PartitionReplicaListener implements ReplicaListener {
      */
     private CompletableFuture<ReplicaResult> processSingleEntryAction(ReadWriteSingleRowPkReplicaRequest request, Long leaseStartTime) {
         UUID txId = request.transactionId();
-        BinaryTuple primaryKey = measure(() -> resolvePk(request.primaryKey()), "resolvePk");
+        BinaryTuple primaryKey = resolvePk(request.primaryKey());
         TablePartitionId commitPartitionId = request.commitPartitionId().asTablePartitionId();
 
         assert commitPartitionId != null || request.requestType() == RW_GET :
@@ -3349,9 +3348,6 @@ public class PartitionReplicaListener implements ReplicaListener {
         return lockManager.acquire(txId, new LockKey(replicationGroupId), LockMode.IX)
                 .thenCompose(ignored -> takePutLockOnIndexes(binaryRow, rowId, txId))
                 .thenApply(shortTermLocks -> new IgniteBiTuple<>(rowId, shortTermLocks));
-        // TODO FIXME coarse locks are slow.
-//        return takePutLockOnIndexes(binaryRow, rowId, txId)
-//                .thenApply(shortTermLocks -> new IgniteBiTuple<>(rowId, shortTermLocks));
     }
 
     private CompletableFuture<Collection<Lock>> takePutLockOnIndexes(BinaryRow binaryRow, RowId rowId, UUID txId) {

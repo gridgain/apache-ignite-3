@@ -16,7 +16,8 @@
  */
 package org.apache.ignite.raft.jraft.storage.impl;
 
-import static org.apache.ignite.internal.tracing.Instrumentation.measure;import com.lmax.disruptor.EventHandler;
+import static org.apache.ignite.internal.tracing.Instrumentation.measure;
+import com.lmax.disruptor.EventHandler;
 import com.lmax.disruptor.EventTranslator;
 import com.lmax.disruptor.RingBuffer;
 import java.util.ArrayList;
@@ -30,7 +31,7 @@ import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 import org.apache.ignite.internal.logger.IgniteLogger;
 import org.apache.ignite.internal.logger.Loggers;
-import org.apache.ignite.internal.tracing.Instrumentation;import org.apache.ignite.raft.jraft.Closure;
+import org.apache.ignite.raft.jraft.Closure;
 import org.apache.ignite.raft.jraft.FSMCaller;
 import org.apache.ignite.raft.jraft.Status;
 import org.apache.ignite.raft.jraft.conf.Configuration;
@@ -535,8 +536,6 @@ public class LogManagerImpl implements LogManager {
         @Override
         public void onEvent(final IStableClosureEvent event, final long sequence, final boolean endOfBatch)
             throws Exception {
-            Instrumentation.mark("LogManagerOnEvent");
-
             if (event.getEventType() == EventType.SHUTDOWN) {
                 this.lastId = this.ab.flush();
                 setDiskId(this.lastId);

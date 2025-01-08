@@ -22,7 +22,6 @@ import static org.apache.ignite.internal.lang.IgniteStringFormatter.format;
 import static org.apache.ignite.internal.table.distributed.TableUtils.indexIdsAtRwTxBeginTs;
 import static org.apache.ignite.internal.table.distributed.index.MetaIndexStatus.BUILDING;
 import static org.apache.ignite.internal.table.distributed.index.MetaIndexStatus.REGISTERED;
-import static org.apache.ignite.internal.tracing.Instrumentation.measure;
 import static org.apache.ignite.internal.tx.TxState.ABORTED;
 import static org.apache.ignite.internal.tx.TxState.COMMITTED;
 import static org.apache.ignite.internal.tx.TxState.PENDING;
@@ -174,10 +173,7 @@ public class PartitionListener implements RaftGroupListener {
 
             // We choose the minimum applied index, since we choose it (the minimum one) on local recovery so as not to lose the data for
             // one of the storages.
-            long storagesAppliedIndex = measure(
-                    () -> Math.min(storage.lastAppliedIndex(), txStateStorage.lastAppliedIndex()),
-                    "getIndexFromStorage"
-            );
+            long storagesAppliedIndex = Math.min(storage.lastAppliedIndex(), txStateStorage.lastAppliedIndex());
 
             assert commandIndex > storagesAppliedIndex :
                     "Write command must have an index greater than that of storages [commandIndex=" + commandIndex
@@ -195,7 +191,7 @@ public class PartitionListener implements RaftGroupListener {
             // (because it's already truncated in the leader's log), so it will have to install a snapshot again, and then
             // repeat same thing over and over again.
 
-            measure(() -> storage.acquirePartitionSnapshotsReadLock(), "acquirePartitionSnapshotsReadLock");
+            storage.acquirePartitionSnapshotsReadLock();
 
             try {
                 if (command instanceof UpdateCommand) {
@@ -244,7 +240,7 @@ public class PartitionListener implements RaftGroupListener {
 
                 throw t;
             } finally {
-                measure(() -> storage.releasePartitionSnapshotsReadLock(), "releasePartitionSnapshotsReadLock");
+                storage.releasePartitionSnapshotsReadLock();
             }
 
             // Completing the closure out of the partition snapshots lock to reduce possibility of deadlocks as it might

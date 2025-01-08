@@ -59,7 +59,7 @@ import org.apache.ignite.internal.raft.storage.impl.RocksDbSharedLogStorage;
 import org.apache.ignite.internal.raft.storage.impl.StripeAwareLogManager;
 import org.apache.ignite.internal.raft.storage.impl.StripeAwareLogManager.Stripe;
 import org.apache.ignite.internal.thread.IgniteThreadFactory;
-import org.apache.ignite.internal.tracing.Instrumentation;import org.apache.ignite.raft.jraft.Closure;
+import org.apache.ignite.raft.jraft.Closure;
 import org.apache.ignite.internal.util.ThreadUtils;
 import org.apache.ignite.raft.jraft.Closure;
 import org.apache.ignite.raft.jraft.FSMCaller;
@@ -2060,12 +2060,10 @@ public class NodeImpl implements Node, RaftServerService {
         };
         switch (this.options.getApplyTaskMode()) {
             case Blocking:
-                Instrumentation.mark("NodeImplApplyTaskBlocking");
                 this.applyQueue.publishEvent(translator);
                 break;
             case NonBlocking:
             default:
-                Instrumentation.mark("NodeImplApplyTaskNonBlocking");
                 if (!this.applyQueue.tryPublishEvent(translator)) {
                     String errorMsg = "Node is busy, has too many tasks, queue is full and bufferSize="+ this.applyQueue.getBufferSize();
                     Utils.runClosureInThread(this.getOptions().getCommonExecutor(), task.getDone(), new Status(RaftError.EBUSY, errorMsg));
