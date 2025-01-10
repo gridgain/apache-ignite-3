@@ -47,7 +47,7 @@ import org.openjdk.jmh.runner.options.OptionsBuilder;
  */
 @State(Scope.Benchmark)
 @Fork(1)
-@Threads(1)
+@Threads(8)
 @Warmup(iterations = 10, time = 2)
 @Measurement(iterations = 20, time = 2)
 @BenchmarkMode(Mode.Throughput)
@@ -63,7 +63,7 @@ public class UpsertKvBenchmark extends AbstractMultiNodeBenchmark {
     @Param({"false"})
     private boolean fsync;
 
-    @Param({"8"})
+    @Param({"1"})
     private int partitionCount;
 
     private static final AtomicInteger COUNTER = new AtomicInteger();
@@ -72,8 +72,9 @@ public class UpsertKvBenchmark extends AbstractMultiNodeBenchmark {
 
     @Override
     public void nodeSetUp() throws Exception {
+        System.setProperty("LOGIT_STORAGE_ENABLED", "true");
         System.setProperty(IgniteSystemProperties.IGNITE_SKIP_REPLICATION_IN_BENCHMARK, "true");
-        System.setProperty(IgniteSystemProperties.IGNITE_SKIP_STORAGE_UPDATE_IN_BENCHMARK, "true");
+        System.setProperty(IgniteSystemProperties.IGNITE_SKIP_STORAGE_UPDATE_IN_BENCHMARK, "false");
         super.nodeSetUp();
     }
 

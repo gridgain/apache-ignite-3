@@ -48,7 +48,7 @@ import org.apache.ignite.internal.storage.rocksdb.RocksDbMetaStorage;
 import org.apache.ignite.internal.storage.util.StorageState;
 import org.apache.ignite.internal.storage.util.StorageUtils;
 import org.apache.ignite.internal.util.ArrayUtils;
-import org.apache.ignite.internal.util.IgniteSpinBusyLock;
+import org.apache.ignite.internal.util.IgniteStripedReadWriteLock;
 import org.jetbrains.annotations.Nullable;
 import org.rocksdb.ReadOptions;
 import org.rocksdb.RocksDBException;
@@ -75,7 +75,7 @@ public abstract class AbstractRocksDbIndexStorage implements IndexStorage {
     private final RocksDbMetaStorage indexMetaStorage;
 
     /** Busy lock. */
-    private final IgniteSpinBusyLock busyLock = new IgniteSpinBusyLock();
+    private final IgniteStripedReadWriteLock busyLock = new IgniteStripedReadWriteLock();
 
     /** Current state of the storage. */
     protected final AtomicReference<StorageState> state = new AtomicReference<>(StorageState.RUNNABLE);
@@ -131,7 +131,7 @@ public abstract class AbstractRocksDbIndexStorage implements IndexStorage {
             return;
         }
 
-        busyLock.block();
+        blockBusy();
     }
 
     /**
@@ -142,7 +142,7 @@ public abstract class AbstractRocksDbIndexStorage implements IndexStorage {
             return;
         }
 
-        busyLock.block();
+        blockBusy();
     }
 
     /**
@@ -156,14 +156,14 @@ public abstract class AbstractRocksDbIndexStorage implements IndexStorage {
         }
 
         // Changed storage states and expect all storage operations to stop soon.
-        busyLock.block();
+        blockBusy();
 
         try {
             destroyData(writeBatch);
         } catch (RocksDBException e) {
             throw new StorageRebalanceException("Error when trying to start rebalancing storage: " + createStorageInfo(), e);
         } finally {
-            busyLock.unblock();
+            unblockBusy();
         }
     }
 
@@ -206,7 +206,7 @@ public abstract class AbstractRocksDbIndexStorage implements IndexStorage {
         }
 
         // Changed storage states and expect all storage operations to stop soon.
-        busyLock.block();
+        blockBusy();
 
         destroyData(writeBatch);
     }
@@ -216,7 +216,7 @@ public abstract class AbstractRocksDbIndexStorage implements IndexStorage {
      */
     public void finishCleanup() {
         if (state.compareAndSet(StorageState.CLEANUP, StorageState.RUNNABLE)) {
-            busyLock.unblock();
+            unblockBusy();
         }
     }
 
@@ -241,14 +241,14 @@ public abstract class AbstractRocksDbIndexStorage implements IndexStorage {
     }
 
     private <V> V busy(Supplier<V> supplier, boolean read) {
-        if (!busyLock.enterBusy()) {
+        if (!enterBusy()) {
             throwExceptionDependingOnIndexStorageState(state.get(), read, createStorageInfo());
         }
 
         try {
             return supplier.get();
         } finally {
-            busyLock.leaveBusy();
+            leaveBusy();
         }
     }
 
@@ -420,5 +420,21 @@ public abstract class AbstractRocksDbIndexStorage implements IndexStorage {
 
     protected void throwExceptionIfIndexNotBuilt() {
         StorageUtils.throwExceptionIfIndexIsNotBuilt(nextRowIdToBuild, this::createStorageInfo);
+    }
+
+    protected final boolean enterBusy() {
+        return !busyLock.isWriteLockedByCurrentThread() && busyLock.readLock().tryLock();
+    }
+
+    protected final void leaveBusy() {
+        busyLock.readLock().unlock();
+    }
+
+    private void blockBusy() {
+        busyLock.writeLock().lock();
+    }
+
+    private void unblockBusy() {
+        busyLock.writeLock().unlock();
     }
 }

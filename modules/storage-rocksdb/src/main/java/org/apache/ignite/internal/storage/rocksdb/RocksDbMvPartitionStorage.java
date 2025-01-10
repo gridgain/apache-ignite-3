@@ -80,7 +80,7 @@ import org.apache.ignite.internal.storage.util.LocalLocker;
 import org.apache.ignite.internal.storage.util.StorageState;
 import org.apache.ignite.internal.tx.TransactionIds;
 import org.apache.ignite.internal.util.Cursor;
-import org.apache.ignite.internal.util.IgniteSpinBusyLock;
+import org.apache.ignite.internal.util.IgniteStripedReadWriteLock;
 import org.apache.ignite.internal.versioned.VersionedSerialization;
 import org.jetbrains.annotations.Nullable;
 import org.rocksdb.AbstractWriteBatch;
@@ -214,7 +214,7 @@ public class RocksDbMvPartitionStorage implements MvPartitionStorage {
     private volatile long estimatedSize;
 
     /** Busy lock. */
-    private final IgniteSpinBusyLock busyLock = new IgniteSpinBusyLock();
+    private final IgniteStripedReadWriteLock busyLock = new IgniteStripedReadWriteLock();
 
     /** Current state of the storage. */
     private final AtomicReference<StorageState> state = new AtomicReference<>(StorageState.RUNNABLE);
@@ -459,55 +459,67 @@ public class RocksDbMvPartitionStorage implements MvPartitionStorage {
                 // Check concurrent transaction data.
                 byte[] uncommittedDataIdKey = createUncommittedDataIdKey(rowId);
 
-                byte[] previousTxState = writeBatch.getFromBatchAndDB(db, helper.partCf, readOpts, uncommittedDataIdKey);
+                ByteBuffer txState = createTxState(rowId, txId, commitTableId, commitPartitionId, row == null);
 
-                // Previous value must belong to the same transaction.
-                if (previousTxState != null) {
-                    ByteBuffer previousTxStateBuffer = ByteBuffer.wrap(previousTxState);
+                ByteBuffer dataId = readDataIdFromTxState(txState);
 
-                    validateTxId(previousTxStateBuffer, txId);
+                writeBatch.put(helper.partCf, uncommittedDataIdKey, txState.array());
 
-                    ByteBuffer dataId = readDataIdFromTxState(previousTxStateBuffer);
-
-                    byte[] payloadKey = helper.createPayloadKey(dataId);
-
-                    BinaryRow previousRow = null;
-
-                    boolean isOldValueTombstone = isTombstone(dataId);
-
-                    if (!isOldValueTombstone) {
-                        byte[] previousRowBytes = writeBatch.getFromBatchAndDB(db, helper.dataCf, readOpts, payloadKey);
-
-                        previousRow = deserializeRow(previousRowBytes);
-                    }
-
-                    // We need to flip the tombstone bit in case we are overwriting a previous Write Intent with a different
-                    // tombstone bit.
-                    if (isOldValueTombstone ^ (row == null)) {
-                        setFirstBit(previousTxState, DATA_ID_SIZE - 1, row == null);
-
-                        writeBatch.put(helper.partCf, uncommittedDataIdKey, previousTxState);
-                    }
-
-                    // No need to update the Data ID key because it should be the same as already in the storage.
-                    if (row != null) {
-                        writeBatch.put(helper.dataCf, payloadKey, serializeBinaryRow(row));
-                    }
-
-                    return previousRow;
-                } else {
-                    ByteBuffer txState = createTxState(rowId, txId, commitTableId, commitPartitionId, row == null);
-
-                    ByteBuffer dataId = readDataIdFromTxState(txState);
-
-                    writeBatch.put(helper.partCf, uncommittedDataIdKey, txState.array());
-
-                    if (row != null) {
-                        writeBatch.put(helper.dataCf, helper.createPayloadKey(dataId), serializeBinaryRow(row));
-                    }
-
-                    return null;
+                if (row != null) {
+                    writeBatch.put(helper.dataCf, helper.createPayloadKey(dataId), serializeBinaryRow(row));
                 }
+
+                return null;
+
+//                byte[] previousTxState = writeBatch.getFromBatchAndDB(db, helper.partCf, readOpts, uncommittedDataIdKey);
+//
+//                // Previous value must belong to the same transaction.
+//                if (previousTxState != null) {
+//                    ByteBuffer previousTxStateBuffer = ByteBuffer.wrap(previousTxState);
+//
+//                    validateTxId(previousTxStateBuffer, txId);
+//
+//                    ByteBuffer dataId = readDataIdFromTxState(previousTxStateBuffer);
+//
+//                    byte[] payloadKey = helper.createPayloadKey(dataId);
+//
+//                    BinaryRow previousRow = null;
+//
+//                    boolean isOldValueTombstone = isTombstone(dataId);
+//
+//                    if (!isOldValueTombstone) {
+//                        byte[] previousRowBytes = writeBatch.getFromBatchAndDB(db, helper.dataCf, readOpts, payloadKey);
+//
+//                        previousRow = deserializeRow(previousRowBytes);
+//                    }
+//
+//                    // We need to flip the tombstone bit in case we are overwriting a previous Write Intent with a different
+//                    // tombstone bit.
+//                    if (isOldValueTombstone ^ (row == null)) {
+//                        setFirstBit(previousTxState, DATA_ID_SIZE - 1, row == null);
+//
+//                        writeBatch.put(helper.partCf, uncommittedDataIdKey, previousTxState);
+//                    }
+//
+//                    // No need to update the Data ID key because it should be the same as already in the storage.
+//                    if (row != null) {
+//                        writeBatch.put(helper.dataCf, payloadKey, serializeBinaryRow(row));
+//                    }
+//
+//                    return previousRow;
+//                } else {
+//                    ByteBuffer txState = createTxState(rowId, txId, commitTableId, commitPartitionId, row == null);
+//
+//                    ByteBuffer dataId = readDataIdFromTxState(txState);
+//
+//                    writeBatch.put(helper.partCf, uncommittedDataIdKey, txState.array());
+//
+//                    if (row != null) {
+//                        writeBatch.put(helper.dataCf, helper.createPayloadKey(dataId), serializeBinaryRow(row));
+//                    }
+//
+//                    return null;
+//                }
             } catch (RocksDBException e) {
                 throw new IgniteRocksDbException("Failed to update a row in storage: " + createStorageInfo(), e);
             }
@@ -1194,7 +1206,7 @@ public class RocksDbMvPartitionStorage implements MvPartitionStorage {
             return;
         }
 
-        busyLock.block();
+        blockBusy();
 
         readOpts.close();
         helper.close();
@@ -1572,14 +1584,14 @@ public class RocksDbMvPartitionStorage implements MvPartitionStorage {
     }
 
     private <V> V busy(Supplier<V> supplier) {
-        if (!busyLock.enterBusy()) {
+        if (!enterBusy()) {
             throwExceptionDependingOnStorageState(state.get(), createStorageInfo());
         }
 
         try {
             return supplier.get();
         } finally {
-            busyLock.leaveBusy();
+            leaveBusy();
         }
     }
 
@@ -1601,14 +1613,14 @@ public class RocksDbMvPartitionStorage implements MvPartitionStorage {
         }
 
         // Change storage states and expect all storage operations to stop soon.
-        busyLock.block();
+        blockBusy();
 
         try {
             clearStorage(writeBatch, REBALANCE_IN_PROGRESS, REBALANCE_IN_PROGRESS);
         } catch (RocksDBException e) {
             throw new StorageRebalanceException("Error when trying to start rebalancing storage: " + createStorageInfo(), e);
         } finally {
-            busyLock.unblock();
+            unblockBusy();
         }
     }
 
@@ -1712,7 +1724,7 @@ public class RocksDbMvPartitionStorage implements MvPartitionStorage {
         }
 
         // Changed storage states and expect all storage operations to stop soon.
-        busyLock.block();
+        blockBusy();
 
         clearStorage(writeBatch, 0, 0);
     }
@@ -1722,7 +1734,24 @@ public class RocksDbMvPartitionStorage implements MvPartitionStorage {
      */
     void finishCleanup() {
         if (state.compareAndSet(StorageState.CLEANUP, StorageState.RUNNABLE)) {
-            busyLock.unblock();
+            blockBusy();
         }
+    }
+
+
+    protected final boolean enterBusy() {
+        return !busyLock.isWriteLockedByCurrentThread() && busyLock.readLock().tryLock();
+    }
+
+    protected final void leaveBusy() {
+        busyLock.readLock().unlock();
+    }
+
+    private void blockBusy() {
+        busyLock.writeLock().lock();
+    }
+
+    private void unblockBusy() {
+        busyLock.writeLock().unlock();
     }
 }
