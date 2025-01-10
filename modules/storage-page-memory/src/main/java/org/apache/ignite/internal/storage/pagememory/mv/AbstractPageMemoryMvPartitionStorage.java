@@ -70,7 +70,7 @@ import org.apache.ignite.internal.storage.util.StorageState;
 import org.apache.ignite.internal.storage.util.StorageUtils;
 import org.apache.ignite.internal.util.Cursor;
 import org.apache.ignite.internal.util.CursorUtils;
-import org.apache.ignite.internal.util.IgniteSpinBusyLock;
+import org.apache.ignite.internal.util.IgniteStripedReadWriteLock;
 import org.jetbrains.annotations.Nullable;
 
 /**
@@ -112,7 +112,7 @@ public abstract class AbstractPageMemoryMvPartitionStorage implements MvPartitio
     private final DataPageReader rowVersionDataPageReader;
 
     /** Busy lock. */
-    private final IgniteSpinBusyLock busyLock = new IgniteSpinBusyLock();
+    private final IgniteStripedReadWriteLock busyLock = new IgniteStripedReadWriteLock();
 
     private final UpdateNextLinkHandler updateNextLinkHandler;
 
@@ -583,7 +583,7 @@ public abstract class AbstractPageMemoryMvPartitionStorage implements MvPartitio
             return;
         }
 
-        busyLock.block();
+        blockBusy();
 
         closeResources();
     }
@@ -637,7 +637,7 @@ public abstract class AbstractPageMemoryMvPartitionStorage implements MvPartitio
 
         indexes.transitionToDestroyedState();
 
-        busyLock.block();
+        blockBusy();
 
         return true;
     }
@@ -651,31 +651,31 @@ public abstract class AbstractPageMemoryMvPartitionStorage implements MvPartitio
      * @throws StorageClosedException If the storage is closed.
      */
     <V> V busy(Supplier<V> supplier) {
-        if (!busyLock.enterBusy()) {
+        if (!enterBusy()) {
             throwExceptionDependingOnStorageState(state.get(), createStorageInfo());
         }
 
         try {
             return supplier.get();
         } finally {
-            busyLock.leaveBusy();
+            leaveBusy();
         }
     }
 
     /**
-     * Performs a {@code fn} in {@code busyLock} if {@link IgniteSpinBusyLock#enterBusy()} succeed. Otherwise it just silently returns.
+     * Performs a {@code fn} in {@code busyLock} if {@link #enterBusy()} succeed. Otherwise it just silently returns.
      *
      * @param fn Runnable to run.
      */
     void busySafe(Runnable fn) {
-        if (!busyLock.enterBusy()) {
+        if (!enterBusy()) {
             return;
         }
 
         try {
             fn.run();
         } finally {
-            busyLock.leaveBusy();
+            leaveBusy();
         }
     }
 
@@ -699,7 +699,7 @@ public abstract class AbstractPageMemoryMvPartitionStorage implements MvPartitio
         }
 
         // Changed storage states and expect all storage operations to stop soon.
-        busyLock.block();
+        blockBusy();
 
         try {
             closeAll(getResourcesToCloseOnCleanup());
@@ -711,7 +711,7 @@ public abstract class AbstractPageMemoryMvPartitionStorage implements MvPartitio
                     e
             );
         } finally {
-            busyLock.unblock();
+            unblockBusy();
         }
     }
 
@@ -770,14 +770,14 @@ public abstract class AbstractPageMemoryMvPartitionStorage implements MvPartitio
         }
 
         // Changed storage states and expect all storage operations to stop soon.
-        busyLock.block();
+        blockBusy();
 
         try {
             closeAll(getResourcesToCloseOnCleanup());
 
             indexes.startCleanup();
         } finally {
-            busyLock.unblock();
+            unblockBusy();
         }
     }
 
@@ -923,4 +923,20 @@ public abstract class AbstractPageMemoryMvPartitionStorage implements MvPartitio
      * @see MvPartitionStorage#estimatedSize
      */
     public abstract void decrementEstimatedSize();
+
+    protected final boolean enterBusy() {
+        return !busyLock.isWriteLockedByCurrentThread() && busyLock.readLock().tryLock();
+    }
+
+    protected final void leaveBusy() {
+        busyLock.readLock().unlock();
+    }
+
+    private void blockBusy() {
+        busyLock.writeLock().lock();
+    }
+
+    private void unblockBusy() {
+        busyLock.writeLock().unlock();
+    }
 }
