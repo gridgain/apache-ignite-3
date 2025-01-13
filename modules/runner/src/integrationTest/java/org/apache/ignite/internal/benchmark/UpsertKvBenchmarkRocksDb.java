@@ -21,6 +21,7 @@ import static org.apache.ignite.internal.benchmark.AbstractMultiNodeBenchmark.FI
 
 import java.io.ByteArrayOutputStream;
 import java.io.DataOutputStream;
+import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -45,6 +46,7 @@ import org.openjdk.jmh.runner.options.Options;
 import org.openjdk.jmh.runner.options.OptionsBuilder;
 import org.rocksdb.CompressionOptions;
 import org.rocksdb.FlushOptions;
+import org.rocksdb.ReadOptions;
 import org.rocksdb.RocksDB;
 import org.rocksdb.RocksDBException;
 import org.rocksdb.WriteOptions;
@@ -55,8 +57,8 @@ import org.rocksdb.WriteOptions;
 @State(Scope.Benchmark)
 @Fork(0)
 @Threads(1)
-@Warmup(iterations = 10, time = 2)
-@Measurement(iterations = 20, time = 2)
+@Warmup(iterations = 1, time = 2)
+@Measurement(iterations = 2, time = 2)
 @BenchmarkMode(Mode.Throughput)
 @OutputTimeUnit(TimeUnit.SECONDS)
 public class UpsertKvBenchmarkRocksDb {
@@ -76,7 +78,29 @@ public class UpsertKvBenchmarkRocksDb {
 
     ThreadLocal<ByteBuffer> key = ThreadLocal.withInitial(() -> ByteBuffer.allocateDirect(Integer.BYTES));
 
-    ByteBuffer val;
+    ThreadLocal<ByteBuffer> val = ThreadLocal.withInitial(() -> {
+        ByteArrayOutputStream bos = null;
+        try {
+            bos = new ByteArrayOutputStream();
+
+            DataOutputStream dos = new DataOutputStream(bos);
+
+            for (int i = 1; i < 11; i++) {
+                dos.writeChars(FIELD_VAL);
+            }
+
+            dos.flush();
+            dos.close();
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
+        byte[] data = bos.toByteArray();
+
+        ByteBuffer val = ByteBuffer.allocateDirect(data.length);
+        val.put(data);
+
+        return val;
+    });
 
     /**
      * Initializes the tuple.
@@ -85,21 +109,6 @@ public class UpsertKvBenchmarkRocksDb {
     public void setUp() throws Exception {
         options = new org.rocksdb.Options().setCreateIfMissing(true).setCompressionOptions(new CompressionOptions().setEnabled(false));
         rocksDB = RocksDB.open(options, "./tmpdb");
-
-        ByteArrayOutputStream bos = new ByteArrayOutputStream();
-
-        DataOutputStream dos = new DataOutputStream(bos);
-
-        for (int i = 1; i < 11; i++) {
-            dos.writeChars(FIELD_VAL);
-        }
-
-        dos.flush();
-        dos.close();
-        byte[] data = bos.toByteArray();
-
-        val = ByteBuffer.allocateDirect(data.length);
-        val.put(data);
 
         writeOptions = new WriteOptions().setDisableWAL(true);
     }
@@ -112,8 +121,15 @@ public class UpsertKvBenchmarkRocksDb {
         ByteBuffer keyBuf = key.get();
         keyBuf.rewind();
         keyBuf.putInt(nextId());
+        keyBuf.rewind();
 
-        rocksDB.put(writeOptions, keyBuf, val);
+        ByteBuffer valBuf = val.get();
+        valBuf.rewind();
+
+        assert keyBuf.position() == 0;
+        assert valBuf.position() == 0;
+
+        rocksDB.put(writeOptions, keyBuf, valBuf);
     }
 
     private int nextId() {
@@ -124,10 +140,23 @@ public class UpsertKvBenchmarkRocksDb {
 
     @TearDown
     public final void tearDown() throws Exception {
-        rocksDB.flush(new FlushOptions().setWaitForFlush(true));
+        ReadOptions ro = new ReadOptions();
+
+        int k = 0;
+        ByteBuffer tmp = ByteBuffer.allocate(Integer.BYTES);
+        tmp.putInt(k);
+        tmp.rewind();
+        byte[] bytes = rocksDB.get(ro, tmp.array());
+
+        System.out.println("READ k=" + k + " len=" + bytes.length);
+
+        FlushOptions fo = new FlushOptions();
+        rocksDB.flush(fo.setWaitForFlush(true));
         rocksDB.close();
         options.close();
         writeOptions.close();
+        fo.close();
+        ro.close();
     }
 
     /**
