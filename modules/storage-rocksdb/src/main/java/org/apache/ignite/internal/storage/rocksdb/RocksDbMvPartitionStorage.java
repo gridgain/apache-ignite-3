@@ -282,7 +282,7 @@ public class RocksDbMvPartitionStorage implements MvPartitionStorage {
         if (existingState != null) {
             return closure.execute(existingState.locker);
         } else {
-            return busy(() -> {
+            return busy(() -> { // TODO locks taken twice.
                 LocalLocker locker = new LocalLocker(helper.lockByRowId);
 
                 try (var writeBatch = new WriteBatchWithIndex()) {
@@ -302,7 +302,7 @@ public class RocksDbMvPartitionStorage implements MvPartitionStorage {
                         if (writeBatch.count() > 0) {
                             // Check if the current thread's modifications have affected the estimated size. If they have,
                             // we need to use synchronization in order to atomically update and persist the new estimated size.
-                            if (state.pendingEstimatedSizeDiff != 0) {
+                            if (state.pendingEstimatedSizeDiff != 0) { // TODO what is it ??
                                 synchronized (this) {
                                     long newEstimatedSize = estimatedSize + state.pendingEstimatedSizeDiff;
 
