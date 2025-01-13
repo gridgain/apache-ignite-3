@@ -263,6 +263,15 @@ tasks.register("runUpsertBenchmark", JavaExec) {
     classpath = sourceSets.integrationTest.runtimeClasspath
 }
 
+tasks.register("runUpsertBenchmarkRocksDb", JavaExec) {
+    mainClass = "org.apache.ignite.internal.benchmark.UpsertKvBenchmarkRocksDb"
+
+    jvmArgs += addOpens
+    jvmArgs += ["-Xmx16g"]
+
+    classpath = sourceSets.integrationTest.runtimeClasspath
+}
+
 jar {
     manifest {
         attributes(
