@@ -142,7 +142,7 @@ public class UpsertKvBenchmarkRocksDb {
     public final void tearDown() throws Exception {
         ReadOptions ro = new ReadOptions();
 
-        int k = 0;
+        int k = 1;
         ByteBuffer tmp = ByteBuffer.allocate(Integer.BYTES);
         tmp.putInt(k);
         tmp.rewind();
@@ -150,8 +150,8 @@ public class UpsertKvBenchmarkRocksDb {
 
         System.out.println("READ k=" + k + " len=" + bytes.length);
 
-        FlushOptions fo = new FlushOptions();
-        rocksDB.flush(fo.setWaitForFlush(true));
+        FlushOptions fo = new FlushOptions().setWaitForFlush(true);
+        rocksDB.flush(fo);
         rocksDB.close();
         options.close();
         writeOptions.close();
