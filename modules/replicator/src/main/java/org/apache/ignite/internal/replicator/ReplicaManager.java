@@ -24,6 +24,7 @@ import static java.util.concurrent.CompletableFuture.supplyAsync;
 import static java.util.stream.Collectors.toSet;
 import static org.apache.ignite.internal.failure.FailureType.CRITICAL_ERROR;
 import static org.apache.ignite.internal.lang.IgniteStringFormatter.format;
+import static org.apache.ignite.internal.lang.IgniteSystemProperties.getBoolean;
 import static org.apache.ignite.internal.raft.PeersAndLearners.fromAssignments;
 import static org.apache.ignite.internal.replicator.LocalReplicaEvent.AFTER_REPLICA_STARTED;
 import static org.apache.ignite.internal.replicator.LocalReplicaEvent.BEFORE_REPLICA_STOPPED;
@@ -151,6 +152,10 @@ public class ReplicaManager extends AbstractEventProducer<LocalReplicaEvent, Loc
     private static final ReplicaMessagesFactory REPLICA_MESSAGES_FACTORY = new ReplicaMessagesFactory();
 
     private static final PlacementDriverMessagesFactory PLACEMENT_DRIVER_MESSAGES_FACTORY = new PlacementDriverMessagesFactory();
+
+    /* Feature flag for zone based collocation track */
+    // TODO IGNITE-22115 remove it; direct property name usage because the flag isn't a reason to add replicator as a dependency.
+    public static final boolean ZONE_COLOCATION_IS_ENABLED = getBoolean("IGNITE_ZONE_BASED_REPLICATION", false);
 
     private final IgniteThrottledLogger throttledLog;
 
@@ -656,7 +661,7 @@ public class ReplicaManager extends AbstractEventProducer<LocalReplicaEvent, Loc
     }
 
     /**
-     * Creates and starts a new replica.
+     * Creates and starts a new partition replica.
      *
      * @param raftGroupEventsListener Raft group events listener for raft group starting.
      * @param raftGroupListener Raft group listener for raft group starting.
@@ -680,6 +685,8 @@ public class ReplicaManager extends AbstractEventProducer<LocalReplicaEvent, Loc
             ReplicationGroupId replicaGrpId,
             PeersAndLearners newConfiguration
     ) throws NodeStoppingException {
+        assert !ZONE_COLOCATION_IS_ENABLED : "Partition replicas are prohibited while zone based colocation is enabled.";
+
         if (!enterBusy()) {
             throw new NodeStoppingException();
         }
@@ -711,7 +718,7 @@ public class ReplicaManager extends AbstractEventProducer<LocalReplicaEvent, Loc
     }
 
     /**
-     * Starts a replica. If a replica with the same partition id already exists, the method throws an exception.
+     * Starts a zone based replica. If a replica with the same partition id already exists, the method throws an exception.
      *
      * @param replicaGrpId Replication group id.
      * @param snapshotStorageFactory Snapshot storage factory for raft group option's parameterization.

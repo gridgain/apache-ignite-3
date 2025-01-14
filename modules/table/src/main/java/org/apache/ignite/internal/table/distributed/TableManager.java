@@ -45,6 +45,7 @@ import static org.apache.ignite.internal.distributionzones.rebalance.RebalanceUt
 import static org.apache.ignite.internal.event.EventListener.fromConsumer;
 import static org.apache.ignite.internal.hlc.HybridTimestamp.LOGICAL_TIME_BITS_SIZE;
 import static org.apache.ignite.internal.hlc.HybridTimestamp.hybridTimestampToLong;
+import static org.apache.ignite.internal.lang.IgniteSystemProperties.getBoolean;
 import static org.apache.ignite.internal.metastorage.dsl.Conditions.notExists;
 import static org.apache.ignite.internal.metastorage.dsl.Operations.put;
 import static org.apache.ignite.internal.partitiondistribution.PartitionDistributionUtils.calculateAssignmentForPartition;
@@ -261,6 +262,10 @@ public class TableManager implements IgniteTablesInternal, IgniteComponent {
 
     /** Table messages factory. */
     private static final PartitionReplicationMessagesFactory TABLE_MESSAGES_FACTORY = new PartitionReplicationMessagesFactory();
+
+    /* Feature flag for zone based collocation track */
+    // TODO IGNITE-22115 remove it
+    public static final boolean ZONE_COLOCATION_IS_ENABLED = getBoolean(PartitionReplicaLifecycleManager.FEATURE_FLAG_NAME, false);
 
     private final TopologyService topologyService;
 
@@ -651,11 +656,14 @@ public class TableManager implements IgniteTablesInternal, IgniteComponent {
 
             startTables(recoveryRevision, lowWatermark.getLowWatermark());
 
-            processAssignmentsOnRecovery(recoveryRevision);
+            if (!ZONE_COLOCATION_IS_ENABLED) {
+                processAssignmentsOnRecovery(recoveryRevision);
 
-            metaStorageMgr.registerPrefixWatch(new ByteArray(PENDING_ASSIGNMENTS_PREFIX_BYTES), pendingAssignmentsRebalanceListener);
-            metaStorageMgr.registerPrefixWatch(new ByteArray(STABLE_ASSIGNMENTS_PREFIX_BYTES), stableAssignmentsRebalanceListener);
-            metaStorageMgr.registerPrefixWatch(new ByteArray(ASSIGNMENTS_SWITCH_REDUCE_PREFIX_BYTES), assignmentsSwitchRebalanceListener);
+                metaStorageMgr.registerPrefixWatch(new ByteArray(PENDING_ASSIGNMENTS_PREFIX_BYTES), pendingAssignmentsRebalanceListener);
+                metaStorageMgr.registerPrefixWatch(new ByteArray(STABLE_ASSIGNMENTS_PREFIX_BYTES), stableAssignmentsRebalanceListener);
+                metaStorageMgr.registerPrefixWatch(new ByteArray(ASSIGNMENTS_SWITCH_REDUCE_PREFIX_BYTES),
+                        assignmentsSwitchRebalanceListener);
+            }
 
             catalogService.listen(CatalogEvent.TABLE_CREATE, parameters -> onTableCreate((CreateTableEventParameters) parameters));
             catalogService.listen(CatalogEvent.TABLE_CREATE, parameters ->
@@ -900,6 +908,10 @@ public class TableManager implements IgniteTablesInternal, IgniteComponent {
 
 
     private CompletableFuture<Boolean> onPrimaryReplicaExpired(PrimaryReplicaEventParameters parameters) {
+        if (ZONE_COLOCATION_IS_ENABLED) {
+            return falseCompletedFuture();
+        }
+
         if (topologyService.localMember().id().equals(parameters.leaseholderId())) {
             TablePartitionId groupId = (TablePartitionId) parameters.groupId();
 
@@ -1202,6 +1214,10 @@ public class TableManager implements IgniteTablesInternal, IgniteComponent {
             boolean isRecovery,
             long assignmentsTimestamp
     ) {
+        if (ZONE_COLOCATION_IS_ENABLED) {
+            return nullCompletedFuture();
+        }
+
         int tableId = table.tableId();
 
         var internalTbl = (InternalTableImpl) table.internalTable();
@@ -1872,17 +1888,25 @@ public class TableManager implements IgniteTablesInternal, IgniteComponent {
                 .collect(toSet());
         metaStorageMgr.removeAll(assignmentKeys);
 
-        CompletableFuture<?>[] stopReplicaAndDestroyFutures = new CompletableFuture<?>[partitions];
+        CompletableFuture<?> stopReplicaAndDestroyFuture;
 
-        // TODO https://issues.apache.org/jira/browse/IGNITE-19170 Partitions should be stopped on the assignments change
-        //  event triggered by zone drop or alter. Stop replica asynchronously, out of metastorage event pipeline.
-        for (int partitionId = 0; partitionId < partitions; partitionId++) {
-            var replicationGroupId = new TablePartitionId(tableId, partitionId);
+        if (ZONE_COLOCATION_IS_ENABLED) {
+            CompletableFuture<?>[] stopReplicaAndDestroyFutures = new CompletableFuture<?>[partitions];
 
-            stopReplicaAndDestroyFutures[partitionId] = stopAndDestroyPartition(replicationGroupId, table);
+            // TODO https://issues.apache.org/jira/browse/IGNITE-19170 Partitions should be stopped on the assignments change
+            //  event triggered by zone drop or alter. Stop replica asynchronously, out of metastorage event pipeline.
+            for (int partitionId = 0; partitionId < partitions; partitionId++) {
+                var replicationGroupId = new TablePartitionId(tableId, partitionId);
+
+                stopReplicaAndDestroyFutures[partitionId] = stopAndDestroyPartition(replicationGroupId, table);
+            }
+
+            stopReplicaAndDestroyFuture = allOf(stopReplicaAndDestroyFutures);
+        } else {
+            stopReplicaAndDestroyFuture = nullCompletedFuture();
         }
 
-        return allOf(stopReplicaAndDestroyFutures)
+        return stopReplicaAndDestroyFuture
                 .thenComposeAsync(
                         unused -> inBusyLockAsync(busyLock, () -> allOf(
                                 internalTable.storage().destroy(),
@@ -2338,6 +2362,7 @@ public class TableManager implements IgniteTablesInternal, IgniteComponent {
                     }
 
                     assert replicaMgr.isReplicaStarted(replicaGrpId) : "The local node is outside of the replication group ["
+                            + "groupId=[type=" + replicaGrpId.getClass() + ", id=" + replicaGrpId + "]"
                             + ", stable=" + stableAssignments
                             + ", pending=" + pendingAssignments
                             + ", localName=" + localNode().name() + "].";
@@ -2726,11 +2751,15 @@ public class TableManager implements IgniteTablesInternal, IgniteComponent {
 
         CompletableFuture<Boolean> stopReplicaFuture;
 
-        try {
-            stopReplicaFuture = replicaMgr.stopReplica(tablePartitionId);
-        } catch (NodeStoppingException e) {
-            // No-op.
-            stopReplicaFuture = falseCompletedFuture();
+        if (ZONE_COLOCATION_IS_ENABLED) {
+            stopReplicaFuture = trueCompletedFuture();
+        } else {
+            try {
+                stopReplicaFuture = replicaMgr.stopReplica(tablePartitionId);
+            } catch (NodeStoppingException e) {
+                // No-op.
+                stopReplicaFuture = falseCompletedFuture();
+            }
         }
 
         return stopReplicaFuture
