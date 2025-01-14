@@ -201,7 +201,7 @@ public class AbstractMultiNodeBenchmark {
                 + "  storage.profiles: {"
                 + "        " + DEFAULT_STORAGE_PROFILE + ".engine: rocksdb, "
                 + "        " + DEFAULT_STORAGE_PROFILE + ".size: 268435456, " // Avoid page replacement.
-                + "        " + DEFAULT_STORAGE_PROFILE + ".writeBufferSize: 536870912"
+                + "        " + DEFAULT_STORAGE_PROFILE + ".writeBufferSize: 2147483648"
                 + "  },\n"
                 + "  clientConnector: { port:{} },\n"
                 + "  rest.port: {},\n"

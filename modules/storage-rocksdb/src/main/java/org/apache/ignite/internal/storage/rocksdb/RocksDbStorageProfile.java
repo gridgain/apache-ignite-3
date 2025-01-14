@@ -36,6 +36,8 @@ public class RocksDbStorageProfile {
     /** Write buffer manager instance. */
     private WriteBufferManager writeBufferManager;
 
+    private long writeBufferSize;
+
     /**
      * Constructor.
      *
@@ -49,7 +51,7 @@ public class RocksDbStorageProfile {
      * Start the profile.
      */
     public void start() {
-        long writeBufferSize = storageProfileConfig.writeBufferSize();
+        writeBufferSize = storageProfileConfig.writeBufferSize();
 
         long totalCacheSize = storageProfileConfig.size() + writeBufferSize;
 
@@ -77,5 +79,9 @@ public class RocksDbStorageProfile {
      */
     public WriteBufferManager writeBufferManager() {
         return writeBufferManager;
+    }
+
+    public long getWriteBufferSize() {
+        return writeBufferSize;
     }
 }

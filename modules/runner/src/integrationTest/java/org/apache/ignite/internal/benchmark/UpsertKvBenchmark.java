@@ -17,6 +17,7 @@
 
 package org.apache.ignite.internal.benchmark;
 
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
@@ -46,7 +47,7 @@ import org.openjdk.jmh.runner.options.OptionsBuilder;
  * Benchmark for a single upsert operation via KV API with a possibility to disable updates via RAFT and to storage.
  */
 @State(Scope.Benchmark)
-@Fork(1)
+@Fork(0)
 @Threads(1)
 @Warmup(iterations = 10, time = 2)
 @Measurement(iterations = 20, time = 2)
@@ -145,5 +146,10 @@ public class UpsertKvBenchmark extends AbstractMultiNodeBenchmark {
     @Override
     protected int replicaCount() {
         return 1;
+    }
+
+    @Override
+    protected Path workDir() throws Exception {
+        return Path.of(".");
     }
 }

@@ -49,6 +49,7 @@ import org.rocksdb.FlushOptions;
 import org.rocksdb.ReadOptions;
 import org.rocksdb.RocksDB;
 import org.rocksdb.RocksDBException;
+import org.rocksdb.SkipListMemTableConfig;
 import org.rocksdb.WriteOptions;
 
 /**
@@ -75,6 +76,8 @@ public class UpsertKvBenchmarkRocksDb {
     RocksDB rocksDB;
 
     WriteOptions writeOptions;
+
+    CompressionOptions compressionOptions;
 
     ThreadLocal<ByteBuffer> key = ThreadLocal.withInitial(() -> ByteBuffer.allocateDirect(Integer.BYTES));
 
@@ -107,7 +110,15 @@ public class UpsertKvBenchmarkRocksDb {
      */
     @Setup
     public void setUp() throws Exception {
-        options = new org.rocksdb.Options().setCreateIfMissing(true).setCompressionOptions(new CompressionOptions().setEnabled(false));
+        compressionOptions = new CompressionOptions().setEnabled(true);
+        options = new org.rocksdb.Options()
+                .setMemTableConfig(new SkipListMemTableConfig())
+                .setWriteBufferSize(20L * 1024 * 1024 * 1024)
+                .setDisableAutoCompactions(true)
+                .setAllowConcurrentMemtableWrite(true)
+                .setEnableWriteThreadAdaptiveYield(true)
+                .setCreateIfMissing(true)
+                .setCompressionOptions(compressionOptions);
         rocksDB = RocksDB.open(options, "./tmpdb");
 
         writeOptions = new WriteOptions().setDisableWAL(true);
@@ -157,6 +168,7 @@ public class UpsertKvBenchmarkRocksDb {
         writeOptions.close();
         fo.close();
         ro.close();
+        compressionOptions.close();
     }
 
     /**

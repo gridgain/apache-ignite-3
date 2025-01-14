@@ -88,10 +88,11 @@ public class SharedRocksDbInstanceCreator {
             DBOptions dbOptions = add(new DBOptions()
                     .setCreateIfMissing(true)
                     .setCreateMissingColumnFamilies(true)
+                    .setDbWriteBufferSize(profile.getWriteBufferSize())
                     // Atomic flush must be enabled to guarantee consistency between different column families when WAL is disabled.
                     .setAtomicFlush(true)
                     .setListeners(List.of(flusher.listener()))
-                    .setWriteBufferManager(profile.writeBufferManager())
+                    //.setWriteBufferManager(profile.writeBufferManager())
                     // Don't flush on shutdown to speed up node shutdown as on recovery we'll apply commands from log.
                     .setAvoidFlushDuringShutdown(true)
             );
@@ -208,7 +209,7 @@ public class SharedRocksDbInstanceCreator {
             case META:
             case GC_QUEUE:
             case DATA:
-                return add(new ColumnFamilyOptions());
+                return add(new ColumnFamilyOptions().setWriteBufferSize(1L * 1024 * 1024 * 1024).setDisableAutoCompactions(true));
 
             case PARTITION:
                 return add(defaultCfOptions().useCappedPrefixExtractor(PartitionDataHelper.ROW_PREFIX_SIZE));
