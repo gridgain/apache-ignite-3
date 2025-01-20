@@ -469,7 +469,7 @@ public class PartitionListener implements RaftGroupListener {
 
         // We MUST bump information about last updated index+term.
         // See a comment in #onWrite() for explanation.
-        advanceLastAppliedIndexConsistently(commandIndex, commandTerm);
+        //advanceLastAppliedIndexConsistently(commandIndex, commandTerm);
 
         return new IgniteBiTuple<>(null, true);
     }
