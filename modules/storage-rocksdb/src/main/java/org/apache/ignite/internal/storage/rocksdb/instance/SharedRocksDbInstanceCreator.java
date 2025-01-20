@@ -214,11 +214,10 @@ public class SharedRocksDbInstanceCreator {
                 return add(defaultCfOptions());
 
             case PARTITION:
-                return add(defaultCfOptions());
+                return add(defaultCfOptions().useCappedPrefixExtractor(PartitionDataHelper.ROW_PREFIX_SIZE));
 
             case HASH_INDEX:
-                //return add(defaultCfOptions().useCappedPrefixExtractor(RocksDbHashIndexStorage.FIXED_PREFIX_LENGTH));
-                return add(defaultCfOptions());
+                return add(defaultCfOptions().useCappedPrefixExtractor(RocksDbHashIndexStorage.FIXED_PREFIX_LENGTH));
 
             case SORTED_INDEX:
                 return add(sortedIndexCfOptions(cfName));
