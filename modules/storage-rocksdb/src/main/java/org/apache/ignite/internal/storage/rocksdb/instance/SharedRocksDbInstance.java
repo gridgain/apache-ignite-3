@@ -70,7 +70,7 @@ import org.rocksdb.WriteOptions;
  */
 public final class SharedRocksDbInstance {
     /** Write options. */
-    public static final WriteOptions DFLT_WRITE_OPTS = new WriteOptions().setDisableWAL(true);
+    public static final WriteOptions DFLT_WRITE_OPTS = new WriteOptions().setDisableWAL(true).setNoSlowdown(true).setMemtableInsertHintPerBatch(true);
 
     /**
      * Class that represents a Column Family for sorted indexes and all index IDs that map to this Column Family.
