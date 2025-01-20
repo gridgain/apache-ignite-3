@@ -41,12 +41,14 @@ import org.apache.ignite.internal.storage.MvPartitionStorage.WriteClosure;
 import org.apache.ignite.internal.storage.RowId;
 import org.apache.ignite.internal.storage.util.LockByRowId;
 import org.jetbrains.annotations.Nullable;
+import org.rocksdb.AbstractWriteBatch;
 import org.rocksdb.ColumnFamilyHandle;
 import org.rocksdb.ReadOptions;
 import org.rocksdb.RocksDB;
 import org.rocksdb.RocksDBException;
 import org.rocksdb.RocksIterator;
 import org.rocksdb.Slice;
+import org.rocksdb.WriteBatch;
 import org.rocksdb.WriteBatchWithIndex;
 
 /** Helper for the partition data. */
@@ -190,18 +192,34 @@ public final class PartitionDataHelper implements ManuallyCloseable {
     static @Nullable WriteBatchWithIndex currentWriteBatch() {
         ThreadLocalState state = THREAD_LOCAL_STATE.get();
 
-        return state == null ? null : state.batch;
+        return state == null ? null : (WriteBatchWithIndex) state.batch;
     }
 
     /**
      * Same as {@link #currentWriteBatch()}, with the exception that the resulting write batch is not expected to be null.
      */
-    public static WriteBatchWithIndex requireWriteBatch() {
+    public static AbstractWriteBatch requireWriteBatch() {
         ThreadLocalState state = THREAD_LOCAL_STATE.get();
 
         assert state != null : "Attempting to write data outside of data access closure.";
 
         return state.batch;
+    }
+
+    public static WriteBatchWithIndex requireWriteBatch3() {
+        ThreadLocalState state = THREAD_LOCAL_STATE.get();
+
+        assert state != null : "Attempting to write data outside of data access closure.";
+
+        return (WriteBatchWithIndex) state.batch;
+    }
+
+    public static WriteBatch requireWriteBatch2() {
+        ThreadLocalState state = THREAD_LOCAL_STATE.get();
+
+        assert state != null : "Attempting to write data outside of data access closure.";
+
+        return (WriteBatch) state.batch;
     }
 
     /**

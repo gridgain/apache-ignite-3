@@ -34,6 +34,8 @@ import static org.apache.ignite.internal.storage.rocksdb.PartitionDataHelper.isT
 import static org.apache.ignite.internal.storage.rocksdb.PartitionDataHelper.putTimestampDesc;
 import static org.apache.ignite.internal.storage.rocksdb.PartitionDataHelper.readTimestampDesc;
 import static org.apache.ignite.internal.storage.rocksdb.PartitionDataHelper.requireWriteBatch;
+import static org.apache.ignite.internal.storage.rocksdb.PartitionDataHelper.requireWriteBatch2;
+import static org.apache.ignite.internal.storage.rocksdb.PartitionDataHelper.requireWriteBatch3;
 import static org.apache.ignite.internal.storage.rocksdb.PartitionDataHelper.setFirstBit;
 import static org.apache.ignite.internal.storage.rocksdb.PartitionDataHelper.wrapIterator;
 import static org.apache.ignite.internal.storage.rocksdb.RocksDbMetaStorage.ESTIMATED_SIZE_PREFIX;
@@ -285,7 +287,7 @@ public class RocksDbMvPartitionStorage implements MvPartitionStorage {
             return busy(() -> { // TODO locks taken twice.
                 LocalLocker locker = new LocalLocker(helper.lockByRowId);
 
-                try (var writeBatch = new WriteBatchWithIndex()) {
+                try (var writeBatch = new WriteBatch()) {
                     var state = new ThreadLocalState(writeBatch, locker);
                     THREAD_LOCAL_STATE.set(state);
 
@@ -451,7 +453,7 @@ public class RocksDbMvPartitionStorage implements MvPartitionStorage {
     public @Nullable BinaryRow addWrite(RowId rowId, @Nullable BinaryRow row, UUID txId, int commitTableId, int commitPartitionId)
             throws TxIdMismatchException, StorageException {
         return busy(() -> {
-            @SuppressWarnings("resource") WriteBatchWithIndex writeBatch = requireWriteBatch();
+            @SuppressWarnings("resource") WriteBatch writeBatch = requireWriteBatch2();
 
             assert rowIsLocked(rowId);
 
@@ -586,7 +588,7 @@ public class RocksDbMvPartitionStorage implements MvPartitionStorage {
         return busy(() -> {
             throwExceptionIfStorageInProgressOfRebalance(state.get(), this::createStorageInfo);
 
-            @SuppressWarnings("resource") WriteBatchWithIndex writeBatch = requireWriteBatch();
+            @SuppressWarnings("resource") WriteBatchWithIndex writeBatch = requireWriteBatch3();
 
             assert rowIsLocked(rowId);
 
@@ -633,7 +635,7 @@ public class RocksDbMvPartitionStorage implements MvPartitionStorage {
     @Override
     public void commitWrite(RowId rowId, HybridTimestamp timestamp) throws StorageException {
         busy(() -> {
-            WriteBatchWithIndex writeBatch = requireWriteBatch();
+            WriteBatchWithIndex writeBatch = requireWriteBatch3();
 
             assert rowIsLocked(rowId);
 
@@ -680,7 +682,7 @@ public class RocksDbMvPartitionStorage implements MvPartitionStorage {
     @Override
     public void addWriteCommitted(RowId rowId, @Nullable BinaryRow row, HybridTimestamp commitTimestamp) throws StorageException {
         busy(() -> {
-            WriteBatchWithIndex writeBatch = requireWriteBatch();
+            WriteBatchWithIndex writeBatch = requireWriteBatch3();
 
             assert rowIsLocked(rowId);
 
@@ -1169,7 +1171,7 @@ public class RocksDbMvPartitionStorage implements MvPartitionStorage {
 
     @Override
     public @Nullable GcEntry peek(HybridTimestamp lowWatermark) {
-        WriteBatchWithIndex batch = requireWriteBatch();
+        WriteBatchWithIndex batch = requireWriteBatch3();
 
         // No busy lock required, we're already in "runConsistently" closure.
         throwExceptionIfStorageInProgressOfRebalance(state.get(), this::createStorageInfo);
@@ -1179,7 +1181,7 @@ public class RocksDbMvPartitionStorage implements MvPartitionStorage {
 
     @Override
     public @Nullable BinaryRow vacuum(GcEntry entry) {
-        WriteBatchWithIndex batch = requireWriteBatch();
+        WriteBatchWithIndex batch = requireWriteBatch3();
 
         // No busy lock required, we're already in "runConsistently" closure.
         throwExceptionIfStorageInProgressOfRebalance(state.get(), this::createStorageInfo);

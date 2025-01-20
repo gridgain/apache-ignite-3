@@ -122,7 +122,7 @@ public class RocksDbSortedIndexStorage extends AbstractRocksDbIndexStorage imple
     public void put(IndexRow row) {
         busyNonDataRead(() -> {
             try {
-                @SuppressWarnings("resource") WriteBatchWithIndex writeBatch = PartitionDataHelper.requireWriteBatch();
+                @SuppressWarnings("resource") WriteBatchWithIndex writeBatch = PartitionDataHelper.requireWriteBatch3();
 
                 writeBatch.put(indexCf.handle(), rocksKey(row), BYTE_EMPTY_ARRAY);
 
@@ -139,7 +139,7 @@ public class RocksDbSortedIndexStorage extends AbstractRocksDbIndexStorage imple
             throwExceptionIfStorageInProgressOfRebalance(state.get(), this::createStorageInfo);
 
             try {
-                @SuppressWarnings("resource") WriteBatchWithIndex writeBatch = PartitionDataHelper.requireWriteBatch();
+                @SuppressWarnings("resource") WriteBatchWithIndex writeBatch = PartitionDataHelper.requireWriteBatch3();
 
                 writeBatch.delete(indexCf.handle(), rocksKey(row));
 

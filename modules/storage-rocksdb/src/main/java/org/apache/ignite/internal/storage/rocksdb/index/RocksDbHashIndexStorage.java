@@ -36,6 +36,7 @@ import org.apache.ignite.internal.storage.rocksdb.PartitionDataHelper;
 import org.apache.ignite.internal.storage.rocksdb.RocksDbMetaStorage;
 import org.apache.ignite.internal.util.Cursor;
 import org.apache.ignite.internal.util.HashUtils;
+import org.rocksdb.AbstractWriteBatch;
 import org.rocksdb.RocksDBException;
 import org.rocksdb.WriteBatch;
 import org.rocksdb.WriteBatchWithIndex;
@@ -125,7 +126,7 @@ public class RocksDbHashIndexStorage extends AbstractRocksDbIndexStorage impleme
     public void put(IndexRow row) {
         busyNonDataRead(() -> {
             try {
-                WriteBatchWithIndex writeBatch = PartitionDataHelper.requireWriteBatch();
+                AbstractWriteBatch writeBatch = PartitionDataHelper.requireWriteBatch();
 
                 writeBatch.put(indexCf.handle(), rocksKey(row), BYTE_EMPTY_ARRAY);
 
@@ -142,7 +143,7 @@ public class RocksDbHashIndexStorage extends AbstractRocksDbIndexStorage impleme
             throwExceptionIfStorageInProgressOfRebalance(state.get(), this::createStorageInfo);
 
             try {
-                WriteBatchWithIndex writeBatch = PartitionDataHelper.requireWriteBatch();
+                WriteBatchWithIndex writeBatch = PartitionDataHelper.requireWriteBatch3();
 
                 writeBatch.delete(indexCf.handle(), rocksKey(row));
 
