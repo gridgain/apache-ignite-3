@@ -125,15 +125,15 @@ public class RocksDbHashIndexStorage extends AbstractRocksDbIndexStorage impleme
     @Override
     public void put(IndexRow row) {
         busyNonDataRead(() -> {
-            try {
+            //try {
                 AbstractWriteBatch writeBatch = PartitionDataHelper.requireWriteBatch();
 
-                writeBatch.put(indexCf.handle(), rocksKey(row), BYTE_EMPTY_ARRAY);
+                //writeBatch.put(indexCf.handle(), rocksKey(row), BYTE_EMPTY_ARRAY);
 
                 return null;
-            } catch (RocksDBException e) {
-                throw new IgniteRocksDbException("Unable to insert data into hash index. Index ID: " + descriptor.id(), e);
-            }
+            //} catch (RocksDBException e) {
+              //  throw new IgniteRocksDbException("Unable to insert data into hash index. Index ID: " + descriptor.id(), e);
+            //}
         });
     }
 
