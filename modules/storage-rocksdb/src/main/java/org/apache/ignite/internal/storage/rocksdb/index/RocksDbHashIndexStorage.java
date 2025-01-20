@@ -128,7 +128,7 @@ public class RocksDbHashIndexStorage extends AbstractRocksDbIndexStorage impleme
             try {
                 AbstractWriteBatch writeBatch = PartitionDataHelper.requireWriteBatch();
 
-                writeBatch.put(indexCf.handle(), rocksKey(row), BYTE_EMPTY_ARRAY);
+                writeBatch.put(rocksKey(row), BYTE_EMPTY_ARRAY);
 
                 return null;
             } catch (RocksDBException e) {

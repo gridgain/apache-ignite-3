@@ -457,19 +457,19 @@ public class RocksDbMvPartitionStorage implements MvPartitionStorage {
 
             assert rowIsLocked(rowId);
 
-            //try {
+            try {
                 // Check concurrent transaction data.
-//                byte[] uncommittedDataIdKey = createUncommittedDataIdKey(rowId);
+                byte[] uncommittedDataIdKey = createUncommittedDataIdKey(rowId);
 
-  //              ByteBuffer txState = createTxState(rowId, txId, commitTableId, commitPartitionId, row == null);
+                ByteBuffer txState = createTxState(rowId, txId, commitTableId, commitPartitionId, row == null);
 
-    //            ByteBuffer dataId = readDataIdFromTxState(txState);
+                ByteBuffer dataId = readDataIdFromTxState(txState);
 
-//                writeBatch.put(helper.partCf, uncommittedDataIdKey, txState.array());
-//
-//                if (row != null) {
-//                    writeBatch.put(helper.dataCf, helper.createPayloadKey(dataId), serializeBinaryRow(row));
-//                }
+                writeBatch.put(uncommittedDataIdKey, txState.array());
+
+                if (row != null) {
+                    writeBatch.put(helper.createPayloadKey(dataId), serializeBinaryRow(row));
+                }
 
                 return null;
 
@@ -522,9 +522,9 @@ public class RocksDbMvPartitionStorage implements MvPartitionStorage {
 //
 //                    return null;
 //                }
-//            } catch (RocksDBException e) {
-//                throw new IgniteRocksDbException("Failed to update a row in storage: " + createStorageInfo(), e);
-//            }
+            } catch (RocksDBException e) {
+                throw new IgniteRocksDbException("Failed to update a row in storage: " + createStorageInfo(), e);
+            }
         });
     }
 
