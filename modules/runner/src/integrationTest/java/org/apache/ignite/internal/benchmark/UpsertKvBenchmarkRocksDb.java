@@ -101,7 +101,7 @@ public class UpsertKvBenchmarkRocksDb {
             DataOutputStream dos = new DataOutputStream(bos);
 
             for (int i = 1; i < 11; i++) {
-                dos.writeChars(FIELD_VAL);
+                dos.writeBytes(FIELD_VAL);
             }
 
             dos.flush();
