@@ -18,16 +18,23 @@
 package org.apache.ignite.internal.benchmark;
 
 import static org.apache.ignite.internal.benchmark.AbstractMultiNodeBenchmark.FIELD_VAL;
+import static org.rocksdb.AbstractEventListener.EnabledEventCallback.ON_COMPACTION_BEGIN;
+import static org.rocksdb.AbstractEventListener.EnabledEventCallback.ON_COMPACTION_COMPLETED;
+import static org.rocksdb.AbstractEventListener.EnabledEventCallback.ON_FLUSH_BEGIN;
+import static org.rocksdb.AbstractEventListener.EnabledEventCallback.ON_FLUSH_COMPLETED;
 
 import java.io.ByteArrayOutputStream;
 import java.io.DataOutputStream;
 import java.io.IOException;
 import java.nio.ByteBuffer;
+import java.nio.file.Paths;
+import java.util.List;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
-import org.apache.ignite.internal.lang.ByteArray;
-import org.apache.ignite.internal.util.IgniteUtils;
-import org.apache.ignite.table.Tuple;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.stream.Collectors;
+import org.apache.ignite.internal.logger.IgniteLogger;
+import org.apache.ignite.internal.logger.Loggers;
 import org.openjdk.jmh.annotations.Benchmark;
 import org.openjdk.jmh.annotations.BenchmarkMode;
 import org.openjdk.jmh.annotations.Fork;
@@ -44,7 +51,10 @@ import org.openjdk.jmh.runner.Runner;
 import org.openjdk.jmh.runner.RunnerException;
 import org.openjdk.jmh.runner.options.Options;
 import org.openjdk.jmh.runner.options.OptionsBuilder;
+import org.rocksdb.AbstractEventListener;
+import org.rocksdb.CompactionJobInfo;
 import org.rocksdb.CompressionOptions;
+import org.rocksdb.FlushJobInfo;
 import org.rocksdb.FlushOptions;
 import org.rocksdb.ReadOptions;
 import org.rocksdb.RocksDB;
@@ -58,8 +68,8 @@ import org.rocksdb.WriteOptions;
 @State(Scope.Benchmark)
 @Fork(0)
 @Threads(1)
-@Warmup(iterations = 1, time = 2)
-@Measurement(iterations = 2, time = 2)
+@Warmup(iterations = 10, time = 2)
+@Measurement(iterations = 20, time = 2)
 @BenchmarkMode(Mode.Throughput)
 @OutputTimeUnit(TimeUnit.SECONDS)
 public class UpsertKvBenchmarkRocksDb {
@@ -78,6 +88,8 @@ public class UpsertKvBenchmarkRocksDb {
     WriteOptions writeOptions;
 
     CompressionOptions compressionOptions;
+
+    TestListener testListener;
 
     ThreadLocal<ByteBuffer> key = ThreadLocal.withInitial(() -> ByteBuffer.allocateDirect(Integer.BYTES));
 
@@ -110,6 +122,8 @@ public class UpsertKvBenchmarkRocksDb {
      */
     @Setup
     public void setUp() throws Exception {
+        testListener = new TestListener("testlistener");
+
         compressionOptions = new CompressionOptions().setEnabled(true);
         options = new org.rocksdb.Options()
                 .setMemTableConfig(new SkipListMemTableConfig())
@@ -118,6 +132,7 @@ public class UpsertKvBenchmarkRocksDb {
                 .setAllowConcurrentMemtableWrite(true)
                 .setEnableWriteThreadAdaptiveYield(true)
                 .setCreateIfMissing(true)
+                .setListeners(List.of(testListener))
                 .setCompressionOptions(compressionOptions);
         rocksDB = RocksDB.open(options, "./tmpdb");
 
@@ -169,6 +184,7 @@ public class UpsertKvBenchmarkRocksDb {
         fo.close();
         ro.close();
         compressionOptions.close();
+        testListener.close();
     }
 
     /**
@@ -182,5 +198,101 @@ public class UpsertKvBenchmarkRocksDb {
                 .build();
 
         new Runner(opt).run();
+    }
+
+    private static class TestListener extends AbstractEventListener {
+        /** Logger. */
+        private static final IgniteLogger LOG = Loggers.forClass(TestListener.class);
+
+        /** Listener name, for logs. */
+        private final String name;
+
+        /**
+         * Type of last processed flush event. Real amount of events doesn't matter in atomic flush mode. All "completed" events go after all
+         * "begin" events, and vice versa.
+         */
+        private final AtomicReference<EnabledEventCallback> lastFlushEventType = new AtomicReference<>(ON_FLUSH_COMPLETED);
+
+        /** Type of last processed compaction event. */
+        private final AtomicReference<EnabledEventCallback> lastCompactionEventType = new AtomicReference<>(ON_COMPACTION_COMPLETED);
+
+        /** This field is used for determining flush duration. */
+        private volatile long lastFlushStartTimeNanos;
+
+        /** This field is used for determining compaction duration. */
+        private volatile long lastCompactionStartTimeNanos;
+
+        /**
+         * Constructor.
+         *
+         * @param name Listener name, for logs.
+         */
+        public TestListener(String name) {
+            super(ON_FLUSH_BEGIN, ON_FLUSH_COMPLETED, ON_COMPACTION_BEGIN, ON_COMPACTION_COMPLETED);
+
+            this.name = name;
+        }
+
+        @Override
+        public void onFlushBegin(RocksDB db, FlushJobInfo flushJobInfo) {
+            if (lastFlushEventType.compareAndSet(ON_FLUSH_COMPLETED, ON_FLUSH_BEGIN)) {
+                if (LOG.isInfoEnabled()) {
+                    LOG.info("Starting rocksdb flush process [name='{}', reason={}]", name, flushJobInfo.getFlushReason());
+
+                    lastFlushStartTimeNanos = System.nanoTime();
+                }
+
+                onFlushBeginCallback(db, flushJobInfo);
+            }
+        }
+
+        @Override
+        public void onFlushCompleted(RocksDB db, FlushJobInfo flushJobInfo) {
+            if (lastFlushEventType.compareAndSet(ON_FLUSH_BEGIN, ON_FLUSH_COMPLETED)) {
+                if (LOG.isInfoEnabled()) {
+                    long duration = System.nanoTime() - lastFlushStartTimeNanos;
+
+                    LOG.info("Finishing rocksdb flush process [name='{}', duration={}ms]", name, TimeUnit.NANOSECONDS.toMillis(duration));
+                }
+
+                onFlushCompletedCallback(db, flushJobInfo);
+            }
+        }
+
+        protected void onFlushBeginCallback(RocksDB db, FlushJobInfo flushJobInfo) {
+            // No-op.
+        }
+
+        protected void onFlushCompletedCallback(RocksDB db, FlushJobInfo flushJobInfo) {
+            // No-op.
+        }
+
+        @Override
+        public void onCompactionBegin(RocksDB db, CompactionJobInfo compactionJobInfo) {
+            if (lastCompactionEventType.compareAndSet(ON_COMPACTION_COMPLETED, ON_COMPACTION_BEGIN)) {
+                if (LOG.isInfoEnabled()) {
+                    LOG.info("Starting rocksdb compaction process [name='{}', reason={}, input={}, output={}]",
+                            name,
+                            compactionJobInfo.compactionReason(),
+                            // Extract file names from full paths.
+                            compactionJobInfo.inputFiles().stream().map(path -> Paths.get(path).getFileName()).collect(Collectors.toList()),
+                            compactionJobInfo.outputFiles().stream().map(path -> Paths.get(path).getFileName()).collect(Collectors.toList())
+                    );
+
+                    lastCompactionStartTimeNanos = System.nanoTime();
+                }
+            }
+        }
+
+        @Override
+        public void onCompactionCompleted(RocksDB db, CompactionJobInfo compactionJobInfo) {
+            if (lastCompactionEventType.compareAndSet(ON_COMPACTION_BEGIN, ON_COMPACTION_COMPLETED)) {
+                if (LOG.isInfoEnabled()) {
+                    long duration = System.nanoTime() - lastCompactionStartTimeNanos;
+
+                    LOG.info("Finishing rocksdb compaction process [name='{}', duration={}ms]", name, TimeUnit.NANOSECONDS.toMillis(duration));
+                }
+            }
+        }
     }
 }
