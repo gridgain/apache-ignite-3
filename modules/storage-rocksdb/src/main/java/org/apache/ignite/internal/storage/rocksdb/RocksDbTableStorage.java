@@ -95,11 +95,11 @@ public class RocksDbTableStorage implements MvTableStorage {
     }
 
     void start() {
-        try {
-            indexes.recoverIndexes(indexDescriptorSupplier);
-        } catch (RocksDBException e) {
-            throw new IgniteRocksDbException("Unable to recover indexes", e);
-        }
+//        try {
+//            indexes.recoverIndexes(indexDescriptorSupplier);
+//        } catch (RocksDBException e) {
+//            throw new IgniteRocksDbException("Unable to recover indexes", e);
+//        }
     }
 
     /**
@@ -209,11 +209,11 @@ public class RocksDbTableStorage implements MvTableStorage {
 
             if (partition.lastAppliedIndex() == 0L) {
                 // Explicitly save meta-information about partition's creation.
-                partition.runConsistently(locker -> {
-                    partition.lastApplied(partition.lastAppliedIndex(), partition.lastAppliedTerm());
-
-                    return null;
-                });
+//                partition.runConsistently(locker -> {
+//                    partition.lastApplied(partition.lastAppliedIndex(), partition.lastAppliedTerm());
+//
+//                    return null;
+//                });
             }
 
             return partition;

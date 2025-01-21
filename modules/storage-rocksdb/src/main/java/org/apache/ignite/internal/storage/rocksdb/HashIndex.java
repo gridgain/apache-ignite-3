@@ -20,6 +20,7 @@ package org.apache.ignite.internal.storage.rocksdb;
 import org.apache.ignite.internal.rocksdb.ColumnFamily;
 import org.apache.ignite.internal.storage.index.StorageHashIndexDescriptor;
 import org.apache.ignite.internal.storage.rocksdb.index.RocksDbHashIndexStorage;
+import org.apache.ignite.internal.storage.rocksdb.instance.SharedRocksDbInstance;
 
 /**
  * Class that represents a Hash Index defined for all partitions of a Table.
@@ -28,21 +29,23 @@ class HashIndex extends Index<RocksDbHashIndexStorage> {
     private final StorageHashIndexDescriptor descriptor;
 
     private final RocksDbMetaStorage indexMetaStorage;
+    private final SharedRocksDbInstance rocksDb;
 
     HashIndex(
             int tableId,
             ColumnFamily indexCf,
             StorageHashIndexDescriptor descriptor,
-            RocksDbMetaStorage indexMetaStorage
-    ) {
+            RocksDbMetaStorage indexMetaStorage,
+            SharedRocksDbInstance rocksDb) {
         super(tableId, descriptor.id(), indexCf);
 
         this.descriptor = descriptor;
         this.indexMetaStorage = indexMetaStorage;
+        this.rocksDb = rocksDb;
     }
 
     @Override
     RocksDbHashIndexStorage createStorage(int partitionId) {
-        return new RocksDbHashIndexStorage(descriptor, tableId(), partitionId, columnFamily(), indexMetaStorage);
+        return new RocksDbHashIndexStorage(descriptor, tableId(), partitionId, columnFamily(), indexMetaStorage, rocksDb);
     }
 }

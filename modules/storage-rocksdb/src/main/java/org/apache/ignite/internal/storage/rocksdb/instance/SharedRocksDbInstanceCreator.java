@@ -86,7 +86,7 @@ public class SharedRocksDbInstanceCreator {
 
             List<ColumnFamilyHandle> cfHandles = new ArrayList<>(cfDescriptors.size());
 
-            DBOptions dbOptions = add(new DBOptions()
+            Options dbOptions = add(new Options()
                     .setCreateIfMissing(true)
                     .setCreateMissingColumnFamilies(true)
                     .setAllowConcurrentMemtableWrite(true)
@@ -100,7 +100,7 @@ public class SharedRocksDbInstanceCreator {
                     .setAvoidFlushDuringShutdown(true)
             );
 
-            RocksDB db = add(RocksDB.open(dbOptions, path.toAbsolutePath().toString(), cfDescriptors, cfHandles));
+            RocksDB db = add(RocksDB.open(dbOptions, path.toAbsolutePath().toString()));
             this.resources.addAll(cfHandles);
 
             RocksDbMetaStorage meta = null;
@@ -158,11 +158,11 @@ public class SharedRocksDbInstanceCreator {
                     busyLock,
                     flusher,
                     db,
-                    requireNonNull(meta, "meta"),
-                    requireNonNull(partitionCf, "partitionCf"),
-                    requireNonNull(gcQueueCf, "gcQueueCf"),
-                    requireNonNull(dataCf, "dataCf"),
-                    requireNonNull(hashIndexCf, "hashIndexCf"),
+                    meta,
+                    partitionCf,
+                    gcQueueCf,
+                    dataCf,
+                    hashIndexCf,
                     sortedIndexCfs,
                     resources // Trusts the inner class to copy the resources!!
             );

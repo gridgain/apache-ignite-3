@@ -233,44 +233,44 @@ public class RocksDbMvPartitionStorage implements MvPartitionStorage {
         tableId = tableStorage.getTableId();
 
         db = tableStorage.db();
-        meta = tableStorage.metaCfHandle();
+        meta = null; // tableStorage.metaCfHandle();
 
         int tableId = tableStorage.getTableId();
-        helper = new PartitionDataHelper(tableId, partitionId, tableStorage.partitionCfHandle(), tableStorage.dataCfHandle());
-        gc = new GarbageCollector(helper, db, readOpts, tableStorage.gcQueueHandle());
+        helper = new PartitionDataHelper(tableId, partitionId, null, null);
+        gc = new GarbageCollector(helper, db, readOpts, null);
 
         lastAppliedIndexAndTermKey = createKey(PARTITION_META_PREFIX, tableId, partitionId);
         lastGroupConfigKey = createKey(PARTITION_CONF_PREFIX, tableId, partitionId);
         leaseKey = createKey(LEASE_PREFIX, tableId, partitionId);
         estimatedSizeKey = createKey(ESTIMATED_SIZE_PREFIX, tableId, partitionId);
 
-        try {
-            byte[] indexAndTerm = db.get(meta, readOpts, lastAppliedIndexAndTermKey);
-            ByteBuffer buf = indexAndTerm == null ? null : ByteBuffer.wrap(indexAndTerm).order(ByteOrder.LITTLE_ENDIAN);
-
-            lastAppliedIndex = buf == null ? 0 : buf.getLong();
-            lastAppliedTerm = buf == null ? 0 : buf.getLong();
-
-            lastGroupConfig = db.get(meta, readOpts, lastGroupConfigKey);
-
-            byte[] leaseBytes = db.get(meta, readOpts, leaseKey);
-
-            if (leaseBytes == null) {
-                leaseStartTime = HybridTimestamp.MIN_VALUE.longValue();
-            } else {
-                LeaseInfo leaseInfo = VersionedSerialization.fromBytes(leaseBytes, LeaseInfoSerializer.INSTANCE);
-
-                leaseStartTime = leaseInfo.leaseStartTime();
-                primaryReplicaNodeId = leaseInfo.primaryReplicaNodeId();
-                primaryReplicaNodeName = leaseInfo.primaryReplicaNodeName();
-            }
-
-            byte[] estimatedSizeBytes = db.get(meta, readOpts, estimatedSizeKey);
-
-            estimatedSize = estimatedSizeBytes == null ? 0 : bytesToLong(estimatedSizeBytes);
-        } catch (RocksDBException e) {
-            throw new IgniteRocksDbException(e);
-        }
+//        try {
+//            byte[] indexAndTerm = db.get(meta, readOpts, lastAppliedIndexAndTermKey);
+//            ByteBuffer buf = indexAndTerm == null ? null : ByteBuffer.wrap(indexAndTerm).order(ByteOrder.LITTLE_ENDIAN);
+//
+//            lastAppliedIndex = buf == null ? 0 : buf.getLong();
+//            lastAppliedTerm = buf == null ? 0 : buf.getLong();
+//
+//            lastGroupConfig = db.get(meta, readOpts, lastGroupConfigKey);
+//
+//            byte[] leaseBytes = db.get(meta, readOpts, leaseKey);
+//
+//            if (leaseBytes == null) {
+//                leaseStartTime = HybridTimestamp.MIN_VALUE.longValue();
+//            } else {
+//                LeaseInfo leaseInfo = VersionedSerialization.fromBytes(leaseBytes, LeaseInfoSerializer.INSTANCE);
+//
+//                leaseStartTime = leaseInfo.leaseStartTime();
+//                primaryReplicaNodeId = leaseInfo.primaryReplicaNodeId();
+//                primaryReplicaNodeName = leaseInfo.primaryReplicaNodeName();
+//            }
+//
+//            byte[] estimatedSizeBytes = db.get(meta, readOpts, estimatedSizeKey);
+//
+//            estimatedSize = estimatedSizeBytes == null ? 0 : bytesToLong(estimatedSizeBytes);
+//        } catch (RocksDBException e) {
+//            throw new IgniteRocksDbException(e);
+//        }
     }
 
     public PartitionDataHelper helper() {
@@ -392,7 +392,7 @@ public class RocksDbMvPartitionStorage implements MvPartitionStorage {
             long lastAppliedIndex,
             long lastAppliedTerm
     ) throws RocksDBException {
-        writeBatch.put(meta, lastAppliedIndexAndTermKey, longPairToBytes(lastAppliedIndex, lastAppliedTerm));
+        writeBatch.put(lastAppliedIndexAndTermKey, longPairToBytes(lastAppliedIndex, lastAppliedTerm));
 
         ThreadLocalState state = THREAD_LOCAL_STATE.get();
 
@@ -439,7 +439,7 @@ public class RocksDbMvPartitionStorage implements MvPartitionStorage {
     }
 
     private void saveGroupConfiguration(AbstractWriteBatch writeBatch, byte[] config) throws RocksDBException {
-        writeBatch.put(meta, lastGroupConfigKey, config);
+        writeBatch.put(lastGroupConfigKey, config);
 
         ThreadLocalState state = THREAD_LOCAL_STATE.get();
 
@@ -1130,7 +1130,7 @@ public class RocksDbMvPartitionStorage implements MvPartitionStorage {
         byte[] bytes = VersionedSerialization.toBytes(leaseInfo, LeaseInfoSerializer.INSTANCE);
 
         try {
-            writeBatch.put(meta, leaseKey, bytes);
+            writeBatch.put(leaseKey, bytes);
         } catch (RocksDBException e) {
             throw new IgniteRocksDbException(e);
         }

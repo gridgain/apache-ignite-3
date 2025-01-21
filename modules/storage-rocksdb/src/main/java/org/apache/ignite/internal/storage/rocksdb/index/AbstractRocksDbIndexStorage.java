@@ -45,6 +45,7 @@ import org.apache.ignite.internal.storage.index.StorageIndexDescriptor;
 import org.apache.ignite.internal.storage.rocksdb.IgniteRocksDbException;
 import org.apache.ignite.internal.storage.rocksdb.PartitionDataHelper;
 import org.apache.ignite.internal.storage.rocksdb.RocksDbMetaStorage;
+import org.apache.ignite.internal.storage.rocksdb.instance.SharedRocksDbInstance;
 import org.apache.ignite.internal.storage.util.StorageState;
 import org.apache.ignite.internal.storage.util.StorageUtils;
 import org.apache.ignite.internal.util.ArrayUtils;
@@ -90,7 +91,7 @@ public abstract class AbstractRocksDbIndexStorage implements IndexStorage {
         this.indexMetaStorage = indexMetaStorage;
         this.partitionId = partitionId;
 
-        RowId rowIdFromMeta = indexMetaStorage.getNextRowIdToBuild(tableId, indexId, partitionId);
+        RowId rowIdFromMeta = null; // indexMetaStorage.getNextRowIdToBuild(tableId, indexId, partitionId);
 
         if (rowIdFromMeta == null && descriptor.mustBeBuilt()) {
             rowIdFromMeta = initialRowIdToBuild(partitionId);
@@ -304,11 +305,11 @@ public abstract class AbstractRocksDbIndexStorage implements IndexStorage {
          */
         private byte @Nullable [] peekedKey = BYTE_EMPTY_ARRAY;
 
-        UpToDatePeekCursor(byte[] upperBound, ColumnFamily indexCf, byte[] lowerBound) {
+        UpToDatePeekCursor(byte[] upperBound, ColumnFamily indexCf, byte[] lowerBound, SharedRocksDbInstance rocksDb) {
             this.lowerBound = lowerBound;
             upperBoundSlice = new Slice(upperBound);
             options = new ReadOptions().setIterateUpperBound(upperBoundSlice);
-            it = indexCf.newIterator(options);
+            it = rocksDb.db.newIterator(options);
         }
 
         /**

@@ -69,7 +69,7 @@ class RocksDbIndexes {
                 if (descriptor == null) {
                     deleteByPrefix(writeBatch, rocksDb.hashIndexCf(), indexPrefix(tableId, indexId));
                 } else {
-                    hashIndices.put(indexId, new HashIndex(tableId, rocksDb.hashIndexCf(), descriptor, rocksDb.meta));
+                    hashIndices.put(indexId, new HashIndex(tableId, rocksDb.hashIndexCf(), descriptor, rocksDb.meta, rocksDb));
                 }
             }
 
@@ -113,7 +113,7 @@ class RocksDbIndexes {
     HashIndexStorage getOrCreateHashIndex(int partitionId, StorageHashIndexDescriptor indexDescriptor) {
         HashIndex hashIndex = hashIndices.computeIfAbsent(
                 indexDescriptor.id(),
-                id -> new HashIndex(tableId, rocksDb.hashIndexCf(), indexDescriptor, rocksDb.meta)
+                id -> new HashIndex(tableId, rocksDb.hashIndexCf(), indexDescriptor, rocksDb.meta, rocksDb)
         );
 
         return hashIndex.getOrCreateStorage(partitionId);

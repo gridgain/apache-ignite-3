@@ -34,6 +34,7 @@ import org.apache.ignite.internal.storage.index.StorageHashIndexDescriptor;
 import org.apache.ignite.internal.storage.rocksdb.IgniteRocksDbException;
 import org.apache.ignite.internal.storage.rocksdb.PartitionDataHelper;
 import org.apache.ignite.internal.storage.rocksdb.RocksDbMetaStorage;
+import org.apache.ignite.internal.storage.rocksdb.instance.SharedRocksDbInstance;
 import org.apache.ignite.internal.util.Cursor;
 import org.apache.ignite.internal.util.HashUtils;
 import org.rocksdb.AbstractWriteBatch;
@@ -64,6 +65,7 @@ public class RocksDbHashIndexStorage extends AbstractRocksDbIndexStorage impleme
 
     /** Constant prefix of every index key. */
     private final byte[] constantPrefix;
+    private final SharedRocksDbInstance rocksDb;
 
     /**
      * Creates a new Hash Index storage.
@@ -73,17 +75,19 @@ public class RocksDbHashIndexStorage extends AbstractRocksDbIndexStorage impleme
      * @param partitionId Partition ID.
      * @param indexCf Column family that stores the index data.
      * @param indexMetaStorage Index meta storage.
+     * @param rocksDb
      */
     public RocksDbHashIndexStorage(
             StorageHashIndexDescriptor descriptor,
             int tableId,
             int partitionId,
             ColumnFamily indexCf,
-            RocksDbMetaStorage indexMetaStorage
-    ) {
+            RocksDbMetaStorage indexMetaStorage,
+            SharedRocksDbInstance rocksDb) {
         super(descriptor, tableId, partitionId, indexMetaStorage);
 
         this.indexCf = indexCf;
+        this.rocksDb = rocksDb;
 
         this.constantPrefix = ByteBuffer.allocate(PREFIX_WITH_IDS_LENGTH)
                 .order(KEY_BYTE_ORDER)
@@ -109,7 +113,7 @@ public class RocksDbHashIndexStorage extends AbstractRocksDbIndexStorage impleme
 
             byte[] rangeEnd = incrementPrefix(rangeStart);
 
-            return new UpToDatePeekCursor<RowId>(rangeEnd, indexCf, rangeStart) {
+            return new UpToDatePeekCursor<RowId>(rangeEnd, indexCf, rangeStart, rocksDb) {
                 @Override
                 protected RowId map(ByteBuffer byteBuffer) {
                     // RowId UUID is located at the last 16 bytes of the key

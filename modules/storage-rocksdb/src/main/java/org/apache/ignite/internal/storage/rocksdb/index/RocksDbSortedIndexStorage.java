@@ -166,7 +166,7 @@ public class RocksDbSortedIndexStorage extends AbstractRocksDbIndexStorage imple
 
         byte[] upperBoundBytes = getBound(upperBound, partitionEndPrefix, includeUpper);
 
-        return new UpToDatePeekCursor<>(upperBoundBytes, indexCf, lowerBoundBytes) {
+        return new UpToDatePeekCursor<>(upperBoundBytes, indexCf, lowerBoundBytes, null) {
             @Override
             protected T map(ByteBuffer byteBuffer) {
                 return mapper.apply(byteBuffer);
