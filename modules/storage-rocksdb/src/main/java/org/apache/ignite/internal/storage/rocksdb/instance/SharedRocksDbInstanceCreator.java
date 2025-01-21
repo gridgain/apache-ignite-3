@@ -90,7 +90,7 @@ public class SharedRocksDbInstanceCreator {
                     .setCreateIfMissing(true)
                     .setCreateMissingColumnFamilies(true)
                     .setAllowConcurrentMemtableWrite(true)
-                    .setDbWriteBufferSize(profile.getWriteBufferSize())
+                    .setWriteBufferSize(profile.getWriteBufferSize())
                     //.setEnableWriteThreadAdaptiveYield(true)
                     // Atomic flush must be enabled to guarantee consistency between different column families when WAL is disabled.
                     //.setAtomicFlush(true)
