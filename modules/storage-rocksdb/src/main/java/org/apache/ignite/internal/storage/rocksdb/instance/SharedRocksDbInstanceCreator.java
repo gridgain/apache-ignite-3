@@ -94,7 +94,7 @@ public class SharedRocksDbInstanceCreator {
                     // Atomic flush must be enabled to guarantee consistency between different column families when WAL is disabled.
                     .setAtomicFlush(true)
                     .setListeners(List.of(flusher.listener()))
-                    .setWriteBufferManager(profile.writeBufferManager())
+                    //.setWriteBufferManager(profile.writeBufferManager())
                     // Don't flush on shutdown to speed up node shutdown as on recovery we'll apply commands from log.
                     .setAvoidFlushDuringShutdown(true)
             );
@@ -238,6 +238,7 @@ public class SharedRocksDbInstanceCreator {
     @SuppressWarnings("resource")
     static ColumnFamilyOptions sortedIndexCfOptions(byte[] cfName) {
         return new ColumnFamilyOptions()
+                .setWriteBufferSize(2L * 1024 * 1024 * 1024)
                 .setComparator(ColumnFamilyUtils.comparatorFromCfName(cfName))
                 .useCappedPrefixExtractor(AbstractRocksDbIndexStorage.PREFIX_WITH_IDS_LENGTH);
     }
