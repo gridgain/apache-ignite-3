@@ -196,7 +196,7 @@ public class PartitionListener implements RaftGroupListener {
 
             try {
                 if (command instanceof UpdateCommand) {
-                    result = handleUpdateCommand((UpdateCommand) command, commandIndex, commandTerm);
+                    result = handleUpdateCommand((UpdateCommand) command, commandIndex, commandTerm, clo);
                 } else if (command instanceof UpdateAllCommand) {
                     result = handleUpdateAllCommand((UpdateAllCommand) command, commandIndex, commandTerm);
                 } else if (command instanceof FinishTxCommand) {
@@ -264,10 +264,11 @@ public class PartitionListener implements RaftGroupListener {
      * @param cmd Command.
      * @param commandIndex Index of the RAFT command.
      * @param commandTerm Term of the RAFT command.
-     *
+     * @param clo
      * @return The result.
      */
-    private IgniteBiTuple<Serializable, Boolean> handleUpdateCommand(UpdateCommand cmd, long commandIndex, long commandTerm) {
+    private IgniteBiTuple<Serializable, Boolean> handleUpdateCommand(UpdateCommand cmd, long commandIndex, long commandTerm,
+            CommandClosure<? extends WriteCommand> clo) {
         // Skips the write command because the storage has already executed it.
         if (commandIndex <= storage.lastAppliedIndex()) {
             return new IgniteBiTuple<>(null, false); // Update result is not needed.
@@ -313,9 +314,11 @@ public class PartitionListener implements RaftGroupListener {
             advanceLastAppliedIndexConsistently(commandIndex, commandTerm);
         }
 
-        replicaTouch(txId, cmd.txCoordinatorId(), cmd.full() ? cmd.safeTime() : null, cmd.full());
+        HybridTimestamp safeTs = cmd.safeTime() == null ? ((WriteCommandClosure) clo).safeTimestamp() : cmd.safeTime();
 
-        return new IgniteBiTuple<>(new UpdateCommandResult(true, isPrimaryInGroupTopology(), cmd.safeTime().longValue()), true);
+        replicaTouch(txId, cmd.txCoordinatorId(), cmd.full() ? safeTs : null, cmd.full());
+
+        return new IgniteBiTuple<>(new UpdateCommandResult(true, isPrimaryInGroupTopology(), safeTs.longValue()), true);
     }
 
     /**
