@@ -17,10 +17,17 @@
 
 package org.apache.ignite.internal.raft.service;
 
+import org.apache.ignite.internal.hlc.HybridTimestamp;
 import org.apache.ignite.internal.raft.WriteCommand;
 
 /**
  * The marker interface for a write command closure.
  */
 public interface WriteCommandClosure extends CommandClosure<WriteCommand> {
+    /**
+     * Get safe timestamp.
+     *
+     * @return The timestamp.
+     */
+    HybridTimestamp safeTimestamp();
 }

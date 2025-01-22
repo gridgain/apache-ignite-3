@@ -49,6 +49,7 @@ import java.util.stream.IntStream;
 import org.apache.ignite.internal.failure.FailureContext;
 import org.apache.ignite.internal.failure.FailureManager;
 import org.apache.ignite.internal.failure.FailureType;
+import org.apache.ignite.internal.hlc.HybridTimestamp;
 import org.apache.ignite.internal.lang.IgniteInternalException;
 import org.apache.ignite.internal.lang.IgniteStringFormatter;
 import org.apache.ignite.internal.logger.IgniteLogger;
@@ -68,6 +69,7 @@ import org.apache.ignite.internal.raft.server.RaftServer;
 import org.apache.ignite.internal.raft.service.CommandClosure;
 import org.apache.ignite.internal.raft.service.CommittedConfiguration;
 import org.apache.ignite.internal.raft.service.RaftGroupListener;
+import org.apache.ignite.internal.raft.service.WriteCommandClosure;
 import org.apache.ignite.internal.raft.storage.LogStorageFactory;
 import org.apache.ignite.internal.raft.storage.impl.IgniteJraftServiceFactory;
 import org.apache.ignite.internal.raft.storage.impl.StripeAwareLogManager.Stripe;
@@ -746,11 +748,12 @@ public class JraftServerImpl implements RaftServer {
                         ByteBuffer data = iter.getData();
 
                         WriteCommand command = done == null ? marshaller.unmarshall(data) : done.command();
+                        HybridTimestamp safeTs = done == null ? null : ((WriteCommandClosure) done).safeTimestamp();
 
                         long commandIndex = iter.getIndex();
                         long commandTerm = iter.getTerm();
 
-                        return new CommandClosure<>() {
+                        return new WriteCommandClosure() {
                             /** {@inheritDoc} */
                             @Override
                             public long index() {
@@ -761,6 +764,11 @@ public class JraftServerImpl implements RaftServer {
                             @Override
                             public long term() {
                                 return commandTerm;
+                            }
+
+                            @Override
+                            public HybridTimestamp safeTimestamp() {
+                                return safeTs;
                             }
 
                             /** {@inheritDoc} */

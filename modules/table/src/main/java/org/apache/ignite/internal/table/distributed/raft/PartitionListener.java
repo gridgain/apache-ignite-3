@@ -59,6 +59,7 @@ import org.apache.ignite.internal.raft.WriteCommand;
 import org.apache.ignite.internal.raft.service.CommandClosure;
 import org.apache.ignite.internal.raft.service.CommittedConfiguration;
 import org.apache.ignite.internal.raft.service.RaftGroupListener;
+import org.apache.ignite.internal.raft.service.WriteCommandClosure;
 import org.apache.ignite.internal.replicator.TablePartitionId;
 import org.apache.ignite.internal.replicator.command.SafeTimePropagatingCommand;
 import org.apache.ignite.internal.replicator.command.SafeTimeSyncCommand;
@@ -222,9 +223,17 @@ public class PartitionListener implements RaftGroupListener {
                     if (command instanceof SafeTimePropagatingCommand) {
                         SafeTimePropagatingCommand safeTimePropagatingCommand = (SafeTimePropagatingCommand) command;
 
-                        assert safeTimePropagatingCommand.safeTime() != null;
+                        HybridTimestamp safeTs = safeTimePropagatingCommand.safeTime();
 
-                        updateTrackerIgnoringTrackerClosedException(safeTimeTracker, safeTimePropagatingCommand.safeTime());
+                        // Handle collocation scenario.
+                        // In this case the safe timestamp is passed in command closure to preserve command's immutability.
+                        if (safeTs == null) {
+                            safeTs = ((WriteCommandClosure) clo).safeTimestamp();
+                        }
+
+                        assert safeTs != null;
+
+                        updateTrackerIgnoringTrackerClosedException(safeTimeTracker, safeTs);
                     }
 
                     updateTrackerIgnoringTrackerClosedException(storageIndexTracker, commandIndex);

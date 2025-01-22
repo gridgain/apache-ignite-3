@@ -265,6 +265,14 @@ tasks.register("runUpsertBenchmark", JavaExec) {
     enableAssertions = true
 }
 
+tasks.register("runRocksDbBenchmark", JavaExec) {
+    mainClass = "org.apache.ignite.internal.benchmark.RocksDbBenchmark"
+
+    jvmArgs += defaultJvmArgs
+
+    classpath = sourceSets.integrationTest.runtimeClasspath
+}
+
 jar {
     manifest {
         attributes(
