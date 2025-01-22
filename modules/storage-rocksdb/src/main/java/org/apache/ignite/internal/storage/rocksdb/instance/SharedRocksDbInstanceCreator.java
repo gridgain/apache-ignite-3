@@ -229,7 +229,7 @@ public class SharedRocksDbInstanceCreator {
     @SuppressWarnings("resource")
     private static ColumnFamilyOptions defaultCfOptions() {
         return new ColumnFamilyOptions()
-                .setWriteBufferSize(2L * 1024 * 1024 * 1024)
+                .setWriteBufferSize(8L * 1024 * 1024 * 1024)
                 .setMemTableConfig(new SkipListMemTableConfig())
                 .setMemtablePrefixBloomSizeRatio(0.125)
                 .setTableFormatConfig(new BlockBasedTableConfig().setFilterPolicy(new BloomFilter()));
@@ -238,7 +238,7 @@ public class SharedRocksDbInstanceCreator {
     @SuppressWarnings("resource")
     static ColumnFamilyOptions sortedIndexCfOptions(byte[] cfName) {
         return new ColumnFamilyOptions()
-                .setWriteBufferSize(2L * 1024 * 1024 * 1024)
+                .setWriteBufferSize(8L * 1024 * 1024 * 1024)
                 .setComparator(ColumnFamilyUtils.comparatorFromCfName(cfName))
                 .useCappedPrefixExtractor(AbstractRocksDbIndexStorage.PREFIX_WITH_IDS_LENGTH);
     }
