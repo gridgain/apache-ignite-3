@@ -62,7 +62,8 @@ ext {
     defaultJvmArgs = addOpens + [
             "-Dio.netty.tryReflectionSetAccessible=true",
             "-XX:+HeapDumpOnOutOfMemoryError",
-            "-ea"
+            "-ea",
+            "-Xmx16g"
     ]
 
     compilerArgs = [
