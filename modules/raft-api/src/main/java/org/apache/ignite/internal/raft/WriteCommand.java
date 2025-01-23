@@ -32,4 +32,11 @@ public interface WriteCommand extends Command {
     default @Nullable HybridTimestamp initiatorTime() {
         return null;
     }
+
+    /**
+     * This is called before a command is submitted to replication pipeline.
+     *
+     * @param safeTs Safe timestamp.
+     */
+    default void patch(HybridTimestamp safeTs) {}
 }

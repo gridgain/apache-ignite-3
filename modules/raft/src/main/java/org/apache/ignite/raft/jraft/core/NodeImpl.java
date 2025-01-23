@@ -314,10 +314,6 @@ public class NodeImpl implements Node, RaftServerService {
                         safeTs = clock.update(timestamp);
                     }
 
-//                    if (!command.getClass().getName().contains("metastorage")) {
-//                        LOG.info("Patch: n=" + nodeId + ", s=" + safeTs.toString() + ", i=" + timestamp.toString() + ", c=" + command.getClass().getName());
-//                    }
-
                     clo.patch(safeTs);
                 }
             }

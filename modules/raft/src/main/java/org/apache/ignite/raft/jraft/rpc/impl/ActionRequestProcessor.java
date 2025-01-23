@@ -177,8 +177,6 @@ public class ActionRequestProcessor implements RpcProcessor<ActionRequest> {
     private void applyWrite(Node node, WriteActionRequest request, WriteCommand command, RpcContext rpcCtx) {
         ByteBuffer wrapper = ByteBuffer.wrap(request.command());
         node.apply(new Task(wrapper, new RaftWriteCommandClosure() {
-            private HybridTimestamp safeTs;
-
             @Override
             public void result(Serializable res) {
                 sendResponse(res, rpcCtx);
@@ -187,11 +185,6 @@ public class ActionRequestProcessor implements RpcProcessor<ActionRequest> {
             @Override
             public WriteCommand command() {
                 return command;
-            }
-
-            @Override
-            public HybridTimestamp safeTimestamp() {
-                return safeTs;
             }
 
             @Override
@@ -204,7 +197,7 @@ public class ActionRequestProcessor implements RpcProcessor<ActionRequest> {
             @Override
             public void patch(HybridTimestamp safeTs) {
                 node.getOptions().getCommandsMarshaller().patch(wrapper, safeTs);
-                this.safeTs = safeTs;
+                command.patch(safeTs);
             }
         }));
     }
