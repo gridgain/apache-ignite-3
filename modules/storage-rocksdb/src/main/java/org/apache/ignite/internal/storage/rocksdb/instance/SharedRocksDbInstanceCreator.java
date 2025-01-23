@@ -227,8 +227,8 @@ public class SharedRocksDbInstanceCreator {
     @SuppressWarnings("resource")
     private static ColumnFamilyOptions defaultCfOptions() {
         return new ColumnFamilyOptions()
-//                .setWriteBufferSize(8L * 1024 * 1024 * 1024)
-//                .setMemTableConfig(new SkipListMemTableConfig())
+                .setWriteBufferSize(8L * 1024 * 1024 * 1024)
+                .setMemTableConfig(new SkipListMemTableConfig())
                 .setMemtablePrefixBloomSizeRatio(0.125)
                 .setTableFormatConfig(new BlockBasedTableConfig().setFilterPolicy(new BloomFilter()));
     }
