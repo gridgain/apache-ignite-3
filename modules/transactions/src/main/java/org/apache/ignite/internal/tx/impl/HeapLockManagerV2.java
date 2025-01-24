@@ -43,14 +43,12 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.Executor;
-import java.util.concurrent.ForkJoinPool;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.LongAdder;
 import org.apache.ignite.internal.configuration.SystemLocalConfiguration;
 import org.apache.ignite.internal.configuration.SystemPropertyView;
 import org.apache.ignite.internal.event.AbstractEventProducer;
 import org.apache.ignite.internal.lang.IgniteBiTuple;
-import org.apache.ignite.internal.logger.IgniteLogger;
-import org.apache.ignite.internal.logger.Loggers;
 import org.apache.ignite.internal.tostring.IgniteToStringExclude;
 import org.apache.ignite.internal.tostring.S;
 import org.apache.ignite.internal.tx.DeadlockPreventionPolicy;
@@ -70,7 +68,7 @@ import org.jetbrains.annotations.TestOnly;
 /**
  * A {@link LockManager} implementation which stores lock queues in the heap.
  *
- * <p>Lock waiters are placed in the queue, ordered according to comparator provided by {@link HeapLockManager#deadlockPreventionPolicy}.
+ * <p>Lock waiters are placed in the queue, ordered according to comparator provided by {@link HeapLockManagerV2#deadlockPreventionPolicy}.
  * When a new waiter is placed in the queue, it's validated against current lock owner: if there is an owner with a higher priority (as
  * defined by comparator) lock request is denied.
  *
@@ -79,80 +77,49 @@ import org.jetbrains.annotations.TestOnly;
  *
  * <p>Additionally limits the lock map size.
  */
-public class HeapLockManager extends AbstractEventProducer<LockEvent, LockEventParameters> implements LockManager {
-    /** Throttled logger. */
-    private static final IgniteLogger THROTTLED_LOG = Loggers.toThrottledLogger(
-            Loggers.forClass(HeapLockManager.class),
-            // TODO: IGNITE-24181 Get rid of Common thread pool.
-            ForkJoinPool.commonPool()
-    );
-
-    /**
-     * Table size.
-     */
+public class HeapLockManagerV2 extends AbstractEventProducer<LockEvent, LockEventParameters> implements LockManager {
+    /** Table size. */
     public static final int DEFAULT_SLOTS = 1_048_576;
 
     private static final String LOCK_MAP_SIZE_PROPERTY_NAME = "lockMapSize";
 
-    private static final String RAW_SLOTS_MAX_SIZE_PROPERTY_NAME = "rawSlotsMaxSize";
-
-    /**
-     * Striped lock concurrency.
-     */
+    /** Striped lock concurrency. */
     private static final int CONCURRENCY = Math.max(1, Runtime.getRuntime().availableProcessors() / 2);
+
+    private final LongAdder lockTableSize = new LongAdder();
+
+    /** An unused state to avoid concurrent allocation. */
+    private LockState removedLockState;
 
     /** Lock map size. */
     private final int lockMapSize;
 
-    /** Raw slots size. */
-    private final int rawSlotsMaxSize;
-
-    /**
-     * Empty slots.
-     */
-    private final ConcurrentLinkedQueue<LockState> empty = new ConcurrentLinkedQueue<>();
-
-    /**
-     * Mapped slots.
-     */
+    /** Mapped slots. */
     private ConcurrentHashMap<LockKey, LockState> locks;
 
-    /**
-     * Raw slots.
-     */
-    private LockState[] slots;
-
-    /**
-     * The policy.
-     */
+    /** The policy. */
     private DeadlockPreventionPolicy deadlockPreventionPolicy;
 
-    /**
-     * Executor that is used to fail waiters after timeout.
-     */
+    /** Executor that is used to fail waiters after timeout. */
     private Executor delayedExecutor;
 
-    /**
-     * Enlisted transactions.
-     */
+    /** Enlisted transactions. */
     private final ConcurrentHashMap<UUID, ConcurrentLinkedQueue<Releasable>> txMap = new ConcurrentHashMap<>(1024);
 
-    /**
-     * Coarse locks.
-     */
+    /** Coarse locks. */
     private final ConcurrentHashMap<Object, CoarseLockState> coarseMap = new ConcurrentHashMap<>();
 
     /**
-     * Creates an instance of {@link HeapLockManager} with a few slots eligible for tests which don't stress the lock manager too much.
+     * Creates an instance of {@link HeapLockManagerV2} with a few slots eligible for tests which don't stress the lock manager too much.
      * Such a small instance is started way faster than a full-blown production ready instance with a lot of slots.
      */
     @TestOnly
-    public static HeapLockManager smallInstance() {
-        return new HeapLockManager(1024);
+    public static HeapLockManagerV2 smallInstance() {
+        return new HeapLockManagerV2(1024);
     }
 
     /** Constructor. */
-    public HeapLockManager(SystemLocalConfiguration systemProperties) {
+    public HeapLockManagerV2(SystemLocalConfiguration systemProperties) {
         this(intProperty(systemProperties, LOCK_MAP_SIZE_PROPERTY_NAME, DEFAULT_SLOTS));
     }
 
@@ -161,8 +128,7 @@ public class HeapLockManager extends AbstractEventProducer<LockEvent, LockEventP
      *
      * @param lockMapSize Lock map size.
      */
-    public HeapLockManager(int lockMapSize) {
-        this.rawSlotsMaxSize = lockMapSize;
+    public HeapLockManagerV2(int lockMapSize) {
         this.lockMapSize = lockMapSize;
     }
 
@@ -175,23 +141,13 @@ public class HeapLockManager extends AbstractEventProducer<LockEvent, LockEventP
     @Override
     public void start(DeadlockPreventionPolicy deadlockPreventionPolicy) {
         this.deadlockPreventionPolicy = deadlockPreventionPolicy;
+        this.removedLockState = new LockState();
 
         this.delayedExecutor = deadlockPreventionPolicy.waitTimeout() > 0
                 ? CompletableFuture.delayedExecutor(deadlockPreventionPolicy.waitTimeout(), TimeUnit.MILLISECONDS)
                 : null;
 
         locks = new ConcurrentHashMap<>(lockMapSize);
-
-        LockState[] tmp = new LockState[rawSlotsMaxSize];
-        for (int i = 0; i < tmp.length; i++) {
-            LockState lockState = new LockState();
-            if (i < lockMapSize) {
-                empty.add(lockState);
-            }
-            tmp[i] = lockState;
-        }
-
-        slots = tmp; // Atomic init.
     }
 
     @Override
@@ -203,7 +159,14 @@ public class HeapLockManager extends AbstractEventProducer<LockEvent, LockEventP
         }
 
         while (true) {
-            LockState state = lockState(lockKey);
+            LockState state = acquireLockState(lockKey);
+
+            if (state == null) {
+                return failedFuture(new LockException(
+                        ACQUIRE_LOCK_ERR,
+                        "Failed to acquire a lock due to lock table overflow [txId=" + txId + ", limit=" + lockMapSize + ']'
+                ));
+            }
 
             IgniteBiTuple<CompletableFuture<Void>, LockMode> futureTuple = state.tryAcquire(txId, lockMode);
 
@@ -291,38 +254,36 @@ public class HeapLockManager extends AbstractEventProducer<LockEvent, LockEventP
     }
 
     /**
+     * Gets a lock state. Use this method where sure this lock state was already acquired.
+     *
+     * @param key A lock key.
+     * @return A state matched with the key or unused state.
+     */
+    private LockState lockState(LockKey key) {
+        return locks.getOrDefault(key, removedLockState);
+    }
+
+    /**
      * Returns the lock state for the key.
      *
      * @param key The key.
+     * @return A state matched with the key.
      */
-    private LockState lockState(LockKey key) {
-        int h = spread(key.hashCode());
-        int index = h & (slots.length - 1);
+    private @Nullable LockState acquireLockState(LockKey key) {
+        return locks.computeIfAbsent(key, (k) -> {
+            int acquiredLocks = lockTableSize.intValue();
 
-        LockState[] res = new LockState[1];
+            if (acquiredLocks < lockMapSize) {
+                lockTableSize.increment();
 
-        locks.compute(key, (k, v) -> {
-            if (v == null) {
-                v = empty.poll();
-                if (v == null) {
-                    res[0] = slots[index];
+                LockState v = new LockState();
+                v.key = k;
 
-                    THROTTLED_LOG.warn(
-                            "Log manager runs out of slots. So the lock state starts to share, and conflicts may appear frequently."
-                    );
-                } else {
-                    v.markedForRemove = false;
-                    v.key = k;
-                    res[0] = v;
-                }
+                return v;
             } else {
-                res[0] = v;
+                return null;
             }
-
-            return v;
         });
-
-        return res[0];
     }
 
     /** {@inheritDoc} */
@@ -340,10 +301,8 @@ public class HeapLockManager extends AbstractEventProducer<LockEvent, LockEventP
     /** {@inheritDoc} */
     @Override
     public boolean isEmpty() {
-        for (LockState slot : slots) {
-            if (slot.waitersCount() != 0) {
-                return false;
-            }
+        if (lockTableSize.sum() != 0) {
+            return false;
         }
 
         for (CoarseLockState value : coarseMap.values()) {
@@ -368,9 +327,10 @@ public class HeapLockManager extends AbstractEventProducer<LockEvent, LockEventP
 
         synchronized (v.waiters) {
             if (v.waiters.isEmpty()) {
-                v.markedForRemove = true;
                 v.key = null;
-                empty.add(v);
+
+                lockTableSize.decrement();
+
                 return null;
             } else {
                 return v;
@@ -768,9 +728,6 @@ public class HeapLockManager extends AbstractEventProducer<LockEvent, LockEventP
         /** Waiters. */
         private final TreeMap<UUID, WaiterImpl> waiters;
 
-        /** Marked for removal flag. */
-        private volatile boolean markedForRemove = false;
-
         /** Lock key. */
         private volatile LockKey key;
 
@@ -779,6 +736,15 @@ public class HeapLockManager extends AbstractEventProducer<LockEvent, LockEventP
                     deadlockPreventionPolicy.txIdComparator() != null ? deadlockPreventionPolicy.txIdComparator() : UUID::compareTo;
 
             this.waiters = new TreeMap<>(txComparator);
+        }
+
+        /**
+         * Checks if lock state is used to hold a lock.
+         *
+         * @return True if the state is used, otherwise false.
+         */
+        boolean isUsed() {
+            return key != null;
         }
 
         @Override
@@ -813,7 +779,7 @@ public class HeapLockManager extends AbstractEventProducer<LockEvent, LockEventP
             WaiterImpl waiter = new WaiterImpl(txId, lockMode);
 
             synchronized (waiters) {
-                if (markedForRemove) {
+                if (!isUsed()) {
                     return new IgniteBiTuple(null, lockMode);
                 }
 
@@ -889,7 +855,7 @@ public class HeapLockManager extends AbstractEventProducer<LockEvent, LockEventP
          * @return True if current waiter ready to notify, false otherwise.
          */
         private boolean isWaiterReadyToNotify(WaiterImpl waiter, boolean skipFail) {
-            for (Map.Entry<UUID, WaiterImpl> entry : waiters.tailMap(waiter.txId(), false).entrySet()) {
+            for (Entry<UUID, WaiterImpl> entry : waiters.tailMap(waiter.txId(), false).entrySet()) {
                 WaiterImpl tmp = entry.getValue();
                 LockMode mode = tmp.lockMode;
 
@@ -908,7 +874,7 @@ public class HeapLockManager extends AbstractEventProducer<LockEvent, LockEventP
                 }
             }
 
-            for (Map.Entry<UUID, WaiterImpl> entry : waiters.headMap(waiter.txId()).entrySet()) {
+            for (Entry<UUID, WaiterImpl> entry : waiters.headMap(waiter.txId()).entrySet()) {
                 WaiterImpl tmp = entry.getValue();
                 LockMode mode = tmp.lockMode;
 
@@ -1019,7 +985,7 @@ public class HeapLockManager extends AbstractEventProducer<LockEvent, LockEventP
             ArrayList<WaiterImpl> toNotify = new ArrayList<>();
             Set<UUID> toFail = new HashSet<>();
 
-            for (Map.Entry<UUID, WaiterImpl> entry : waiters.entrySet()) {
+            for (Entry<UUID, WaiterImpl> entry : waiters.entrySet()) {
                 WaiterImpl tmp = entry.getValue();
 
                 if (tmp.hasLockIntent() && isWaiterReadyToNotify(tmp, true)) {
@@ -1030,7 +996,7 @@ public class HeapLockManager extends AbstractEventProducer<LockEvent, LockEventP
             }
 
             if (deadlockPreventionPolicy.usePriority() && deadlockPreventionPolicy.waitTimeout() >= 0) {
-                for (Map.Entry<UUID, WaiterImpl> entry : waiters.entrySet()) {
+                for (Entry<UUID, WaiterImpl> entry : waiters.entrySet()) {
                     WaiterImpl tmp = entry.getValue();
 
                     if (tmp.hasLockIntent() && isWaiterReadyToNotify(tmp, false)) {
@@ -1359,10 +1325,10 @@ public class HeapLockManager extends AbstractEventProducer<LockEvent, LockEventP
 
     @TestOnly
     public LockState[] getSlots() {
-        return slots;
+        return locks.values().toArray(new LockState[]{});
     }
 
     public int available() {
-        return empty.size();
+        return Math.max(lockMapSize - lockTableSize.intValue(), 0);
     }
 }
