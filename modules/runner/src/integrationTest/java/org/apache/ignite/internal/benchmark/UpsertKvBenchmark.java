@@ -63,7 +63,7 @@ public class UpsertKvBenchmark extends AbstractMultiNodeBenchmark {
     @Param({"false"})
     private boolean fsync;
 
-    @Param({"8"})
+    @Param({"8", "32"})
     private int partitionCount;
 
     private static final AtomicInteger counter = new AtomicInteger();
