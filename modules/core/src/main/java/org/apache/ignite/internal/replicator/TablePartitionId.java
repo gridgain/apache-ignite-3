@@ -99,7 +99,7 @@ public class TablePartitionId implements PartitionGroupId {
 
     @Override
     public int hashCode() {
-        return hash(partId, tableId);
+        return 31 * partId + 9931 * tableId;
     }
 
     @Override
