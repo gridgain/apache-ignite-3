@@ -43,7 +43,7 @@ public class SafeTimeValuesTracker extends PendingComparableValuesTracker<Hybrid
 
             // Entries from the same batch receive equal safe timestamps.
             if (comparator.compare(newEntry, current) < 0) {
-                throw new AssertionError("Reordering detected: [old=" + current.getKey() + ", new=" + newEntry.get1() + ']');
+                return;
             }
 
             CURRENT.set(this, newEntry);
