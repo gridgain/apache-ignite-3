@@ -268,7 +268,7 @@ tasks.register("runUpsertBenchmark", JavaExec) {
 tasks.register("runRocksDbBenchmark", JavaExec) {
     mainClass = "org.apache.ignite.internal.benchmark.RocksDbBenchmark"
 
-    jvmArgs += defaultJvmArgs
+    jvmArgs += addOpens + ["-Dio.netty.tryReflectionSetAccessible=true", "-Xmx16g"]
 
     classpath = sourceSets.integrationTest.runtimeClasspath
 }
