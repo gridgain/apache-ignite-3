@@ -171,6 +171,7 @@ public class CheckpointTimeoutLock {
                         }
 
                         LOG.error("Synchronous waiting for checkpoint.");
+                        long before = System.nanoTime();
 
                         checkpointReadWriteLock.readUnlock();
 
@@ -185,6 +186,7 @@ public class CheckpointTimeoutLock {
                         } catch (CancellationException e) {
                             throw new IgniteInternalException("Failed to wait for checkpoint begin", e);
                         }
+                        System.out.println("Checkpoint wait time: " + (System.nanoTime() - before) / 1_000_000 + "ms");
                     }
                 } catch (CheckpointReadLockTimeoutException e) {
                     LOG.debug(e.getMessage(), e);
