@@ -66,6 +66,12 @@ public class UpsertKvBenchmark extends AbstractMultiNodeBenchmark {
     @Param({"32"})
     private int partitionCount;
 
+    @Param({"aipersist"})
+    private String engine;
+
+    @Param({"20737418240L"})
+    private int cacheSize;
+
     private static final AtomicInteger COUNTER = new AtomicInteger();
 
     private static final ThreadLocal<Integer> GEN = ThreadLocal.withInitial(() -> COUNTER.getAndIncrement() * 20_000_000);
@@ -145,5 +151,15 @@ public class UpsertKvBenchmark extends AbstractMultiNodeBenchmark {
     @Override
     protected int replicaCount() {
         return 1;
+    }
+
+    @Override
+    protected String engine() {
+        return engine;
+    }
+
+    @Override
+    protected long cacheSize() {
+        return cacheSize;
     }
 }

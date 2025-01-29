@@ -202,8 +202,8 @@ public class AbstractMultiNodeBenchmark {
                 + "    }\n"
                 + "  },\n"
                 + "  storage.profiles: {"
-                + "        " + DEFAULT_STORAGE_PROFILE + ".engine: rocksdb, "
-                + "        " + DEFAULT_STORAGE_PROFILE + ".size: 20737418240 " // Avoid page replacement.
+                + "        " + DEFAULT_STORAGE_PROFILE + ".engine: " + engine() + ", "
+                + "        " + DEFAULT_STORAGE_PROFILE + ".size: " + cacheSize()
                 + "  },\n"
                 + "  clientConnector: { port:{} },\n"
                 + "  rest.port: {},\n"
@@ -272,5 +272,13 @@ public class AbstractMultiNodeBenchmark {
 
     protected int replicaCount() {
         return CatalogUtils.DEFAULT_REPLICA_COUNT;
+    }
+
+    protected String engine() {
+        return "aipersist";
+    }
+
+    protected long cacheSize() {
+        return 2073741824;
     }
 }
