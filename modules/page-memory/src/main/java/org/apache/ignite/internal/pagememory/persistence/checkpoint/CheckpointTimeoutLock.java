@@ -170,7 +170,7 @@ public class CheckpointTimeoutLock {
                             return;
                         }
 
-                        LOG.error("Synchronous waiting for checkpoint.");
+                        LOG.error("Synchronous waiting for checkpoint. timeout=" + timeout);
                         long before = System.nanoTime();
 
                         checkpointReadWriteLock.readUnlock();
