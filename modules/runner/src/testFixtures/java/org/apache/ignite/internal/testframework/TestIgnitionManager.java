@@ -65,8 +65,8 @@ public class TestIgnitionManager {
             "ignite.storage.profiles.default_aimem.engine", "aimem",
             "ignite.storage.profiles.default_aimem.initSize", Integer.toString(256 * MiB),
             "ignite.storage.profiles.default_aimem.maxSize", Integer.toString(256 * MiB),
-            "ignite.storage.profiles.default.engine", "aipersist",
-            "ignite.storage.profiles.default.size", Integer.toString(256 * MiB)
+            "ignite.storage.profiles.default.engine", "aipersist"
+            //"ignite.storage.profiles.default.size", Integer.toString(256 * MiB)
     );
 
     /** Map with default cluster configuration values. */

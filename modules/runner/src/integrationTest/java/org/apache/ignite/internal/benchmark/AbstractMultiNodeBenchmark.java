@@ -202,14 +202,16 @@ public class AbstractMultiNodeBenchmark {
                 + "    }\n"
                 + "  },\n"
                 + "  storage.profiles: {"
-                + "        " + DEFAULT_STORAGE_PROFILE + ".engine: aipersist, "
-                + "        " + DEFAULT_STORAGE_PROFILE + ".size: 2073741824 " // Avoid page replacement.
+                + "        " + DEFAULT_STORAGE_PROFILE + ".engine: " + engine() + ", "
+                + "        " + ("aipersist".equals(engine()) ? (DEFAULT_STORAGE_PROFILE + ".size: " + cacheSize()) : "")
+                + "        " + ("aimem".equals(engine()) ? (DEFAULT_STORAGE_PROFILE + ".initSize: " + cacheSize() + ", ") : "")
+                + "        " + ("aimem".equals(engine()) ? (DEFAULT_STORAGE_PROFILE + ".maxSize: " + cacheSize()) : "")
                 + "  },\n"
                 + "  clientConnector: { port:{} },\n"
                 + "  rest.port: {},\n"
                 + "  raft.fsync = " + fsync() + ",\n"
                 + "  system.partitionsLogPath = \"" + logPath() + "\",\n"
-                + "  failureHandler.handler: {\n" 
+                + "  failureHandler.handler: {\n"
                 + "      type: \"" + StopNodeOrHaltFailureHandlerConfigurationSchema.TYPE + "\",\n"
                 + "      tryStop: true,\n"
                 + "      timeoutMillis: 60000,\n" // 1 minute for graceful shutdown
@@ -272,5 +274,13 @@ public class AbstractMultiNodeBenchmark {
 
     protected int replicaCount() {
         return CatalogUtils.DEFAULT_REPLICA_COUNT;
+    }
+
+    protected String engine() {
+        return "aipersist";
+    }
+
+    protected int cacheSize() {
+        return 2073741824;
     }
 }
