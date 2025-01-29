@@ -266,7 +266,7 @@ tasks.register("runUpsertBenchmark", JavaExec) {
 tasks.register("runPutGetBenchmark", JavaExec) {
     mainClass = "org.apache.ignite.internal.benchmark.PutGetKvBenchmark"
 
-    jvmArgs += defaultJvmArgs
+    jvmArgs += addOpens + ["-Dio.netty.tryReflectionSetAccessible=true", "-Xmx16g"]
 
     classpath = sourceSets.integrationTest.runtimeClasspath
 }

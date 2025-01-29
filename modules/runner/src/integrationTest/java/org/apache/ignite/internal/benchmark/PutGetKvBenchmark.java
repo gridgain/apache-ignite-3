@@ -52,8 +52,8 @@ import org.openjdk.jmh.runner.options.OptionsBuilder;
  * Benchmark for a single upsert operation via KV API with a possibility to disable updates via RAFT and to storage.
  */
 @State(Scope.Benchmark)
-@Fork(0)
-@Threads(1)
+@Fork(1)
+@Threads(32)
 @Warmup(iterations = 10, time = 2)
 @Measurement(iterations = 20, time = 2)
 @BenchmarkMode(Mode.Throughput)
@@ -69,10 +69,10 @@ public class PutGetKvBenchmark extends AbstractMultiNodeBenchmark {
     @Param({"false"})
     private boolean fsync;
 
-    @Param({"8"})
+    @Param({"32"})
     private int partitionCount;
 
-    @Param({"300000"})
+    @Param({"190000"})
     private int keys;
 
     @Param({"aimem"})
