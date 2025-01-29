@@ -62,7 +62,7 @@ public class PageMemoryCheckpointConfigurationSchema {
     /** Threshold for logging (if greater than zero) read lock holders in milliseconds. */
     @Range(min = 0)
     @Value(hasDefault = true)
-    public long logReadLockThresholdTimeout = 0;
+    public long logReadLockThresholdTimeout = 1000;
 
     /** Use an asynchronous file I/O operations provider. */
     @Value(hasDefault = true)
