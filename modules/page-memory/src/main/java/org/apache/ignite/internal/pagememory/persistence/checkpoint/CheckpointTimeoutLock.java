@@ -170,6 +170,8 @@ public class CheckpointTimeoutLock {
                             return;
                         }
 
+                        LOG.error("Synchronous waiting for checkpoint.");
+
                         checkpointReadWriteLock.readUnlock();
 
                         if (timeout > 0 && coarseCurrentTimeMillis() - start >= timeout) {
