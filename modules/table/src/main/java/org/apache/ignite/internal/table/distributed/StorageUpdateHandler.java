@@ -205,19 +205,27 @@ public class StorageUpdateHandler {
         Iterator<Entry<UUID, TimedBinaryRow>> it = rowsToUpdate.entrySet().iterator();
         Entry<UUID, TimedBinaryRow> lastUnprocessedEntry = it.next();
 
-        while (lastUnprocessedEntry != null) {
-            lastUnprocessedEntry = processEntriesUntilBatchLimit(
-                    lastUnprocessedEntry,
-                    txId,
-                    trackWriteIntent,
-                    commitTs,
-                    commitTblId,
-                    commitPartId,
-                    it,
-                    onApplication,
-                    storageUpdateConfiguration.batchByteLength().value(),
-                    indexIds
-            );
+        try {
+            while (lastUnprocessedEntry != null) {
+                lastUnprocessedEntry = processEntriesUntilBatchLimit(
+                        lastUnprocessedEntry,
+                        txId,
+                        trackWriteIntent,
+                        commitTs,
+                        commitTblId,
+                        commitPartId,
+                        it,
+                        onApplication,
+                        storageUpdateConfiguration.batchByteLength().value(),
+                        indexIds
+                );
+            }
+        } catch (Exception e) {
+            System.err.println("Error in handleUpdateAll");
+
+            e.printStackTrace(System.err);
+
+            throw e;
         }
     }
 
