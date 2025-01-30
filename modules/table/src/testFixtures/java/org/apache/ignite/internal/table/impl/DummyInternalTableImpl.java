@@ -120,7 +120,7 @@ import org.apache.ignite.internal.tx.impl.RemotelyTriggeredResourceRegistry;
 import org.apache.ignite.internal.tx.impl.TransactionIdGenerator;
 import org.apache.ignite.internal.tx.impl.TransactionInflights;
 import org.apache.ignite.internal.tx.impl.TxManagerImpl;
-import org.apache.ignite.internal.tx.storage.state.test.TestTxStateTableStorage;
+import org.apache.ignite.internal.tx.storage.state.test.TestTxStateStorage;
 import org.apache.ignite.internal.tx.test.TestLocalRwTxCounter;
 import org.apache.ignite.internal.util.Lazy;
 import org.apache.ignite.internal.util.PendingComparableValuesTracker;
@@ -265,7 +265,7 @@ public class DummyInternalTableImpl extends InternalTableImpl {
                 new SingleClusterNodeResolver(LOCAL_NODE),
                 txManager(replicaSvc, placementDriver, txConfiguration, resourcesRegistry),
                 mock(MvTableStorage.class),
-                new TestTxStateTableStorage(),
+                new TestTxStateStorage(),
                 replicaSvc,
                 CLOCK_SERVICE,
                 tracker,
