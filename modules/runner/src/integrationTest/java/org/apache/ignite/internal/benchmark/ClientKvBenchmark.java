@@ -63,7 +63,7 @@ public class ClientKvBenchmark extends AbstractMultiNodeBenchmark {
 
     private KeyValueView<Tuple, Tuple> kvView;
 
-    @Param({"1"})
+    @Param({"5"})
     private int batch;
 
     @Param({"false"})
