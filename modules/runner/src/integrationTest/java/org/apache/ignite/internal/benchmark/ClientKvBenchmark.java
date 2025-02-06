@@ -112,6 +112,10 @@ public class ClientKvBenchmark extends AbstractMultiNodeBenchmark {
      */
     @Benchmark
     public void upsert() {
+        if (!Thread.currentThread().isVirtual()) {
+            throw new IllegalStateException();
+        }
+
         Transaction tx = client.transactions().begin();
         for (int i = 0; i < batch; i++) {
             Tuple key = Tuple.create().set("ycsb_key", nextId());
