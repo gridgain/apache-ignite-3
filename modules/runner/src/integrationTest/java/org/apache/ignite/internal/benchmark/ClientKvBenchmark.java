@@ -17,11 +17,14 @@
 
 package org.apache.ignite.internal.benchmark;
 
+import static org.apache.ignite.internal.util.IgniteUtils.closeAll;
+
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import org.apache.ignite.client.IgniteClient;
 import org.apache.ignite.internal.lang.IgniteSystemProperties;
 import org.apache.ignite.table.KeyValueView;
 import org.apache.ignite.table.Tuple;
@@ -46,16 +49,18 @@ import org.openjdk.jmh.runner.options.OptionsBuilder;
  * Benchmark for a single upsert operation via KV API with a possibility to disable updates via RAFT and to storage.
  */
 @State(Scope.Benchmark)
-@Fork(0)
+@Fork(1)
 @Threads(1)
 @Warmup(iterations = 10, time = 2)
 @Measurement(iterations = 20, time = 2)
 @BenchmarkMode(Mode.Throughput)
 @OutputTimeUnit(TimeUnit.SECONDS)
-public class UpsertKvBenchmark extends AbstractMultiNodeBenchmark {
+public class ClientKvBenchmark extends AbstractMultiNodeBenchmark {
     private final Tuple tuple = Tuple.create();
 
-    private static KeyValueView<Tuple, Tuple> kvView;
+    private IgniteClient client;
+
+    private KeyValueView<Tuple, Tuple> kvView;
 
     @Param({"1"})
     private int batch;
@@ -82,10 +87,19 @@ public class UpsertKvBenchmark extends AbstractMultiNodeBenchmark {
      */
     @Setup
     public void setUp() {
-        kvView = igniteImpl.tables().table(TABLE_NAME).keyValueView();
         for (int i = 1; i < 11; i++) {
             tuple.set("field" + i, FIELD_VAL);
         }
+
+        //client = IgniteClient.builder().addresses("127.0.0.1:10800", "127.0.0.1:10801").build();
+        client = IgniteClient.builder().addresses("127.0.0.1:10800").build();
+        kvView = client.tables().table(TABLE_NAME).keyValueView();
+    }
+
+    @Override
+    public void nodeTearDown() throws Exception {
+        closeAll(client);
+        super.nodeTearDown();
     }
 
     /**
@@ -118,7 +132,7 @@ public class UpsertKvBenchmark extends AbstractMultiNodeBenchmark {
      */
     public static void main(String[] args) throws RunnerException {
         Options opt = new OptionsBuilder()
-                .include(".*" + UpsertKvBenchmark.class.getSimpleName() + ".*")
+                .include(".*" + ClientKvBenchmark.class.getSimpleName() + ".*")
                 // .jvmArgsAppend("-Djmh.executor=VIRTUAL")
                 // .addProfiler(JavaFlightRecorderProfiler.class, "configName=profile.jfc")
                 .build();

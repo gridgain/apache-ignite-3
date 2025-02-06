@@ -265,6 +265,14 @@ tasks.register("runUpsertBenchmark", JavaExec) {
     enableAssertions = true
 }
 
+tasks.register("runClientBenchmark", JavaExec) {
+    mainClass = "org.apache.ignite.internal.benchmark.ClientKvBenchmark"
+
+    jvmArgs += addOpens + ["-Dio.netty.tryReflectionSetAccessible=true", "-Xmx16g"]
+
+    classpath = sourceSets.integrationTest.runtimeClasspath
+}
+
 jar {
     manifest {
         attributes(

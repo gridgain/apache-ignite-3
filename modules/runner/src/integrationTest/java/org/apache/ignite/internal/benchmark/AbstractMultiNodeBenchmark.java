@@ -184,7 +184,7 @@ public class AbstractMultiNodeBenchmark {
      * @throws Exception In case of any error.
      */
     @TearDown
-    public final void nodeTearDown() throws Exception {
+    public void nodeTearDown() throws Exception {
         IgniteUtils.closeAll(igniteServers.stream().map(node -> node::shutdown));
     }
 
