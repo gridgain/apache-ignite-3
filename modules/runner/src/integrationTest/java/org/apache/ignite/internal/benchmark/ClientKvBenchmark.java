@@ -28,6 +28,7 @@ import org.apache.ignite.client.IgniteClient;
 import org.apache.ignite.internal.lang.IgniteSystemProperties;
 import org.apache.ignite.table.KeyValueView;
 import org.apache.ignite.table.Tuple;
+import org.apache.ignite.tx.Transaction;
 import org.openjdk.jmh.annotations.Benchmark;
 import org.openjdk.jmh.annotations.BenchmarkMode;
 import org.openjdk.jmh.annotations.Fork;
@@ -50,7 +51,7 @@ import org.openjdk.jmh.runner.options.OptionsBuilder;
  */
 @State(Scope.Benchmark)
 @Fork(1)
-@Threads(8)
+@Threads(16)
 @Warmup(iterations = 10, time = 2)
 @Measurement(iterations = 20, time = 2)
 @BenchmarkMode(Mode.Throughput)
@@ -62,13 +63,13 @@ public class ClientKvBenchmark extends AbstractMultiNodeBenchmark {
 
     private KeyValueView<Tuple, Tuple> kvView;
 
-    @Param({"1"})
+    @Param({"5"})
     private int batch;
 
     @Param({"false"})
     private boolean fsync;
 
-    @Param({"8"})
+    @Param({"16"})
     private int partitionCount;
 
     private static final AtomicInteger COUNTER = new AtomicInteger();
@@ -107,18 +108,11 @@ public class ClientKvBenchmark extends AbstractMultiNodeBenchmark {
      */
     @Benchmark
     public void upsert() {
-        List<CompletableFuture<Void>> futs = new ArrayList<>();
-
-        for (int i = 0; i < batch - 1; i++) {
-            CompletableFuture<Void> fut = kvView.putAsync(null, Tuple.create().set("ycsb_key", nextId()), tuple);
-            futs.add(fut);
+        Transaction tx = igniteImpl.transactions().begin();
+        for (int i = 0; i < batch; i++) {
+            kvView.put(tx, Tuple.create().set("ycsb_key", nextId()), tuple);
         }
-
-        for (CompletableFuture<Void> fut : futs) {
-            fut.join();
-        }
-
-        kvView.put(null, Tuple.create().set("ycsb_key", nextId()), tuple);
+        tx.commit();
     }
 
     private int nextId() {
