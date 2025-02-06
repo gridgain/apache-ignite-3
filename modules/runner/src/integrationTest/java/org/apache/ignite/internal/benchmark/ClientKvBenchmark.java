@@ -27,6 +27,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import org.apache.ignite.client.IgniteClient;
 import org.apache.ignite.internal.lang.IgniteSystemProperties;
 import org.apache.ignite.table.KeyValueView;
+import org.apache.ignite.table.Table;
 import org.apache.ignite.table.Tuple;
 import org.apache.ignite.tx.Transaction;
 import org.openjdk.jmh.annotations.Benchmark;
@@ -51,7 +52,7 @@ import org.openjdk.jmh.runner.options.OptionsBuilder;
  */
 @State(Scope.Benchmark)
 @Fork(0)
-@Threads(16)
+@Threads(64)
 @Warmup(iterations = 10, time = 2)
 @Measurement(iterations = 20, time = 2)
 @BenchmarkMode(Mode.Throughput)
@@ -61,6 +62,8 @@ public class ClientKvBenchmark extends AbstractMultiNodeBenchmark {
 
     private IgniteClient client;
 
+    private Table table;
+
     private KeyValueView<Tuple, Tuple> kvView;
 
     @Param({"5"})
@@ -69,7 +72,7 @@ public class ClientKvBenchmark extends AbstractMultiNodeBenchmark {
     @Param({"false"})
     private boolean fsync;
 
-    @Param({"16"})
+    @Param({"32"})
     private int partitionCount;
 
     private static final AtomicInteger COUNTER = new AtomicInteger();
@@ -94,7 +97,8 @@ public class ClientKvBenchmark extends AbstractMultiNodeBenchmark {
 
         //client = IgniteClient.builder().addresses("127.0.0.1:10800", "127.0.0.1:10801").build();
         client = IgniteClient.builder().addresses("127.0.0.1:10800").build();
-        kvView = client.tables().table(TABLE_NAME).keyValueView();
+        table = client.tables().table(TABLE_NAME);
+        kvView = table.keyValueView();
     }
 
     @Override
@@ -110,7 +114,8 @@ public class ClientKvBenchmark extends AbstractMultiNodeBenchmark {
     public void upsert() {
         Transaction tx = client.transactions().begin();
         for (int i = 0; i < batch; i++) {
-            kvView.put(tx, Tuple.create().set("ycsb_key", nextId()), tuple);
+            Tuple key = Tuple.create().set("ycsb_key", nextId());
+            kvView.put(tx, key, tuple);
         }
         tx.commit();
     }
@@ -127,7 +132,7 @@ public class ClientKvBenchmark extends AbstractMultiNodeBenchmark {
     public static void main(String[] args) throws RunnerException {
         Options opt = new OptionsBuilder()
                 .include(".*" + ClientKvBenchmark.class.getSimpleName() + ".*")
-                // .jvmArgsAppend("-Djmh.executor=VIRTUAL")
+                .jvmArgsAppend("-Djmh.executor=VIRTUAL")
                 // .addProfiler(JavaFlightRecorderProfiler.class, "configName=profile.jfc")
                 .build();
 
