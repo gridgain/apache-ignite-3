@@ -86,7 +86,9 @@ public class AbstractMultiNodeBenchmark {
     @Setup
     public void nodeSetUp() throws Exception {
         System.setProperty("jraft.available_processors", "2");
-        startCluster();
+        if (!remote()) {
+            startCluster();
+        }
 
         try {
             // Create a new zone on the cluster's start-up.
@@ -189,6 +191,10 @@ public class AbstractMultiNodeBenchmark {
     }
 
     private void startCluster() throws Exception {
+        if (remote()) {
+            throw new AssertionError("Can't start the cluster in remote mode");
+        }
+
         Path workDir = workDir();
 
         String connectNodeAddr = "\"localhost:" + BASE_PORT + '\"';
@@ -272,5 +278,9 @@ public class AbstractMultiNodeBenchmark {
 
     protected int replicaCount() {
         return CatalogUtils.DEFAULT_REPLICA_COUNT;
+    }
+
+    protected boolean remote() {
+        return false;
     }
 }

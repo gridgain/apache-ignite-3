@@ -19,9 +19,6 @@ package org.apache.ignite.internal.benchmark;
 
 import static org.apache.ignite.internal.util.IgniteUtils.closeAll;
 
-import java.util.ArrayList;
-import java.util.List;
-import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.apache.ignite.client.IgniteClient;
@@ -51,29 +48,23 @@ import org.openjdk.jmh.runner.options.OptionsBuilder;
  * Benchmark for a single upsert operation via KV API with a possibility to disable updates via RAFT and to storage.
  */
 @State(Scope.Benchmark)
-@Fork(1)
+@Fork(0)
 @Threads(1)
 @Warmup(iterations = 10, time = 2)
 @Measurement(iterations = 20, time = 2)
 @BenchmarkMode(Mode.Throughput)
 @OutputTimeUnit(TimeUnit.SECONDS)
-public class ClientKvBenchmark extends AbstractMultiNodeBenchmark {
+public class RemoteKvBenchmark extends AbstractMultiNodeBenchmark {
     private final Tuple tuple = Tuple.create();
+
+    @Param({"5"})
+    private int batch;
 
     private IgniteClient client;
 
     private Table table;
 
     private KeyValueView<Tuple, Tuple> kvView;
-
-    @Param({"5"})
-    private int batch;
-
-    @Param({"false"})
-    private boolean fsync;
-
-    @Param({"32"})
-    private int partitionCount;
 
     private static final AtomicInteger COUNTER = new AtomicInteger();
 
@@ -83,6 +74,11 @@ public class ClientKvBenchmark extends AbstractMultiNodeBenchmark {
     public void nodeSetUp() throws Exception {
         System.setProperty(IgniteSystemProperties.IGNITE_SKIP_REPLICATION_IN_BENCHMARK, "false");
         System.setProperty(IgniteSystemProperties.IGNITE_SKIP_STORAGE_UPDATE_IN_BENCHMARK, "false");
+
+        //publicIgnite = IgniteClient.builder().addresses("127.0.0.1:10800", "127.0.0.1:10801").build();
+        client = IgniteClient.builder().addresses("127.0.0.1:10800").build();
+        publicIgnite = client;
+
         super.nodeSetUp();
     }
 
@@ -95,8 +91,6 @@ public class ClientKvBenchmark extends AbstractMultiNodeBenchmark {
             tuple.set("field" + i, FIELD_VAL);
         }
 
-        //client = IgniteClient.builder().addresses("127.0.0.1:10800", "127.0.0.1:10801").build();
-        client = IgniteClient.builder().addresses("127.0.0.1:10800").build();
         table = client.tables().table(TABLE_NAME);
         kvView = table.keyValueView();
     }
@@ -131,7 +125,7 @@ public class ClientKvBenchmark extends AbstractMultiNodeBenchmark {
      */
     public static void main(String[] args) throws RunnerException {
         Options opt = new OptionsBuilder()
-                .include(".*" + ClientKvBenchmark.class.getSimpleName() + ".*")
+                .include(".*" + RemoteKvBenchmark.class.getSimpleName() + ".*")
                 // .jvmArgsAppend("-Djmh.executor=VIRTUAL")
                 // .addProfiler(JavaFlightRecorderProfiler.class, "configName=profile.jfc")
                 .build();
@@ -140,22 +134,7 @@ public class ClientKvBenchmark extends AbstractMultiNodeBenchmark {
     }
 
     @Override
-    protected boolean fsync() {
-        return fsync;
-    }
-
-    @Override
-    protected int nodes() {
-        return 1;
-    }
-
-    @Override
-    protected int partitionCount() {
-        return partitionCount;
-    }
-
-    @Override
-    protected int replicaCount() {
-        return 1;
+    protected boolean remote() {
+        return true;
     }
 }
