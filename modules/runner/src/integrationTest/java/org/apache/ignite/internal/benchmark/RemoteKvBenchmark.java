@@ -60,6 +60,9 @@ public class RemoteKvBenchmark extends AbstractMultiNodeBenchmark {
     @Param({"5"})
     private int batch;
 
+    @Param({"32"})
+    private int partitionCount;
+
     private IgniteClient client;
 
     private Table table;
@@ -136,5 +139,15 @@ public class RemoteKvBenchmark extends AbstractMultiNodeBenchmark {
     @Override
     protected boolean remote() {
         return true;
+    }
+
+    @Override
+    protected int partitionCount() {
+        return partitionCount;
+    }
+
+    @Override
+    protected int replicaCount() {
+        return 1;
     }
 }
