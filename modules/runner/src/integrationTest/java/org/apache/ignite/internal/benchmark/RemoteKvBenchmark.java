@@ -79,7 +79,7 @@ public class RemoteKvBenchmark extends AbstractMultiNodeBenchmark {
         System.setProperty(IgniteSystemProperties.IGNITE_SKIP_STORAGE_UPDATE_IN_BENCHMARK, "false");
 
         //publicIgnite = IgniteClient.builder().addresses("127.0.0.1:10800", "127.0.0.1:10801").build();
-        client = IgniteClient.builder().addresses("172.25.4.102:10800").build();
+        client = IgniteClient.builder().addresses("172.25.4.102:10800, 172.25.4.109:10800").build();
         publicIgnite = client;
 
         super.nodeSetUp();
