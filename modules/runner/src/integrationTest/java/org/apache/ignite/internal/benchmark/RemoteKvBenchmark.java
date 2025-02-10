@@ -19,13 +19,19 @@ package org.apache.ignite.internal.benchmark;
 
 import static org.apache.ignite.internal.util.IgniteUtils.closeAll;
 
+import java.util.HashSet;
+import java.util.Map;
+import java.util.Map.Entry;
+import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.apache.ignite.client.IgniteClient;
 import org.apache.ignite.internal.lang.IgniteSystemProperties;
+import org.apache.ignite.network.ClusterNode;
 import org.apache.ignite.table.KeyValueView;
 import org.apache.ignite.table.Table;
 import org.apache.ignite.table.Tuple;
+import org.apache.ignite.table.partition.Partition;
 import org.apache.ignite.tx.Transaction;
 import org.openjdk.jmh.annotations.Benchmark;
 import org.openjdk.jmh.annotations.BenchmarkMode;
@@ -63,6 +69,9 @@ public class RemoteKvBenchmark extends AbstractMultiNodeBenchmark {
     @Param({"32"})
     private int partitionCount;
 
+    @Param({"node1"})
+    private String nodeAffinity;
+
     private IgniteClient client;
 
     private Table table;
@@ -72,6 +81,8 @@ public class RemoteKvBenchmark extends AbstractMultiNodeBenchmark {
     private static final AtomicInteger COUNTER = new AtomicInteger();
 
     private static final ThreadLocal<Integer> GEN = ThreadLocal.withInitial(() -> COUNTER.getAndIncrement() * 20_000_000);
+
+    private Set<Integer> txPars = new HashSet<>();
 
     @Override
     public void nodeSetUp() throws Exception {
@@ -110,9 +121,15 @@ public class RemoteKvBenchmark extends AbstractMultiNodeBenchmark {
     @Benchmark
     public void upsert() {
         Transaction tx = client.transactions().begin();
-        for (int i = 0; i < batch; i++) {
+        int i = 0;
+        while (i < batch) {
             Tuple key = Tuple.create().set("ycsb_key", nextId());
-            kvView.put(tx, key, tuple);
+
+            Partition part = table.partitionManager().partitionAsync(key).join();
+            if (table.partitionManager().primaryReplicaAsync(part).join().name().equals(nodeAffinity)) {
+                kvView.put(tx, key, tuple);
+                i++;
+            }
         }
         tx.commit();
     }
