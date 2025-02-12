@@ -1160,6 +1160,7 @@ public class InternalTableImpl implements InternalTable {
                 .timestamp(beginTs)
                 .full(false)
                 .coordinatorId(coordinatorId)
+                .skipDelayedAck(true)
                 .build();
 
         return replicaSvc.invoke(this.txManager.topology().localMember(), req);

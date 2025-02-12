@@ -2726,6 +2726,7 @@ public class PartitionReplicaListener implements ReplicaListener {
             boolean full,
             UUID txCoordinatorId,
             int catalogVersion,
+            boolean skipDelayedAck,
             Long leaseStartTime
     ) {
         assert leaseStartTime != null : format("Lease start time is null for UpdateCommand [txId={}].", txId);
@@ -2744,24 +2745,42 @@ public class PartitionReplicaListener implements ReplicaListener {
         );
 
         if (!cmd.full()) {
-            if (!SKIP_UPDATES) {
-                // We don't need to take the partition snapshots read lock, see #INTERNAL_DOC_PLACEHOLDER why.
-                storageUpdateHandler.handleUpdate(
-                        cmd.txId(),
-                        cmd.rowUuid(),
-                        cmd.commitPartitionId().asTablePartitionId(),
-                        cmd.rowToUpdate(),
-                        true,
-                        null,
-                        null,
-                        null,
-                        indexIdsAtRwTxBeginTs(txId)
-                );
+            if (skipDelayedAck) {
+                if (!SKIP_UPDATES) {
+                    storageUpdateHandler.handleUpdate(
+                            cmd.txId(),
+                            cmd.rowUuid(),
+                            cmd.commitPartitionId().asTablePartitionId(),
+                            cmd.rowToUpdate(),
+                            true,
+                            null,
+                            null,
+                            null,
+                            indexIdsAtRwTxBeginTs(txId)
+                    );
+                }
+
+                return applyCmdWithExceptionHandling(cmd).thenApply(res -> null);
+            } else {
+                if (!SKIP_UPDATES) {
+                    // We don't need to take the partition snapshots read lock, see #INTERNAL_DOC_PLACEHOLDER why.
+                    storageUpdateHandler.handleUpdate(
+                            cmd.txId(),
+                            cmd.rowUuid(),
+                            cmd.commitPartitionId().asTablePartitionId(),
+                            cmd.rowToUpdate(),
+                            true,
+                            null,
+                            null,
+                            null,
+                            indexIdsAtRwTxBeginTs(txId)
+                    );
+                }
+
+                CompletableFuture<UUID> repFut = applyCmdWithExceptionHandling(cmd).thenApply(res -> cmd.txId());
+
+                return completedFuture(new CommandApplicationResult(null, repFut));
             }
-
-            CompletableFuture<UUID> repFut = applyCmdWithExceptionHandling(cmd).thenApply(res -> cmd.txId());
-
-            return completedFuture(new CommandApplicationResult(null, repFut));
         } else {
             return applyCmdWithExceptionHandling(cmd).thenCompose(res -> {
                 UpdateCommandResult updateCommandResult = (UpdateCommandResult) res.getResult();
@@ -2826,6 +2845,7 @@ public class PartitionReplicaListener implements ReplicaListener {
                 request.full(),
                 request.coordinatorId(),
                 catalogVersion,
+                request.skipDelayedAck(),
                 leaseStartTime
         );
     }
@@ -3224,6 +3244,7 @@ public class PartitionReplicaListener implements ReplicaListener {
                                             request.full(),
                                             request.coordinatorId(),
                                             catalogVersion,
+                                            false,
                                             leaseStartTime
                                     )
                             )
@@ -3249,6 +3270,7 @@ public class PartitionReplicaListener implements ReplicaListener {
                                             request.full(),
                                             request.coordinatorId(),
                                             catalogVersion,
+                                            false,
                                             leaseStartTime
                                     )
                             )
@@ -3488,6 +3510,7 @@ public class PartitionReplicaListener implements ReplicaListener {
                                                     request.full(),
                                                     request.coordinatorId(),
                                                     catalogVersion,
+                                                    false,
                                                     leaseStartTime
                                             )
                                     )
