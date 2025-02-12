@@ -22,6 +22,7 @@ import static org.apache.ignite.internal.util.ViewUtils.sync;
 import static org.apache.ignite.lang.ErrorGroups.Common.INTERNAL_ERR;
 import static org.apache.ignite.lang.ErrorGroups.Transactions.TX_ALREADY_FINISHED_ERR;
 
+import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
@@ -59,16 +60,25 @@ public class ClientTransaction implements Transaction {
     /** Read-only flag. */
     private final boolean isReadOnly;
 
+    private UUID txId;
+
+    private int commitPartition;
+
+    private UUID coordId;
+
     /**
      * Constructor.
      *
      * @param ch Channel that the transaction belongs to.
      * @param id Transaction id.
      */
-    public ClientTransaction(ClientChannel ch, long id, boolean isReadOnly) {
+    public ClientTransaction(ClientChannel ch, long id, boolean isReadOnly, UUID txId, int commitPartition, UUID coordId) {
         this.ch = ch;
         this.id = id;
         this.isReadOnly = isReadOnly;
+        this.txId = txId;
+        this.commitPartition = commitPartition;
+        this.coordId = coordId;
     }
 
     /**
@@ -78,6 +88,18 @@ public class ClientTransaction implements Transaction {
      */
     public long id() {
         return id;
+    }
+
+    public UUID txId() {
+        return txId;
+    }
+
+    public int commitPartition() {
+        return commitPartition;
+    }
+
+    public UUID coordinatorId() {
+        return coordId;
     }
 
     /**

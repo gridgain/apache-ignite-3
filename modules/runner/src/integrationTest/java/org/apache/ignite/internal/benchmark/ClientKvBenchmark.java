@@ -25,6 +25,9 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.apache.ignite.client.IgniteClient;
+import org.apache.ignite.internal.client.table.ClientTable;
+import org.apache.ignite.internal.client.table.ClientTupleSerializer;
+import org.apache.ignite.internal.client.table.PartitionAwarenessProvider;
 import org.apache.ignite.internal.lang.IgniteSystemProperties;
 import org.apache.ignite.table.KeyValueView;
 import org.apache.ignite.table.Table;
@@ -62,7 +65,7 @@ public class ClientKvBenchmark extends AbstractMultiNodeBenchmark {
 
     private IgniteClient client;
 
-    private Table table;
+    private ClientTable table;
 
     private KeyValueView<Tuple, Tuple> kvView;
 
@@ -84,6 +87,7 @@ public class ClientKvBenchmark extends AbstractMultiNodeBenchmark {
         System.setProperty(IgniteSystemProperties.IGNITE_SKIP_REPLICATION_IN_BENCHMARK, "false");
         System.setProperty(IgniteSystemProperties.IGNITE_SKIP_STORAGE_UPDATE_IN_BENCHMARK, "false");
         super.nodeSetUp();
+        Thread.sleep(2000);
     }
 
     /**
@@ -95,10 +99,14 @@ public class ClientKvBenchmark extends AbstractMultiNodeBenchmark {
             tuple.set("field" + i, FIELD_VAL);
         }
 
-        //client = IgniteClient.builder().addresses("127.0.0.1:10800", "127.0.0.1:10801").build();
-        client = IgniteClient.builder().addresses("127.0.0.1:10800").build();
-        table = client.tables().table(TABLE_NAME);
+        client = IgniteClient.builder().addresses("127.0.0.1:10800", "127.0.0.1:10801").build();
+        //client = IgniteClient.builder().addresses("127.0.0.1:10800").build();
+        table = (ClientTable) client.tables().table(TABLE_NAME);
         kvView = table.keyValueView();
+        List<String> ass = table.getPartitionAssignment().join();
+        if (ass.get(0) == null) {
+            throw new IllegalArgumentException();
+        }
     }
 
     @Override
@@ -146,7 +154,7 @@ public class ClientKvBenchmark extends AbstractMultiNodeBenchmark {
 
     @Override
     protected int nodes() {
-        return 1;
+        return 2;
     }
 
     @Override

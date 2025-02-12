@@ -96,6 +96,7 @@ import org.apache.ignite.internal.partition.replicator.network.replication.ReadO
 import org.apache.ignite.internal.partition.replicator.network.replication.ReadWriteMultiRowPkReplicaRequest;
 import org.apache.ignite.internal.partition.replicator.network.replication.ReadWriteMultiRowReplicaRequest;
 import org.apache.ignite.internal.partition.replicator.network.replication.ReadWriteScanRetrieveBatchReplicaRequest;
+import org.apache.ignite.internal.partition.replicator.network.replication.ReadWriteSingleRowReplicaRequest;
 import org.apache.ignite.internal.partition.replicator.network.replication.RequestType;
 import org.apache.ignite.internal.partition.replicator.network.replication.ScanCloseReplicaRequest;
 import org.apache.ignite.internal.partition.replicator.network.replication.SingleRowPkReplicaRequest;
@@ -133,6 +134,7 @@ import org.apache.ignite.lang.IgniteException;
 import org.apache.ignite.network.ClusterNode;
 import org.apache.ignite.table.QualifiedName;
 import org.apache.ignite.table.QualifiedNameHelper;
+import org.apache.ignite.table.Tuple;
 import org.apache.ignite.tx.TransactionException;
 import org.jetbrains.annotations.Nullable;
 
@@ -1134,6 +1136,33 @@ public class InternalTableImpl implements InternalTable {
                         .build(),
                 (res, req) -> false
         );
+    }
+
+    @Override
+    public CompletableFuture<Void> upsertDirect(BinaryRowEx row, UUID txId, int commitPartId, UUID coordinatorId) {
+        // Only explicit transactions can be processed this way.
+        HybridTimestamp beginTs = TransactionIds.beginTimestamp(txId);
+
+        int partId = partitionId(row);
+
+        TablePartitionId partGroupId = new TablePartitionId(tableId, partId);
+        TablePartitionId commitGroupId = new TablePartitionId(tableId, commitPartId);
+
+        ReadWriteSingleRowReplicaRequest req = TABLE_MESSAGES_FACTORY.readWriteSingleRowReplicaRequest()
+                .groupId(serializeTablePartitionId(partGroupId))
+                .tableId(tableId)
+                .commitPartitionId(serializeTablePartitionId(commitGroupId))
+                .schemaVersion(row.schemaVersion())
+                .binaryTuple(row.tupleSlice())
+                .transactionId(txId)
+                .enlistmentConsistencyToken(0L) // Don't check lease on enlist.
+                .requestType(RW_UPSERT)
+                .timestamp(beginTs)
+                .full(false)
+                .coordinatorId(coordinatorId)
+                .build();
+
+        return replicaSvc.invoke(this.txManager.topology().localMember(), req);
     }
 
     /** {@inheritDoc} */

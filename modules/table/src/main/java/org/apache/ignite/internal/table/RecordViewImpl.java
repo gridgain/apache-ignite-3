@@ -450,7 +450,7 @@ public class RecordViewImpl<R> extends AbstractTableView<R> implements RecordVie
      * @return Binary row.
      * @throws MarshallerException If failed to marshal row.
      */
-    private BinaryRowEx marshal(R rec, int schemaVersion) {
+    public BinaryRowEx marshal(R rec, int schemaVersion) {
         RecordMarshaller<R> marsh = marshaller(schemaVersion);
 
         return marsh.marshal(rec);

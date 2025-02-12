@@ -29,6 +29,7 @@ import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
+import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
@@ -47,7 +48,7 @@ public class RepeatedFinishClientTransactionTest extends BaseIgniteAbstractTest 
 
         TestClientChannel clientChannel = new TestClientChannel(txFinishStartedLatch, secondFinishLatch);
 
-        ClientTransaction tx = new ClientTransaction(clientChannel, 1, false);
+        ClientTransaction tx = new ClientTransaction(clientChannel, 1, false, UUID.randomUUID(), 0, UUID.randomUUID());
 
         CompletableFuture<Object> fut = new CompletableFuture<>();
 
@@ -85,7 +86,7 @@ public class RepeatedFinishClientTransactionTest extends BaseIgniteAbstractTest 
 
         TestClientChannel clientChannel = new TestClientChannel(txFinishStartedLatch, secondFinishLatch);
 
-        ClientTransaction tx = new ClientTransaction(clientChannel, 1, false);
+        ClientTransaction tx = new ClientTransaction(clientChannel, 1, false, UUID.randomUUID(), 0, UUID.randomUUID());
 
         CompletableFuture<Object> fut = new CompletableFuture<>();
 
@@ -122,7 +123,7 @@ public class RepeatedFinishClientTransactionTest extends BaseIgniteAbstractTest 
 
         when(clientChannel.serviceAsync(anyInt(), any(), any())).thenReturn(failedFuture(new Exception("Expected exception.")));
 
-        ClientTransaction tx = new ClientTransaction(clientChannel, 1, false);
+        ClientTransaction tx = new ClientTransaction(clientChannel, 1, false, UUID.randomUUID(), 0, UUID.randomUUID());
 
         CompletableFuture<Object> fut = new CompletableFuture<>();
 
@@ -148,7 +149,7 @@ public class RepeatedFinishClientTransactionTest extends BaseIgniteAbstractTest 
 
         when(clientChannel.serviceAsync(anyInt(), any(), any())).thenReturn(failedFuture(new Exception("Expected exception.")));
 
-        ClientTransaction tx = new ClientTransaction(clientChannel, 1, false);
+        ClientTransaction tx = new ClientTransaction(clientChannel, 1, false, UUID.randomUUID(), 0, UUID.randomUUID());
 
         CompletableFuture<Object> fut = new CompletableFuture<>();
 

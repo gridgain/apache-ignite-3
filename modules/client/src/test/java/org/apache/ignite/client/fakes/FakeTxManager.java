@@ -29,6 +29,7 @@ import org.apache.ignite.internal.hlc.HybridTimestamp;
 import org.apache.ignite.internal.hlc.HybridTimestampTracker;
 import org.apache.ignite.internal.lang.IgniteBiTuple;
 import org.apache.ignite.internal.manager.ComponentContext;
+import org.apache.ignite.internal.network.TopologyService;
 import org.apache.ignite.internal.replicator.TablePartitionId;
 import org.apache.ignite.internal.tx.InternalTransaction;
 import org.apache.ignite.internal.tx.InternalTxOptions;
@@ -248,5 +249,10 @@ public class FakeTxManager implements TxManager {
     @Override
     public void finishFull(HybridTimestampTracker timestampTracker, UUID txId, HybridTimestamp ts, boolean commit) {
         // No-op.
+    }
+
+    @Override
+    public TopologyService topology() {
+        return null;
     }
 }

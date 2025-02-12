@@ -503,9 +503,7 @@ public class PartitionReplicaListener implements ReplicaListener {
             @Nullable Long leaseStartTime) {
         boolean hasSchemaVersion = request instanceof SchemaVersionAwareReplicaRequest;
 
-        if (hasSchemaVersion) {
-            assert ((SchemaVersionAwareReplicaRequest) request).schemaVersion() > 0 : "No schema version passed?";
-        }
+        assert !hasSchemaVersion || ((SchemaVersionAwareReplicaRequest) request).schemaVersion() > 0 : "No schema version passed?";
 
         if (request instanceof ReadWriteReplicaRequest) {
             var req = (ReadWriteReplicaRequest) request;
@@ -3559,7 +3557,7 @@ public class PartitionReplicaListener implements ReplicaListener {
 
                 long currentEnlistmentConsistencyToken = primaryReplicaMeta.getStartTime().longValue();
 
-                if (enlistmentConsistencyToken != currentEnlistmentConsistencyToken
+                if ((enlistmentConsistencyToken != 0 && enlistmentConsistencyToken != currentEnlistmentConsistencyToken)
                         || clockService.before(primaryReplicaMeta.getExpirationTime(), current)
                         || !isLocalPeer(primaryReplicaMeta.getLeaseholderId())
                 ) {
@@ -4214,10 +4212,10 @@ public class PartitionReplicaListener implements ReplicaListener {
      */
     private static class OperationId {
         /** Operation node initiator id. */
-        private UUID initiatorId;
+        private final UUID initiatorId;
 
         /** Timestamp. */
-        private long ts;
+        private final long ts;
 
         /**
          * The constructor.
@@ -4241,10 +4239,7 @@ public class PartitionReplicaListener implements ReplicaListener {
 
             OperationId that = (OperationId) o;
 
-            if (ts != that.ts) {
-                return false;
-            }
-            return initiatorId.equals(that.initiatorId);
+            return ts == that.ts && initiatorId.equals(that.initiatorId);
         }
 
         @Override

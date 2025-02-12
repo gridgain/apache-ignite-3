@@ -26,6 +26,7 @@ import org.apache.ignite.internal.hlc.HybridTimestamp;
 import org.apache.ignite.internal.hlc.HybridTimestampTracker;
 import org.apache.ignite.internal.lang.IgniteBiTuple;
 import org.apache.ignite.internal.manager.IgniteComponent;
+import org.apache.ignite.internal.network.TopologyService;
 import org.apache.ignite.internal.replicator.TablePartitionId;
 import org.apache.ignite.network.ClusterNode;
 import org.jetbrains.annotations.Nullable;
@@ -239,4 +240,6 @@ public interface TxManager extends IgniteComponent {
      */
     @TestOnly
     int pending();
+
+    TopologyService topology();
 }

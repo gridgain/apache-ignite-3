@@ -17,13 +17,20 @@
 
 package org.apache.ignite.internal.table;
 
+import static java.util.concurrent.CompletableFuture.completedFuture;
+import static java.util.function.Function.identity;
+import static org.apache.ignite.internal.table.distributed.TableUtils.isDirectFlowApplicableTx;
+import static org.apache.ignite.internal.util.ExceptionUtils.isOrCausedBy;
+
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Supplier;
+import org.apache.ignite.internal.hlc.HybridTimestamp;
 import org.apache.ignite.internal.logger.IgniteLogger;
 import org.apache.ignite.internal.logger.Loggers;
 import org.apache.ignite.internal.marshaller.MarshallersProvider;
@@ -36,14 +43,18 @@ import org.apache.ignite.internal.schema.marshaller.reflection.KvMarshallerImpl;
 import org.apache.ignite.internal.schema.row.Row;
 import org.apache.ignite.internal.storage.index.StorageHashIndexDescriptor;
 import org.apache.ignite.internal.storage.index.StorageSortedIndexDescriptor;
+import org.apache.ignite.internal.table.AbstractTableView.KvAction;
 import org.apache.ignite.internal.table.IndexWrapper.HashIndexWrapper;
 import org.apache.ignite.internal.table.IndexWrapper.SortedIndexWrapper;
 import org.apache.ignite.internal.table.distributed.IndexLocker;
 import org.apache.ignite.internal.table.distributed.PartitionSet;
 import org.apache.ignite.internal.table.distributed.TableIndexStoragesSupplier;
 import org.apache.ignite.internal.table.distributed.TableSchemaAwareIndexStorage;
+import org.apache.ignite.internal.table.distributed.replicator.IncompatibleSchemaVersionException;
+import org.apache.ignite.internal.table.distributed.replicator.InternalSchemaVersionMismatchException;
 import org.apache.ignite.internal.table.distributed.schema.SchemaVersions;
 import org.apache.ignite.internal.table.partition.HashPartitionManagerImpl;
+import org.apache.ignite.internal.tx.InternalTransaction;
 import org.apache.ignite.internal.tx.LockManager;
 import org.apache.ignite.sql.IgniteSql;
 import org.apache.ignite.table.KeyValueView;
@@ -52,6 +63,7 @@ import org.apache.ignite.table.RecordView;
 import org.apache.ignite.table.Tuple;
 import org.apache.ignite.table.mapper.Mapper;
 import org.apache.ignite.table.partition.PartitionManager;
+import org.jetbrains.annotations.Nullable;
 import org.jetbrains.annotations.TestOnly;
 
 /**
@@ -161,6 +173,17 @@ public class TableImpl implements TableViewInternal {
     @Override
     public SchemaRegistry schemaView() {
         return schemaReg;
+    }
+
+    @Override
+    public SchemaVersions schemaVersions() {
+        return schemaVersions;
+    }
+
+    private static void assertSchemaVersionIncreased(@Nullable Integer previousSchemaVersion, Integer schemaVersion) {
+        assert previousSchemaVersion == null || !Objects.equals(schemaVersion, previousSchemaVersion)
+                : "Same schema version (" + schemaVersion
+                + ") on a retry: something is wrong, is this caused by the test setup?";
     }
 
     @Override

@@ -39,6 +39,7 @@ import org.apache.ignite.internal.util.PendingComparableValuesTracker;
 import org.apache.ignite.internal.utils.PrimaryReplica;
 import org.apache.ignite.network.ClusterNode;
 import org.apache.ignite.table.QualifiedName;
+import org.apache.ignite.table.Tuple;
 import org.apache.ignite.tx.TransactionException;
 import org.jetbrains.annotations.Nullable;
 
@@ -186,6 +187,8 @@ public interface InternalTable extends ManuallyCloseable {
      * @return Future representing pending completion of the operation.
      */
     CompletableFuture<Void> upsert(BinaryRowEx row, @Nullable InternalTransaction tx);
+
+    CompletableFuture<Void> upsertDirect(BinaryRowEx row, UUID txId, int commitPartId, UUID coordinatorId);
 
     /**
      * Asynchronously inserts records into a table, if they do not exist, or replaces the existing ones.

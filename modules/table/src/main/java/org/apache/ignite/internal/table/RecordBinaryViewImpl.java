@@ -414,7 +414,7 @@ public class RecordBinaryViewImpl extends AbstractTableView<Tuple> implements Re
      * @return Row.
      * @throws MarshallerException If failed to marshal tuple.
      */
-    private Row marshal(Tuple tuple, int schemaVersion, boolean keyOnly) {
+    public Row marshal(Tuple tuple, int schemaVersion, boolean keyOnly) {
         TupleMarshaller marshaller = marshaller(schemaVersion);
 
         return marshal(tuple, marshaller, keyOnly);

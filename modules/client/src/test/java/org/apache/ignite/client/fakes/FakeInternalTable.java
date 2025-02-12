@@ -62,6 +62,7 @@ import org.apache.ignite.network.ClusterNode;
 import org.apache.ignite.network.NetworkAddress;
 import org.apache.ignite.table.QualifiedName;
 import org.apache.ignite.table.ReceiverDescriptor;
+import org.apache.ignite.table.Tuple;
 import org.jetbrains.annotations.Nullable;
 
 /**
@@ -193,6 +194,11 @@ public class FakeInternalTable implements InternalTable, StreamerReceiverRunner 
     public CompletableFuture<Void> upsert(BinaryRowEx row, @Nullable InternalTransaction tx) {
         upsertImpl(keyExtractor.extractColumns(row), row);
 
+        return nullCompletedFuture();
+    }
+
+    @Override
+    public CompletableFuture<Void> upsertDirect(BinaryRowEx row, UUID txId) {
         return nullCompletedFuture();
     }
 

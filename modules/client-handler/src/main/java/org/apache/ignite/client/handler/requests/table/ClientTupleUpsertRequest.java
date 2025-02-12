@@ -21,12 +21,24 @@ import static org.apache.ignite.client.handler.requests.table.ClientTableCommon.
 import static org.apache.ignite.client.handler.requests.table.ClientTableCommon.readTableAsync;
 import static org.apache.ignite.client.handler.requests.table.ClientTableCommon.readTuple;
 
+import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import org.apache.ignite.client.handler.ClientResourceRegistry;
 import org.apache.ignite.internal.client.proto.ClientMessagePacker;
 import org.apache.ignite.internal.client.proto.ClientMessageUnpacker;
+import org.apache.ignite.internal.hlc.HybridTimestamp;
+import org.apache.ignite.internal.schema.BinaryRowEx;
+import org.apache.ignite.internal.table.InternalTable;
+import org.apache.ignite.internal.table.RecordBinaryViewImpl;
+import org.apache.ignite.internal.table.RecordViewImpl;
+import org.apache.ignite.internal.tx.TransactionIds;
 import org.apache.ignite.internal.tx.TxManager;
+import org.apache.ignite.internal.tx.impl.ReadWriteTransactionImpl;
 import org.apache.ignite.table.IgniteTables;
+import org.apache.ignite.table.RecordView;
+import org.apache.ignite.table.Tuple;
+import org.apache.ignite.tx.IgniteTransactions;
+import org.apache.ignite.tx.Transaction;
 
 /**
  * Client tuple upsert request.
@@ -50,10 +62,19 @@ public class ClientTupleUpsertRequest {
             TxManager txManager
     ) {
         return readTableAsync(in, tables).thenCompose(table -> {
-            var tx = readOrStartImplicitTx(in, out, resources, txManager, false);
+            UUID txId = in.unpackUuid();
+            int commitPart = in.unpackInt();
+            UUID coord = in.unpackUuid();
+            HybridTimestamp beginTs = TransactionIds.beginTimestamp(txId);
+
             return readTuple(in, table, false).thenCompose(tuple -> {
-                return table.recordView().upsertAsync(tx, tuple).thenAccept(v -> {
-                    out.packInt(table.schemaView().lastKnownSchemaVersion());
+                return table.schemaVersions().schemaVersionAt(beginTs, table.tableId()).thenCompose(schema -> {
+                    RecordBinaryViewImpl view = (RecordBinaryViewImpl) table.recordView();
+                    BinaryRowEx row = view.marshal(tuple, schema, false);
+
+                    return table.internalTable().upsertDirect(row, txId, commitPart, coord).thenAccept(ignored -> {
+                        out.packInt(table.schemaView().lastKnownSchemaVersion());
+                    });
                 });
             });
         });

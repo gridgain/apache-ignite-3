@@ -22,6 +22,7 @@ import org.apache.ignite.internal.schema.SchemaRegistry;
 import org.apache.ignite.internal.storage.index.StorageHashIndexDescriptor;
 import org.apache.ignite.internal.storage.index.StorageSortedIndexDescriptor;
 import org.apache.ignite.internal.table.distributed.PartitionSet;
+import org.apache.ignite.internal.table.distributed.schema.SchemaVersions;
 import org.apache.ignite.table.Table;
 import org.apache.ignite.table.Tuple;
 import org.apache.ignite.table.mapper.Mapper;
@@ -51,6 +52,8 @@ public interface TableViewInternal extends Table {
      * @return Schema view.
      */
     SchemaRegistry schemaView();
+
+    public SchemaVersions schemaVersions();
 
     /**
      * Sets a schema view for the table.

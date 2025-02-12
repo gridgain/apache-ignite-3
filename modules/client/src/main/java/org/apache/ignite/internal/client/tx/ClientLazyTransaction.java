@@ -21,6 +21,7 @@ import static org.apache.ignite.internal.util.CompletableFutures.nullCompletedFu
 
 import java.util.concurrent.CompletableFuture;
 import org.apache.ignite.internal.client.ReliableChannel;
+import org.apache.ignite.internal.lang.IgniteBiTuple;
 import org.apache.ignite.tx.Transaction;
 import org.apache.ignite.tx.TransactionException;
 import org.apache.ignite.tx.TransactionOptions;
@@ -138,7 +139,7 @@ public class ClientLazyTransaction implements Transaction {
     public static CompletableFuture<ClientTransaction> ensureStarted(
             @Nullable Transaction tx,
             ReliableChannel ch,
-            @Nullable String preferredNodeName) {
+            @Nullable IgniteBiTuple<String, Integer> tup) {
         if (tx == null) {
             return nullCompletedFuture();
         }
@@ -147,19 +148,19 @@ public class ClientLazyTransaction implements Transaction {
             throw ClientTransaction.unsupportedTxTypeException(tx);
         }
 
-        return ((ClientLazyTransaction) tx).ensureStarted(ch, preferredNodeName);
+        return ((ClientLazyTransaction) tx).ensureStarted(ch, tup);
     }
 
     private synchronized CompletableFuture<ClientTransaction> ensureStarted(
             ReliableChannel ch,
-            @Nullable String preferredNodeName) {
+            @Nullable IgniteBiTuple<String, Integer> tup) {
         var tx0 = tx;
 
         if (tx0 != null) {
             return tx0;
         }
 
-        tx0 = ClientTransactions.beginAsync(ch, preferredNodeName, options, observableTimestamp);
+        tx0 = ClientTransactions.beginAsync(ch, tup, options, observableTimestamp);
         tx = tx0;
 
         return tx0;

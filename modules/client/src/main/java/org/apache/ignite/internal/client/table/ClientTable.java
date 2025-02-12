@@ -47,6 +47,7 @@ import org.apache.ignite.internal.client.tx.ClientTransaction;
 import org.apache.ignite.internal.hlc.HybridTimestamp;
 import org.apache.ignite.internal.lang.IgniteBiTuple;
 import org.apache.ignite.internal.logger.IgniteLogger;
+import org.apache.ignite.internal.marshaller.BinaryMode;
 import org.apache.ignite.internal.marshaller.MarshallersProvider;
 import org.apache.ignite.internal.marshaller.UnmappedColumnsException;
 import org.apache.ignite.internal.tostring.IgniteToStringBuilder;
@@ -299,12 +300,15 @@ public class ClientTable implements Table {
             ClientTransaction clientTx = ClientTransaction.get(tx);
 
             //noinspection resource
-            if (clientTx.channel() != out.clientChannel()) {
-                // Do not throw IgniteClientConnectionException to avoid retry kicking in.
-                throw new IgniteException(CONNECTION_ERR, "Transaction context has been lost due to connection errors.");
-            }
+//            if (clientTx.channel() != out.clientChannel()) {
+//                // Do not throw IgniteClientConnectionException to avoid retry kicking in.
+//                throw new IgniteException(CONNECTION_ERR, "Transaction context has been lost due to connection errors.");
+//            }
 
-            out.out().packLong(clientTx.id());
+            //out.out().packLong(clientTx.id());
+            out.out().packUuid(clientTx.txId());
+            out.out().packInt(clientTx.commitPartition());
+            out.out().packUuid(clientTx.coordinatorId());
         }
     }
 
@@ -463,17 +467,17 @@ public class ClientTable implements Table {
         CompletableFuture.allOf(schemaFut, partitionsFut)
                 .thenCompose(v -> {
                     ClientSchema schema = schemaFut.getNow(null);
-                    String txPreferredNodeName = getPreferredNodeName(provider, partitionsFut.getNow(null), schema);
+                    var tup = getPreferredNodeName(provider, partitionsFut.getNow(null), schema);
 
-                    return ClientLazyTransaction.ensureStarted(tx, ch, txPreferredNodeName).thenCompose(unused -> {
+                    return ClientLazyTransaction.ensureStarted(tx, ch, tup).thenCompose(unused -> {
                                 // Update preferred node name after starting the transaction.
                                 // All operations for a given explicit transaction should go to the same node (tx coordinator).
-                                String opPreferredNodeName = getPreferredNodeName(provider, partitionsFut.getNow(null), schema);
+                                //var tup2 = getPreferredNodeName(provider, partitionsFut.getNow(null), schema);
 
                                 return ch.serviceAsync(opCode,
                                         w -> writer.accept(schema, w),
                                         r -> readSchemaAndReadData(schema, r, reader, defaultValue, responseSchemaRequired),
-                                        opPreferredNodeName,
+                                        tup.get1(),
                                         retryPolicyOverride,
                                         expectNotifications);
                             }
@@ -608,7 +612,7 @@ public class ClientTable implements Table {
                 && !pa.partitionsFut.isCompletedExceptionally();
     }
 
-    synchronized CompletableFuture<List<String>> getPartitionAssignment() {
+    public synchronized CompletableFuture<List<String>> getPartitionAssignment() {
         long timestamp = ch.partitionAssignmentTimestamp();
         PartitionAssignment pa = partitionAssignment;
 
@@ -686,7 +690,7 @@ public class ClientTable implements Table {
     }
 
     @Nullable
-    private static String getPreferredNodeName(
+    private static IgniteBiTuple<String, Integer> getPreferredNodeName(
             @Nullable PartitionAwarenessProvider provider,
             @Nullable List<String> partitions,
             ClientSchema schema) {
@@ -694,11 +698,11 @@ public class ClientTable implements Table {
             return null;
         }
 
-        String nodeName = provider.nodeName();
-
-        if (nodeName != null) {
-            return nodeName;
-        }
+//        String nodeName = provider.nodeName();
+//
+//        if (nodeName != null) {
+//            return nodeName;
+//        }
 
         if (partitions == null || partitions.isEmpty()) {
             return null;
@@ -707,7 +711,7 @@ public class ClientTable implements Table {
         Integer partition = provider.partition();
 
         if (partition != null) {
-            return partitions.get(partition);
+            return new IgniteBiTuple<>(partitions.get(partition), partition);
         }
 
         Integer hash = provider.getObjectHashCode(schema);
@@ -716,7 +720,8 @@ public class ClientTable implements Table {
             return null;
         }
 
-        return partitions.get(Math.abs(hash % partitions.size()));
+        int part = Math.abs(hash % partitions.size());
+        return new IgniteBiTuple<>(partitions.get(part), part);
     }
 
     private static class PartitionAssignment {

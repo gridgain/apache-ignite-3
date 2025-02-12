@@ -46,6 +46,7 @@ public class ClientTablePartitionPrimaryReplicasGetRequest {
     ) throws NodeStoppingException {
         int tableId = in.unpackInt();
         long timestamp = in.unpackLong();
+        System.out.println("DBG:HUJ" + timestamp);
 
         return tracker.primaryReplicasAsync(tableId, timestamp).thenAccept(primaryReplicas -> {
             assert primaryReplicas != null : "Primary replicas == null";

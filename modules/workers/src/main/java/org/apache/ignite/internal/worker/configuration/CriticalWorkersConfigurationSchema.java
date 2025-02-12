@@ -42,7 +42,7 @@ public class CriticalWorkersConfigurationSchema {
      */
     @Value(hasDefault = true)
     @Range(min = 1)
-    public long maxAllowedLag = 500;
+    public long maxAllowedLag = 1000;
 
     /**
      * Interval between heartbeats used to update Netty threads heartbeat timestamps.

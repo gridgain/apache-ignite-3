@@ -835,6 +835,11 @@ public class TxManagerImpl implements TxManager, NetworkMessageHandler, SystemVi
     }
 
     @Override
+    public TopologyService topology() {
+        return topologyService;
+    }
+
+    @Override
     public CompletableFuture<Void> startAsync(ComponentContext componentContext) {
         return inBusyLockAsync(busyLock, () -> {
             var deadlockPreventionPolicy = new DeadlockPreventionPolicyImpl(
