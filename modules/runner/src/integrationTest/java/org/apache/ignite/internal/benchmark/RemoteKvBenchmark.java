@@ -20,12 +20,14 @@ package org.apache.ignite.internal.benchmark;
 import static org.apache.ignite.internal.util.IgniteUtils.closeAll;
 
 import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.apache.ignite.client.IgniteClient;
+import org.apache.ignite.internal.client.table.ClientTable;
 import org.apache.ignite.internal.lang.IgniteSystemProperties;
 import org.apache.ignite.network.ClusterNode;
 import org.apache.ignite.table.KeyValueView;
@@ -74,7 +76,7 @@ public class RemoteKvBenchmark extends AbstractMultiNodeBenchmark {
 
     private IgniteClient client;
 
-    private Table table;
+    private ClientTable table;
 
     private KeyValueView<Tuple, Tuple> kvView;
 
@@ -107,8 +109,12 @@ public class RemoteKvBenchmark extends AbstractMultiNodeBenchmark {
             tuple.set("field" + i, FIELD_VAL);
         }
 
-        table = client.tables().table(TABLE_NAME);
+        table = (ClientTable) client.tables().table(TABLE_NAME);
         kvView = table.keyValueView();
+        List<String> ass = table.getPartitionAssignment().join();
+        if (ass.get(0) == null) {
+            throw new IllegalArgumentException();
+        }
     }
 
     @Override
