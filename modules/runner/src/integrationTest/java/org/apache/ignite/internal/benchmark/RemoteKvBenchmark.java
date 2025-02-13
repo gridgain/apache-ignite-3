@@ -56,8 +56,8 @@ import org.openjdk.jmh.runner.options.OptionsBuilder;
  * Benchmark for a single upsert operation via KV API with a possibility to disable updates via RAFT and to storage.
  */
 @State(Scope.Benchmark)
-@Fork(1)
-@Threads(32)
+@Fork(0)
+@Threads(1)
 @Warmup(iterations = 10, time = 2)
 @Measurement(iterations = 20, time = 2)
 @BenchmarkMode(Mode.Throughput)
@@ -71,8 +71,8 @@ public class RemoteKvBenchmark extends AbstractMultiNodeBenchmark {
     @Param({"32"})
     private int partitionCount;
 
-    @Param({"node1"})
-    private String nodeAffinity;
+    // @Param({"node1"})
+    private String nodeAffinity = null;
 
     private IgniteClient client;
 
@@ -128,16 +128,23 @@ public class RemoteKvBenchmark extends AbstractMultiNodeBenchmark {
      */
     @Benchmark
     public void upsert() {
-        Transaction tx = client.transactions().begin();
-        int i = 0;
-        while (i < batch) {
-            Tuple key = Tuple.create().set("ycsb_key", nextId());
+//        Transaction tx = client.transactions().begin();
+//        int i = 0;
+//        while (i < batch) {
+//            Tuple key = Tuple.create().set("ycsb_key", nextId());
+//
+//            Partition part = table.partitionManager().partitionAsync(key).join();
+//            if (table.partitionManager().primaryReplicaAsync(part).join().name().equals(nodeAffinity)) {
+//                kvView.put(tx, key, tuple);
+//                i++;
+//            }
+//        }
+//        tx.commit();
 
-            Partition part = table.partitionManager().partitionAsync(key).join();
-            if (table.partitionManager().primaryReplicaAsync(part).join().name().equals(nodeAffinity)) {
-                kvView.put(tx, key, tuple);
-                i++;
-            }
+        Transaction tx = client.transactions().begin();
+        for (int i = 0; i < batch; i++) {
+            Tuple key = Tuple.create().set("ycsb_key", nextId());
+            kvView.put(tx, key, tuple);
         }
         tx.commit();
     }
