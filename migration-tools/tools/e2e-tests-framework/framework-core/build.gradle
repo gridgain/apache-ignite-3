@@ -23,7 +23,7 @@ description = 'migration-tools-e2e-core'
 
 dependencies {
     compileOnly libs.ignite2.core
-    compileOnly libs.ignite3.api
+    compileOnly project(":ignite-api")
 
     implementation libs.auto.service.annotations
     implementation libs.junit5.api

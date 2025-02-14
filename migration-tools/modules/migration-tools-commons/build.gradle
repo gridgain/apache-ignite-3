@@ -22,7 +22,7 @@ apply from: "$rootDir/buildscripts/java-junit5.gradle"
 description = 'migration-tools-commons'
 
 dependencies {
-    implementation project(path: ":ignite3-repack", configuration: "shadow")
+    implementation project(path: ":migration-tools-ignite3-repack", configuration: "shadow")
     implementation libs.ignite2.core
     implementation libs.ignite2.spring
     implementation libs.commons.lang3
