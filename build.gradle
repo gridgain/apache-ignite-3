@@ -136,6 +136,8 @@ subprojects {
                 releasesOnly()
             }
         }
+
+        mavenLocal()
     }
 
     tasks.register('printSubDependencies', DependencyReportTask)
