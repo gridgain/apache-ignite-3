@@ -72,12 +72,15 @@ import org.apache.ignite.sql.IgniteSql;
 import org.apache.ignite.sql.ResultSet;
 import org.apache.ignite.sql.SqlRow;
 import org.jetbrains.annotations.Nullable;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Cluster of nodes used for testing.
  */
 public class Cluster {
     private static final IgniteLogger LOG = Loggers.forClass(Cluster.class);
+    private static final Logger log = LoggerFactory.getLogger(Cluster.class);
 
     private final ClusterConfiguration clusterConfiguration;
 
@@ -184,6 +187,8 @@ public class Cluster {
 
         initialClusterSize = nodeCount;
 
+        log.info("Node configuration: {}", nodeBootstrapConfigTemplate);
+
         List<ServerRegistration> nodeRegistrations = IntStream.range(0, nodeCount)
                 .mapToObj(nodeIndex -> startEmbeddedNode(nodeIndex, nodeBootstrapConfigTemplate))
                 .collect(toList());
@@ -236,6 +241,8 @@ public class Cluster {
                 httpPort(nodeIndex),
                 clusterConfiguration.baseHttpsPort() + nodeIndex
         );
+
+        System.err.printf("Node#%s configuration: %s%n", nodeIndex, config);
 
         IgniteServer node = TestIgnitionManager.start(
                 nodeName,

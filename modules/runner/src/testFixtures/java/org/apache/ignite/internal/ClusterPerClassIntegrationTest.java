@@ -104,6 +104,10 @@ public abstract class ClusterPerClassIntegrationTest extends BaseIgniteAbstractT
     @WorkDirectory
     protected static Path WORK_DIR;
 
+    protected Path getWorkDir(Path autoWorkDir) {
+        return autoWorkDir;
+    }
+
     /**
      * Before all.
      *
@@ -111,7 +115,8 @@ public abstract class ClusterPerClassIntegrationTest extends BaseIgniteAbstractT
      */
     @BeforeAll
     protected void startCluster(TestInfo testInfo) {
-        ClusterConfiguration.Builder clusterConfiguration = ClusterConfiguration.builder(testInfo, WORK_DIR)
+        Path workDir = getWorkDir(WORK_DIR);
+        ClusterConfiguration.Builder clusterConfiguration = ClusterConfiguration.builder(testInfo, workDir)
                 .defaultNodeBootstrapConfigTemplate(getNodeBootstrapConfigTemplate());
 
         customizeConfiguration(clusterConfiguration);

@@ -61,8 +61,12 @@ ext {
             "-Dio.netty.tryReflectionSetAccessible=true",
             "-XX:+HeapDumpOnOutOfMemoryError",
             "-ea",
-            "-Xmx1g"
+            "-Xmx16g"
     ]
+
+    if (System.getProperty("jvmLogOpts") != null) {
+        defaultJvmArgs = defaultJvmArgs + [System.getProperty("jvmLogOpts")];
+    }
 
     compilerArgs = [
             "--add-exports=java.base/sun.nio.ch=ALL-UNNAMED",
