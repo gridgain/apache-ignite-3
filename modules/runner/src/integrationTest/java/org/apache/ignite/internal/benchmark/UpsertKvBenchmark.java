@@ -161,6 +161,6 @@ public class UpsertKvBenchmark extends AbstractMultiNodeBenchmark {
 
     @Override
     protected String regionFilter() {
-        return super.regionFilter();
+        return "US";
     }
 }
