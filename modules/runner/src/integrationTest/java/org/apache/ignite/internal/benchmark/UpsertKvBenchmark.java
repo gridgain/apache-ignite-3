@@ -64,7 +64,7 @@ public class UpsertKvBenchmark extends AbstractMultiNodeBenchmark {
     @Param({"false"})
     private boolean fsync;
 
-    @Param({"32"})
+    @Param({"64"})
     private int partitionCount;
 
     @Param({"true"})
