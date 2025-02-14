@@ -26,6 +26,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.UUID;
 import org.apache.ignite.Ignite;
 import org.apache.ignite.IgniteServer;
 import org.apache.ignite.InitParameters;
@@ -257,7 +258,7 @@ public class AbstractMultiNodeBenchmark {
     }
 
     private static String nodeName(int port) {
-        return "node_" + port;
+        return "node_" + UUID.randomUUID() + "_" + port;
     }
 
     protected Path workDir() throws Exception {
