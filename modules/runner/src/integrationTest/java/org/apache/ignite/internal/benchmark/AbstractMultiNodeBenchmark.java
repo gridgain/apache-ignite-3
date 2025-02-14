@@ -144,7 +144,7 @@ public class AbstractMultiNodeBenchmark {
     }
 
     protected static void createTable(String tableName, List<String> columns, List<String> primaryKeys, List<String> colocationKeys) {
-        var createTableStatement = "CREATE TABLE " + tableName + "(\n";
+        var createTableStatement = "CREATE TABLE IF NOT EXISTS " + tableName + "(\n";
 
         createTableStatement += String.join(",\n", columns);
         createTableStatement += "\n, PRIMARY KEY (" + String.join(", ", primaryKeys) + ")\n)";
