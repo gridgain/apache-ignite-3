@@ -75,6 +75,8 @@ public class AbstractMultiNodeBenchmark {
     @Param({"false"})
     private boolean fsync;
 
+    private String connectorAddr;
+
     @Nullable
     protected String clusterConfiguration() {
         return "ignite {}";
@@ -104,6 +106,12 @@ public class AbstractMultiNodeBenchmark {
     protected void createDistributionZoneOnStartup() {
         var createZoneStatement = "CREATE ZONE IF NOT EXISTS " + ZONE_NAME + " WITH partitions=" + partitionCount()
                 + ", replicas=" + replicaCount() + ", storage_profiles ='" + DEFAULT_STORAGE_PROFILE + "'";
+
+        if (regionFilter() != null) {
+            createZoneStatement += ", data_nodes_filter='$[?(@.region == \"" + regionFilter() + "\")]'";
+        }
+
+        System.out.println("DBG: " + createZoneStatement);
 
         try (ResultSet<SqlRow> rs = publicIgnite.sql().execute(null, createZoneStatement)) {
             // No-op.
@@ -191,7 +199,7 @@ public class AbstractMultiNodeBenchmark {
     private void startCluster() throws Exception {
         Path workDir = workDir();
 
-        String connectNodeAddr = "\"localhost:" + BASE_PORT + '\"';
+        String connectNodeAddr = "\"" + connectorAddress() + ":" + BASE_PORT + '\"';
 
         @Language("HOCON")
         String configTemplate = "ignite {\n"
@@ -226,15 +234,17 @@ public class AbstractMultiNodeBenchmark {
             igniteServers.add(TestIgnitionManager.start(nodeName, config, workDir.resolve(nodeName)));
         }
 
-        String metaStorageNodeName = nodeName(BASE_PORT);
+        if (!join()) {
+            String metaStorageNodeName = nodeName(BASE_PORT);
 
-        InitParameters initParameters = InitParameters.builder()
-                .metaStorageNodeNames(metaStorageNodeName)
-                .clusterName("cluster")
-                .clusterConfiguration(clusterConfiguration())
-                .build();
+            InitParameters initParameters = InitParameters.builder()
+                    .metaStorageNodeNames(metaStorageNodeName)
+                    .clusterName("cluster")
+                    .clusterConfiguration(clusterConfiguration())
+                    .build();
 
-        TestIgnitionManager.init(igniteServers.get(0), initParameters);
+            TestIgnitionManager.init(igniteServers.get(0), initParameters);
+        }
 
         for (IgniteServer node : igniteServers) {
             assertThat(node.waitForInitAsync(), willCompleteSuccessfully());
@@ -272,5 +282,17 @@ public class AbstractMultiNodeBenchmark {
 
     protected int replicaCount() {
         return CatalogUtils.DEFAULT_REPLICA_COUNT;
+    }
+
+    protected String connectorAddress() {
+        return "localhost";
+    }
+
+    protected boolean join() {
+        return false;
+    }
+
+    protected String regionFilter() {
+        return null;
     }
 }

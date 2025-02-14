@@ -46,7 +46,7 @@ import org.openjdk.jmh.runner.options.OptionsBuilder;
  * Benchmark for a single upsert operation via KV API with a possibility to disable updates via RAFT and to storage.
  */
 @State(Scope.Benchmark)
-@Fork(1)
+@Fork(0)
 @Threads(1)
 @Warmup(iterations = 10, time = 2)
 @Measurement(iterations = 20, time = 2)
@@ -66,14 +66,17 @@ public class UpsertKvBenchmark extends AbstractMultiNodeBenchmark {
     @Param({"8"})
     private int partitionCount;
 
+    @Param({"true"})
+    private boolean join;
+
     private static final AtomicInteger COUNTER = new AtomicInteger();
 
     private static final ThreadLocal<Integer> GEN = ThreadLocal.withInitial(() -> COUNTER.getAndIncrement() * 20_000_000);
 
     @Override
     public void nodeSetUp() throws Exception {
-        System.setProperty(IgniteSystemProperties.IGNITE_SKIP_REPLICATION_IN_BENCHMARK, "true");
-        System.setProperty(IgniteSystemProperties.IGNITE_SKIP_STORAGE_UPDATE_IN_BENCHMARK, "true");
+        System.setProperty(IgniteSystemProperties.IGNITE_SKIP_REPLICATION_IN_BENCHMARK, "false");
+        System.setProperty(IgniteSystemProperties.IGNITE_SKIP_STORAGE_UPDATE_IN_BENCHMARK, "false");
         super.nodeSetUp();
     }
 
@@ -144,5 +147,20 @@ public class UpsertKvBenchmark extends AbstractMultiNodeBenchmark {
     @Override
     protected int replicaCount() {
         return 1;
+    }
+
+    @Override
+    protected String connectorAddress() {
+        return "172.25.4.102";
+    }
+
+    @Override
+    protected boolean join() {
+        return join;
+    }
+
+    @Override
+    protected String regionFilter() {
+        return super.regionFilter();
     }
 }
