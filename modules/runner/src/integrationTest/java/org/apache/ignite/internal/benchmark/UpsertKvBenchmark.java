@@ -67,12 +67,14 @@ public class UpsertKvBenchmark extends AbstractMultiNodeBenchmark {
     @Param({"64"})
     private int partitionCount;
 
+    private static final int offset = 1073741824;
+
     @Param({"true"})
     private boolean join;
 
     private static final AtomicInteger COUNTER = new AtomicInteger();
 
-    private static final ThreadLocal<Integer> GEN = ThreadLocal.withInitial(() -> COUNTER.getAndIncrement() * 20_000_000);
+    private static final ThreadLocal<Integer> GEN = ThreadLocal.withInitial(() -> offset + COUNTER.getAndIncrement() * 20_000_000);
 
     @Override
     public void nodeSetUp() throws Exception {
