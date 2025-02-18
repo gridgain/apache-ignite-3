@@ -207,13 +207,11 @@ public class TxFinishReplicaRequestHandler {
             return completedFuture(new TransactionResult(txMeta.txState(), txMeta.commitTimestamp()));
         }
 
-//        return finishTransaction(enlistedPartitions.keySet(), txId, commit, commitTimestamp)
-//                .thenCompose(txResult ->
-//                    txManager.cleanup(replicationGroupId, enlistedPartitions, commit, commitTimestamp, txId)
-//                            .thenApply(v -> txResult)
-//                );
-
-        return finishTransaction(enlistedPartitions.keySet(), txId, commit, commitTimestamp);
+        return finishTransaction(enlistedPartitions.keySet(), txId, commit, commitTimestamp)
+                .thenCompose(txResult ->
+                    txManager.cleanup(replicationGroupId, enlistedPartitions, commit, commitTimestamp, txId)
+                            .thenApply(v -> txResult)
+                );
     }
 
     private static void throwIfSchemaValidationOnCommitFailed(CompatValidationResult validationResult, TransactionResult txResult) {
