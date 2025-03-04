@@ -23,6 +23,7 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executor;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeoutException;
+import org.apache.ignite.internal.lang.IgniteSystemProperties;
 import org.apache.ignite.raft.jraft.NodeManager;
 import org.apache.ignite.raft.jraft.Status;
 import org.apache.ignite.raft.jraft.entity.PeerId;
@@ -56,6 +57,8 @@ import org.apache.ignite.raft.jraft.util.Utils;
 public class DefaultRaftClientService extends AbstractClientService implements RaftClientService {
     /** Stripes map */
     private final ConcurrentMap<PeerId, Executor> appendEntriesExecutorMap = new ConcurrentHashMap<>();
+
+    private final boolean useHeartbeatCoalescing = IgniteSystemProperties.getBoolean("IGNITE_USE_HEARTBEAT_COALESCING", true);
 
     // cached node options
     private NodeOptions nodeOptions;
@@ -100,7 +103,7 @@ public class DefaultRaftClientService extends AbstractClientService implements R
                 k -> nodeOptions.getStripedExecutor().next());
 
         if (connect(peerId)) { // Replicator should be started asynchronously by node joined event.
-            if (isHeartbeatRequest(request)) {
+            if (useHeartbeatCoalescing && isHeartbeatRequest(request)) {
                 return sendHeartbeat(peerId, request, timeoutMs, done, executor);
             }
 

@@ -19,6 +19,7 @@ package org.apache.ignite.raft.jraft.util;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
+import org.apache.ignite.internal.lang.NodeStoppingException;
 import org.apache.ignite.internal.logger.IgniteLogger;
 import org.apache.ignite.internal.logger.Loggers;
 import org.apache.ignite.internal.thread.NamedThreadFactory;
@@ -81,7 +82,9 @@ public abstract class RepeatedTimer implements Describer {
             onTrigger();
         }
         catch (final Throwable t) {
-            LOG.error("Run timer failed.", t);
+            if (!(t instanceof NodeStoppingException)) {
+                LOG.error("Run timer failed.", t);
+            }
         }
         boolean invokeDestroyed = false;
         this.lock.lock();

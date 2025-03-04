@@ -199,7 +199,7 @@ public class ReplicaImpl implements Replica {
 
     private void changePeersAndLearnersAsyncIfPendingExists(long term) {
         getPendingAssignmentsSupplier.apply(replicaGrpId).exceptionally(e -> {
-            LOG.error("Couldn't fetch pending assignments for rebalance failover [groupId={}, term={}].", e, replicaGrpId, term);
+            LOG.warn("Couldn't fetch pending assignments for rebalance failover [groupId={}, term={}].", replicaGrpId, term);
 
             return null;
         }).thenCompose(pendingsBytes -> {

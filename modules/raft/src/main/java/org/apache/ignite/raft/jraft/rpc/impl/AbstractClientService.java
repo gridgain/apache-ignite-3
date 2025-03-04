@@ -25,6 +25,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executor;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.atomic.AtomicBoolean;
 import org.apache.ignite.internal.lang.NodeStoppingException;
 import org.apache.ignite.internal.logger.IgniteLogger;
 import org.apache.ignite.internal.logger.Loggers;
@@ -109,9 +110,11 @@ public abstract class AbstractClientService implements ClientService, TopologyEv
         return true;
     }
 
+    private final AtomicBoolean stopGuard = new AtomicBoolean();
+
     @Override
     public synchronized void shutdown() {
-        if (this.rpcClient != null) {
+        if (stopGuard.compareAndSet(false, true) && this.rpcClient != null) {
             this.rpcClient.shutdown();
             this.rpcClient = null;
         }
@@ -140,6 +143,10 @@ public abstract class AbstractClientService implements ClientService, TopologyEv
     public CompletableFuture<Boolean> connectAsync(PeerId peerId) {
         final RpcClient rc = this.rpcClient;
         if (rc == null) {
+            if (stopGuard.get()) {
+                throw ExceptionUtils.sneakyThrow(new NodeStoppingException());
+            }
+
             throw new IllegalStateException("Client service is uninitialized.");
         }
 
