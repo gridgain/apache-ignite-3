@@ -94,6 +94,25 @@ allprojects {
         if (project.hasProperty('excludeTest')) {
             exclude project.property('excludeTest')
         }
+
+        systemProperty "migration-tools.docker.version",
+            java.util.Optional.ofNullable(findProperty("migration-tools.docker.version")).orElse(project.version)
+
+        [
+            "tests.containers.support",
+            "e2e.testLimiter",
+            "ai2.sampleCluster.Xmx",
+            "ai2.sampleCluster.checkpointChecker.maxwaitseconds",
+            "ai2.sampleCluster.checkpointChecker.pollingseconds",
+            "ai2.sampleCluster.recreate.seeding.maxwaitseconds",
+            "ai2.sampleCluster.recreate.seeding.pollingseconds",
+            "seeddata.nCachesPerStint",
+        ].forEach {
+            def v = findProperty(it)
+            if (v != null) {
+                systemProperty it, v
+            }
+        }
     }
 
     tasks.withType(Sign).configureEach {
