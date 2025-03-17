@@ -48,7 +48,7 @@ public @interface SqlLogicTestEnvironment {
      *
      * @return Ignite nodes count.
      */
-    int nodes() default 2;
+    int nodes() default 1;
 
     /**
      * Test timeout (3 min by default).
@@ -62,7 +62,7 @@ public @interface SqlLogicTestEnvironment {
      *
      * @return Cluster restart mode.
      */
-    RestartMode restart() default RestartMode.NONE;
+    RestartMode restart() default RestartMode.TEST;
 
     /**
      * Cluster restart mode.

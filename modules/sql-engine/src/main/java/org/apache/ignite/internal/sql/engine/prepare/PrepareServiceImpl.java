@@ -61,6 +61,7 @@ import org.apache.ignite.internal.sql.engine.SqlOperationContext;
 import org.apache.ignite.internal.sql.engine.SqlQueryType;
 import org.apache.ignite.internal.sql.engine.exec.kill.KillCommand;
 import org.apache.ignite.internal.sql.engine.prepare.ddl.DdlSqlToCommandConverter;
+import org.apache.ignite.internal.sql.engine.querydb.QueryDetailsCollector;
 import org.apache.ignite.internal.sql.engine.rel.IgniteKeyValueGet;
 import org.apache.ignite.internal.sql.engine.rel.IgniteKeyValueModify;
 import org.apache.ignite.internal.sql.engine.rel.IgniteRel;
@@ -253,6 +254,17 @@ public class PrepareServiceImpl implements PrepareService {
                 .build();
 
         result = prepareAsync0(parsedResult, planningContext);
+        result.thenApply(plan -> {
+            try {
+                if (plan instanceof MultiStepPlan) {
+                    QueryDetailsCollector.INSTANCE.collect(parsedResult.originalQuery(), (MultiStepPlan) plan);
+                }
+            } catch (Exception e) {
+                LOG.warn("Failed to collect results for query", e);
+                e.printStackTrace(System.err);
+            }
+            return plan;
+        });
 
         return result.exceptionally(ex -> {
                     Throwable th = ExceptionUtils.unwrapCause(ex);

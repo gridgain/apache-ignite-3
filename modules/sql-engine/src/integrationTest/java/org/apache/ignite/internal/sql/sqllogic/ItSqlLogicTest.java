@@ -49,6 +49,7 @@ import org.apache.ignite.internal.logger.IgniteLogger;
 import org.apache.ignite.internal.logger.Loggers;
 import org.apache.ignite.internal.metrics.MetricManager;
 import org.apache.ignite.internal.metrics.MetricSource;
+import org.apache.ignite.internal.sql.engine.querydb.QueryDetailsCollector;
 import org.apache.ignite.internal.sql.sqllogic.SqlLogicTestEnvironment.RestartMode;
 import org.apache.ignite.internal.sql.sqllogic.SqlScriptRunner.RunnerRuntime;
 import org.apache.ignite.internal.testframework.BaseIgniteAbstractTest;
@@ -227,6 +228,8 @@ public class ItSqlLogicTest extends BaseIgniteAbstractTest {
     @AfterAll
     static void shutdown() throws Exception {
         stopNodes();
+
+        QueryDetailsCollector.INSTANCE.dump();
     }
 
     @TestFactory
