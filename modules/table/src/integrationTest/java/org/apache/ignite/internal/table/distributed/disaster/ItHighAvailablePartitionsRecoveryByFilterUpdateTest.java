@@ -338,7 +338,7 @@ public class ItHighAvailablePartitionsRecoveryByFilterUpdateTest extends Abstrac
      *   <li>No data should be lost</li>
      * </ol>
      */
-    @Disabled("https://issues.apache.org/jira/browse/IGNITE-24467")
+    //@Disabled("https://issues.apache.org/jira/browse/IGNITE-24467")
     @Test
     void testResetAfterChangeFilters() throws InterruptedException {
         startNode(1, EU_ONLY_NODES_CONFIG);

@@ -29,6 +29,7 @@ import static org.apache.ignite.internal.distributionzones.rebalance.RebalanceUt
 import static org.apache.ignite.internal.distributionzones.rebalance.RebalanceUtil.pendingChangeTriggerKey;
 import static org.apache.ignite.internal.distributionzones.rebalance.RebalanceUtil.pendingPartAssignmentsQueueKey;
 import static org.apache.ignite.internal.distributionzones.rebalance.RebalanceUtil.plannedPartAssignmentsKey;
+import static org.apache.ignite.internal.distributionzones.rebalance.RebalanceUtil.tablePendingAssignmentsGetLocally;
 import static org.apache.ignite.internal.distributionzones.rebalance.RebalanceUtil.tableStableAssignments;
 import static org.apache.ignite.internal.metastorage.dsl.Conditions.notExists;
 import static org.apache.ignite.internal.metastorage.dsl.Conditions.value;
@@ -40,7 +41,7 @@ import static org.apache.ignite.internal.partition.replicator.network.disaster.L
 import static org.apache.ignite.internal.partition.replicator.network.disaster.LocalPartitionStateEnum.HEALTHY;
 import static org.apache.ignite.internal.partitiondistribution.PartitionDistributionUtils.calculateAssignmentForPartition;
 import static org.apache.ignite.internal.partitiondistribution.PendingAssignmentsCalculator.pendingAssignmentsCalculator;
-import static org.apache.ignite.internal.table.distributed.disaster.DisasterRecoveryRequestType.SINGLE_NODE;
+import static org.apache.ignite.internal.table.distributed.disaster.DisasterRecoveryRequestType.MULTI_NODE;
 import static org.apache.ignite.internal.util.ByteUtils.longToBytesKeepingOrder;
 import static org.apache.ignite.internal.util.CompletableFutures.nullCompletedFuture;
 import static org.apache.ignite.lang.ErrorGroups.DisasterRecovery.CLUSTER_NOT_IDLE_ERR;
@@ -65,7 +66,6 @@ import org.apache.ignite.internal.distributionzones.rebalance.RebalanceUtil;
 import org.apache.ignite.internal.distributionzones.rebalance.RebalanceUtil.UpdateStatus;
 import org.apache.ignite.internal.hlc.HybridTimestamp;
 import org.apache.ignite.internal.lang.ByteArray;
-import org.apache.ignite.internal.lang.IgniteStringFormatter;
 import org.apache.ignite.internal.logger.IgniteLogger;
 import org.apache.ignite.internal.logger.Loggers;
 import org.apache.ignite.internal.metastorage.MetaStorageManager;
@@ -126,7 +126,7 @@ class GroupUpdateRequest implements DisasterRecoveryRequest {
 
     @Override
     public DisasterRecoveryRequestType type() {
-        return SINGLE_NODE;
+        return MULTI_NODE;
     }
 
     public int catalogVersion() {
@@ -329,13 +329,26 @@ class GroupUpdateRequest implements DisasterRecoveryRequest {
 
         Assignment nextAssignment = nextAssignment(localPartitionStateMessageByNode, partAssignments);
 
-        boolean isProposedPendingEqualsProposedPlanned = partAssignments.size() == 1;
+        Set<Assignment> currentPendingNodes = tablePendingAssignmentsGetLocally(
+                metaStorageMgr,
+                partId.tableId(),
+                partitions,
+                revision
+        ).get(partId.partitionId()).nodes();
 
-        assert partAssignments.contains(nextAssignment) : IgniteStringFormatter.format(
-                "Recovery nodes set doesn't contain the reset node assignment [partAssignments={}, nextAssignment={}]",
-                partAssignments,
-                nextAssignment
-        );
+        Set<String> currentPendingNodeNames = currentPendingNodes.stream().map(Assignment::consistentId).collect(toSet());
+
+        if (!currentPendingNodeNames.isEmpty() && aliveDataNodes.containsAll(currentPendingNodeNames)) {
+            partAssignments = currentPendingNodes;
+        }
+
+        boolean isProposedPendingEqualsProposedPlanned = partAssignments.equals(Set.of(nextAssignment));
+
+//        assert partAssignments.contains(nextAssignment) : IgniteStringFormatter.format(
+//                "Recovery nodes set doesn't contain the reset node assignment [partAssignments={}, nextAssignment={}]",
+//                partAssignments,
+//                nextAssignment
+//        );
 
         // There are nodes with data, and we set pending assignments to this set of nodes. It'll be the source of peers for
         // "resetPeers", and after that new assignments with restored replica factor wil be picked up from planned assignments

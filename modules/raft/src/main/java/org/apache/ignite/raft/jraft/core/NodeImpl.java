@@ -2755,7 +2755,7 @@ public class NodeImpl implements Node, RaftServerService {
         }
         // check concurrent conf change
         if (this.confCtx.isBusy()) {
-            LOG.warn("Node {} refused configuration concurrent changing.", getNodeId());
+            LOG.warn("Node {} refused configuration concurrent changing. oldConf = {}, newConf = {}. ", getNodeId(), oldConf, newConf);
             if (done != null) {
                 Utils.runClosureInThread(this.getOptions().getCommonExecutor(), done, new Status(RaftError.EBUSY, "Doing another configuration change."));
             }
@@ -3541,7 +3541,7 @@ public class NodeImpl implements Node, RaftServerService {
                 return Status.OK();
             }
             if (this.state == State.STATE_LEADER && this.confCtx.isBusy()) {
-                LOG.warn("Node {} set peers need wait current conf changing.", getNodeId());
+                LOG.warn("Node {} set peers need wait current conf changing. stage = {}, peers = {}.", getNodeId(), this.confCtx.stage, this.confCtx.newPeers);
                 return new Status(RaftError.EBUSY, "Changing to another configuration");
             }
             // check equal, maybe retry direct return

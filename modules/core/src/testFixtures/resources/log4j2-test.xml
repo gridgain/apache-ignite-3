@@ -62,7 +62,7 @@
   </Appenders>
 
   <Loggers>
-    <Root level="INFO">
+    <Root level="DEBUG">
       <AppenderRef ref="CONSOLE" level="DEBUG"/>
       <AppenderRef ref="CONSOLE_ERR" level="WARN"/>
       <AppenderRef ref="FILE" level="DEBUG"/>
