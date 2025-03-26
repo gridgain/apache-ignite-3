@@ -49,7 +49,7 @@ public class ReplicationConfigurationSchema {
     /** Lease holding interval. */
     @Value(hasDefault = true)
     @Range(min = 2000, max = 120000)
-    public long leaseExpirationInterval = 5_000;
+    public long leaseExpirationInterval = 110000;
 
     @Value(hasDefault = true)
     @Range(max = 10_000)

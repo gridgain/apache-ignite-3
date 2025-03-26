@@ -440,7 +440,7 @@ public class DefaultMessagingService extends AbstractMessagingService {
             } finally {
                 long tookMillis = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedNanos);
 
-                if (tookMillis > 100) {
+                if (tookMillis > 1_000) {
                     LOG.warn(
                             "Processing of {} from {} took {} ms",
                             LOG.isDebugEnabled() && includeSensitive() ? message : message.toStringForLightLogging(),

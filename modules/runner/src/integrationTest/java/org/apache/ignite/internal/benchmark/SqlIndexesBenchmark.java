@@ -17,6 +17,7 @@
 
 package org.apache.ignite.internal.benchmark;
 
+import java.nio.file.Path;
 import java.time.LocalDate;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
@@ -47,7 +48,7 @@ import org.openjdk.jmh.runner.options.OptionsBuilder;
  * Benchmark that compares sequential scanning of index against full table scan.
  */
 @State(Scope.Benchmark)
-@Fork(1)
+@Fork(value = 1/*, jvmArgsAppend = {"-XX:+PrintGCDetails", "-Xloggc:D:/GC_logs/gc.log", "-Xlog:safepoint"}*/)
 @Threads(8)
 @Warmup(iterations = 10, time = 2)
 @Measurement(iterations = 20, time = 2)
@@ -64,10 +65,10 @@ public class SqlIndexesBenchmark extends AbstractMultiNodeBenchmark {
 
     private AtomicInteger idGen = new AtomicInteger();
 
-    @Param({"0", "2", "4", "8", "10"})
+    @Param({"0"/*, "2", "4", "8"*/, "10"})
     private int idxes;
 
-    @Param({"INT", "STR10", "STR150"})
+    @Param({/*"INT",*/ "STR10", "STR150"})
     private String idxType;
 
     private IgniteSql sql;
@@ -116,7 +117,7 @@ public class SqlIndexesBenchmark extends AbstractMultiNodeBenchmark {
     }
 
     private static @NotNull String queryForStringIndexes() {
-        String query = "CREATE ZONE single_partition_zone WITH STORAGE_PROFILES='default', replicas = 1, partitions = 1;"
+        String query = "CREATE ZONE single_partition_zone WITH STORAGE_PROFILES='default', replicas = 1, partitions = 16;"
                 + "CREATE TABLE test (id INT PRIMARY KEY, val VARCHAR, val1 VARCHAR, val2 VARCHAR, val3 VARCHAR, val4 VARCHAR,"
                 + " val5 VARCHAR, val6 VARCHAR, val7 VARCHAR, val8 VARCHAR, val9 VARCHAR) ZONE single_partition_zone;";
 
@@ -124,7 +125,7 @@ public class SqlIndexesBenchmark extends AbstractMultiNodeBenchmark {
     }
 
     private static @NotNull String queryForIntIndexes() {
-        String query = "CREATE ZONE single_partition_zone WITH STORAGE_PROFILES='default', replicas = 1, partitions = 1;"
+        String query = "CREATE ZONE single_partition_zone WITH STORAGE_PROFILES='default', replicas = 1, partitions = 16;"
                 + "CREATE TABLE test (id INT PRIMARY KEY, val INT, val1 INT, val2 INT, val3 INT, val4 INT, val5 INT,"
                 + " val6 INT, val7 INT, val8 INT, val9 INT) ZONE single_partition_zone;";
 
@@ -182,6 +183,11 @@ public class SqlIndexesBenchmark extends AbstractMultiNodeBenchmark {
         return idGen.getAndIncrement();
     }
 
+    @Override
+    protected int nodes() {
+        return 1;
+    }
+
 //    @Override
 //    protected Path workDir() throws Exception {
 //        return Path.of("D:", "tmpDirPrefix" + ThreadLocalRandom.current().nextInt());
@@ -192,6 +198,11 @@ public class SqlIndexesBenchmark extends AbstractMultiNodeBenchmark {
      */
     public static void main(String[] args) throws RunnerException {
         Options opt = new OptionsBuilder()
+//                .jvmArgsAppend(
+//                        " -Xlog:gc*:D:\\GC_logs:time:filecount=10,filesize=25M "
+//                        + "-Xlog:safepoint*:D:\\GC_logs:time:filecount=10,filesize=25M "
+//                        + "-verbose:gc "
+//                )
                 .include(".*" + SqlIndexesBenchmark.class.getSimpleName() + ".*")
                 .build();
 
