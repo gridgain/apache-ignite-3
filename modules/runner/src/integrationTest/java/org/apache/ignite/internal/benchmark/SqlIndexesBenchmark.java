@@ -17,6 +17,7 @@
 
 package org.apache.ignite.internal.benchmark;
 
+import java.nio.file.Path;
 import java.time.LocalDate;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
@@ -55,15 +56,17 @@ import org.openjdk.jmh.runner.options.OptionsBuilder;
 @OutputTimeUnit(TimeUnit.SECONDS)
 @SuppressWarnings({"WeakerAccess", "unused"})
 public class SqlIndexesBenchmark extends AbstractMultiNodeBenchmark {
+    private static final AtomicInteger COUNTER = new AtomicInteger();
+
+    private static final ThreadLocal<Integer> GEN = ThreadLocal.withInitial(() -> COUNTER.getAndIncrement() * 20_000_000);
+
     private static final LocalDate INITIAL_DATE = LocalDate.of(1970, 1, 1);
 
     private static final String STR10 = "qwertyuiop";
     private static final String STR100 = "qwertyuiopqwertyuiopqwertyuiopqwertyuiopqwertyuiop"
             + "qwertyuiopqwertyuiopqwertyuiopqwertyuiopqwertyuiop";
 
-    private AtomicInteger idGen = new AtomicInteger();
-
-    @Param({"0"/*, "2", "4", "8"*/, "10"})
+    @Param({"0", "2", "4", "8", "10"})
     private int idxes;
 
     @Param({/*"INT",*/ "STR10", "STR100"})
@@ -178,7 +181,9 @@ public class SqlIndexesBenchmark extends AbstractMultiNodeBenchmark {
     }
 
     private int nextId() {
-        return idGen.getAndIncrement();
+        int cur = GEN.get() + 1;
+        GEN.set(cur);
+        return cur;
     }
 
     @Override
