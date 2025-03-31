@@ -17,16 +17,14 @@
 
 package org.apache.ignite.internal.benchmark;
 
-import java.nio.file.Path;
-import java.time.LocalDate;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import org.apache.ignite.internal.testframework.IgniteTestUtils;
 import org.apache.ignite.sql.IgniteSql;
 import org.apache.ignite.table.RecordView;
 import org.apache.ignite.table.Tuple;
 import org.jetbrains.annotations.NotNull;
-import org.openjdk.jmh.annotations.Benchmark;
 import org.openjdk.jmh.annotations.BenchmarkMode;
 import org.openjdk.jmh.annotations.Fork;
 import org.openjdk.jmh.annotations.Measurement;
@@ -60,16 +58,14 @@ public class SqlIndexesBenchmark extends AbstractMultiNodeBenchmark {
 
     private static final ThreadLocal<Integer> GEN = ThreadLocal.withInitial(() -> COUNTER.getAndIncrement() * 20_000_000);
 
-    private static final LocalDate INITIAL_DATE = LocalDate.of(1970, 1, 1);
-
     private static final String STR10 = "qwertyuiop";
     private static final String STR100 = "qwertyuiopqwertyuiopqwertyuiopqwertyuiopqwertyuiop"
             + "qwertyuiopqwertyuiopqwertyuiopqwertyuiopqwertyuiop";
 
-    @Param({"0", "2", "4", "8", "10"})
+    @Param({/*"0", "2", "4", "8",*/ "10"})
     private int idxes;
 
-    @Param({/*"INT",*/ "STR10", "STR100"})
+    @Param({/*"INT",*/ "STR10", "STR100", "CHAR10", "CHAR100"})
     private String idxType;
 
     private IgniteSql sql;
@@ -82,7 +78,15 @@ public class SqlIndexesBenchmark extends AbstractMultiNodeBenchmark {
         try {
             sql = publicIgnite.sql();
 
-            String query = "INT".equals(idxType) ? queryForIntIndexes() : queryForStringIndexes();
+            String query;
+
+            if ("INT".equalsIgnoreCase(idxType)) {
+                query = queryForIntIndexes();
+            } else if ("CHAR100".equalsIgnoreCase(idxType)) {
+                query = queryForCharIndexes();
+            } else {
+                query = queryForStringIndexes();
+            }
 
             switch (idxes) {
                 case 10:
@@ -117,6 +121,14 @@ public class SqlIndexesBenchmark extends AbstractMultiNodeBenchmark {
         }
     }
 
+    private static @NotNull String queryForCharIndexes() {
+        String query = "CREATE ZONE single_partition_zone WITH STORAGE_PROFILES='default', replicas = 1, partitions = 32;"
+                + "CREATE TABLE test (id INT PRIMARY KEY, val VARCHAR(100), val1 VARCHAR(100), val2 VARCHAR(100), val3 VARCHAR(100), val4 VARCHAR(100),"
+                + " val5 VARCHAR(100), val6 VARCHAR(100), val7 VARCHAR(100), val8 VARCHAR(100), val9 VARCHAR(100)) ZONE single_partition_zone;";
+
+        return query;
+    }
+
     private static @NotNull String queryForStringIndexes() {
         String query = "CREATE ZONE single_partition_zone WITH STORAGE_PROFILES='default', replicas = 1, partitions = 32;"
                 + "CREATE TABLE test (id INT PRIMARY KEY, val VARCHAR, val1 VARCHAR, val2 VARCHAR, val3 VARCHAR, val4 VARCHAR,"
@@ -133,13 +145,13 @@ public class SqlIndexesBenchmark extends AbstractMultiNodeBenchmark {
         return query;
     }
 
-    @Benchmark
+    // @Benchmark
     public void put() {
         int val = ThreadLocalRandom.current().nextInt(0, 1_500_000);
 
         recordView.upsert(null, Tuple.create()
                 .set("id", nextId())
-                .set("val", /*INITIAL_DATE.plusDays(val)*/getVal(val))
+                .set("val", getVal(val))
                 .set("val1", getVal(val))
                 .set("val2", getVal(val))
                 .set("val3", getVal(val))
@@ -157,18 +169,55 @@ public class SqlIndexesBenchmark extends AbstractMultiNodeBenchmark {
             case "INT":
                 return val;
             case "STR10": {
-                String str = STR10 + val;
+                String str = val + STR10;
 
-                return str.substring(str.length() - STR10.length());
+                return str.substring(0, STR10.length());
             }
-            case "STR100": {
-                String str = STR100 + val;
+            case "CHAR100":
+            case "STR100":
+                String str = val + STR100;
 
-                return str.substring(str.length() - STR100.length());
-            }
+                return str.substring(0, STR100.length());
             default:
                 throw new IllegalArgumentException("Unsupported index type: " + idxType);
         }
+    }
+
+    // @Benchmark
+    public void randomStringGen(Blackhole bh) {
+        int val = ThreadLocalRandom.current().nextInt(0, 1_500_000);
+
+        String s;
+
+        switch (idxType) {
+            case "STR10": {
+                s = IgniteTestUtils.randomString(ThreadLocalRandom.current(), 10);
+                break;
+            }
+            case "STR100": {
+                s = IgniteTestUtils.randomString(ThreadLocalRandom.current(), 100);
+                break;
+            }
+            case "CHAR10": {
+                String str = val + STR10;
+
+                s = str.substring(0, STR10.length());
+
+                break;
+            }
+            case "CHAR100": {
+                String str = val + STR100;
+
+                s = str.substring(0, STR100.length());
+
+                break;
+            }
+            default: {
+                throw new IllegalArgumentException("Unsupported index type: " + idxType);
+            }
+        }
+
+        bh.consume(s);
     }
 
     //@Benchmark
