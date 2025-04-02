@@ -17,6 +17,7 @@
 
 package org.apache.ignite.internal.benchmark;
 
+import java.nio.file.Path;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -25,6 +26,7 @@ import org.apache.ignite.sql.IgniteSql;
 import org.apache.ignite.table.RecordView;
 import org.apache.ignite.table.Tuple;
 import org.jetbrains.annotations.NotNull;
+import org.openjdk.jmh.annotations.Benchmark;
 import org.openjdk.jmh.annotations.BenchmarkMode;
 import org.openjdk.jmh.annotations.Fork;
 import org.openjdk.jmh.annotations.Measurement;
@@ -62,10 +64,10 @@ public class SqlIndexesBenchmark extends AbstractMultiNodeBenchmark {
     private static final String STR100 = "qwertyuiopqwertyuiopqwertyuiopqwertyuiopqwertyuiop"
             + "qwertyuiopqwertyuiopqwertyuiopqwertyuiopqwertyuiop";
 
-    @Param({/*"0", "2", "4", "8",*/ "10"})
+    @Param({"0", "2", "4", "8", "10"})
     private int idxes;
 
-    @Param({/*"INT",*/ "STR10", "STR100", "CHAR10", "CHAR100"})
+    @Param({/*"INT",*/ "STR10", "STR100", "CHAR100"})
     private String idxType;
 
     private IgniteSql sql;
@@ -145,7 +147,7 @@ public class SqlIndexesBenchmark extends AbstractMultiNodeBenchmark {
         return query;
     }
 
-    // @Benchmark
+    @Benchmark
     public void put() {
         int val = ThreadLocalRandom.current().nextInt(0, 1_500_000);
 
@@ -183,7 +185,7 @@ public class SqlIndexesBenchmark extends AbstractMultiNodeBenchmark {
         }
     }
 
-    // @Benchmark
+    //@Benchmark
     public void randomStringGen(Blackhole bh) {
         int val = ThreadLocalRandom.current().nextInt(0, 1_500_000);
 
@@ -240,10 +242,10 @@ public class SqlIndexesBenchmark extends AbstractMultiNodeBenchmark {
         return 1;
     }
 
-//    @Override
-//    protected Path workDir() throws Exception {
-//        return Path.of("D:", "tmpDirPrefix" + ThreadLocalRandom.current().nextInt());
-//    }
+    @Override
+    protected Path workDir() throws Exception {
+        return Path.of("D:", "tmpDirPrefix" + ThreadLocalRandom.current().nextInt());
+    }
 
     /**
      * Benchmark's entry point.
