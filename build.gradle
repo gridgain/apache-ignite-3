@@ -95,8 +95,8 @@ allprojects {
             exclude project.property('excludeTest')
         }
 
-        systemProperty "migration-tools.docker.version",
-            java.util.Optional.ofNullable(findProperty("migration-tools.docker.version")).orElse(project.version)
+        def dockerVersion = findProperty("migration-tools.docker.version")
+        systemProperty "migration-tools.docker.version", dockerVersion != null ? dockerVersion : project.version
 
         [
             "tests.containers.support",
