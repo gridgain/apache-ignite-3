@@ -17,7 +17,7 @@
 
 package org.apache.ignite.internal.pagememory.tree.io;
 
-import static org.apache.ignite.internal.pagememory.util.PageUtils.copyMemory;
+import org.apache.ignite.internal.util.GridUnsafe;
 
 /**
  * Abstract IO routines for B+Tree leaf pages.
@@ -52,7 +52,7 @@ public abstract class BplusLeafIo<L> extends BplusIo<L> {
 
         assertPageType(dstPageAddr);
 
-        copyMemory(srcPageAddr, offset(srcIdx), dstPageAddr, offset(dstIdx), cnt * (long) getItemSize());
+        GridUnsafe.copyDisjoint(srcPageAddr + offset(srcIdx), dstPageAddr + offset(dstIdx), cnt * (long) getItemSize());
     }
 
     @Override

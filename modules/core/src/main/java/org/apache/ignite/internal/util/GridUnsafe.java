@@ -1319,6 +1319,19 @@ public abstract class GridUnsafe {
     }
 
     /**
+     * Copies memory.
+     *
+     * @param src Source.
+     * @param dst Dst.
+     * @param len Length.
+     */
+    public static void copyDisjoint(long src, long dst, long len) {
+        for (int i = 0; i < len; i++) {
+            UNSAFE.putByte(null, dst + i, UNSAFE.getByte(null, src + i));
+        }
+    }
+
+    /**
      * Sets all bytes in a given block of memory to a copy of another block.
      *
      * @param srcBase Source base.
