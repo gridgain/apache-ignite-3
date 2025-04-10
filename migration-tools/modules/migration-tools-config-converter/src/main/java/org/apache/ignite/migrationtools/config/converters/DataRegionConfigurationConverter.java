@@ -46,7 +46,7 @@ public class DataRegionConfigurationConverter implements ConfigurationConverter 
         StorageConfiguration storageConfig = registry.getConfiguration(StorageExtensionConfiguration.KEY).storage();
 
         Consumer<StorageProfileChange> changer = t -> t.convert(PersistentPageMemoryProfileChange.class)
-                .changeSize(regionCfg.getMaxSize())
+                .changeSizeBytes(regionCfg.getMaxSize())
                 .changeReplacementMode(regionCfg.getPageReplacementMode().name());
 
         storageConfig.profiles().change(c -> c.createOrUpdate(regionName, changer)).get();
@@ -61,8 +61,8 @@ public class DataRegionConfigurationConverter implements ConfigurationConverter 
         // TODO: Check where the eviction configuration went!!
         // TODO: Check where the changeEmptyPagesPoolSize configuration went!!
         Consumer<StorageProfileChange> changer = t -> t.convert(VolatilePageMemoryProfileChange.class)
-                .changeInitSize(regionCfg.getInitialSize())
-                .changeMaxSize(regionCfg.getMaxSize());
+                .changeInitSizeBytes(regionCfg.getInitialSize())
+                .changeMaxSizeBytes(regionCfg.getMaxSize());
 
         storageConfig.profiles().change(c -> c.createOrUpdate(regionName, changer)).get();
         // TODO: Configure the allocator

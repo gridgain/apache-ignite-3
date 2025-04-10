@@ -178,6 +178,16 @@ public class CustomTupleImpl implements Tuple {
     }
 
     @Override
+    public byte[] bytesValue(String s) {
+        throw new NotImplementedException();
+    }
+
+    @Override
+    public byte[] bytesValue(int i) {
+        throw new NotImplementedException();
+    }
+
+    @Override
     public UUID uuidValue(String s) {
         throw new NotImplementedException();
     }

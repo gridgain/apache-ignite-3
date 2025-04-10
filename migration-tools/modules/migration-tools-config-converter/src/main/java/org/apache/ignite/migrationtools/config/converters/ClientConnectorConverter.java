@@ -35,11 +35,11 @@ public class ClientConnectorConverter implements ConfigurationConverter {
         target.port().update(clientConnCfg.getPort()).get();
 
         if (clientConnCfg.getHandshakeTimeout() != org.apache.ignite.configuration.ClientConnectorConfiguration.DFLT_HANDSHAKE_TIMEOUT) {
-            target.connectTimeout().update((int) Math.min(Integer.MAX_VALUE, clientConnCfg.getHandshakeTimeout())).get();
+            target.connectTimeoutMillis().update((int) Math.min(Integer.MAX_VALUE, clientConnCfg.getHandshakeTimeout())).get();
         }
 
         if (clientConnCfg.getIdleTimeout() > 0) {
-            target.idleTimeout().update(clientConnCfg.getIdleTimeout()).get();
+            target.idleTimeoutMillis().update(clientConnCfg.getIdleTimeout()).get();
         }
     }
 }

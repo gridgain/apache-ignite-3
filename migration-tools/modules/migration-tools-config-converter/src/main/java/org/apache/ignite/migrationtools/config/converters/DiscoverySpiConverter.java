@@ -23,6 +23,7 @@ import org.apache.ignite.migrationtools.config.registry.ConfigurationRegistryInt
 import org.apache.ignite.spi.discovery.tcp.TcpDiscoverySpi;
 import org.apache.ignite.spi.discovery.tcp.ipfinder.vm.TcpDiscoveryVmIpFinder;
 import org.apache.ignite3.internal.network.configuration.NetworkExtensionConfiguration;
+import org.apache.ignite3.internal.network.configuration.StaticNodeFinderConfiguration;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -92,7 +93,7 @@ public class DiscoverySpiConverter implements ConfigurationConverter {
                         .flatMap(a -> collectAddresses(a).stream())
                         .toArray(String[]::new);
 
-                target.nodeFinder()
+                ((StaticNodeFinderConfiguration) target.nodeFinder())
                         .netClusterNodes()
                         .update(addrArr)
                         .get();

@@ -32,7 +32,7 @@ import org.testcontainers.utility.MountableFile;
 /** Ignite 3 cluster container. */
 public class Ignite3ClusterContainer implements Startable {
 
-    public static final String DOCKER_IMAGE_NAME = "apacheignite/ignite3:" + System.getProperty("ignite3.docker.version", "latest");
+    public static final String DOCKER_IMAGE_NAME = "apacheignite/ignite:" + System.getProperty("ignite3.docker.version", "latest");
 
     private static Path COMPUTE_LIBS_FOLDER = Path.of("build/dependency");
 

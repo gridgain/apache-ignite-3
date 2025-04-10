@@ -72,28 +72,28 @@ class ConfigurationConverterTest {
                     (Consumer<Config>) c -> {
                         assertThat(c.getString("name")).isEqualTo("default");
                         assertThat(c.getString("engine")).isEqualTo("aimem");
-                        assertThat(c.getString("initSize")).isEqualTo("" + 100 * 1024 * 1024);
+                        assertThat(c.getString("initSizeBytes")).isEqualTo("" + 100 * 1024 * 1024);
                     },
                     (Consumer<Config>) c -> {
                         assertThat(c.getString("name")).isEqualTo("40MB_Region_Eviction");
                         assertThat(c.getString("engine")).isEqualTo("aimem");
-                        assertThat(c.getString("initSize")).isEqualTo("" + 20 * 1024 * 1024);
-                        assertThat(c.getString("maxSize")).isEqualTo("" + 40 * 1024 * 1024);
+                        assertThat(c.getString("initSizeBytes")).isEqualTo("" + 20 * 1024 * 1024);
+                        assertThat(c.getString("maxSizeBytes")).isEqualTo("" + 40 * 1024 * 1024);
                     }
                 )),
                 Arguments.of("configs-custom/ignite-config.1.xml", List.of(
                     (Consumer<Config>) c -> {
                         assertThat(c.getString("name")).isEqualTo("default");
                         assertThat(c.getString("engine")).isEqualTo("aimem");
-                        assertThat(c.getString("initSize")).isEqualTo("" + 50 * 1024 * 1024);
-                        assertThat(c.getString("maxSize")).isEqualTo("" + 150 * 1024 * 1024);
+                        assertThat(c.getString("initSizeBytes")).isEqualTo("" + 50 * 1024 * 1024);
+                        assertThat(c.getString("maxSizeBytes")).isEqualTo("" + 150 * 1024 * 1024);
                     }
                 )),
                 Arguments.of("configs-custom/ignite-config.2.xml", List.of(
                         (Consumer<Config>) c -> {
                             assertThat(c.getString("name")).isEqualTo("default");
                             assertThat(c.getString("engine")).isEqualTo("aipersist");
-                            assertThat(c.getString("size")).isEqualTo("" + 50 * 1024 * 1024);
+                            assertThat(c.getString("sizeBytes")).isEqualTo("" + 50 * 1024 * 1024);
                         }
                 ))
         );
