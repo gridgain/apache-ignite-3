@@ -53,7 +53,11 @@ public abstract class RpcRequestProcessor<T extends Message> implements RpcProce
             }
         }
         catch (final Throwable t) {
-            LOG.error("handleRequest {} failed", t, request);
+            if ("Not leader".equals(t.getMessage())) {
+                LOG.debug("handleRequest {} failed", t, request);
+            } else {
+                LOG.error("handleRequest {} failed", t, request);
+            }
             rpcCtx.sendResponse(RaftRpcFactory.DEFAULT //
                 .newResponse(msgFactory, -1, "handleRequest internal error"));
         }

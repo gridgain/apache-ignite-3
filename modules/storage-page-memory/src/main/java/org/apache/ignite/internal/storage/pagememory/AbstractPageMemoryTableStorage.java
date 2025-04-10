@@ -29,6 +29,8 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Supplier;
+import org.apache.ignite.internal.logger.IgniteLogger;
+import org.apache.ignite.internal.logger.Loggers;
 import org.apache.ignite.internal.pagememory.DataRegion;
 import org.apache.ignite.internal.pagememory.PageMemory;
 import org.apache.ignite.internal.pagememory.freelist.FreeList;
@@ -58,6 +60,8 @@ import org.jetbrains.annotations.Nullable;
  * Abstract table storage implementation based on {@link PageMemory}.
  */
 public abstract class AbstractPageMemoryTableStorage implements MvTableStorage {
+    private static final IgniteLogger LOG = Loggers.forClass(AbstractPageMemoryTableStorage.class);
+
     private final MvPartitionStorages<AbstractPageMemoryMvPartitionStorage> mvPartitionStorages;
 
     private final IgniteSpinBusyLock busyLock = new IgniteSpinBusyLock();
@@ -144,6 +148,8 @@ public abstract class AbstractPageMemoryTableStorage implements MvTableStorage {
         return busy(() -> mvPartitionStorages.create(partitionId, partId -> {
             AbstractPageMemoryMvPartitionStorage partition = createMvPartitionStorage(partitionId);
 
+            LOG.info("Created MV partition storage [tableId={}, partitionId={}]", getTableId(), partitionId);
+
             partition.start();
 
             return partition;
@@ -162,7 +168,10 @@ public abstract class AbstractPageMemoryTableStorage implements MvTableStorage {
         }
 
         try {
-            return mvPartitionStorages.destroy(partitionId, this::destroyMvPartitionStorage);
+            LOG.info("Destroying MV partition storage [tableId={}, partitionId={}]", getTableId(), partitionId);
+
+            return mvPartitionStorages.destroy(partitionId, this::destroyMvPartitionStorage)
+                    .whenComplete((res, ex) -> LOG.info("Destroyed MV partition storage [tableId={}, partitionId={}]", getTableId(), partitionId));
         } finally {
             busyLock.leaveBusy();
         }
