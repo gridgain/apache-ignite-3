@@ -489,15 +489,13 @@ public class ClientTable implements Table {
 
                     return ClientLazyTransaction.ensureStarted(tx, ch, forCrd).thenCompose(tx0 -> {
                         @Nullable PartitionMapping forOp = getPreferredNodeName(tableId(), provider, partitionsFut.getNow(null), schema,
-                                tx0 == null); // Force coordinator mode for implicit transactions.
+                                true); // Force coordinator mode for implicit transactions.
 
                         WriteContext ctx = new WriteContext();
-                        ctx.pm = forOp;
+                        //ctx.pm = forOp;
 
                         return ch.serviceAsync(opCode,
-                                        (opCh) -> tx0 == null || tx0.isReadOnly() || forOp == null
-                                                || !opCh.protocolContext().isFeatureSupported(TX_DIRECT_MAPPING) ? nullCompletedFuture()
-                                                : tx0.enlistFuture(opCh, ctx),
+                                        (opCh) -> nullCompletedFuture(),
                                         w -> writer.accept(schema, w, ctx),
                                         r -> readSchemaAndReadData(schema, r, reader, defaultValue, responseSchemaRequired, ctx, tx0),
                                         resolvePreferredNode(tx0, forOp),
