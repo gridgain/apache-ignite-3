@@ -19,7 +19,6 @@ package org.apache.ignite.internal.client.table;
 
 import static java.util.concurrent.CompletableFuture.completedFuture;
 import static java.util.function.Function.identity;
-import static org.apache.ignite.internal.client.proto.ProtocolBitmaskFeature.TX_DIRECT_MAPPING;
 import static org.apache.ignite.internal.client.proto.tx.ClientTxUtils.TX_ID_DIRECT;
 import static org.apache.ignite.internal.util.CompletableFutures.nullCompletedFuture;
 import static org.apache.ignite.internal.util.ExceptionUtils.matchAny;
@@ -488,8 +487,8 @@ public class ClientTable implements Table {
                     PartitionMapping forCrd = getPreferredNodeName(tableId(), provider, partitionsFut.getNow(null), schema, true);
 
                     return ClientLazyTransaction.ensureStarted(tx, ch, forCrd).thenCompose(tx0 -> {
-                        @Nullable PartitionMapping forOp = getPreferredNodeName(tableId(), provider, partitionsFut.getNow(null), schema,
-                                true); // Force coordinator mode for implicit transactions.
+//                        @Nullable PartitionMapping forOp = getPreferredNodeName(tableId(), provider, partitionsFut.getNow(null), schema,
+//                                true); // Force coordinator mode for implicit transactions.
 
                         WriteContext ctx = new WriteContext();
                         //ctx.pm = forOp;
@@ -498,7 +497,7 @@ public class ClientTable implements Table {
                                         (opCh) -> nullCompletedFuture(),
                                         w -> writer.accept(schema, w, ctx),
                                         r -> readSchemaAndReadData(schema, r, reader, defaultValue, responseSchemaRequired, ctx, tx0),
-                                        resolvePreferredNode(tx0, forOp),
+                                        resolvePreferredNode(tx0, null),
                                         tx0 == null ? null : tx0.nodeName(),
                                         retryPolicyOverride,
                                         expectNotifications)
