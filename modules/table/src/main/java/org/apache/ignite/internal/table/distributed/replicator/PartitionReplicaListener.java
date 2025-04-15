@@ -2992,6 +2992,8 @@ public class PartitionReplicaListener implements ReplicaListener, ReplicaTablePr
                 .thenApply(shortTermLocks -> new IgniteBiTuple<>(rowId, shortTermLocks));
     }
 
+    private boolean skipSecondaryIdxsLock = getBoolean("SKIP_SECONDARY_IDXS_LOCK");
+
     /**
      * Takes all required locks on a key, before inserting the value.
      *
@@ -3012,11 +3014,15 @@ public class PartitionReplicaListener implements ReplicaListener, ReplicaTablePr
             return emptyCollectionCompletedFuture();
         }
 
-        CompletableFuture<Lock>[] locks = new CompletableFuture[indexes.size()];
+        CompletableFuture<Lock>[] locks = new CompletableFuture[skipSecondaryIdxsLock ? 1 : indexes.size()];
         int idx = 0;
 
         for (IndexLocker locker : indexes) {
             locks[idx++] = locker.locksForInsert(txId, binaryRow, rowId);
+
+            if (skipSecondaryIdxsLock) {
+                break;
+            }
         }
 
         return allOf(locks).thenApply(unused -> {

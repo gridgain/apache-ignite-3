@@ -17,10 +17,13 @@
 
 package org.apache.ignite.internal.table.distributed.index;
 
+import static org.apache.ignite.internal.lang.IgniteSystemProperties.getBoolean;
+
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import org.apache.ignite.internal.schema.BinaryRow;
 import org.apache.ignite.internal.schema.BinaryTuple;
@@ -65,10 +68,16 @@ public class IndexUpdateHandler {
             return;
         }
 
+        if (updateOnlyPk) {
+            indexIds = indexIds.stream().reduce(Integer::min).stream().collect(Collectors.toList());
+        }
+
         for (TableSchemaAwareIndexStorage index : indexes(indexIds)) {
             putToIndex(index, binaryRow, rowId);
         }
     }
+
+    private boolean updateOnlyPk = getBoolean("UPDATE_ONLY_PK");
 
     /**
      * Adds a binary row to the index, if it's a tombstone then skips such operation.
