@@ -367,6 +367,38 @@ public class ClientTable implements Table {
      * @param writer Writer.
      * @param reader Reader.
      * @param provider Partition awareness provider.
+     * @param tx Transaction.
+     * @param <T> Result type.
+     * @apiNote expectNotification {@code True} if the notification is expected.
+     * @return Future representing pending completion of the operation.
+     */
+    public <T> CompletableFuture<T> doSchemaOutOpAsync(
+            int opCode,
+            IgniteTriConsumer<ClientSchema, PayloadOutputChannel, WriteContext> writer,
+            Function<PayloadInputChannel, T> reader,
+            PartitionAwarenessProvider provider,
+            @Nullable Transaction tx,
+            boolean expectNotification) {
+        return doSchemaOutInOpAsync(
+                opCode,
+                writer,
+                (schema, unpacker) -> reader.apply(unpacker),
+                null,
+                false,
+                provider,
+                null,
+                null,
+                expectNotification,
+                tx);
+    }
+
+    /**
+     * Performs a schema-based operation.
+     *
+     * @param opCode Op code.
+     * @param writer Writer.
+     * @param reader Reader.
+     * @param provider Partition awareness provider.
      * @param expectNotifications Whether to expect notifications as a result of the operation.
      * @param tx Transaction.
      * @param <T> Result type.
@@ -497,7 +529,7 @@ public class ClientTable implements Table {
                         return ch.serviceAsync(opCode,
                                         (opCh) -> tx0 == null || tx0.isReadOnly() || forOp == null
                                                 || !opCh.protocolContext().isFeatureSupported(TX_DIRECT_MAPPING) ? nullCompletedFuture()
-                                                : tx0.enlistFuture(opCh, ctx),
+                                                : tx0.enlistFuture(ch, opCh, ctx),
                                         w -> writer.accept(schema, w, ctx),
                                         r -> readSchemaAndReadData(schema, r, reader, defaultValue, responseSchemaRequired, ctx, tx0),
                                         resolvePreferredNode(tx0, forOp),

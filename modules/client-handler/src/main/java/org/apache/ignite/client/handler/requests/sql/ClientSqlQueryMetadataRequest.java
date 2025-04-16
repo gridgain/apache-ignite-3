@@ -46,7 +46,7 @@ public class ClientSqlQueryMetadataRequest {
             QueryProcessor processor,
             ClientResourceRegistry resources
     ) {
-        var tx = readTx(in, out, resources, null);
+        var tx = readTx(in, out, resources, null, null);
         String schema = in.unpackString();
         String query = in.unpackString();
 

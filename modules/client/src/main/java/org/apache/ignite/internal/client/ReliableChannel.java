@@ -130,6 +130,9 @@ public final class ReliableChannel implements AutoCloseable {
     @Nullable
     private ScheduledExecutorService streamerFlushExecutor;
 
+    /** Inflights. */
+    private final ClientTransactionInflights inflights;
+
     /**
      * Constructor.
      *
@@ -151,6 +154,8 @@ public final class ReliableChannel implements AutoCloseable {
 
         connMgr = new NettyClientConnectionMultiplexer(metrics);
         connMgr.start(clientCfg);
+
+        inflights = new ClientTransactionInflights();
     }
 
     /** {@inheritDoc} */
@@ -476,6 +481,15 @@ public final class ReliableChannel implements AutoCloseable {
     }
 
     /**
+     * Get inflights instance.
+     *
+     * @return The instance.
+     */
+    public ClientTransactionInflights inflights() {
+        return inflights;
+    }
+
+    /**
      * Should the channel initialization be stopped.
      */
     private boolean shouldStopChannelsReinit() {
@@ -775,6 +789,11 @@ public final class ReliableChannel implements AutoCloseable {
         partitionAssignmentTimestamp.updateAndGet(curTs -> Math.max(curTs, timestamp));
     }
 
+    private void onGlobalNotification(PayloadInputChannel channel) {
+        UUID txId = channel.in().unpackUuid();
+        inflights().removeInflight(txId);
+    }
+
     /**
      * Gets the last known primary replica start time (for any table).
      *
@@ -867,7 +886,8 @@ public final class ReliableChannel implements AutoCloseable {
                         connMgr,
                         metrics,
                         ReliableChannel.this::onPartitionAssignmentChanged,
-                        ReliableChannel.this::onObservableTimestampReceived);
+                        ReliableChannel.this::onObservableTimestampReceived,
+                        inflights);
 
                 chFut0 = createFut.thenApply(ch -> {
                     UUID currentClusterId = ch.protocolContext().clusterId();
