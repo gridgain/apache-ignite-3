@@ -54,8 +54,6 @@ import org.openjdk.jmh.runner.options.OptionsBuilder;
 @BenchmarkMode(Mode.Throughput)
 @OutputTimeUnit(TimeUnit.SECONDS)
 public class UpsertKvBenchmarkOrig extends AbstractMultiNodeBenchmark {
-    private final Tuple tuple = Tuple.create();
-
     private static KeyValueView<Tuple, Tuple> kvView;
 
     @Param({"1"})
@@ -84,9 +82,6 @@ public class UpsertKvBenchmarkOrig extends AbstractMultiNodeBenchmark {
     @Setup
     public void setUp() {
         kvView = igniteImpl.tables().table(TABLE_NAME).keyValueView();
-        for (int i = 1; i < 11; i++) {
-            tuple.set("field" + i, FIELD_VAL);
-        }
     }
 
     /**
@@ -97,7 +92,9 @@ public class UpsertKvBenchmarkOrig extends AbstractMultiNodeBenchmark {
         List<CompletableFuture<Void>> futs = new ArrayList<>();
 
         for (int i = 0; i < batch - 1; i++) {
-            CompletableFuture<Void> fut = kvView.putAsync(null, Tuple.create().set("ycsb_key", nextId()), tuple);
+            int id = nextId();
+
+            CompletableFuture<Void> fut = kvView.putAsync(null, Tuple.create().set("ycsb_key", id), valueTuple(id));
             futs.add(fut);
         }
 
