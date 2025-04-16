@@ -23,6 +23,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.apache.ignite.internal.lang.IgniteSystemProperties;
+import org.apache.ignite.internal.util.CompletableFutures;
 import org.apache.ignite.table.KeyValueView;
 import org.apache.ignite.table.Tuple;
 import org.openjdk.jmh.annotations.Benchmark;
@@ -100,9 +101,11 @@ public class UpsertKvBenchmarkOrig extends AbstractMultiNodeBenchmark {
             futs.add(fut);
         }
 
-        for (CompletableFuture<Void> fut : futs) {
-            fut.join();
-        }
+        CompletableFutures.allOf(futs).join();
+
+//        for (CompletableFuture<Void> fut : futs) {
+//            fut.join();
+//        }
 
         kvView.put(null, Tuple.create().set("ycsb_key", nextId()), tuple);
     }
