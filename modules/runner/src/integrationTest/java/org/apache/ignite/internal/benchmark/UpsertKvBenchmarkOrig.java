@@ -103,11 +103,25 @@ public class UpsertKvBenchmarkOrig extends AbstractMultiNodeBenchmark {
 
         CompletableFutures.allOf(futs).join();
 
-//        for (CompletableFuture<Void> fut : futs) {
-//            fut.join();
-//        }
+        int id = nextId();
 
-        kvView.put(null, Tuple.create().set("ycsb_key", nextId()), tuple);
+        kvView.put(null, Tuple.create().set("ycsb_key",id), valueTuple(id));
+    }
+
+    private Tuple valueTuple(int id) {
+        String fieldVal = String.format("%0" + 100 + "d", id);
+
+        return Tuple.create()
+                .set("field1", fieldVal)
+                .set("field2", fieldVal)
+                .set("field3", fieldVal)
+                .set("field4", fieldVal)
+                .set("field5", fieldVal)
+                .set("field6", fieldVal)
+                .set("field7", fieldVal)
+                .set("field8", fieldVal)
+                .set("field9", fieldVal)
+                .set("field10", fieldVal);
     }
 
     private int nextId() {
