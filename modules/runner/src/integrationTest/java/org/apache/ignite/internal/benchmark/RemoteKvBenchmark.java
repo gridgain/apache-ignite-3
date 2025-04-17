@@ -52,7 +52,7 @@ public class RemoteKvBenchmark extends ClientKvBenchmark {
 
     @Override
     protected String[] addresses() {
-        return new String[]{};
+        return new String[]{"172.25.4.33:10800"};
     }
 
     @Override
