@@ -434,12 +434,12 @@ public class ClientTableCommon {
         try {
             long id = in.unpackLong();
             if (id == TX_ID_DIRECT) {
-                long token = 0; // in.unpackLong();
+                long token = in.unpackLong();
                 UUID txId = in.unpackUuid();
-                int commitTableId = 1; // in.unpackInt();
-                int commitPart = 1; // in.unpackInt();
-                UUID coord = UUID.randomUUID(); // in.unpackUuid();
-                long timeout = 30000; // in.unpackLong();
+                int commitTableId = in.unpackInt();
+                int commitPart = in.unpackInt();
+                UUID coord = in.unpackUuid();
+                long timeout = in.unpackLong();
 
                 InternalTransaction remote = txManager.beginRemote(txId, new TablePartitionId(commitTableId, commitPart),
                         coord, token, timeout, err -> {

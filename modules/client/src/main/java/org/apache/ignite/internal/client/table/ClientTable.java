@@ -312,12 +312,12 @@ public class ClientTable implements Table {
 
             if (ctx != null && ctx.enlistmentToken != null) {
                 out.out().packLong(TX_ID_DIRECT); // For direct enlistment, pass 0 for resourceId to distinguish with proxy mode.
-                //out.out().packLong(ctx.enlistmentToken);
+                out.out().packLong(ctx.enlistmentToken);
                 out.out().packUuid(tx0.txId());
-//                out.out().packInt(tx0.commitTableId());
-//                out.out().packInt(tx0.commitPartition());
-//                out.out().packUuid(tx0.coordinatorId());
-//                out.out().packLong(tx0.timeout());
+                out.out().packInt(tx0.commitTableId());
+                out.out().packInt(tx0.commitPartition());
+                out.out().packUuid(tx0.coordinatorId());
+                out.out().packLong(tx0.timeout());
             } else {
                 //noinspection resource
                 if (tx0.channel() != out.clientChannel()) {
