@@ -217,8 +217,7 @@ public class ClientKeyValueBinaryView extends AbstractClientView<Entry<Tuple, Tu
                 (s, w, n) -> ser.writeKvTuple(tx, key, val, s, w, n, false),
                 r -> null,
                 ClientTupleSerializer.getPartitionAwarenessProvider(key),
-                tx,
-                false);
+                tx);
     }
 
     /** {@inheritDoc} */
