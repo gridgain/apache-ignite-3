@@ -78,8 +78,7 @@ public class ClientKvBenchmark extends AbstractMultiNodeBenchmark {
     private final ThreadLocal<Integer> gen = ThreadLocal.withInitial(() -> offset + counter.getAndIncrement() * 20_000_000);
 
     protected String[] addresses() {
-        //return new String[]{"127.0.0.1:10800", "127.0.0.1:10801"};
-        return new String[]{"127.0.0.1:10800"};
+        return new String[]{"127.0.0.1:10800", "127.0.0.1:10801"};
     }
 
     @Override
@@ -148,7 +147,7 @@ public class ClientKvBenchmark extends AbstractMultiNodeBenchmark {
 
     @Override
     protected int nodes() {
-        return 1;
+        return 2;
     }
 
     @Override

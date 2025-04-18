@@ -789,11 +789,6 @@ public final class ReliableChannel implements AutoCloseable {
         partitionAssignmentTimestamp.updateAndGet(curTs -> Math.max(curTs, timestamp));
     }
 
-    private void onGlobalNotification(PayloadInputChannel channel) {
-        UUID txId = channel.in().unpackUuid();
-        inflights().removeInflight(txId);
-    }
-
     /**
      * Gets the last known primary replica start time (for any table).
      *

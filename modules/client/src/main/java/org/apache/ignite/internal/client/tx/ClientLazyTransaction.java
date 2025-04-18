@@ -135,7 +135,7 @@ public class ClientLazyTransaction implements Transaction {
      *
      * @param tx Transaction.
      * @param ch Channel.
-     * @param pm Partition mapping.
+     * @param sup Partition mapping supplier.
      * @return Future that will be completed when the transaction is started.
      */
     public static CompletableFuture<ClientTransaction> ensureStarted(

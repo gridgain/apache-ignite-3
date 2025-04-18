@@ -17,7 +17,6 @@
 
 package org.apache.ignite.internal.partition.replicator.network.replication;
 
-import java.util.UUID;
 import java.util.function.Consumer;
 import org.apache.ignite.internal.network.annotations.Transferable;
 import org.apache.ignite.internal.network.annotations.Transient;

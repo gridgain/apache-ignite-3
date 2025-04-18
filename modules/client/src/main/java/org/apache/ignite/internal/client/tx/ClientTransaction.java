@@ -342,8 +342,8 @@ public class ClientTransaction implements Transaction {
     /**
      * Enlists a write operation in direct mapping.
      *
-     * @param ch
-     * @param opChannel Operation channge.
+     * @param ch Channel facade.
+     * @param opChannel Operation channel.
      * @param ctx The context.
      * @return The future.
      */
