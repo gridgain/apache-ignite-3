@@ -490,22 +490,18 @@ public class ClientTable implements Table {
                         @Nullable PartitionMapping forOp = getPreferredNodeName(tableId(), provider, partitionsFut.getNow(null), schema,
                                 tx0 == null); // Force coordinator mode for implicit transactions.
 
-                        // Force proxy mode for requests collocated with coordinator to reduce passed enlistment info on commit.
-                        if (tx0 != null && forOp != null && forOp.nodeConsistentId().equals(tx0.nodeName())) {
-                            forOp = null;
-                        }
-
                         WriteContext ctx = new WriteContext();
-                        ctx.pm = forOp;
+                        // Force proxy mode for requests collocated with coordinator to reduce passed enlistment info on commit.
+                        ctx.pm = tx0 != null && forOp != null && forOp.nodeConsistentId().equals(tx0.nodeName()) ? null : forOp;
 
                         @Nullable PartitionMapping finalForOp = forOp;
                         return ch.serviceAsync(opCode,
-                                        (opCh) -> tx0 == null || tx0.isReadOnly() || finalForOp == null
+                                        (opCh) -> tx0 == null || tx0.isReadOnly() || ctx.pm == null
                                                 || !opCh.protocolContext().isFeatureSupported(TX_DIRECT_MAPPING) ? nullCompletedFuture()
                                                 : tx0.enlistFuture(ch, opCh, ctx),
                                         w -> writer.accept(schema, w, ctx),
                                         r -> readSchemaAndReadData(schema, r, reader, defaultValue, responseSchemaRequired, ctx, tx0),
-                                        resolvePreferredNode(tx0, finalForOp),
+                                        resolvePreferredNode(tx0, ctx.pm),
                                         tx0 == null ? null : tx0.nodeName(),
                                         retryPolicyOverride,
                                         expectNotifications)
