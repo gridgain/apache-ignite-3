@@ -960,7 +960,7 @@ public class TxManagerImpl implements TxManager, NetworkMessageHandler, SystemVi
             }
         };
 
-        // transactionExpirationRegistry.register(tx);
+        transactionExpirationRegistry.register(tx);
 
         return tx;
     }

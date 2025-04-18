@@ -151,14 +151,14 @@ public class ClientTransactionCommitRequest {
      * @return {@code True} if merged.
      */
     public static boolean merge(InternalTable table, int partId, String consistentId, long token, InternalTransaction tx, boolean commit) {
-//        ReplicationGroupId replicationGroupId = table.targetReplicationGroupId(partId);
-//        PendingTxPartitionEnlistment existing = tx.enlistedPartition(replicationGroupId);
-//        if (existing == null) {
-//            tx.enlist(replicationGroupId, table.tableId(), consistentId, token);
-//        } else {
-//            // Enlistment tokens should be equal on commit.
-//            return !commit || existing.consistencyToken() == token;
-//        }
+        ReplicationGroupId replicationGroupId = table.targetReplicationGroupId(partId);
+        PendingTxPartitionEnlistment existing = tx.enlistedPartition(replicationGroupId);
+        if (existing == null) {
+            tx.enlist(replicationGroupId, table.tableId(), consistentId, token);
+        } else {
+            // Enlistment tokens should be equal on commit.
+            return !commit || existing.consistencyToken() == token;
+        }
 
         return true;
     }

@@ -20,6 +20,7 @@ package org.apache.ignite.internal.client.tx;
 import static org.apache.ignite.internal.util.CompletableFutures.nullCompletedFuture;
 
 import java.util.concurrent.CompletableFuture;
+import java.util.function.Supplier;
 import org.apache.ignite.internal.client.PartitionMapping;
 import org.apache.ignite.internal.client.ReliableChannel;
 import org.apache.ignite.internal.hlc.HybridTimestampTracker;
@@ -140,7 +141,7 @@ public class ClientLazyTransaction implements Transaction {
     public static CompletableFuture<ClientTransaction> ensureStarted(
             @Nullable Transaction tx,
             ReliableChannel ch,
-            @Nullable PartitionMapping pm
+            Supplier<PartitionMapping> sup
     ) {
         if (tx == null) {
             return nullCompletedFuture();
@@ -150,18 +151,20 @@ public class ClientLazyTransaction implements Transaction {
             throw ClientTransaction.unsupportedTxTypeException(tx);
         }
 
-        return ((ClientLazyTransaction) tx).ensureStarted(ch, pm);
+        return ((ClientLazyTransaction) tx).ensureStarted(ch, sup);
     }
 
     private synchronized CompletableFuture<ClientTransaction> ensureStarted(
             ReliableChannel ch,
-            @Nullable PartitionMapping pm
+            Supplier<PartitionMapping> sup
     ) {
         var tx0 = tx;
 
         if (tx0 != null) {
             return tx0;
         }
+
+        @Nullable PartitionMapping pm = sup.get();
 
         tx0 = ClientTransactions.beginAsync(ch, pm, options, observableTimestamp);
         tx = tx0;
