@@ -226,14 +226,13 @@ public class ClientTransaction implements Transaction {
             w.out().packLong(id);
             if (!isReadOnly && w.clientChannel().protocolContext().isFeatureSupported(TX_DIRECT_MAPPING)) {
                 w.out().packLong(tracker.get().longValue());
-//                w.out().packInt(enlisted.size());
-//                for (Entry<TablePartitionId, CompletableFuture<IgniteBiTuple<String, Long>>> entry : enlisted.entrySet()) {
-//                    w.out().packInt(entry.getKey().tableId());
-//                    w.out().packInt(entry.getKey().partitionId());
-//                    w.out().packString(entry.getValue().getNow(null).get1());
-//                    w.out().packLong(entry.getValue().getNow(null).get2());
-//                }
-                w.out().packInt(0);
+                w.out().packInt(enlisted.size());
+                for (Entry<TablePartitionId, CompletableFuture<IgniteBiTuple<String, Long>>> entry : enlisted.entrySet()) {
+                    w.out().packInt(entry.getKey().tableId());
+                    w.out().packInt(entry.getKey().partitionId());
+                    w.out().packString(entry.getValue().getNow(null).get1());
+                    w.out().packLong(entry.getValue().getNow(null).get2());
+                }
             }
         }, r -> null));
 
