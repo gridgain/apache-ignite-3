@@ -391,13 +391,13 @@ public class ClientTableCommon {
      * @param tx The transaction.
      */
     public static void writeTxMeta(ClientMessagePacker out, @Nullable ClockService clockService, InternalTransaction tx) {
-//        if (tx.remote()) {
-//            // Remote tx carries operation enlistment info.
-//            PendingTxPartitionEnlistment token = tx.enlistedPartition(null);
-//            out.packString(token.primaryNodeConsistentId());
-//            out.packLong(token.consistencyToken());
-//            out.meta(clockService.current());
-//        }
+        if (tx.remote()) {
+            // Remote tx carries operation enlistment info.
+            PendingTxPartitionEnlistment token = tx.enlistedPartition(null);
+            out.packString(token.primaryNodeConsistentId());
+            out.packLong(token.consistencyToken());
+            out.meta(clockService.current());
+        }
     }
 
     /**

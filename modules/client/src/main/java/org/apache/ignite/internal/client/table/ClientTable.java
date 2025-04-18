@@ -634,18 +634,18 @@ public class ClientTable implements Table {
             @Nullable ClientTransaction tx
     ) {
         // Use enlistment meta only for remote transactions.
-//        if (ctx.enlistmentToken != null) {
-//            assert tx != null;
-//            assert ctx.pm != null;
-//
-//            String consistentId = in.in().unpackString();
-//            long token = in.in().unpackLong();
-//
-//            // Finish enlist on first request only.
-//            if (ctx.enlistmentToken == 0) {
-//                tx.tryFinishEnlist(ctx.pm, consistentId, token);
-//            }
-//        }
+        if (ctx.enlistmentToken != null) {
+            assert tx != null;
+            assert ctx.pm != null;
+
+            String consistentId = in.in().unpackString();
+            long token = in.in().unpackLong();
+
+            // Finish enlist on first request only.
+            if (ctx.enlistmentToken == 0) {
+                tx.tryFinishEnlist(ctx.pm, consistentId, token);
+            }
+        }
 
         int schemaVer = in.in().unpackInt();
 
