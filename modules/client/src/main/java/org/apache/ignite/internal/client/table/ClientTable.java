@@ -492,9 +492,8 @@ public class ClientTable implements Table {
 
                         WriteContext ctx = new WriteContext();
                         // Force proxy mode for requests collocated with coordinator to reduce passed enlistment info on commit.
-                        ctx.pm = tx0 != null && forOp != null && forOp.nodeConsistentId().equals(tx0.nodeName()) ? null : forOp;
+                        ctx.pm = forOp;
 
-                        @Nullable PartitionMapping finalForOp = forOp;
                         return ch.serviceAsync(opCode,
                                         (opCh) -> tx0 == null || tx0.isReadOnly() || ctx.pm == null
                                                 || !opCh.protocolContext().isFeatureSupported(TX_DIRECT_MAPPING) ? nullCompletedFuture()
