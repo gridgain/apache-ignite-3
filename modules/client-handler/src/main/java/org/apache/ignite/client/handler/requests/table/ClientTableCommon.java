@@ -391,13 +391,13 @@ public class ClientTableCommon {
      * @param tx The transaction.
      */
     public static void writeTxMeta(ClientMessagePacker out, @Nullable ClockService clockService, InternalTransaction tx) {
-        if (tx.remote()) {
-            // Remote tx carries operation enlistment info.
-            PendingTxPartitionEnlistment token = tx.enlistedPartition(null);
-            out.packString(token.primaryNodeConsistentId());
-            out.packLong(token.consistencyToken());
-            out.meta(clockService.current());
-        }
+//        if (tx.remote()) {
+//            // Remote tx carries operation enlistment info.
+//            PendingTxPartitionEnlistment token = tx.enlistedPartition(null);
+//            out.packString(token.primaryNodeConsistentId());
+//            out.packLong(token.consistencyToken());
+//            out.meta(clockService.current());
+//        }
     }
 
     /**
@@ -434,12 +434,12 @@ public class ClientTableCommon {
         try {
             long id = in.unpackLong();
             if (id == TX_ID_DIRECT) {
-                long token = in.unpackLong();
+                long token = 0; // in.unpackLong();
                 UUID txId = in.unpackUuid();
-                int commitTableId = in.unpackInt();
-                int commitPart = in.unpackInt();
-                UUID coord = in.unpackUuid();
-                long timeout = in.unpackLong();
+                int commitTableId = 1; // in.unpackInt();
+                int commitPart = 1; // in.unpackInt();
+                UUID coord = UUID.randomUUID(); // in.unpackUuid();
+                long timeout = 30000; // in.unpackLong();
 
                 InternalTransaction remote = txManager.beginRemote(txId, new TablePartitionId(commitTableId, commitPart),
                         coord, token, timeout, err -> {

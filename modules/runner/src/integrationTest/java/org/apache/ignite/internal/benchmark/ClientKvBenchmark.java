@@ -70,7 +70,7 @@ public class ClientKvBenchmark extends AbstractMultiNodeBenchmark {
     @Param({"false"})
     private boolean fsync;
 
-    @Param({"64"})
+    @Param({"16"})
     private int partitionCount;
 
     private final AtomicInteger counter = new AtomicInteger();

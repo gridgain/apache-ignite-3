@@ -350,40 +350,42 @@ public class ClientTransaction implements Transaction {
     public CompletableFuture<Void> enlistFuture(ReliableChannel ch, ClientChannel opChannel, WriteContext ctx) {
         // Check if direct mapping is applicable.
         if (ctx.pm != null && ctx.pm.nodeConsistentId().equals(opChannel.protocolContext().clusterNode().name()) && hasCommitPartition()) {
-            if (!enlistPartitionLock.readLock().tryLock()) {
-                throw new TransactionException(TX_ALREADY_FINISHED_ERR, format("Transaction is already finished [tx={}].", this));
-            }
-
-            checkEnlistPossible();
-
-            boolean[] first = {false};
-
-            // TODO FIXME remove new object.
-            TablePartitionId tablePartitionId = new TablePartitionId(ctx.pm.tableId(), ctx.pm.partition());
-
-            CompletableFuture<IgniteBiTuple<String, Long>> fut = enlisted.compute(tablePartitionId, (k, v) -> {
-                if (v == null) {
-                    first[0] = true;
-                    return new CompletableFuture<>();
-                } else {
-                    return v;
-                }
-            });
-
-            enlistPartitionLock.readLock().unlock();
-
-            // Re-check after unlock.
-            checkEnlistPossible();
-
+//            if (!enlistPartitionLock.readLock().tryLock()) {
+//                throw new TransactionException(TX_ALREADY_FINISHED_ERR, format("Transaction is already finished [tx={}].", this));
+//            }
+//
+//            checkEnlistPossible();
+//
+//            boolean[] first = {false};
+//
+//            // TODO FIXME remove new object.
+//            TablePartitionId tablePartitionId = new TablePartitionId(ctx.pm.tableId(), ctx.pm.partition());
+//
+//            CompletableFuture<IgniteBiTuple<String, Long>> fut = enlisted.compute(tablePartitionId, (k, v) -> {
+//                if (v == null) {
+//                    first[0] = true;
+//                    return new CompletableFuture<>();
+//                } else {
+//                    return v;
+//                }
+//            });
+//
+//            enlistPartitionLock.readLock().unlock();
+//
+//            // Re-check after unlock.
+//            checkEnlistPossible();
+//
             ch.inflights().addInflight(txId);
+//
+//            if (first[0]) {
+//                ctx.enlistmentToken = 0L;
+//                // For the first request return completed future.
+//                return nullCompletedFuture();
+//            } else {
+//                return fut.thenAccept(tup -> ctx.enlistmentToken = tup.get2());
+//            }
 
-            if (first[0]) {
-                ctx.enlistmentToken = 0L;
-                // For the first request return completed future.
-                return nullCompletedFuture();
-            } else {
-                return fut.thenAccept(tup -> ctx.enlistmentToken = tup.get2());
-            }
+            ctx.enlistmentToken = 0L;
         }
 
         return nullCompletedFuture();

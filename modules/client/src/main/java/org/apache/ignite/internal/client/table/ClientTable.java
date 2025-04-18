@@ -312,12 +312,12 @@ public class ClientTable implements Table {
 
             if (ctx != null && ctx.enlistmentToken != null) {
                 out.out().packLong(TX_ID_DIRECT); // For direct enlistment, pass 0 for resourceId to distinguish with proxy mode.
-                out.out().packLong(ctx.enlistmentToken);
+                //out.out().packLong(ctx.enlistmentToken);
                 out.out().packUuid(tx0.txId());
-                out.out().packInt(tx0.commitTableId());
-                out.out().packInt(tx0.commitPartition());
-                out.out().packUuid(tx0.coordinatorId());
-                out.out().packLong(tx0.timeout());
+//                out.out().packInt(tx0.commitTableId());
+//                out.out().packInt(tx0.commitPartition());
+//                out.out().packUuid(tx0.coordinatorId());
+//                out.out().packLong(tx0.timeout());
             } else {
                 //noinspection resource
                 if (tx0.channel() != out.clientChannel()) {
@@ -634,18 +634,18 @@ public class ClientTable implements Table {
             @Nullable ClientTransaction tx
     ) {
         // Use enlistment meta only for remote transactions.
-        if (ctx.enlistmentToken != null) {
-            assert tx != null;
-            assert ctx.pm != null;
-
-            String consistentId = in.in().unpackString();
-            long token = in.in().unpackLong();
-
-            // Finish enlist on first request only.
-            if (ctx.enlistmentToken == 0) {
-                tx.tryFinishEnlist(ctx.pm, consistentId, token);
-            }
-        }
+//        if (ctx.enlistmentToken != null) {
+//            assert tx != null;
+//            assert ctx.pm != null;
+//
+//            String consistentId = in.in().unpackString();
+//            long token = in.in().unpackLong();
+//
+//            // Finish enlist on first request only.
+//            if (ctx.enlistmentToken == 0) {
+//                tx.tryFinishEnlist(ctx.pm, consistentId, token);
+//            }
+//        }
 
         int schemaVer = in.in().unpackInt();
 
