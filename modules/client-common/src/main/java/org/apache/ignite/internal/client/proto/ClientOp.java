@@ -202,4 +202,8 @@ public class ClientOp {
     /** Reserved for extensions: max. */
     @SuppressWarnings("unused")
     public static final int RESERVED_EXTENSION_RANGE_END = 2000;
+
+    public static boolean isRead(int opCode) {
+        return opCode == TUPLE_GET || opCode == TUPLE_GET_ALL || opCode == TUPLE_CONTAINS_KEY || opCode == TUPLE_CONTAINS_ALL_KEYS;
+    }
 }

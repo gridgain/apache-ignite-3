@@ -18,12 +18,22 @@
 
 package org.apache.ignite.internal.client;
 
+import java.util.concurrent.CompletableFuture;
+import org.apache.ignite.internal.client.tx.ClientTransaction;
+import org.apache.ignite.internal.hlc.HybridTimestampTracker;
 import org.jetbrains.annotations.Nullable;
 
 /**
  * Write context.
  */
 public class WriteContext {
+    public final HybridTimestampTracker tracker;
+
+    public WriteContext(HybridTimestampTracker tracker) {
+        this.tracker = tracker;
+    }
+
     public @Nullable PartitionMapping pm;
     public @Nullable Long enlistmentToken;
+    public CompletableFuture<ClientTransaction> firstFut;
 }

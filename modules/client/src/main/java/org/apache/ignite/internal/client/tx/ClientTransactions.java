@@ -65,9 +65,17 @@ public class ClientTransactions implements IgniteTransactions {
         return CompletableFuture.completedFuture(new ClientLazyTransaction(ch.observableTimestamp(), options));
     }
 
+    /**
+     * Begins the transaction on any node.
+     *
+     * @param ch Reliable channel.
+     * @param options The options.
+     * @param observableTimestamp The timestamp.
+     *
+     * @return The future.
+     */
     static CompletableFuture<ClientTransaction> beginAsync(
             ReliableChannel ch,
-            @Nullable PartitionMapping pm,
             @Nullable TransactionOptions options,
             HybridTimestampTracker observableTimestamp
     ) {
@@ -80,13 +88,9 @@ public class ClientTransactions implements IgniteTransactions {
                     w.out().packBoolean(readOnly);
                     w.out().packLong(timeout);
                     w.out().packLong(observableTimestamp.get().longValue());
-                    if (!readOnly && w.clientChannel().protocolContext().isFeatureSupported(TX_DIRECT_MAPPING)) {
-                        w.out().packInt(pm == null ? -1 : pm.tableId());
-                        w.out().packInt(pm == null ? -1 : pm.partition());
-                    }
                 },
-                r -> readTx(r, readOnly, pm, observableTimestamp, timeout),
-                pm == null ? null : pm.nodeConsistentId(),
+                r -> readTx(r, readOnly, timeout),
+                null,
                 null,
                 null,
                 false);
@@ -95,19 +99,12 @@ public class ClientTransactions implements IgniteTransactions {
     private static ClientTransaction readTx(
             PayloadInputChannel r,
             boolean isReadOnly,
-            @Nullable PartitionMapping pm,
-            HybridTimestampTracker tracker,
             long timeout
     ) {
         ClientMessageUnpacker in = r.in();
 
         long id = in.unpackLong();
-        if (isReadOnly || !r.clientChannel().protocolContext().isFeatureSupported(TX_DIRECT_MAPPING)) {
-            return new ClientTransaction(r.clientChannel(), id, isReadOnly, EMPTY, null, EMPTY, null, timeout);
-        } else {
-            UUID txId = in.unpackUuid();
-            UUID coordId = in.unpackUuid();
-            return new ClientTransaction(r.clientChannel(), id, isReadOnly, txId, pm, coordId, tracker, timeout);
-        }
+
+        return new ClientTransaction(r.clientChannel(), id, isReadOnly, EMPTY, null, EMPTY, null, timeout);
     }
 }

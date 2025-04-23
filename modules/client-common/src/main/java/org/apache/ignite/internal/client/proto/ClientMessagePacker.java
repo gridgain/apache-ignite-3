@@ -55,6 +55,16 @@ public class ClientMessagePacker implements AutoCloseable {
      */
     private @Nullable Object meta;
 
+    private long resourceId;
+
+    public long resourceId() {
+        return resourceId;
+    }
+
+    public void resourceId(long resourceId) {
+        this.resourceId = resourceId;
+    }
+
     /**
      * Constructor.
      *

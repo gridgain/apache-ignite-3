@@ -20,10 +20,10 @@ package org.apache.ignite.internal.client.tx;
 import static org.apache.ignite.internal.util.CompletableFutures.nullCompletedFuture;
 
 import java.util.concurrent.CompletableFuture;
-import java.util.function.Supplier;
 import org.apache.ignite.internal.client.PartitionMapping;
 import org.apache.ignite.internal.client.ReliableChannel;
 import org.apache.ignite.internal.hlc.HybridTimestampTracker;
+import org.apache.ignite.internal.lang.IgniteBiTuple;
 import org.apache.ignite.tx.Transaction;
 import org.apache.ignite.tx.TransactionException;
 import org.apache.ignite.tx.TransactionOptions;
@@ -135,41 +135,39 @@ public class ClientLazyTransaction implements Transaction {
      *
      * @param tx Transaction.
      * @param ch Channel.
-     * @param sup Partition mapping supplier.
-     * @return Future that will be completed when the transaction is started.
+     * @param pm Partition mapping.
+     * @return Future that will be completed when the transaction is started and the {@code first} flag.
      */
-    public static CompletableFuture<ClientTransaction> ensureStarted(
+    public static IgniteBiTuple<CompletableFuture<ClientTransaction>, Boolean> ensureStarted(
             @Nullable Transaction tx,
             ReliableChannel ch,
-            Supplier<PartitionMapping> sup
+            @Nullable PartitionMapping pm
     ) {
         if (tx == null) {
-            return nullCompletedFuture();
+            return new IgniteBiTuple<>(nullCompletedFuture(), false);
         }
 
         if (!(tx instanceof ClientLazyTransaction)) {
             throw ClientTransaction.unsupportedTxTypeException(tx);
         }
 
-        return ((ClientLazyTransaction) tx).ensureStarted(ch, sup);
+        return ((ClientLazyTransaction) tx).ensureStarted(ch, pm);
     }
 
-    private synchronized CompletableFuture<ClientTransaction> ensureStarted(
+    private synchronized IgniteBiTuple<CompletableFuture<ClientTransaction>, Boolean> ensureStarted(
             ReliableChannel ch,
-            Supplier<PartitionMapping> sup
+            @Nullable PartitionMapping pm
     ) {
         var tx0 = tx;
 
         if (tx0 != null) {
-            return tx0;
+            return new IgniteBiTuple<>(tx0, false);
         }
 
-        @Nullable PartitionMapping pm = sup.get();
-
-        tx0 = ClientTransactions.beginAsync(ch, pm, options, observableTimestamp);
+        tx0 = pm == null ? ClientTransactions.beginAsync(ch, options, observableTimestamp) : new CompletableFuture<>();
         tx = tx0;
 
-        return tx0;
+        return new IgniteBiTuple<>(tx0, pm != null);
     }
 
     /**
