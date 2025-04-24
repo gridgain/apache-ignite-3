@@ -79,7 +79,7 @@ import org.jetbrains.annotations.TestOnly;
  */
 public class HeapLockManager extends AbstractEventProducer<LockEvent, LockEventParameters> implements LockManager {
     /** Table size. */
-    public static final int DEFAULT_SLOTS = 1_048_576;
+    public static final int DEFAULT_SLOTS = 1_048_576 * 6;
 
     public static final String LOCK_MAP_SIZE_PROPERTY_NAME = "lockMapSize";
 
