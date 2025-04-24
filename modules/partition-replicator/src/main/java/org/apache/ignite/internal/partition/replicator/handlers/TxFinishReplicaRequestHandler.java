@@ -35,6 +35,8 @@ import java.util.Map;
 import java.util.Map.Entry;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ForkJoinPool;
 import org.apache.ignite.internal.catalog.CatalogService;
 import org.apache.ignite.internal.hlc.ClockService;
 import org.apache.ignite.internal.hlc.HybridTimestamp;
@@ -223,11 +225,12 @@ public class TxFinishReplicaRequestHandler {
         List<EnlistedPartitionGroup> enlistedPartitionGroups = enlistedPartitions.entrySet().stream()
                 .map(entry -> new EnlistedPartitionGroup(entry.getKey(), entry.getValue().tableIds()))
                 .collect(toList());
-        return finishTransaction(enlistedPartitionGroups, txId, commit, commitTimestamp);
-//                .thenCompose(txResult ->
-//                    txManager.cleanup(replicationGroupId, enlistedPartitions, commit, commitTimestamp, txId)
-//                            .thenApply(v -> txResult)
-//                );
+        return finishTransaction(enlistedPartitionGroups, txId, commit, commitTimestamp)
+                .thenApply(txResult -> {
+                    CompletableFuture.runAsync(() -> txManager.cleanup(replicationGroupId, enlistedPartitions, commit, commitTimestamp, txId));
+
+                    return txResult;
+                });
     }
 
     private static void throwIfSchemaValidationOnCommitFailed(CompatValidationResult validationResult, TransactionResult txResult) {
