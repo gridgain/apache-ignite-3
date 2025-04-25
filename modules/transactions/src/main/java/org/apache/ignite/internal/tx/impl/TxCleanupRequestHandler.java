@@ -123,63 +123,66 @@ public class TxCleanupRequestHandler {
     }
 
     private void processTxCleanup(TxCleanupMessage txCleanupMessage, ClusterNode sender, @Nullable Long correlationId) {
-        assert correlationId != null;
+        NetworkMessage msg = prepareResponse();
+        messagingService.respond(sender, msg, correlationId);
 
-        Map<EnlistedPartitionGroup, CompletableFuture<?>> writeIntentSwitches = new HashMap<>();
-
-        // These cleanups will all be local.
-        @Nullable List<EnlistedPartitionGroupMessage> partitionMessagess = txCleanupMessage.groups();
-
-        if (partitionMessagess != null) {
-            List<EnlistedPartitionGroup> partitions = asPartitionsList(partitionMessagess);
-
-            trackPartitions(
-                    txCleanupMessage.txId(),
-                    partitions.stream().map(EnlistedPartitionGroup::groupId).collect(Collectors.toSet()),
-                    sender
-            );
-
-            for (EnlistedPartitionGroup partition : partitions) {
-                CompletableFuture<Void> future = writeIntentSwitchProcessor.switchLocalWriteIntents(
-                        partition,
-                        txCleanupMessage.txId(),
-                        txCleanupMessage.commit(),
-                        txCleanupMessage.commitTimestamp()
-                ).thenAccept(this::processWriteIntentSwitchResponse);
-
-                writeIntentSwitches.put(partition, future);
-            }
-        }
-        // First trigger the cleanup to properly release the locks if we know all affected partitions on this node.
-        // If the partition collection is empty (likely to be the recovery case)- just run 'release locks'.
-        allOf(writeIntentSwitches.values().toArray(new CompletableFuture<?>[0]))
-                .whenComplete((unused, ex) -> {
-                    releaseTxLocks(txCleanupMessage.txId());
-
-                    remotelyTriggeredResourceRegistry.close(txCleanupMessage.txId());
-
-                    NetworkMessage msg;
-                    if (ex == null) {
-                        msg = prepareResponse();
-                    } else {
-                        msg = prepareErrorResponse(txCleanupMessage.txId(), ex);
-
-                        // Run durable cleanup for the partitions that we failed to cleanup properly.
-                        // No need to wait on this future.
-                        writeIntentSwitches.forEach((groupId, future) -> {
-                            if (future.isCompletedExceptionally()) {
-                                writeIntentSwitchProcessor.switchWriteIntentsWithRetry(
-                                        txCleanupMessage.commit(),
-                                        txCleanupMessage.commitTimestamp(),
-                                        txCleanupMessage.txId(),
-                                        groupId
-                                ).thenAccept(this::processWriteIntentSwitchResponse);
-                            }
-                        });
-                    }
-
-                    messagingService.respond(sender, msg, correlationId);
-                });
+//        assert correlationId != null;
+//
+//        Map<EnlistedPartitionGroup, CompletableFuture<?>> writeIntentSwitches = new HashMap<>();
+//
+//        // These cleanups will all be local.
+//        @Nullable List<EnlistedPartitionGroupMessage> partitionMessagess = txCleanupMessage.groups();
+//
+//        if (partitionMessagess != null) {
+//            List<EnlistedPartitionGroup> partitions = asPartitionsList(partitionMessagess);
+//
+//            trackPartitions(
+//                    txCleanupMessage.txId(),
+//                    partitions.stream().map(EnlistedPartitionGroup::groupId).collect(Collectors.toSet()),
+//                    sender
+//            );
+//
+//            for (EnlistedPartitionGroup partition : partitions) {
+//                CompletableFuture<Void> future = writeIntentSwitchProcessor.switchLocalWriteIntents(
+//                        partition,
+//                        txCleanupMessage.txId(),
+//                        txCleanupMessage.commit(),
+//                        txCleanupMessage.commitTimestamp()
+//                ).thenAccept(this::processWriteIntentSwitchResponse);
+//
+//                writeIntentSwitches.put(partition, future);
+//            }
+//        }
+//        // First trigger the cleanup to properly release the locks if we know all affected partitions on this node.
+//        // If the partition collection is empty (likely to be the recovery case)- just run 'release locks'.
+//        allOf(writeIntentSwitches.values().toArray(new CompletableFuture<?>[0]))
+//                .whenComplete((unused, ex) -> {
+//                    releaseTxLocks(txCleanupMessage.txId());
+//
+//                    remotelyTriggeredResourceRegistry.close(txCleanupMessage.txId());
+//
+//                    NetworkMessage msg;
+//                    if (ex == null) {
+//                        msg = prepareResponse();
+//                    } else {
+//                        msg = prepareErrorResponse(txCleanupMessage.txId(), ex);
+//
+//                        // Run durable cleanup for the partitions that we failed to cleanup properly.
+//                        // No need to wait on this future.
+//                        writeIntentSwitches.forEach((groupId, future) -> {
+//                            if (future.isCompletedExceptionally()) {
+//                                writeIntentSwitchProcessor.switchWriteIntentsWithRetry(
+//                                        txCleanupMessage.commit(),
+//                                        txCleanupMessage.commitTimestamp(),
+//                                        txCleanupMessage.txId(),
+//                                        groupId
+//                                ).thenAccept(this::processWriteIntentSwitchResponse);
+//                            }
+//                        });
+//                    }
+//
+//                    messagingService.respond(sender, msg, correlationId);
+//                });
     }
 
     private void releaseTxLocks(UUID txId) {
