@@ -401,23 +401,24 @@ public class StorageUpdateHandler {
         // Or the cleanup might have been done asynchronously.
         // However, we still need to run `onApplication` if it is not null, e.g. called in TxCleanupCommand handler in PartitionListener
         // to update indexes. In this case it should be executed under `runConsistently`.
-        if (!pendingRowIds.isEmpty() || onApplication != null) {
-            storage.runConsistently(locker -> {
-                pendingRowIds.forEach(locker::lock);
 
-                if (commit) {
-                    performCommitWrite(txId, pendingRowIds, commitTimestamp);
-                } else {
-                    performAbortWrite(txId, pendingRowIds, indexIds);
-                }
-
-                if (onApplication != null) {
-                    onApplication.run();
-                }
-
-                return null;
-            });
-        }
+//        if (!pendingRowIds.isEmpty() || onApplication != null) {
+//            storage.runConsistently(locker -> {
+//                pendingRowIds.forEach(locker::lock);
+//
+//                if (commit) {
+//                    performCommitWrite(txId, pendingRowIds, commitTimestamp);
+//                } else {
+//                    performAbortWrite(txId, pendingRowIds, indexIds);
+//                }
+//
+//                if (onApplication != null) {
+//                    onApplication.run();
+//                }
+//
+//                return null;
+//            });
+//        }
     }
 
     /**

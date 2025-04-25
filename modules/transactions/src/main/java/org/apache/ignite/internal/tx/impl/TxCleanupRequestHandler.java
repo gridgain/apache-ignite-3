@@ -31,6 +31,7 @@ import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.Executor;
 import java.util.stream.Collectors;
 import org.apache.ignite.internal.hlc.ClockService;
 import org.apache.ignite.internal.network.ChannelType;
@@ -79,6 +80,8 @@ public class TxCleanupRequestHandler {
     /** The map of txId to a cleanup context, tracking replicated write intents. */
     private final ConcurrentMap<UUID, CleanupContext> writeIntentsReplicated = new ConcurrentHashMap<>();
 
+    private final Executor partitionOperationsExecutor;
+
     /**
      * The constructor.
      *
@@ -87,26 +90,29 @@ public class TxCleanupRequestHandler {
      * @param clockService Clock service.
      * @param writeIntentSwitchProcessor A cleanup processor.
      * @param resourcesRegistry Resources registry.
+     * @param partitionOperationsExecutor Partition executor.
      */
     public TxCleanupRequestHandler(
             MessagingService messagingService,
             LockManager lockManager,
             ClockService clockService,
             WriteIntentSwitchProcessor writeIntentSwitchProcessor,
-            RemotelyTriggeredResourceRegistry resourcesRegistry
+            RemotelyTriggeredResourceRegistry resourcesRegistry,
+            Executor partitionOperationsExecutor
     ) {
         this.messagingService = messagingService;
         this.lockManager = lockManager;
         this.clockService = clockService;
         this.writeIntentSwitchProcessor = writeIntentSwitchProcessor;
         this.remotelyTriggeredResourceRegistry = resourcesRegistry;
+        this.partitionOperationsExecutor = partitionOperationsExecutor;
     }
 
     /**
      * Starts the processor.
      */
     public void start() {
-        messagingService.addMessageHandler(TxMessageGroup.class, (msg, sender, correlationId) -> {
+        messagingService.addMessageHandler(TxMessageGroup.class, (msg) -> partitionOperationsExecutor, (msg, sender, correlationId) -> {
             if (msg instanceof TxCleanupMessage) {
                 processTxCleanup((TxCleanupMessage) msg, sender, correlationId);
             }

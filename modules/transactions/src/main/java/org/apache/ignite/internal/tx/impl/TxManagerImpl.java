@@ -395,7 +395,8 @@ public class TxManagerImpl implements TxManager, NetworkMessageHandler, SystemVi
                 lockManager,
                 clockService,
                 writeIntentSwitchProcessor,
-                resourcesRegistry
+                resourcesRegistry,
+                partitionOperationsExecutor
         );
 
         txCleanupRequestSender =
