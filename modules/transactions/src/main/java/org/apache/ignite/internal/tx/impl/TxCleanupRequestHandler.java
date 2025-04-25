@@ -123,6 +123,10 @@ public class TxCleanupRequestHandler {
     }
 
     private void processTxCleanup(TxCleanupMessage txCleanupMessage, ClusterNode sender, @Nullable Long correlationId) {
+        releaseTxLocks(txCleanupMessage.txId());
+
+        //remotelyTriggeredResourceRegistry.close(txCleanupMessage.txId());
+
         NetworkMessage msg = prepareResponse();
         messagingService.respond(sender, msg, correlationId);
 
