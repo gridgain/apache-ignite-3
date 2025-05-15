@@ -38,6 +38,7 @@ import static org.apache.ignite.internal.util.CompletableFutures.nullCompletedFu
 
 import java.io.Serializable;
 import java.lang.reflect.Field;
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
@@ -71,6 +72,7 @@ import org.apache.ignite.internal.configuration.tree.ConstructableTreeNode;
 import org.apache.ignite.internal.configuration.tree.InnerNode;
 import org.apache.ignite.internal.configuration.tree.NamedListNode;
 import org.apache.ignite.internal.configuration.util.ConfigurationUtil;
+import org.apache.ignite.internal.configuration.util.LegacyNamesTrackingConfigurationVisitor;
 import org.apache.ignite.internal.configuration.validation.ConfigurationValidator;
 import org.apache.ignite.internal.lang.IgniteInternalException;
 import org.apache.ignite.internal.lang.NodeStoppingException;
@@ -321,6 +323,32 @@ public abstract class ConfigurationChanger implements DynamicConfigurationChange
         persistModifiedConfiguration();
 
         started.set(true);
+    }
+
+    private static Map<String, Serializable> removeLegacyNames(
+            SuperRoot superRoot,
+            Map<String, ? extends Serializable> storageData,
+            Map<String, ? extends Serializable> allChanges
+    ) {
+        Map<String, Serializable> res = new HashMap<>(allChanges);
+
+        superRoot.traverseChildren(new LegacyNamesTrackingConfigurationVisitor<>() {
+            @Override
+            protected Object doVisitLeafNode(Field field, String key, Serializable val) {
+                var path = new ArrayList<String>();
+
+                processPath(path, (legacyPath, newPath) -> {
+                    if (storageData.containsKey(legacyPath)) {
+                        res.put(newPath, storageData.get(legacyPath));
+                        res.put(legacyPath, null);
+                    }
+                });
+
+                return null;
+            }
+        }, true);
+
+        return res;
     }
 
     /**
@@ -645,6 +673,8 @@ public abstract class ConfigurationChanger implements DynamicConfigurationChange
                 }
             }
 
+            allChanges = removeLegacyNames(curRoots, localRoots.data.values(), allChanges);
+
             if (allChanges.isEmpty() && onStartup) {
                 // We don't want an empty storage update if this is the initialization changer.
                 return nullCompletedFuture();
@@ -704,7 +734,9 @@ public abstract class ConfigurationChanger implements DynamicConfigurationChange
             SuperRoot newSuperRoot = oldSuperRoot.copy();
             SuperRoot newSuperNoDefaults = oldSuperRootNoDefaults.copy();
 
-            Map<String, ?> dataValuesPrefixMap = toPrefixMap(changedValues);
+            Map<String, Serializable> changedValuesNoLegacy = ignoreLegacy(changedValues, oldStorageRoots);
+
+            Map<String, ?> dataValuesPrefixMap = toPrefixMap(changedValuesNoLegacy);
 
             compressDeletedEntries(dataValuesPrefixMap);
 
@@ -736,6 +768,23 @@ public abstract class ConfigurationChanger implements DynamicConfigurationChange
                 }
             });
         };
+    }
+
+    private static Map<String, Serializable> ignoreLegacy(Map<String, ? extends Serializable> changedValues, StorageRoots oldStorageRoots) {
+        var res = new HashMap<String, Serializable>(changedValues);
+
+        oldStorageRoots.roots.traverseChildren(new LegacyNamesTrackingConfigurationVisitor<>() {
+            @Override
+            protected Object doVisitLeafNode(Field field, String key, Serializable val) {
+                var path = new ArrayList<String>();
+
+                processPath(path, (legacyPath, newPath) -> res.remove(legacyPath));
+
+                return null;
+            }
+        }, true);
+
+        return res;
     }
 
     private static Data mergeData(Data currentData, Data delta) {
