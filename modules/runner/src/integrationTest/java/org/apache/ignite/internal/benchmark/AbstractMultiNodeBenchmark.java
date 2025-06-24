@@ -156,12 +156,21 @@ public class AbstractMultiNodeBenchmark {
                         "field10  varchar(100)"
                 ),
                 List.of("ycsb_key"),
-                List.of(),
-                ZONE_NAME
+                List.of()
         );
     }
 
-    protected static void createTable(String tableName, List<String> columns, List<String> primaryKeys, List<String> colocationKeys, String zoneName) {
+    protected static void createTable(String tableName, List<String> columns, List<String> primaryKeys, List<String> colocationKeys) {
+        createTable(tableName, columns, primaryKeys, colocationKeys, ZONE_NAME);
+    }
+
+    protected static void createTable(
+            String tableName,
+            List<String> columns,
+            List<String> primaryKeys,
+            List<String> colocationKeys,
+            String zoneName
+    ) {
         var createTableStatement = "CREATE TABLE IF NOT EXISTS " + tableName + "(\n";
 
         createTableStatement += String.join(",\n", columns);
