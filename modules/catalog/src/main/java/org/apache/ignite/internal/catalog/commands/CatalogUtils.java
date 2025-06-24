@@ -805,7 +805,7 @@ public class CatalogUtils {
     // default zone auto adjust scale up timeout is set to 5 seconds. If colocation is disabled tests usually create tables
     // after all nodes already started meaning that tables are created on stable topology and usually doesn't assume any rebalances at all.
     public static int defaultZoneDefaultAutoAdjustScaleUpTimeoutSeconds(boolean colocationEnabled) {
-        return colocationEnabled ? 5 : 0;
+        return /*colocationEnabled ? 5 :*/ 0;
     }
 
     /**
