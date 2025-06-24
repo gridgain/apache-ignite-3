@@ -30,12 +30,12 @@ import org.apache.ignite.Ignite;
 import org.apache.ignite.IgniteServer;
 import org.apache.ignite.InitParameters;
 import org.apache.ignite.internal.app.IgniteImpl;
-import org.apache.ignite.internal.catalog.CatalogManagerImpl;
 import org.apache.ignite.internal.catalog.commands.CatalogUtils;
 import org.apache.ignite.internal.failure.handlers.configuration.StopNodeOrHaltFailureHandlerConfigurationSchema;
 import org.apache.ignite.internal.lang.IgniteStringFormatter;
 import org.apache.ignite.internal.testframework.TestIgnitionManager;
 import org.apache.ignite.internal.util.IgniteUtils;
+import org.apache.ignite.internal.util.StringUtils;
 import org.apache.ignite.sql.ResultSet;
 import org.apache.ignite.sql.SqlRow;
 import org.apache.ignite.table.RecordView;
@@ -136,7 +136,7 @@ public class AbstractMultiNodeBenchmark {
                 ),
                 List.of("ycsb_key"),
                 List.of(),
-                CatalogManagerImpl.DEFAULT_ZONE_NAME
+                null
         );
     }
 
@@ -180,7 +180,9 @@ public class AbstractMultiNodeBenchmark {
             createTableStatement += "\nCOLOCATE BY (" + String.join(", ", colocationKeys) + ")";
         }
 
-        createTableStatement += "\nZONE " + zoneName;
+        if (!StringUtils.nullOrEmpty(zoneName)) {
+            createTableStatement += "\nZONE " + zoneName;
+        }
 
         try (ResultSet<SqlRow> rs = publicIgnite.sql().execute(null, createTableStatement)) {
             // No-op.
