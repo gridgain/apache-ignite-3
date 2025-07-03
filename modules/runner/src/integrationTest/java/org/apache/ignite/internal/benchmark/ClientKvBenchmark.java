@@ -19,11 +19,14 @@ package org.apache.ignite.internal.benchmark;
 
 import static org.apache.ignite.internal.util.IgniteUtils.closeAll;
 
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.apache.ignite.client.IgniteClient;
 import org.apache.ignite.internal.client.table.ClientTable;
-import org.apache.ignite.internal.lang.IgniteSystemProperties;
+import org.apache.ignite.internal.util.CompletableFutures;
 import org.apache.ignite.table.KeyValueView;
 import org.apache.ignite.table.Tuple;
 import org.apache.ignite.tx.Transaction;
@@ -55,8 +58,6 @@ import org.openjdk.jmh.runner.options.OptionsBuilder;
 @BenchmarkMode(Mode.Throughput)
 @OutputTimeUnit(TimeUnit.SECONDS)
 public class ClientKvBenchmark extends AbstractMultiNodeBenchmark {
-    private final Tuple tuple = Tuple.create();
-
     protected IgniteClient client;
 
     private KeyValueView<Tuple, Tuple> kvView;
@@ -64,7 +65,7 @@ public class ClientKvBenchmark extends AbstractMultiNodeBenchmark {
     @Param({"0"})
     private int offset; // 1073741824 for second client to ensure unique keys
 
-    @Param({"5"})
+    @Param({"1", "10"})
     private int batch;
 
     @Param({"false"})
@@ -72,6 +73,18 @@ public class ClientKvBenchmark extends AbstractMultiNodeBenchmark {
 
     @Param({"32"})
     private int partitionCount;
+
+    @Param({"100"})
+    private int fieldLength;
+
+    @Param({"uniquePrefix"/*, "uniquePostfix"*/})
+    private String fieldValueGeneration;
+
+    @Param({"false", "true"})
+    private boolean zoneBasedReplication;
+
+    @Param({/*"false",*/ "true"})
+    private boolean withTx;
 
     private final AtomicInteger counter = new AtomicInteger();
 
@@ -83,8 +96,9 @@ public class ClientKvBenchmark extends AbstractMultiNodeBenchmark {
 
     @Override
     public void nodeSetUp() throws Exception {
-        System.setProperty(IgniteSystemProperties.IGNITE_SKIP_REPLICATION_IN_BENCHMARK, "false");
-        System.setProperty(IgniteSystemProperties.IGNITE_SKIP_STORAGE_UPDATE_IN_BENCHMARK, "false");
+        System.setProperty("IGNITE_ZONE_BASED_REPLICATION", Boolean.toString(zoneBasedReplication));
+//        System.setProperty(IgniteSystemProperties.IGNITE_SKIP_REPLICATION_IN_BENCHMARK, "false");
+//        System.setProperty(IgniteSystemProperties.IGNITE_SKIP_STORAGE_UPDATE_IN_BENCHMARK, "false");
         super.nodeSetUp();
     }
 
@@ -93,13 +107,27 @@ public class ClientKvBenchmark extends AbstractMultiNodeBenchmark {
      */
     @Setup
     public void setUp() {
-        for (int i = 1; i < 11; i++) {
-            tuple.set("field" + i, FIELD_VAL);
-        }
-
         client = IgniteClient.builder().addresses(addresses()).build();
         ClientTable table = (ClientTable) client.tables().table(TABLE_NAME);
         kvView = table.keyValueView();
+    }
+
+    private Tuple valueTuple(int id) {
+        String formattedString = String.format("%" + (fieldValueGeneration.equals("uniquePrefix") ? '-' : '0') + fieldLength + "d", id);
+
+        String fieldVal = formattedString.length() > fieldLength ? formattedString.substring(0, fieldLength) : formattedString;
+
+        return Tuple.create()
+                .set("field1", fieldVal)
+                .set("field2", fieldVal)
+                .set("field3", fieldVal)
+                .set("field4", fieldVal)
+                .set("field5", fieldVal)
+                .set("field6", fieldVal)
+                .set("field7", fieldVal)
+                .set("field8", fieldVal)
+                .set("field9", fieldVal)
+                .set("field10", fieldVal);
     }
 
     @Override
@@ -113,12 +141,26 @@ public class ClientKvBenchmark extends AbstractMultiNodeBenchmark {
      */
     @Benchmark
     public void upsert() {
-        Transaction tx = client.transactions().begin();
-        for (int i = 0; i < batch; i++) {
-            Tuple key = Tuple.create().set("ycsb_key", nextId());
-            kvView.put(tx, key, tuple);
+        Transaction tx = withTx ? client.transactions().begin() : null;
+
+        List<CompletableFuture<Void>> futs = new ArrayList<>();
+
+        for (int i = 0; i < batch - 1; i++) {
+            int id = nextId();
+
+            CompletableFuture<Void> fut = kvView.putAsync(tx, Tuple.create().set("ycsb_key", id), valueTuple(id));
+            futs.add(fut);
         }
-        tx.commit();
+
+        CompletableFutures.allOf(futs).join();
+
+        int id = nextId();
+
+        kvView.put(tx, Tuple.create().set("ycsb_key", id), valueTuple(id));
+
+        if (withTx) {
+            tx.commit();
+        }
     }
 
     private int nextId() {
@@ -147,7 +189,7 @@ public class ClientKvBenchmark extends AbstractMultiNodeBenchmark {
 
     @Override
     protected int nodes() {
-        return 2;
+        return 1;
     }
 
     @Override

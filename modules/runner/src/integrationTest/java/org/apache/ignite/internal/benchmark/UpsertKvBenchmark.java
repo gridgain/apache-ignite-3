@@ -27,6 +27,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import org.apache.ignite.internal.util.CompletableFutures;
 import org.apache.ignite.table.KeyValueView;
 import org.apache.ignite.table.Tuple;
+import org.apache.ignite.tx.Transaction;
 import org.openjdk.jmh.annotations.Benchmark;
 import org.openjdk.jmh.annotations.BenchmarkMode;
 import org.openjdk.jmh.annotations.Fork;
@@ -59,13 +60,13 @@ public class UpsertKvBenchmark extends AbstractMultiNodeBenchmark {
 
     private static KeyValueView<Tuple, Tuple> kvView;
 
-    @Param({"1"})
+    @Param({"1", "10"})
     private int batch;
 
     @Param({"false"})
     private boolean fsync;
 
-    @Param({"64"})
+    @Param({"32"})
     private int partitionCount;
 
     @Param({"0", "10"})
@@ -82,6 +83,9 @@ public class UpsertKvBenchmark extends AbstractMultiNodeBenchmark {
 
     @Param({"false", "true"})
     private boolean zoneBasedReplication;
+
+    @Param({"false", "true"})
+    private boolean withTx;
 
     private static final AtomicInteger COUNTER = new AtomicInteger();
 
@@ -140,12 +144,14 @@ public class UpsertKvBenchmark extends AbstractMultiNodeBenchmark {
      */
     @Benchmark
     public void upsert() {
+        Transaction tx = withTx ? igniteImpl.transactions().begin() : null;
+
         List<CompletableFuture<Void>> futs = new ArrayList<>();
 
         for (int i = 0; i < batch - 1; i++) {
             int id = nextId();
 
-            CompletableFuture<Void> fut = kvView.putAsync(null, Tuple.create().set("ycsb_key", id), valueTuple(id));
+            CompletableFuture<Void> fut = kvView.putAsync(tx, Tuple.create().set("ycsb_key", id), valueTuple(id));
             futs.add(fut);
         }
 
@@ -153,7 +159,11 @@ public class UpsertKvBenchmark extends AbstractMultiNodeBenchmark {
 
         int id = nextId();
 
-        kvView.put(null, Tuple.create().set("ycsb_key", id), valueTuple(id));
+        kvView.put(tx, Tuple.create().set("ycsb_key", id), valueTuple(id));
+
+        if (withTx) {
+            tx.commit();
+        }
     }
 
     private int nextId() {

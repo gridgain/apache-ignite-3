@@ -87,8 +87,18 @@ public class SelectBenchmark extends AbstractMultiNodeBenchmark {
 
     private final TransactionOptions readOnlyTransactionOptions = new TransactionOptions().readOnly(true);
 
-    @Param({"1", "2", "3"})
+    @Param({"false", "true"})
+    private boolean zoneBasedReplication;
+
+    @Param({"1"/*, "2", "3"*/})
     private int clusterSize;
+
+    @Override
+    public void nodeSetUp() throws Exception {
+        System.setProperty("IGNITE_ZONE_BASED_REPLICATION", Boolean.toString(zoneBasedReplication));
+
+        super.nodeSetUp();
+    }
 
     /**
      * Fills the table with data.
