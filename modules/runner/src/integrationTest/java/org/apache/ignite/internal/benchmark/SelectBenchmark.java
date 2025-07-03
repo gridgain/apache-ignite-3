@@ -20,6 +20,7 @@ package org.apache.ignite.internal.benchmark;
 import static org.apache.ignite.internal.util.IgniteUtils.closeAll;
 
 import java.io.IOException;
+import java.nio.file.Path;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.PreparedStatement;
@@ -28,6 +29,7 @@ import java.sql.SQLException;
 import java.util.Iterator;
 import java.util.Random;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
 import org.apache.ignite.client.IgniteClient;
 import org.apache.ignite.internal.sql.engine.AsyncSqlCursor;
@@ -241,7 +243,7 @@ public class SelectBenchmark extends AbstractMultiNodeBenchmark {
      *
      * <p>Holds {@link IgniteSql}.
      */
-    @State(Scope.Benchmark)
+    @State(Scope.Thread)
     public static class SqlState {
         private final IgniteSql sql = publicIgnite.sql();
 
@@ -254,7 +256,7 @@ public class SelectBenchmark extends AbstractMultiNodeBenchmark {
      * Benchmark state for {@link #sqlGetInternalScript(SqlInternalApiState, Blackhole)} and
      * {@link #sqlGetInternal(SqlInternalApiState, Blackhole)}.
      */
-    @State(Scope.Benchmark)
+    @State(Scope.Thread)
     public static class SqlInternalApiState {
         private final SqlProperties properties = new SqlProperties()
                 .allowedQueryTypes(SqlQueryType.SINGLE_STMT_TYPES);
@@ -296,7 +298,7 @@ public class SelectBenchmark extends AbstractMultiNodeBenchmark {
      *
      * <p>Holds {@link IgniteClient} and {@link IgniteSql}.
      */
-    @State(Scope.Benchmark)
+    @State(Scope.Thread)
     public static class SqlThinState {
         private IgniteClient client;
         private IgniteSql sql;
@@ -329,7 +331,7 @@ public class SelectBenchmark extends AbstractMultiNodeBenchmark {
      *
      * <p>Holds {@link Connection} and {@link PreparedStatement}.
      */
-    @State(Scope.Benchmark)
+    @State(Scope.Thread)
     public static class JdbcState {
         Connection conn;
 
@@ -361,7 +363,7 @@ public class SelectBenchmark extends AbstractMultiNodeBenchmark {
      *
      * <p>Holds {@link IgniteClient} and {@link KeyValueView} for the table.
      */
-    @State(Scope.Benchmark)
+    @State(Scope.Thread)
     public static class KvThinState {
         private IgniteClient client;
         private KeyValueView<Tuple, Tuple> kvView;
@@ -389,6 +391,11 @@ public class SelectBenchmark extends AbstractMultiNodeBenchmark {
     protected int nodes() {
         return clusterSize;
     }
+
+//    @Override
+//    protected Path workDir() throws Exception {
+//        return Path.of("D:", "tmpDirPrefix" + ThreadLocalRandom.current().nextInt());
+//    }
 }
 
 
