@@ -69,11 +69,11 @@ import org.openjdk.jmh.runner.options.OptionsBuilder;
  */
 @State(Scope.Benchmark)
 @Fork(1)
-@Threads(1)
+@Threads(32)
 @Warmup(iterations = 10, time = 2)
 @Measurement(iterations = 20, time = 2)
-@BenchmarkMode(Mode.AverageTime)
-@OutputTimeUnit(TimeUnit.MICROSECONDS)
+@BenchmarkMode(Mode.Throughput)
+@OutputTimeUnit(TimeUnit.SECONDS)
 @SuppressWarnings({"WeakerAccess", "unused"})
 public class SelectBenchmark extends AbstractMultiNodeBenchmark {
     private static final int TABLE_SIZE = 30_000;
@@ -86,6 +86,9 @@ public class SelectBenchmark extends AbstractMultiNodeBenchmark {
     private IgniteTransactions transactions;
 
     private final TransactionOptions readOnlyTransactionOptions = new TransactionOptions().readOnly(true);
+
+    @Param({"32"})
+    private int partitionCount;
 
     @Param({"false", "true"})
     private boolean zoneBasedReplication;
@@ -119,6 +122,11 @@ public class SelectBenchmark extends AbstractMultiNodeBenchmark {
         }
 
         transactions = publicIgnite.transactions();
+    }
+
+    @Override
+    protected int partitionCount() {
+        return partitionCount;
     }
 
     /**
