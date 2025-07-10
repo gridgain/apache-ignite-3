@@ -55,6 +55,7 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executor;
 import java.util.concurrent.atomic.AtomicLong;
 import org.apache.ignite.client.BasicAuthenticator;
+import org.apache.ignite.client.IgniteClient;
 import org.apache.ignite.client.IgniteClientAuthenticator;
 import org.apache.ignite.client.IgniteClientConfiguration;
 import org.apache.ignite.client.SslConfiguration;
@@ -860,6 +861,10 @@ public class JdbcConnection implements Connection {
      */
     public JdbcQueryEventHandler handler() {
         return handler;
+    }
+
+    public IgniteClient client() {
+        return client;
     }
 
     /** Returns an identifier of the connection. */

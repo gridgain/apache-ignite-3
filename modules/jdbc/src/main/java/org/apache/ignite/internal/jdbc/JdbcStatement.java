@@ -20,7 +20,6 @@ package org.apache.ignite.internal.jdbc;
 import static java.sql.ResultSet.CONCUR_READ_ONLY;
 import static java.sql.ResultSet.FETCH_FORWARD;
 import static java.sql.ResultSet.TYPE_FORWARD_ONLY;
-import static org.apache.ignite.internal.jdbc.JdbcResultSet.createTransformer;
 import static org.apache.ignite.internal.util.ArrayUtils.INT_EMPTY_ARRAY;
 
 import java.sql.BatchUpdateException;
@@ -35,21 +34,18 @@ import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.ExecutionException;
-import java.util.function.Function;
-import org.apache.ignite.internal.binarytuple.BinaryTupleReader;
 import org.apache.ignite.internal.jdbc.proto.IgniteQueryErrorCode;
-import org.apache.ignite.internal.jdbc.proto.JdbcQueryCursorHandler;
 import org.apache.ignite.internal.jdbc.proto.JdbcStatementType;
 import org.apache.ignite.internal.jdbc.proto.SqlStateCode;
 import org.apache.ignite.internal.jdbc.proto.event.JdbcBatchExecuteRequest;
 import org.apache.ignite.internal.jdbc.proto.event.JdbcBatchExecuteResult;
-import org.apache.ignite.internal.jdbc.proto.event.JdbcColumnMeta;
 import org.apache.ignite.internal.jdbc.proto.event.JdbcQueryCancelResult;
 import org.apache.ignite.internal.jdbc.proto.event.JdbcQueryExecuteRequest;
-import org.apache.ignite.internal.jdbc.proto.event.JdbcQuerySingleResult;
 import org.apache.ignite.internal.jdbc.proto.event.Response;
 import org.apache.ignite.internal.util.ArrayUtils;
 import org.apache.ignite.internal.util.CollectionUtils;
+import org.apache.ignite.sql.IgniteSql;
+import org.apache.ignite.sql.SqlRow;
 import org.jetbrains.annotations.Nullable;
 
 /**
@@ -81,7 +77,7 @@ public class JdbcStatement implements Statement {
     private int pageSize = DFLT_PAGE_SIZE;
 
     /** Result sets. {@code null} represents final result set (no more results are available). */
-    private volatile List<@Nullable JdbcResultSet> resSets;
+    private volatile List<@Nullable JdbcResultSet2> resSets;
 
     /** Batch. */
     private List<String> batch;
@@ -147,35 +143,45 @@ public class JdbcStatement implements Statement {
 
         JdbcQueryExecuteResponse res;
 
+        IgniteSql sqlClient = conn.client().sql();
+
+        org.apache.ignite.sql.ResultSet<SqlRow> irs;
+
         try {
-            res = (JdbcQueryExecuteResponse) conn.handler().queryAsync(conn.connectionId(), req).get();
-        } catch (InterruptedException e) {
-            throw new SQLException("Thread was interrupted.", e);
-        } catch (ExecutionException e) {
-            throw toSqlException(e);
-        } catch (CancellationException e) {
+            irs =  sqlClient.execute(null, sql, args);
+
+//            while (irs.hasNext()) {
+//
+//            }
+            //res = (JdbcQueryExecuteResponse) conn.handler().queryAsync(conn.connectionId(), req).get();
+        }
+//        catch (InterruptedException e) {
+//            throw new SQLException("Thread was interrupted.", e);
+//        }
+//        catch (ExecutionException e) {
+//            throw toSqlException(e);
+//        }
+        catch (CancellationException e) {
             throw new SQLException("Query execution canceled.", SqlStateCode.QUERY_CANCELLED, e);
         }
 
-        if (!res.success()) {
-            throw IgniteQueryErrorCode.createJdbcSqlException(res.err(), res.status());
-        }
-
-        JdbcQuerySingleResult executeResult = res.result();
-
+//        if (!res.success()) {
+//            throw IgniteQueryErrorCode.createJdbcSqlException(res.err(), res.status());
+//        }
+//
+//        JdbcQuerySingleResult executeResult = res.result();
+//
         resSets = new ArrayList<>();
+//
+//        JdbcQueryCursorHandler handler = new JdbcClientQueryCursorHandler(res.getChannel());
+//
+//        List<JdbcColumnMeta> meta = executeResult.meta();
+//
+//        Function<BinaryTupleReader, List<Object>> transformer = meta != null ? createTransformer(meta) : null;
+//
+//        int colCount = meta != null ? meta.size() : 0;
 
-        JdbcQueryCursorHandler handler = new JdbcClientQueryCursorHandler(res.getChannel());
-
-        List<JdbcColumnMeta> meta = executeResult.meta();
-
-        Function<BinaryTupleReader, List<Object>> transformer = meta != null ? createTransformer(meta) : null;
-
-        int colCount = meta != null ? meta.size() : 0;
-
-        resSets.add(new JdbcResultSet(handler, this, executeResult.cursorId(), pageSize, !executeResult.hasMoreData(),
-                executeResult.items(), meta, executeResult.hasResultSet(), executeResult.hasNextResult(),
-                executeResult.updateCount(), closeOnCompletion, colCount, transformer));
+        resSets.add(new JdbcResultSet2(this, irs));
     }
 
     /** {@inheritDoc} */
@@ -415,7 +421,7 @@ public class JdbcStatement implements Statement {
             return null;
         }
 
-        @Nullable JdbcResultSet rs = resSets.get(curRes);
+        @Nullable JdbcResultSet2 rs = resSets.get(curRes);
 
         if (rs == null || !rs.hasResultSet()) {
             return null;
@@ -433,7 +439,7 @@ public class JdbcStatement implements Statement {
             return -1;
         }
 
-        @Nullable JdbcResultSet rs = resSets.get(curRes);
+        @Nullable JdbcResultSet2 rs = resSets.get(curRes);
 
         if (rs == null || rs.hasResultSet()) {
             return -1;
@@ -474,7 +480,7 @@ public class JdbcStatement implements Statement {
             return false;
         }
 
-        JdbcResultSet nextResultSet;
+        JdbcResultSet2 nextResultSet;
         SQLException exceptionally = null;
 
         try {
@@ -674,7 +680,7 @@ public class JdbcStatement implements Statement {
         closeOnCompletion = true;
 
         if (resSets != null) {
-            for (JdbcResultSet rs : resSets) {
+            for (JdbcResultSet2 rs : resSets) {
                 if (rs != null) {
                     rs.closeStatement(true);
                 }
@@ -732,14 +738,14 @@ public class JdbcStatement implements Statement {
      * @throws SQLException On error.
      */
     void closeResults() throws SQLException {
-        @Nullable JdbcResultSet last = null;
+        @Nullable JdbcResultSet2 last = null;
 
         if (resSets != null) {
-            JdbcResultSet lastRs = resSets.get(resSets.size() - 1);
+            JdbcResultSet2 lastRs = resSets.get(resSets.size() - 1);
             boolean allFetched = lastRs == null || (lastRs.isClosed() && !lastRs.holdsResources());
 
             if (allFetched) {
-                for (JdbcResultSet rs : resSets) {
+                for (JdbcResultSet2 rs : resSets) {
                     if (rs != null) {
                         rs.close0(true);
                     }
@@ -772,7 +778,7 @@ public class JdbcStatement implements Statement {
         boolean allRsClosed = true;
 
         if (resSets != null) {
-            for (JdbcResultSet rs : resSets) {
+            for (JdbcResultSet2 rs : resSets) {
                 if (rs != null && !rs.isClosed()) {
                     allRsClosed = false;
                     break;
