@@ -21,6 +21,7 @@ import static java.util.Collections.emptyList;
 import static java.util.Comparator.comparing;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.containsString;
+import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.startsWith;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -64,6 +65,7 @@ import org.apache.ignite.lang.ErrorGroups;
 import org.apache.ignite.lang.ErrorGroups.Transactions;
 import org.apache.ignite.lang.IgniteException;
 import org.apache.ignite.network.ClusterNode;
+import org.apache.ignite.sql.IgniteSql;
 import org.apache.ignite.sql.ResultSet;
 import org.apache.ignite.sql.SqlRow;
 import org.apache.ignite.table.KeyValueView;
@@ -954,6 +956,29 @@ public class ItThinClientTransactionsTest extends ItAbstractThinClientTest {
         assertTrue(Tuple.equals(v2, kvView.get(tx, k2)));
 
         tx.commit();
+    }
+
+    @Test
+    void testX() {
+        ResultSet<SqlRow> rs = client().sql().execute(null, "CREATE TABLE T1(ID INT PRIMARY KEY, VAL INT)");
+
+        rs.close();
+
+        Transaction tx = client().transactions().begin();
+
+        IgniteSql sql = client().sql();
+
+        for (int i = 0; i < 10; i++) {
+            rs = sql.execute(tx, "INSERT INTO T1 VALUES (?, ?)", i, i);
+
+            rs.close();
+        }
+
+        rs = sql.execute(tx, "SELECT count(*) FROM T1");
+
+        assertTrue(rs.hasNext());
+
+        assertThat(rs.next().longValue(0), is(10L));
     }
 
     @AfterEach

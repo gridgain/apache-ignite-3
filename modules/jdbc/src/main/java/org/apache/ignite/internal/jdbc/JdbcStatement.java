@@ -20,6 +20,7 @@ package org.apache.ignite.internal.jdbc;
 import static java.sql.ResultSet.CONCUR_READ_ONLY;
 import static java.sql.ResultSet.FETCH_FORWARD;
 import static java.sql.ResultSet.TYPE_FORWARD_ONLY;
+import static org.apache.ignite.internal.jdbc.JdbcResultSet.createTransformer;
 import static org.apache.ignite.internal.util.ArrayUtils.INT_EMPTY_ARRAY;
 
 import java.sql.BatchUpdateException;
@@ -34,17 +35,23 @@ import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.ExecutionException;
+import java.util.function.Function;
+import org.apache.ignite.internal.binarytuple.BinaryTupleReader;
 import org.apache.ignite.internal.jdbc.proto.IgniteQueryErrorCode;
+import org.apache.ignite.internal.jdbc.proto.JdbcQueryCursorHandler;
 import org.apache.ignite.internal.jdbc.proto.JdbcStatementType;
 import org.apache.ignite.internal.jdbc.proto.SqlStateCode;
 import org.apache.ignite.internal.jdbc.proto.event.JdbcBatchExecuteRequest;
 import org.apache.ignite.internal.jdbc.proto.event.JdbcBatchExecuteResult;
+import org.apache.ignite.internal.jdbc.proto.event.JdbcColumnMeta;
 import org.apache.ignite.internal.jdbc.proto.event.JdbcQueryCancelResult;
 import org.apache.ignite.internal.jdbc.proto.event.JdbcQueryExecuteRequest;
+import org.apache.ignite.internal.jdbc.proto.event.JdbcQuerySingleResult;
 import org.apache.ignite.internal.jdbc.proto.event.Response;
 import org.apache.ignite.internal.util.ArrayUtils;
 import org.apache.ignite.internal.util.CollectionUtils;
 import org.apache.ignite.sql.IgniteSql;
+import org.apache.ignite.sql.ResultSetMetadata;
 import org.apache.ignite.sql.SqlRow;
 import org.jetbrains.annotations.Nullable;
 
@@ -138,50 +145,71 @@ public class JdbcStatement implements Statement {
 
         long correlationToken = nextToken();
 
+        IgniteSql sqlClient = conn.client().sql();
+
+        org.apache.ignite.sql.ResultSet<SqlRow> irs = null;
+
+        try {
+            if (multiStatement) {
+                sqlClient.executeScript(null, sql, args);
+                irs = new FakeResultSet();
+            } else {
+                irs = sqlClient.execute(null, sql, args);
+            }
+        } catch (CancellationException e) {
+            throw new SQLException("Query execution canceled.", SqlStateCode.QUERY_CANCELLED, e);
+        }
+
+        resSets = new ArrayList<>();
+
+        resSets.add(new JdbcResultSet2(this, irs));
+    }
+
+    void execute0old(JdbcStatementType stmtType, String sql, boolean multiStatement, Object[] args) throws SQLException {
+        ensureNotClosed();
+
+        closeResults();
+
+        if (sql == null || sql.isEmpty()) {
+            throw new SQLException("SQL query is empty.");
+        }
+
+        long correlationToken = nextToken();
+
         JdbcQueryExecuteRequest req = new JdbcQueryExecuteRequest(stmtType, schema, pageSize, maxRows, sql, args,
                 conn.getAutoCommit(), multiStatement, queryTimeoutMillis, correlationToken, conn.observableTimestamp());
 
         JdbcQueryExecuteResponse res;
 
-        IgniteSql sqlClient = conn.client().sql();
-
-        org.apache.ignite.sql.ResultSet<SqlRow> irs;
-
         try {
-            irs =  sqlClient.execute(null, sql, args);
-
-//            while (irs.hasNext()) {
-//
-//            }
-            //res = (JdbcQueryExecuteResponse) conn.handler().queryAsync(conn.connectionId(), req).get();
-        }
-//        catch (InterruptedException e) {
-//            throw new SQLException("Thread was interrupted.", e);
-//        }
-//        catch (ExecutionException e) {
-//            throw toSqlException(e);
-//        }
-        catch (CancellationException e) {
+            res = (JdbcQueryExecuteResponse) conn.handler().queryAsync(conn.connectionId(), req).get();
+        } catch (InterruptedException e) {
+            throw new SQLException("Thread was interrupted.", e);
+        } catch (ExecutionException e) {
+            throw toSqlException(e);
+        } catch (CancellationException e) {
             throw new SQLException("Query execution canceled.", SqlStateCode.QUERY_CANCELLED, e);
         }
 
-//        if (!res.success()) {
-//            throw IgniteQueryErrorCode.createJdbcSqlException(res.err(), res.status());
-//        }
-//
-//        JdbcQuerySingleResult executeResult = res.result();
-//
-        resSets = new ArrayList<>();
-//
-//        JdbcQueryCursorHandler handler = new JdbcClientQueryCursorHandler(res.getChannel());
-//
-//        List<JdbcColumnMeta> meta = executeResult.meta();
-//
-//        Function<BinaryTupleReader, List<Object>> transformer = meta != null ? createTransformer(meta) : null;
-//
-//        int colCount = meta != null ? meta.size() : 0;
+        if (!res.success()) {
+            throw IgniteQueryErrorCode.createJdbcSqlException(res.err(), res.status());
+        }
 
-        resSets.add(new JdbcResultSet2(this, irs));
+        JdbcQuerySingleResult executeResult = res.result();
+
+        resSets = new ArrayList<>();
+
+        JdbcQueryCursorHandler handler = new JdbcClientQueryCursorHandler(res.getChannel());
+
+        List<JdbcColumnMeta> meta = executeResult.meta();
+
+        Function<BinaryTupleReader, List<Object>> transformer = meta != null ? createTransformer(meta) : null;
+
+        int colCount = meta != null ? meta.size() : 0;
+
+//        resSets.add(new JdbcResultSet(handler, this, executeResult.cursorId(), pageSize, !executeResult.hasMoreData(),
+//                executeResult.items(), meta, executeResult.hasResultSet(), executeResult.hasNextResult(),
+//                executeResult.updateCount(), closeOnCompletion, colCount, transformer));
     }
 
     /** {@inheritDoc} */
@@ -603,6 +631,44 @@ public class JdbcStatement implements Statement {
         );
 
         try {
+            // conn.client().sql().executeBatch(null, )
+            JdbcBatchExecuteResult res = conn.handler().batchAsync(conn.connectionId(), req).get();
+
+            if (!res.success()) {
+                throw new BatchUpdateException(res.err(),
+                        IgniteQueryErrorCode.codeToSqlState(res.getErrorCode()),
+                        res.getErrorCode(),
+                        res.updateCounts());
+            }
+
+            return res.updateCounts();
+        } catch (InterruptedException e) {
+            throw new SQLException("Thread was interrupted.", e);
+        } catch (ExecutionException e) {
+            throw toSqlException(e);
+        } catch (CancellationException e) {
+            throw new SQLException("Batch execution canceled.", SqlStateCode.QUERY_CANCELLED);
+        } finally {
+            batch = null;
+        }
+    }
+
+    public int[] executeBatchOld() throws SQLException {
+        ensureNotClosed();
+
+        closeResults();
+
+        if (CollectionUtils.nullOrEmpty(batch)) {
+            return INT_EMPTY_ARRAY;
+        }
+
+        long correlationToken = nextToken();
+
+        JdbcBatchExecuteRequest req = new JdbcBatchExecuteRequest(
+                conn.getSchema(), batch, conn.getAutoCommit(), queryTimeoutMillis, correlationToken
+        );
+
+        try {
             JdbcBatchExecuteResult res = conn.handler().batchAsync(conn.connectionId(), req).get();
 
             if (!res.success()) {
@@ -819,5 +885,42 @@ public class JdbcStatement implements Statement {
 
     private static SQLException toSqlException(ExecutionException e) {
         return new SQLException(e);
+    }
+
+    private class FakeResultSet implements org.apache.ignite.sql.ResultSet<SqlRow> {
+        @Override
+        public @Nullable ResultSetMetadata metadata() {
+            return null;
+        }
+
+        @Override
+        public boolean hasRowSet() {
+            return false;
+        }
+
+        @Override
+        public long affectedRows() {
+            return 0;
+        }
+
+        @Override
+        public boolean wasApplied() {
+            return false;
+        }
+
+        @Override
+        public void close() {
+
+        }
+
+        @Override
+        public boolean hasNext() {
+            return false;
+        }
+
+        @Override
+        public SqlRow next() {
+            return null;
+        }
     }
 }

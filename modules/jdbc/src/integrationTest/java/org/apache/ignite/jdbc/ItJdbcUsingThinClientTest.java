@@ -37,4 +37,9 @@ public class ItJdbcUsingThinClientTest extends ClusterPerClassIntegrationTest {
             }
         }
     }
+
+    @Test
+    void testTx() {
+
+    }
 }

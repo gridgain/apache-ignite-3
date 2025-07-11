@@ -40,7 +40,13 @@ public class JdbcResultSet2 extends AbstractJdbcResultSet {
     }
 
     public long updatedCount() {
-        return clientSet.affectedRows();
+        long affected = clientSet.affectedRows();
+
+        if (affected >= 0) {
+            return affected;
+        }
+
+        return clientSet.wasApplied() ? 0 : -1;
     }
 
     @Nullable JdbcResultSet2 getNextResultSet() throws SQLException {
@@ -293,7 +299,9 @@ public class JdbcResultSet2 extends AbstractJdbcResultSet {
 
     @Override
     public ResultSetMetaData getMetaData() throws SQLException {
-        return null;
+        ensureNotClosed();
+
+        return metaOrThrow();
     }
 
     @Override
@@ -361,11 +369,11 @@ public class JdbcResultSet2 extends AbstractJdbcResultSet {
     /**
      * Init column order map.
      */
-    private void initColumnOrder(ResultSetMetadata jdbcMeta) throws SQLException {
-        colOrder = new HashMap<>(jdbcMeta.columns().size());
+    private void initColumnOrder(ResultSetMetaData jdbcMeta) throws SQLException {
+        colOrder = new HashMap<>(jdbcMeta.getColumnCount());
 
-        for (int i = 0; i < jdbcMeta.columns().size(); ++i) {
-            String colName = jdbcMeta.columns().get(i).name().toUpperCase();
+        for (int i = 0; i < jdbcMeta.getColumnCount(); ++i) {
+            String colName = jdbcMeta.getColumnLabel(i + 1).toUpperCase();
 
             if (!colOrder.containsKey(colName)) {
                 colOrder.put(colName, i);
@@ -373,14 +381,14 @@ public class JdbcResultSet2 extends AbstractJdbcResultSet {
         }
     }
 
-    private ResultSetMetadata metaOrThrow() throws SQLException {
-        @Nullable ResultSetMetadata meta = clientSet.metadata();
+    private ResultSetMetaData metaOrThrow() throws SQLException {
+        ResultSetMetadata meta = clientSet.metadata();
 
         if (meta == null) {
             throw new SQLException("Result doesn't have metadata");
         }
 
-        return meta;
+        return new JdbcResultSetMetadata2(meta);
     }
 
     @Override

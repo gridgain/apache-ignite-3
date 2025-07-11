@@ -58,6 +58,8 @@ import org.apache.ignite.internal.jdbc.proto.event.JdbcBatchExecuteResult;
 import org.apache.ignite.internal.jdbc.proto.event.JdbcBatchPreparedStmntRequest;
 import org.apache.ignite.internal.util.ArrayUtils;
 import org.apache.ignite.internal.util.CollectionUtils;
+import org.apache.ignite.sql.BatchedArguments;
+import org.apache.ignite.sql.IgniteSql;
 import org.jetbrains.annotations.Nullable;
 
 /**
@@ -134,6 +136,71 @@ public class JdbcPreparedStatement extends JdbcStatement implements PreparedStat
     /** {@inheritDoc} */
     @Override
     public int[] executeBatch() throws SQLException {
+        ensureNotClosed();
+
+        closeResults();
+
+        if (CollectionUtils.nullOrEmpty(batchedArgs)) {
+            return INT_EMPTY_ARRAY;
+        }
+
+        long correlationToken = nextToken();
+
+//        JdbcBatchPreparedStmntRequest req = new JdbcBatchPreparedStmntRequest(
+//                conn.getSchema(), sql, batchedArgs, conn.getAutoCommit(), queryTimeoutMillis, correlationToken
+//        );
+
+        try {
+            IgniteSql sqlClient = conn.client().sql();
+
+            BatchedArguments batchedArguments = BatchedArguments.create();
+
+            for (Object[] args : batchedArgs) {
+                batchedArguments.add(args);
+            }
+
+            return toInts(sqlClient.executeBatch(null, sql, batchedArguments));
+//            JdbcBatchExecuteResult res = conn.handler().batchPrepStatementAsync(conn.connectionId(), req).get();
+//
+//            if (!res.success()) {
+//                throw new BatchUpdateException(res.err(),
+//                        IgniteQueryErrorCode.codeToSqlState(res.getErrorCode()),
+//                        res.getErrorCode(),
+//                        res.updateCounts());
+//            }
+//
+//            return res.updateCounts();
+        }
+//        catch (InterruptedException e) {
+//            throw new SQLException("Thread was interrupted.", e);
+//        } catch (ExecutionException e) {
+//            throw new SQLException("Batch request failed.", e);
+//        }
+        catch (CancellationException e) {
+            throw new SQLException("Batch request canceled.", SqlStateCode.QUERY_CANCELLED);
+        } finally {
+            batchedArgs = null;
+        }
+    }
+
+    private int[] toInts(long[] longs) {
+        int[] ints = new int[longs.length];
+
+        for (int i = 0; i < longs.length; i++) {
+            long n = longs[i];
+
+            if (n > Integer.MAX_VALUE || n < Integer.MIN_VALUE) {
+                throw new IllegalArgumentException("The value " + n + " is out of INT range... use batchLong blah");
+            }
+
+            ints[i] = (int) longs[i];
+        }
+
+        return ints;
+    }
+
+    @Override
+    public int[] executeBatchOld() throws SQLException {
         ensureNotClosed();
 
         closeResults();
