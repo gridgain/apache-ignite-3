@@ -478,6 +478,15 @@ public class ClientSql implements IgniteSql {
         return ch.serviceAsync(ClientOp.SQL_EXEC_SCRIPT, payloadWriter, null);
     }
 
+    public CompletableFuture<Void> executeScriptInternalAsync(
+            @Nullable Transaction transaction,
+            @Nullable CancellationToken cancellationToken,
+            String query,
+            @Nullable Object... arguments
+    ) {
+
+    }
+
     private static void addCancelAction(CancellationToken cancellationToken, PayloadOutputChannel ch) {
         CompletableFuture<Void> cancelFuture = new CompletableFuture<>();
 
