@@ -200,6 +200,10 @@ public class ClientOp {
     /** Response to a server->client operation. */
     public static final int SERVER_OP_RESPONSE = 73;
 
+    public static final int SQL_EXEC_SCRIPT_WITH_RESULT_SET = 74;
+
+    public static final int SQL_CURSOR_NEXT_RESULT_SET = 75;
+
     /** Reserved for extensions: min. */
     @SuppressWarnings("unused")
     public static final int RESERVED_EXTENSION_RANGE_START = 1000;

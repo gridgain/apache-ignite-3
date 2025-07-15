@@ -378,6 +378,93 @@ public class ClientSql implements IgniteSql {
         );
     }
 
+    public <T> CompletableFuture<AsyncResultSet<T>> executeScriptInternalAsync(
+            @Nullable Transaction transaction,
+            @Nullable CancellationToken cancellationToken,
+            Statement statement,
+            @Nullable Object... arguments
+    ) {
+        Objects.requireNonNull(statement);
+
+        PayloadWriter payloadWriter = w -> {
+            writeTx(transaction, w, null);
+
+            w.out().packString(statement.defaultSchema());
+            w.out().packInt(statement.pageSize());
+            w.out().packLong(statement.queryTimeout(TimeUnit.MILLISECONDS));
+
+            w.out().packLongNullable(0L); // defaultSessionTimeout
+            w.out().packString(statement.timeZoneId().getId());
+
+            packProperties(w, null);
+
+            w.out().packString(statement.query());
+
+            w.out().packObjectArrayAsBinaryTuple(arguments);
+
+            w.out().packLong(ch.observableTimestamp().get().longValue());
+
+            if (w.clientChannel().protocolContext().isFeatureSupported(SQL_PARTITION_AWARENESS)) {
+                // Let's always request PA metadata from server, if enabled. Later we might introduce some throttling.
+                w.out().packBoolean(partitionAwarenessEnabled);
+            }
+
+            if (cancellationToken != null) {
+                addCancelAction(cancellationToken, w);
+            }
+        };
+
+        PayloadReader<AsyncResultSet<T>> payloadReader = r -> {
+            boolean tryUnpackPaMeta = partitionAwarenessEnabled
+                    && r.clientChannel().protocolContext().isFeatureSupported(SQL_PARTITION_AWARENESS);
+
+            ClientAsyncResultSet<T> rs = new ClientAsyncResultSet<>(
+                    r.clientChannel(), marshallers, r.in(), null, tryUnpackPaMeta
+            );
+
+            ClientPartitionAwarenessMetadata partitionAwarenessMetadata = rs.partitionAwarenessMetadata();
+
+            if (partitionAwarenessEnabled && partitionAwarenessMetadata != null) {
+                int tableId = partitionAwarenessMetadata.tableId();
+
+                // The table being created is fake and used only to reuse code to derive table's schema and partition assignment.
+                // Yet the name of the table may appear in error messages and/or logs, therefore let's put some meaning
+                // in the fake name.
+                QualifiedName tableName = QualifiedNameHelper.fromNormalized("DUMMY", String.valueOf(tableId));
+
+                ClientTable table = tableCache.get(tableId, id -> new ClientTable(
+                        ch,
+                        marshallers,
+                        tableId,
+                        tableName,
+                        0
+                ));
+
+                assert table != null;
+
+                mappingProviderCache.put(
+                        new PaCacheKey(statement),
+                        PartitionMappingProvider.create(
+                                table, partitionAwarenessMetadata
+                        )
+                );
+            }
+
+            return rs;
+        };
+
+        assert transaction == null : "Not supported in POC";
+
+        return ch.serviceAsync(
+                ClientOp.SQL_EXEC,
+                payloadWriter,
+                payloadReader,
+                null,
+                null,
+                false
+        );
+    }
+
     /** {@inheritDoc} */
     @Override
     public CompletableFuture<long[]> executeBatchAsync(
@@ -476,15 +563,6 @@ public class ClientSql implements IgniteSql {
         };
 
         return ch.serviceAsync(ClientOp.SQL_EXEC_SCRIPT, payloadWriter, null);
-    }
-
-    public CompletableFuture<Void> executeScriptInternalAsync(
-            @Nullable Transaction transaction,
-            @Nullable CancellationToken cancellationToken,
-            String query,
-            @Nullable Object... arguments
-    ) {
-
     }
 
     private static void addCancelAction(CancellationToken cancellationToken, PayloadOutputChannel ch) {

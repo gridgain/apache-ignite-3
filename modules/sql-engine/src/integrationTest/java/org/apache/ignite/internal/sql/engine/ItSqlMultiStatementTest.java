@@ -50,6 +50,12 @@ public class ItSqlMultiStatementTest extends BaseSqlMultiStatementTest {
     }
 
     @Test
+    public void testX() {
+        sql("CREATE TABLE t(id INT PRIMARY KEY)");
+        System.out.println(sql("SELECT * FROM t"));
+    }
+
+    @Test
     void basicMultiStatementQuery() {
         String sql = "CREATE TABLE test (id INT PRIMARY KEY, val INT);"
                 + "INSERT INTO test VALUES (0, 0);"

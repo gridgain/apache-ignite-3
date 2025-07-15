@@ -82,6 +82,7 @@ import org.apache.ignite.client.handler.requests.sql.ClientSqlCursorNextPageRequ
 import org.apache.ignite.client.handler.requests.sql.ClientSqlExecuteBatchRequest;
 import org.apache.ignite.client.handler.requests.sql.ClientSqlExecuteRequest;
 import org.apache.ignite.client.handler.requests.sql.ClientSqlExecuteScriptRequest;
+import org.apache.ignite.client.handler.requests.sql.ClientSqlExecuteScriptResultSetRequest;
 import org.apache.ignite.client.handler.requests.sql.ClientSqlQueryMetadataRequest;
 import org.apache.ignite.client.handler.requests.table.ClientSchemasGetRequest;
 import org.apache.ignite.client.handler.requests.table.ClientStreamerBatchSendRequest;
@@ -956,6 +957,11 @@ public class ClientInboundMessageHandler
             case ClientOp.SQL_EXEC_SCRIPT:
                 return ClientSqlExecuteScriptRequest.process(
                         partitionOperationsExecutor, in, queryProcessor, requestId, cancelHandles, tsTracker
+                );
+
+            case ClientOp.SQL_EXEC_SCRIPT_WITH_RESULT_SET:
+                return ClientSqlExecuteScriptResultSetRequest.process(
+                        partitionOperationsExecutor, in, requestId, cancelHandles, queryProcessor, resources, metrics, tsTracker
                 );
 
             case ClientOp.SQL_QUERY_META:

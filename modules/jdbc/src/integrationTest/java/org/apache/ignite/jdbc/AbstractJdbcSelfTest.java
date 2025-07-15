@@ -43,7 +43,7 @@ import org.junit.jupiter.api.function.Executable;
  */
 public class AbstractJdbcSelfTest extends ClusterPerClassIntegrationTest {
     /** URL. */
-    protected static final String URL = "jdbc:ignite:thin://127.0.0.1:10800";
+    protected static final String URL = "jdbc:ignite:thin://127.0.0.1:10800,localhost:10803";
     /** Default schema. */
     protected static final String DEFAULT_SCHEMA = "PUBLIC";
 
