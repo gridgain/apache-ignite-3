@@ -109,15 +109,11 @@ public interface RaftManager extends IgniteComponent {
      *
      * @param groupId Raft group ID.
      * @param configuration Peers and Learners of the Raft group.
-     * @param isSystemGroup Whether the group service is for a system group or not.
      * @return An instance of a Raft group service.
      * @throws NodeStoppingException If node stopping intention was detected.
      */
-    RaftGroupService startRaftGroupService(
-            ReplicationGroupId groupId,
-            PeersAndLearners configuration,
-            boolean isSystemGroup
-    ) throws NodeStoppingException;
+    RaftGroupService startRaftGroupService(ReplicationGroupId groupId, PeersAndLearners configuration)
+            throws NodeStoppingException;
 
     /**
      * Creates a Raft group service providing operations on a Raft group, using the given factory.
@@ -128,7 +124,6 @@ public interface RaftManager extends IgniteComponent {
      * @param commandsMarshaller Marshaller that should be used to serialize commands. {@code null} if default marshaller should be
      *         used.
      * @param stoppingExceptionFactory Exception factory used to create exceptions thrown to indicate that the object is being stopped.
-     * @param isSystemGroup Whether the group service is for a system group or not.
      * @return Raft group service.
      * @throws NodeStoppingException If node stopping intention was detected.
      */
@@ -137,8 +132,7 @@ public interface RaftManager extends IgniteComponent {
             PeersAndLearners configuration,
             RaftServiceFactory<T> factory,
             @Nullable Marshaller commandsMarshaller,
-            ExceptionFactory stoppingExceptionFactory,
-            boolean isSystemGroup
+            ExceptionFactory stoppingExceptionFactory
     ) throws NodeStoppingException;
 
     /**

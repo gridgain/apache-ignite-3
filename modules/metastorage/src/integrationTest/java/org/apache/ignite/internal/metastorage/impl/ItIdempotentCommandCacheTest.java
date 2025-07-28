@@ -496,7 +496,7 @@ public class ItIdempotentCommandCacheTest extends IgniteAbstractTest {
 
         try {
             return node.raftManager
-                    .startRaftGroupService(MetastorageGroupId.INSTANCE, configuration, true);
+                    .startRaftGroupService(MetastorageGroupId.INSTANCE, configuration);
         } catch (NodeStoppingException e) {
             throw new RuntimeException(e);
         }

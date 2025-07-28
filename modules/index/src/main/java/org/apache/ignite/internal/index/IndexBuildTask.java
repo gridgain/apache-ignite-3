@@ -24,7 +24,7 @@ import static org.apache.ignite.internal.replicator.message.ReplicaMessageUtils.
 import static org.apache.ignite.internal.replicator.message.ReplicaMessageUtils.toZonePartitionIdMessage;
 import static org.apache.ignite.internal.util.CompletableFutures.nullCompletedFuture;
 import static org.apache.ignite.internal.util.ExceptionUtils.hasCause;
-import static org.apache.ignite.internal.util.ExceptionUtils.unwrapRootCause;
+import static org.apache.ignite.internal.util.ExceptionUtils.unwrapCause;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -42,7 +42,6 @@ import org.apache.ignite.internal.logger.IgniteLogger;
 import org.apache.ignite.internal.logger.Loggers;
 import org.apache.ignite.internal.partition.replicator.network.PartitionReplicationMessagesFactory;
 import org.apache.ignite.internal.partition.replicator.network.replication.BuildIndexReplicaRequest;
-import org.apache.ignite.internal.raft.GroupOverloadedException;
 import org.apache.ignite.internal.replicator.ReplicaService;
 import org.apache.ignite.internal.replicator.TablePartitionId;
 import org.apache.ignite.internal.replicator.ZonePartitionId;
@@ -211,10 +210,10 @@ class IndexBuildTask {
             return replicaService.invoke(node, createBuildIndexReplicaRequest(batchRowIds, initialOperationTimestamp))
                     .handleAsync((unused, throwable) -> {
                         if (throwable != null) {
-                            Throwable cause = unwrapRootCause(throwable);
+                            Throwable cause = unwrapCause(throwable);
 
                             // Read-write transaction operations have not yet completed, let's try to send the batch again.
-                            if (!(cause instanceof ReplicationTimeoutException || cause instanceof GroupOverloadedException)) {
+                            if (!(cause instanceof ReplicationTimeoutException)) {
                                 return CompletableFuture.<Void>failedFuture(cause);
                             }
                         } else if (indexStorage.getNextRowIdToBuild() == null) {

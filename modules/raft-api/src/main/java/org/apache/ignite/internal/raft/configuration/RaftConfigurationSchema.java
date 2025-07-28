@@ -95,13 +95,6 @@ public class RaftConfigurationSchema {
     @Value(hasDefault = true)
     public boolean logYieldStrategy = false;
 
-    /**
-     * Value for max inflights overflow rate. It's used in partitions throttling context.
-     * {@code 1.0} is too strict, so we use {@code 1.3}, allows 30% overflow.
-     */
-    @Value(hasDefault = true)
-    public double maxInflightOverflowRate = 1.3;
-
     /** Configuration for RAFT disruptor's. */
     @ConfigValue
     public DisruptorConfigurationSchema disruptor;

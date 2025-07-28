@@ -22,7 +22,6 @@ import static java.util.stream.Collectors.toSet;
 import static org.apache.ignite.internal.metastorage.TestMetasStorageUtils.ANY_TIMESTAMP;
 import static org.apache.ignite.internal.network.utils.ClusterServiceTestUtils.findLocalAddresses;
 import static org.apache.ignite.internal.network.utils.ClusterServiceTestUtils.waitForTopology;
-import static org.apache.ignite.internal.raft.TestThrottlingContextHolder.throttlingContextHolder;
 import static org.apache.ignite.internal.raft.server.RaftGroupOptions.defaults;
 import static org.apache.ignite.internal.testframework.IgniteTestUtils.waitForCondition;
 import static org.apache.ignite.internal.testframework.matchers.CompletableFutureMatcher.willCompleteSuccessfully;
@@ -491,8 +490,7 @@ public class ItMetaStorageRaftGroupTest extends IgniteAbstractTest {
                 raftConfiguration,
                 membersConfiguration,
                 executor,
-                commandsMarshaller,
-                throttlingContextHolder()
+                commandsMarshaller
         );
 
         metaStorageRaftGrpSvc2 = RaftGroupServiceImpl.start(
@@ -502,8 +500,7 @@ public class ItMetaStorageRaftGroupTest extends IgniteAbstractTest {
                 raftConfiguration,
                 membersConfiguration,
                 executor,
-                commandsMarshaller,
-                throttlingContextHolder()
+                commandsMarshaller
         );
 
         metaStorageRaftGrpSvc3 = RaftGroupServiceImpl.start(
@@ -513,8 +510,7 @@ public class ItMetaStorageRaftGroupTest extends IgniteAbstractTest {
                 raftConfiguration,
                 membersConfiguration,
                 executor,
-                commandsMarshaller,
-                throttlingContextHolder()
+                commandsMarshaller
         );
 
         assertTrue(waitForCondition(

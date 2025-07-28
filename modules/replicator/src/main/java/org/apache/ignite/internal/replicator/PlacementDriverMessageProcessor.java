@@ -20,7 +20,6 @@ package org.apache.ignite.internal.replicator;
 import static java.lang.System.currentTimeMillis;
 import static java.util.concurrent.CompletableFuture.completedFuture;
 import static java.util.concurrent.CompletableFuture.failedFuture;
-import static org.apache.ignite.internal.replicator.ReplicatorRecoverableExceptions.isRecoverable;
 import static org.apache.ignite.internal.util.ExceptionUtils.hasCause;
 import static org.apache.ignite.internal.util.IgniteUtils.retryOperationUntilSuccess;
 
@@ -30,6 +29,8 @@ import java.util.concurrent.Executor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.function.BiConsumer;
+import org.apache.ignite.internal.failure.FailureContext;
+import org.apache.ignite.internal.failure.FailureProcessor;
 import org.apache.ignite.internal.hlc.ClockService;
 import org.apache.ignite.internal.hlc.HybridTimestamp;
 import org.apache.ignite.internal.lang.ComponentStoppingException;
@@ -44,6 +45,8 @@ import org.apache.ignite.internal.placementdriver.message.PlacementDriverMessage
 import org.apache.ignite.internal.placementdriver.message.PlacementDriverReplicaMessage;
 import org.apache.ignite.internal.raft.Peer;
 import org.apache.ignite.internal.raft.client.TopologyAwareRaftGroupService;
+import org.apache.ignite.internal.replicator.exception.ReplicationException;
+import org.apache.ignite.internal.replicator.exception.ReplicationTimeoutException;
 import org.apache.ignite.internal.replicator.message.PrimaryReplicaChangeCommand;
 import org.apache.ignite.internal.replicator.message.ReplicaMessagesFactory;
 import org.apache.ignite.internal.util.PendingComparableValuesTracker;
@@ -89,6 +92,8 @@ public class PlacementDriverMessageProcessor {
 
     private final TopologyAwareRaftGroupService raftClient;
 
+    private final FailureProcessor failureProcessor;
+
     /**
      * The constructor of a replica server.
      *
@@ -101,6 +106,7 @@ public class PlacementDriverMessageProcessor {
      * @param executor Executor for handling requests.
      * @param storageIndexTracker Storage index tracker.
      * @param raftClient Raft client.
+     * @param failureProcessor Failure processor.
      */
     PlacementDriverMessageProcessor(
             ReplicationGroupId groupId,
@@ -110,7 +116,8 @@ public class PlacementDriverMessageProcessor {
             BiConsumer<ReplicationGroupId, HybridTimestamp> replicaReservationClosure,
             Executor executor,
             PendingComparableValuesTracker<Long, Void> storageIndexTracker,
-            TopologyAwareRaftGroupService raftClient
+            TopologyAwareRaftGroupService raftClient,
+            FailureProcessor failureProcessor
     ) {
         this.groupId = groupId;
         this.localNode = localNode;
@@ -120,6 +127,7 @@ public class PlacementDriverMessageProcessor {
         this.executor = executor;
         this.storageIndexTracker = storageIndexTracker;
         this.raftClient = raftClient;
+        this.failureProcessor = failureProcessor;
 
         raftClient.subscribeLeader(this::onLeaderElected);
     }
@@ -135,11 +143,21 @@ public class PlacementDriverMessageProcessor {
             return processLeaseGrantedMessage((LeaseGrantedMessage) msg)
                     .handle((v, e) -> {
                         if (e != null) {
-                            if (!hasCause(e, NodeStoppingException.class, ComponentStoppingException.class, TrackerClosedException.class)
-                                    && !isRecoverable(e)) {
-                                LOG.warn("Failed to process the lease granted message, lease negotiation will be retried [msg={}].",
-                                        e, msg);
+                            if (!hasCause(
+                                    e,
+                                    NodeStoppingException.class,
+                                    ComponentStoppingException.class,
+                                    TrackerClosedException.class,
+                                    TimeoutException.class,
+                                    ReplicationException.class,
+                                    ReplicationTimeoutException.class,
+                                    ReplicaReservationFailedException.class
+                            )) {
+                                String errorMessage = String.format("Failed to process the lease granted message [msg=%s].", msg);
+                                failureProcessor.process(new FailureContext(e, errorMessage));
                             }
+
+                            LOG.warn("Failed to process the lease granted message, lease negotiation will be retried [msg={}].", e, msg);
 
                             // Just restart the negotiation in case of exception.
                             return PLACEMENT_DRIVER_MESSAGES_FACTORY.leaseGrantedMessageResponse()

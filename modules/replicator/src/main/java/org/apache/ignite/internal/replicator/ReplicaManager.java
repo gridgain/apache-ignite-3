@@ -85,7 +85,6 @@ import org.apache.ignite.internal.placementdriver.message.PlacementDriverMessage
 import org.apache.ignite.internal.placementdriver.message.PlacementDriverMessagesFactory;
 import org.apache.ignite.internal.placementdriver.message.PlacementDriverReplicaMessage;
 import org.apache.ignite.internal.placementdriver.message.StopLeaseProlongationMessageResponse;
-import org.apache.ignite.internal.raft.GroupOverloadedException;
 import org.apache.ignite.internal.raft.Loza;
 import org.apache.ignite.internal.raft.Marshaller;
 import org.apache.ignite.internal.raft.Peer;
@@ -422,9 +421,7 @@ public class ReplicaManager extends AbstractEventProducer<LocalReplicaEvent, Loc
                                 if (ex0 == null) {
                                     msg0 = prepareReplicaResponse(sendTimestamp, new ReplicaResult(res0, null));
                                 } else {
-                                    if (indicatesUnexpectedProblem(ex0)) {
-                                        LOG.warn("Failed to process delayed response [request={}]", ex0, request);
-                                    }
+                                    LOG.warn("Failed to process delayed response [request={}]", ex0, request);
 
                                     msg0 = prepareReplicaErrorResponse(sendTimestamp, ex0);
                                 }
@@ -448,13 +445,7 @@ public class ReplicaManager extends AbstractEventProducer<LocalReplicaEvent, Loc
     private static boolean indicatesUnexpectedProblem(Throwable ex) {
         Throwable unwrapped = unwrapCause(ex);
         return !(unwrapped instanceof ExpectedReplicationException)
-                && !hasCause(
-                        ex,
-                        NodeStoppingException.class,
-                        TrackerClosedException.class,
-                        ComponentStoppingException.class,
-                        GroupOverloadedException.class
-                );
+                && !hasCause(ex, NodeStoppingException.class, TrackerClosedException.class, ComponentStoppingException.class);
     }
 
     /**
@@ -640,7 +631,8 @@ public class ReplicaManager extends AbstractEventProducer<LocalReplicaEvent, Loc
                                 replicaStateManager::reserveReplica,
                                 requestsExecutor,
                                 storageIndexTracker,
-                                raftClient
+                                raftClient,
+                                failureProcessor
                         );
 
                         return new ReplicaImpl(
@@ -704,7 +696,8 @@ public class ReplicaManager extends AbstractEventProducer<LocalReplicaEvent, Loc
                                 replicaStateManager::reserveReplica,
                                 requestsExecutor,
                                 storageIndexTracker,
-                                raftClient
+                                raftClient,
+                                failureProcessor
                         );
 
                         return new ZonePartitionReplicaImpl(
@@ -1113,8 +1106,7 @@ public class ReplicaManager extends AbstractEventProducer<LocalReplicaEvent, Loc
                         NodeStoppingException.class,
                         ComponentStoppingException.class,
                         // Not a problem, there will be a retry.
-                        TimeoutException.class,
-                        GroupOverloadedException.class
+                        TimeoutException.class
                 )) {
                     failureProcessor.process(
                             new FailureContext(ex, String.format("Could not advance safe time for %s", replica.groupId())));

@@ -48,7 +48,6 @@ import org.apache.ignite.internal.raft.Marshaller;
 import org.apache.ignite.internal.raft.Peer;
 import org.apache.ignite.internal.raft.PeersAndLearners;
 import org.apache.ignite.internal.raft.RaftGroupServiceImpl;
-import org.apache.ignite.internal.raft.ThrottlingContextHolder;
 import org.apache.ignite.internal.raft.configuration.RaftConfiguration;
 import org.apache.ignite.internal.raft.service.LeaderWithTerm;
 import org.apache.ignite.internal.raft.service.RaftGroupService;
@@ -193,7 +192,6 @@ public class TopologyAwareRaftGroupService implements RaftGroupService {
      *         if the leader did not change in that moment (see {@link #subscribeLeader}).
      * @param cmdMarshaller Marshaller that should be used to serialize/deserialize commands.
      * @param stoppingExceptionFactory Exception factory used to create exceptions thrown to indicate that the object is being stopped.
-     * @param throttlingContextHolder Holder of throttling context.
      * @return New Raft client.
      */
     public static TopologyAwareRaftGroupService start(
@@ -207,8 +205,7 @@ public class TopologyAwareRaftGroupService implements RaftGroupService {
             RaftGroupEventsClientListener eventsClientListener,
             boolean notifyOnSubscription,
             Marshaller cmdMarshaller,
-            ExceptionFactory stoppingExceptionFactory,
-            ThrottlingContextHolder throttlingContextHolder
+            ExceptionFactory stoppingExceptionFactory
     ) {
         return new TopologyAwareRaftGroupService(
                 cluster,
@@ -223,8 +220,7 @@ public class TopologyAwareRaftGroupService implements RaftGroupService {
                         configuration,
                         executor,
                         cmdMarshaller,
-                        stoppingExceptionFactory,
-                        throttlingContextHolder
+                        stoppingExceptionFactory
                 ),
                 logicalTopologyService,
                 eventsClientListener,

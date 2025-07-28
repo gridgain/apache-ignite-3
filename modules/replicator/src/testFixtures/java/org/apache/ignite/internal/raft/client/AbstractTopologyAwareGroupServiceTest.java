@@ -20,7 +20,6 @@ package org.apache.ignite.internal.raft.client;
 import static java.util.stream.Collectors.toSet;
 import static org.apache.ignite.internal.network.utils.ClusterServiceTestUtils.clusterService;
 import static org.apache.ignite.internal.network.utils.ClusterServiceTestUtils.findLocalAddresses;
-import static org.apache.ignite.internal.raft.TestThrottlingContextHolder.throttlingContextHolder;
 import static org.apache.ignite.internal.testframework.IgniteTestUtils.waitForCondition;
 import static org.apache.ignite.internal.testframework.matchers.CompletableFutureMatcher.willCompleteSuccessfully;
 import static org.hamcrest.MatcherAssert.assertThat;
@@ -542,8 +541,7 @@ public abstract class AbstractTopologyAwareGroupServiceTest extends IgniteAbstra
                 eventsClientListener,
                 notifyOnSubscription,
                 commandsMarshaller,
-                StoppingExceptionFactories.indicateComponentStop(),
-                throttlingContextHolder()
+                StoppingExceptionFactories.indicateComponentStop()
         );
     }
 

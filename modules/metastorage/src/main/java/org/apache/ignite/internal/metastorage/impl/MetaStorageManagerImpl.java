@@ -1182,7 +1182,7 @@ public class MetaStorageManagerImpl implements MetaStorageManager, MetastorageGr
             Function<RaftGroupService, CompletableFuture<T>> action
     ) {
         try {
-            RaftGroupService raftGroupService = raftMgr.startRaftGroupService(MetastorageGroupId.INSTANCE, raftClientConfiguration, true);
+            RaftGroupService raftGroupService = raftMgr.startRaftGroupService(MetastorageGroupId.INSTANCE, raftClientConfiguration);
 
             return action.apply(raftGroupService)
                     // This callback should be executed asynchronously due to

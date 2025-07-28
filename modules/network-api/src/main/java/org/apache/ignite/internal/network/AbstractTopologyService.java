@@ -34,11 +34,6 @@ public abstract class AbstractTopologyService implements TopologyService {
         eventHandlers.add(handler);
     }
 
-    @Override
-    public void removeEventHandler(TopologyEventHandler handler) {
-        eventHandlers.remove(handler);
-    }
-
     /**
      * Returns the registered topology event handlers.
      *

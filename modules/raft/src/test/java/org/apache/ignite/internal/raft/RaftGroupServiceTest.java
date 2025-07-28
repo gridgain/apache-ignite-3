@@ -21,7 +21,6 @@ import static java.util.Collections.emptyList;
 import static java.util.concurrent.CompletableFuture.completedFuture;
 import static java.util.concurrent.CompletableFuture.failedFuture;
 import static java.util.stream.Collectors.toUnmodifiableList;
-import static org.apache.ignite.internal.raft.TestThrottlingContextHolder.throttlingContextHolder;
 import static org.apache.ignite.internal.raft.util.OptimizedMarshaller.NO_POOL;
 import static org.apache.ignite.internal.testframework.IgniteTestUtils.deriveUuidFrom;
 import static org.apache.ignite.internal.testframework.matchers.CompletableFutureExceptionMatcher.willThrow;
@@ -718,13 +717,7 @@ public class RaftGroupServiceTest extends BaseIgniteAbstractTest {
         var commandsSerializer = new ThreadLocalOptimizedMarshaller(cluster.serializationRegistry());
 
         return RaftGroupServiceImpl.start(
-                TEST_GRP, cluster,
-                FACTORY,
-                raftConfiguration,
-                memberConfiguration,
-                executor,
-                commandsSerializer,
-                throttlingContextHolder()
+                TEST_GRP, cluster, FACTORY, raftConfiguration, memberConfiguration, executor, commandsSerializer
         );
     }
 

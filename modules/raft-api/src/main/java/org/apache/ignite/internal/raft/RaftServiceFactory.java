@@ -35,7 +35,6 @@ public interface RaftServiceFactory<T extends RaftGroupService> {
      * @param raftClientExecutor Client executor.
      * @param commandsMarshaller Marshaller that should be used to serialize commands.
      * @param stoppingExceptionFactory Exception factory used to create exceptions thrown to indicate that the object is being stopped.
-     * @param throttlingContextHolder Throttling context.
      * @return New Raft client.
      */
     T startRaftGroupService(
@@ -44,7 +43,6 @@ public interface RaftServiceFactory<T extends RaftGroupService> {
             RaftConfiguration raftConfiguration,
             ScheduledExecutorService raftClientExecutor,
             Marshaller commandsMarshaller,
-            ExceptionFactory stoppingExceptionFactory,
-            ThrottlingContextHolder throttlingContextHolder
+            ExceptionFactory stoppingExceptionFactory
     );
 }

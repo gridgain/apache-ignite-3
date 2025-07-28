@@ -46,7 +46,6 @@ import org.apache.ignite.internal.raft.Loza;
 import org.apache.ignite.internal.raft.PeersAndLearners;
 import org.apache.ignite.internal.raft.RaftGroupServiceImpl;
 import org.apache.ignite.internal.raft.RaftNodeId;
-import org.apache.ignite.internal.raft.ThrottlingContextHolderImpl;
 import org.apache.ignite.internal.raft.server.RaftServer;
 import org.apache.ignite.internal.raft.server.TestJraftServerFactory;
 import org.apache.ignite.internal.raft.server.impl.GroupStoragesContextResolver;
@@ -276,16 +275,8 @@ public abstract class JraftAbstractTest extends RaftServerAbstractTest {
 
         var commandsMarshaller = new ThreadLocalOptimizedMarshaller(clientNode.serializationRegistry());
 
-        RaftGroupService client = RaftGroupServiceImpl.start(
-                groupId,
-                clientNode,
-                FACTORY,
-                raftConfiguration,
-                configuration,
-                executor,
-                commandsMarshaller,
-                new ThrottlingContextHolderImpl(raftConfiguration)
-        );
+        RaftGroupService client = RaftGroupServiceImpl
+                .start(groupId, clientNode, FACTORY, raftConfiguration, configuration, executor, commandsMarshaller);
 
         clients.add(client);
 
