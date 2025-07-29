@@ -53,6 +53,8 @@ public final class DaoTrafGen
     private static int optKeyRange = 0;
     private static Main handler;
     private static long warmup = 5_000;
+    public static int partitions = 16;
+    public static int replicas = 2;
 
     private DaoTrafGen()
     {
@@ -285,6 +287,12 @@ public final class DaoTrafGen
                     {
                         throw new IllegalArgumentException("Warmup time must be non-negative");
                     }
+                    break;
+                case "--partitions":
+                    partitions = Integer.parseInt(args[++ii]);
+                    break;
+                case "--replicas":
+                    replicas = Integer.parseInt(args[++ii]);
                     break;
                 default:
                     throw new IllegalArgumentException("Invalid argument: " + args[ii]);

@@ -17,6 +17,9 @@
 
 package org.apache.ignite.internal.benchmark.trafgen;
 
+import static org.apache.ignite.internal.benchmark.trafgen.DaoTrafGen.partitions;
+import static org.apache.ignite.internal.benchmark.trafgen.DaoTrafGen.replicas;
+
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.MapperFeature;
@@ -171,15 +174,15 @@ public class Main
     public void intitialize(String realm, String storage)
     {
         var builder = IgniteClient.builder();
-        client = builder.addresses("localhost:47500").build();
+        client = builder.addresses("localhost:3344").build();
 
         var catalog = client.catalog();
 
     // @formatter:off
     catalog.createZone(
-        ZoneDefinition.builder("SDE_DEFAULT_256_2")
-             .partitions(16)
-             .replicas(2)
+        ZoneDefinition.builder("SDE_DEFAULT_"+partitions+"_" + replicas)
+             .partitions(partitions)
+             .replicas(replicas)
              .storageProfiles("sde_default")
              .ifNotExists()
              .build()

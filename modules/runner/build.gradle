@@ -285,7 +285,7 @@ tasks.register('runClientGetBenchmark', JavaExec) {
 }
 
 tasks.register('runComplexBenchmark', JavaExec) {
-    mainClass = 'org.apache.ignite.internal.benchmark.hpe.DaoTrafGen'
+    mainClass = 'org.apache.ignite.internal.benchmark.trafgen.DaoTrafGen'
 
     jvmArgs += addOpens + ['-Dio.netty.tryReflectionSetAccessible=true', '-Xmx16g']
 
