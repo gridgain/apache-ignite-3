@@ -202,6 +202,7 @@ dependencies {
     integrationTestImplementation libs.typesafe.config
     integrationTestImplementation libs.netty.common
     integrationTestImplementation libs.netty.handler
+    integrationTestImplementation libs.jackson.datatype.jsr310
 
     testFixturesAnnotationProcessor libs.auto.service
 
@@ -281,6 +282,14 @@ tasks.register('runClientGetBenchmark', JavaExec) {
     classpath = sourceSets.integrationTest.runtimeClasspath
 
     enableAssertions = true
+}
+
+tasks.register('runComplexBenchmark', JavaExec) {
+    mainClass = 'org.apache.ignite.internal.benchmark.hpe.DaoTrafGen'
+
+    jvmArgs += addOpens + ['-Dio.netty.tryReflectionSetAccessible=true', '-Xmx16g']
+
+    classpath = sourceSets.integrationTest.runtimeClasspath
 }
 
 jar {
