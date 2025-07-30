@@ -143,7 +143,7 @@ public final class Metric
      */
     public synchronized double throughput()
     {
-        return count() * MS_TO_SEC / duration();
+        return reqCount * MS_TO_SEC / duration();
     }
 
     /**
