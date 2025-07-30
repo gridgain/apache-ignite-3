@@ -17,6 +17,7 @@
 
 package org.apache.ignite.internal.benchmark.trafgen;
 
+import static org.apache.ignite.internal.benchmark.trafgen.DaoTrafGen.addrs;
 import static org.apache.ignite.internal.benchmark.trafgen.DaoTrafGen.partitions;
 import static org.apache.ignite.internal.benchmark.trafgen.DaoTrafGen.replicas;
 
@@ -174,7 +175,7 @@ public class Main
     public void intitialize(String realm, String storage)
     {
         var builder = IgniteClient.builder();
-        client = builder.addresses("localhost:3344").build();
+        client = builder.addresses(addrs).build();
 
         var catalog = client.catalog();
 

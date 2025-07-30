@@ -55,6 +55,7 @@ public final class DaoTrafGen
     private static long warmup = 5_000;
     public static int partitions = 16;
     public static int replicas = 2;
+    public static String addrs = "localhost:10800";
 
     private DaoTrafGen()
     {
@@ -293,6 +294,9 @@ public final class DaoTrafGen
                     break;
                 case "--replicas":
                     replicas = Integer.parseInt(args[++ii]);
+                    break;
+                case "--addresses":
+                    addrs = args[++ii];
                     break;
                 default:
                     throw new IllegalArgumentException("Invalid argument: " + args[ii]);
