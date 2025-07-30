@@ -104,7 +104,7 @@ public final class Metric
      */
     public synchronized double latency()
     {
-        return reqCount <= 0 ? 0 : (reqDuration / reqCount) / NANO_TO_MS;
+        return reqCount <= 0 ? 0 : ((double) reqDuration / reqCount) / NANO_TO_MS;
     }
 
     /**

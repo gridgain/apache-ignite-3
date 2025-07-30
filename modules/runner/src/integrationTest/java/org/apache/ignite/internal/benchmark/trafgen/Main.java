@@ -184,7 +184,7 @@ public class Main
         ZoneDefinition.builder("SDE_DEFAULT_"+partitions+"_" + replicas)
              .partitions(partitions)
              .replicas(replicas)
-             //.storageProfiles("sde_default")
+             .storageProfiles("default")
              .ifNotExists()
              .build()
     );
