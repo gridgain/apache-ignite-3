@@ -318,13 +318,11 @@ public class ReplicaManager extends AbstractEventProducer<LocalReplicaEvent, Loc
         // If the request actually came from the network, we are already in the correct thread that has permissions to do storage reads
         // and writes.
         // But if this is a local call (in the same Ignite instance), we might still be in a thread that does not have those permissions.
-//        if (shouldSwitchToRequestsExecutor(STORAGE_READ, STORAGE_WRITE, TX_STATE_STORAGE_ACCESS)) {
-//            requestsExecutor.execute(() -> handleReplicaRequest(request, sender, correlationId));
-//        } else {
-//            handleReplicaRequest(request, sender, correlationId);
-//        }
-
-        handleReplicaRequest(request, sender, correlationId);
+        if (shouldSwitchToRequestsExecutor(STORAGE_READ, STORAGE_WRITE, TX_STATE_STORAGE_ACCESS)) {
+            requestsExecutor.execute(() -> handleReplicaRequest(request, sender, correlationId));
+        } else {
+            handleReplicaRequest(request, sender, correlationId);
+        }
     }
 
     private void handleReplicaRequest(ReplicaRequest request, ClusterNode sender, @Nullable Long correlationId) {
