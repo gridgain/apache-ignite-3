@@ -253,7 +253,7 @@ public final class DaoTrafGen
     public static void main(String[] args) throws InterruptedException
     {
         CallFlow callFlow = new CallFlow(CRUD.CREATE_OR_REPLACE);
-        int iterations = 0;
+        int iterations = 100000;
         int parallelism = 1;
         int optPayloadSize = DEF_PAYLOAD_SIZE;
 

@@ -222,11 +222,12 @@ public class TxFinishReplicaRequestHandler {
         List<EnlistedPartitionGroup> enlistedPartitionGroups = enlistedPartitions.entrySet().stream()
                 .map(entry -> new EnlistedPartitionGroup(entry.getKey(), entry.getValue().tableIds()))
                 .collect(toList());
-        return finishTransaction(enlistedPartitionGroups, txId, commit, commitTimestamp)
-                .thenCompose(txResult ->
-                    txManager.cleanup(replicationGroupId, enlistedPartitions, commit, commitTimestamp, txId)
-                            .thenApply(v -> txResult)
-                );
+//        return finishTransaction(enlistedPartitionGroups, txId, commit, commitTimestamp)
+//                .thenCompose(txResult ->
+//                    txManager.cleanup(replicationGroupId, enlistedPartitions, commit, commitTimestamp, txId)
+//                            .thenApply(v -> txResult)
+//                );
+        return finishTransaction(enlistedPartitionGroups, txId, commit, commitTimestamp);
     }
 
     private static void throwIfSchemaValidationOnCommitFailed(CompatValidationResult validationResult, TransactionResult txResult) {
