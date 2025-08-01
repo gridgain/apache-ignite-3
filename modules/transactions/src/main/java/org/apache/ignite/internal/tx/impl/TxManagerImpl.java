@@ -1101,12 +1101,14 @@ public class TxManagerImpl implements TxManager, NetworkMessageHandler, SystemVi
             @Nullable HybridTimestamp commitTimestamp,
             UUID txId
     ) {
-        assertReplicationGroupType(commitPartitionId);
-        for (ReplicationGroupId replicationGroupId : enlistedPartitions.keySet()) {
-            assertReplicationGroupType(replicationGroupId);
-        }
-
-        return txCleanupRequestSender.cleanup(commitPartitionId, enlistedPartitions, commit, commitTimestamp, txId);
+//        assertReplicationGroupType(commitPartitionId);
+//        for (ReplicationGroupId replicationGroupId : enlistedPartitions.keySet()) {
+//            assertReplicationGroupType(replicationGroupId);
+//        }
+//
+//        return txCleanupRequestSender.cleanup(commitPartitionId, enlistedPartitions, commit, commitTimestamp, txId);
+        lockManager.releaseAll(txId);
+        return nullCompletedFuture();
     }
 
     @Override
