@@ -232,6 +232,7 @@ public class JdbcResultSet extends AbstractJdbcResultSet {
         return rows != null;
     }
 
+    @Override
     @Nullable JdbcResultSet getNextResultSet() throws SQLException {
         try {
             if (hasNextResult) {
@@ -339,6 +340,7 @@ public class JdbcResultSet extends AbstractJdbcResultSet {
      *
      * @throws SQLException On error.
      */
+    @Override
     void close0(boolean removeFromResources) throws SQLException {
         try {
             if (!holdsResource) {
@@ -367,6 +369,7 @@ public class JdbcResultSet extends AbstractJdbcResultSet {
         }
     }
 
+    @Override
     boolean holdsResources() {
         return holdsResource;
     }
@@ -1044,11 +1047,7 @@ public class JdbcResultSet extends AbstractJdbcResultSet {
         return closed || stmt == null || stmt.isClosed();
     }
 
-    /**
-     * Get the isQuery flag.
-     *
-     * @return Is query flag.
-     */
+    @Override
     public boolean hasResultSet() {
         return hasResultSet;
     }
@@ -1114,11 +1113,7 @@ public class JdbcResultSet extends AbstractJdbcResultSet {
         }
     }
 
-    /**
-     * Get the update count.
-     *
-     * @return Update count for no-SELECT queries.
-     */
+    @Override
     public long updatedCount() {
         return updCnt;
     }
@@ -1128,6 +1123,7 @@ public class JdbcResultSet extends AbstractJdbcResultSet {
      *
      * @param closeStmt Close statement on this result set close.
      */
+    @Override
     public void closeStatement(boolean closeStmt) {
         this.closeStmt = closeStmt;
     }

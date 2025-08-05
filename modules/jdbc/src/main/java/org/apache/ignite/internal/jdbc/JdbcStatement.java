@@ -84,7 +84,7 @@ public class JdbcStatement implements Statement {
     private int pageSize = DFLT_PAGE_SIZE;
 
     /** Result sets. {@code null} represents final result set (no more results are available). */
-    private volatile List<@Nullable JdbcResultSet2> resSets;
+    private volatile List<@Nullable AbstractJdbcResultSet> resSets;
 
     /** Batch. */
     private List<String> batch;
@@ -135,6 +135,12 @@ public class JdbcStatement implements Statement {
      * @throws SQLException Onj error.
      */
     void execute0(JdbcStatementType stmtType, String sql, boolean multiStatement, Object[] args) throws SQLException {
+        if (multiStatement) {
+            execute0old(stmtType, sql, true, args);
+
+            return;
+        }
+
         ensureNotClosed();
 
         closeResults();
@@ -207,9 +213,9 @@ public class JdbcStatement implements Statement {
 
         int colCount = meta != null ? meta.size() : 0;
 
-//        resSets.add(new JdbcResultSet(handler, this, executeResult.cursorId(), pageSize, !executeResult.hasMoreData(),
-//                executeResult.items(), meta, executeResult.hasResultSet(), executeResult.hasNextResult(),
-//                executeResult.updateCount(), closeOnCompletion, colCount, transformer));
+        resSets.add(new JdbcResultSet(handler, this, executeResult.cursorId(), pageSize, !executeResult.hasMoreData(),
+                executeResult.items(), meta, executeResult.hasResultSet(), executeResult.hasNextResult(),
+                executeResult.updateCount(), closeOnCompletion, colCount, transformer));
     }
 
     /** {@inheritDoc} */
@@ -449,7 +455,7 @@ public class JdbcStatement implements Statement {
             return null;
         }
 
-        @Nullable JdbcResultSet2 rs = resSets.get(curRes);
+        @Nullable AbstractJdbcResultSet rs = resSets.get(curRes);
 
         if (rs == null || !rs.hasResultSet()) {
             return null;
@@ -467,7 +473,7 @@ public class JdbcStatement implements Statement {
             return -1;
         }
 
-        @Nullable JdbcResultSet2 rs = resSets.get(curRes);
+        @Nullable AbstractJdbcResultSet rs = resSets.get(curRes);
 
         if (rs == null || rs.hasResultSet()) {
             return -1;
@@ -508,13 +514,13 @@ public class JdbcStatement implements Statement {
             return false;
         }
 
-        JdbcResultSet2 nextResultSet;
+        JdbcResultSet nextResultSet;
         SQLException exceptionally = null;
 
         try {
             // just a stub if exception is raised inside multiple statements.
             // all further execution is not processed.
-            nextResultSet = resSets.get(curRes).getNextResultSet();
+            nextResultSet = ((JdbcResultSet) resSets.get(curRes)).getNextResultSet();
         } catch (SQLException ex) {
             nextResultSet = null;
             exceptionally = ex;
@@ -746,7 +752,7 @@ public class JdbcStatement implements Statement {
         closeOnCompletion = true;
 
         if (resSets != null) {
-            for (JdbcResultSet2 rs : resSets) {
+            for (AbstractJdbcResultSet rs : resSets) {
                 if (rs != null) {
                     rs.closeStatement(true);
                 }
@@ -804,14 +810,14 @@ public class JdbcStatement implements Statement {
      * @throws SQLException On error.
      */
     void closeResults() throws SQLException {
-        @Nullable JdbcResultSet2 last = null;
+        @Nullable AbstractJdbcResultSet last = null;
 
         if (resSets != null) {
-            JdbcResultSet2 lastRs = resSets.get(resSets.size() - 1);
+            AbstractJdbcResultSet lastRs = resSets.get(resSets.size() - 1);
             boolean allFetched = lastRs == null || (lastRs.isClosed() && !lastRs.holdsResources());
 
             if (allFetched) {
-                for (JdbcResultSet2 rs : resSets) {
+                for (AbstractJdbcResultSet rs : resSets) {
                     if (rs != null) {
                         rs.close0(true);
                     }
@@ -844,7 +850,7 @@ public class JdbcStatement implements Statement {
         boolean allRsClosed = true;
 
         if (resSets != null) {
-            for (JdbcResultSet2 rs : resSets) {
+            for (AbstractJdbcResultSet rs : resSets) {
                 if (rs != null && !rs.isClosed()) {
                     allRsClosed = false;
                     break;

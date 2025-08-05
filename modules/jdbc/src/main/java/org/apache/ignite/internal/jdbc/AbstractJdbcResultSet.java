@@ -1124,4 +1124,32 @@ public abstract class AbstractJdbcResultSet implements ResultSet {
             throw new SQLException("Result set is closed.", SqlStateCode.INVALID_CURSOR_STATE);
         }
     }
+
+    /**
+     * Get the isQuery flag.
+     *
+     * @return Is query flag.
+     */
+    abstract boolean hasResultSet();
+
+    /**
+     * Get the update count.
+     *
+     * @return Update count for no-SELECT queries.
+     */
+    abstract long updatedCount();
+
+    public void closeStatement(boolean closeStmt) {
+        // TODO
+    }
+
+    boolean holdsResources() {
+        return false;
+    }
+
+    abstract AbstractJdbcResultSet getNextResultSet() throws SQLException;
+
+    void close0(boolean removeFromResources) throws SQLException {
+        // TODO
+    }
 }

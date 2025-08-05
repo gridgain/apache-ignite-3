@@ -35,10 +35,12 @@ public class JdbcResultSet2 extends AbstractJdbcResultSet {
         this.stmt = stmt;
     }
 
+    @Override
     public boolean hasResultSet() {
         return clientSet.hasRowSet();
     }
 
+    @Override
     public long updatedCount() {
         long affected = clientSet.affectedRows();
 
@@ -49,25 +51,9 @@ public class JdbcResultSet2 extends AbstractJdbcResultSet {
         return clientSet.wasApplied() ? 0 : -1;
     }
 
+    @Override
     @Nullable JdbcResultSet2 getNextResultSet() throws SQLException {
         return null;
-    }
-
-    public void closeStatement(boolean closeStmt) {
-        // TODO
-        // this.closeStmt = closeStmt;
-    }
-
-    boolean holdResults() {
-        throw new UnsupportedOperationException();
-    }
-
-    boolean holdsResources() {
-        return false;
-    }
-
-    void close0(boolean removeFromResources) throws SQLException {
-        // TODO
     }
 
 
