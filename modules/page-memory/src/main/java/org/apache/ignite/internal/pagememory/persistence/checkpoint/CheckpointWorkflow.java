@@ -448,12 +448,12 @@ class CheckpointWorkflow {
 //                .map(pageIds -> parallelSortThreadPool.submit(() -> Arrays.parallelSort(pageIds, DIRTY_PAGE_COMPARATOR)))
 //                .collect(toList());
 //
-//        // Sort arrays of dirty page IDs if their number is less than PARALLEL_SORT_THRESHOLD.
-//        for (DirtyPagesAndPartitions dirtyPagesAndPartitions : checkpointDirtyPages) {
+        // Sort arrays of dirty page IDs if their number is less than PARALLEL_SORT_THRESHOLD.
+        for (DirtyPagesAndPartitions dirtyPagesAndPartitions : checkpointDirtyPages) {
 //            if (dirtyPagesAndPartitions.dirtyPages.length < PARALLEL_SORT_THRESHOLD) {
-//                Arrays.sort(dirtyPagesAndPartitions.dirtyPages, DIRTY_PAGE_COMPARATOR);
+                Arrays.sort(dirtyPagesAndPartitions.dirtyPages, DIRTY_PAGE_COMPARATOR);
 //            }
-//        }
+        }
 //
 //        // Waits for a parallel sort task.
 //        for (ForkJoinTask<?> parallelSortTask : parallelSortTasks) {
