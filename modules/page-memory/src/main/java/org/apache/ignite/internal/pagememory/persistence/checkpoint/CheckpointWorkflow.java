@@ -441,31 +441,31 @@ class CheckpointWorkflow {
             checkpointDirtyPages.add(new DirtyPagesAndPartitions(dataRegionDirtyPages.pageMemory, pageIds, partitionIds));
         }
 
-        // Add tasks to sort arrays of dirty page IDs in parallel if their number is greater than or equal to PARALLEL_SORT_THRESHOLD.
-        List<ForkJoinTask<?>> parallelSortTasks = checkpointDirtyPages.stream()
-                .map(dirtyPagesAndPartitions -> dirtyPagesAndPartitions.dirtyPages)
-                .filter(pageIds -> pageIds.length >= PARALLEL_SORT_THRESHOLD)
-                .map(pageIds -> parallelSortThreadPool.submit(() -> Arrays.parallelSort(pageIds, DIRTY_PAGE_COMPARATOR)))
-                .collect(toList());
-
-        // Sort arrays of dirty page IDs if their number is less than PARALLEL_SORT_THRESHOLD.
-        for (DirtyPagesAndPartitions dirtyPagesAndPartitions : checkpointDirtyPages) {
-            if (dirtyPagesAndPartitions.dirtyPages.length < PARALLEL_SORT_THRESHOLD) {
-                Arrays.sort(dirtyPagesAndPartitions.dirtyPages, DIRTY_PAGE_COMPARATOR);
-            }
-        }
-
-        // Waits for a parallel sort task.
-        for (ForkJoinTask<?> parallelSortTask : parallelSortTasks) {
-            try {
-                parallelSortTask.get();
-            } catch (ExecutionException | InterruptedException e) {
-                throw new IgniteInternalCheckedException(
-                        "Failed to perform pages array parallel sort",
-                        e instanceof ExecutionException ? e.getCause() : e
-                );
-            }
-        }
+//        // Add tasks to sort arrays of dirty page IDs in parallel if their number is greater than or equal to PARALLEL_SORT_THRESHOLD.
+//        List<ForkJoinTask<?>> parallelSortTasks = checkpointDirtyPages.stream()
+//                .map(dirtyPagesAndPartitions -> dirtyPagesAndPartitions.dirtyPages)
+//                .filter(pageIds -> pageIds.length >= PARALLEL_SORT_THRESHOLD)
+//                .map(pageIds -> parallelSortThreadPool.submit(() -> Arrays.parallelSort(pageIds, DIRTY_PAGE_COMPARATOR)))
+//                .collect(toList());
+//
+//        // Sort arrays of dirty page IDs if their number is less than PARALLEL_SORT_THRESHOLD.
+//        for (DirtyPagesAndPartitions dirtyPagesAndPartitions : checkpointDirtyPages) {
+//            if (dirtyPagesAndPartitions.dirtyPages.length < PARALLEL_SORT_THRESHOLD) {
+//                Arrays.sort(dirtyPagesAndPartitions.dirtyPages, DIRTY_PAGE_COMPARATOR);
+//            }
+//        }
+//
+//        // Waits for a parallel sort task.
+//        for (ForkJoinTask<?> parallelSortTask : parallelSortTasks) {
+//            try {
+//                parallelSortTask.get();
+//            } catch (ExecutionException | InterruptedException e) {
+//                throw new IgniteInternalCheckedException(
+//                        "Failed to perform pages array parallel sort",
+//                        e instanceof ExecutionException ? e.getCause() : e
+//                );
+//            }
+//        }
 
         return new CheckpointDirtyPages(checkpointDirtyPages);
     }
