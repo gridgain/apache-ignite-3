@@ -38,6 +38,7 @@ public class TimerManager implements Scheduler {
 
     public TimerManager(int workerNum, String name) {
         this.executor = ThreadPoolUtil.newScheduledBuilder() //
+            .coreThreads(1)
             .poolName(name) //
             .coreThreads(workerNum) //
             .enableMetric(true) //
