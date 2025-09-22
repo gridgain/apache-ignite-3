@@ -228,7 +228,7 @@ public class PagesWriteSpeedBasedThrottle implements PagesWriteThrottlePolicy {
 
         long throttleParkTimeNs = parkAndReturnParkingNanos(isPageInCheckpoint);
 
-        if (true /*throttleParkTimeNs == NO_THROTTLING_MARKER*/) {
+        if (throttleParkTimeNs == NO_THROTTLING_MARKER) {
             return;
         }
 
