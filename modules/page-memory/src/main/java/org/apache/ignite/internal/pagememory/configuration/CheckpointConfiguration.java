@@ -23,10 +23,10 @@ import java.util.function.LongSupplier;
 /** Checkpoint configuration. */
 public class CheckpointConfiguration {
     /** Default value for {@link #checkpointThreads()}. */
-    public static final int DEFAULT_CHECKPOINT_THREADS = 4;
+    public static final int DEFAULT_CHECKPOINT_THREADS = 3;
 
     /** Default value for {@link #compactionThreads()}. */
-    public static final int DEFAULT_COMPACTION_THREADS = 4;
+    public static final int DEFAULT_COMPACTION_THREADS = 1;
 
     /** Default value for {@link #intervalMillis()}. */
     public static final long DEFAULT_CHECKPOINT_INTERVAL = 180_000L;
