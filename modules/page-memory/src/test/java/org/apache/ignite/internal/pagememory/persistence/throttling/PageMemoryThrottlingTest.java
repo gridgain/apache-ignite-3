@@ -41,6 +41,7 @@ import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.ForkJoinPool;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.IntStream;
@@ -135,7 +136,7 @@ public class PageMemoryThrottlingTest extends IgniteAbstractTest {
         FailureManager failureManager = mock(FailureManager.class);
         when(failureManager.process(any())).thenThrow(new AssertionError("Unexpected error"));
 
-        fileIoFactory = spy(new AsyncFileIoFactory());
+        fileIoFactory = spy(new AsyncFileIoFactory(ForkJoinPool.commonPool()));
         pageStoreManager = new FilePageStoreManager("test", workDir, fileIoFactory, PAGE_SIZE, failureManager);
 
         List<DataRegion<PersistentPageMemory>> dataRegions = new CopyOnWriteArrayList<>();

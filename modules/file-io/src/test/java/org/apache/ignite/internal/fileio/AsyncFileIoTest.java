@@ -19,6 +19,7 @@ package org.apache.ignite.internal.fileio;
 
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
+import java.util.concurrent.ForkJoinPool;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -28,7 +29,7 @@ import org.junit.jupiter.api.Test;
 public class AsyncFileIoTest extends AbstractFileIoTest {
     @BeforeEach
     void setUp() {
-        fileIoFactory = new AsyncFileIoFactory();
+        fileIoFactory = new AsyncFileIoFactory(ForkJoinPool.commonPool());
     }
 
     /** {@inheritDoc} */

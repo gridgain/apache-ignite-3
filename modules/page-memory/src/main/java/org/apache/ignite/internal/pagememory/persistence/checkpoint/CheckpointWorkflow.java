@@ -20,7 +20,6 @@ package org.apache.ignite.internal.pagememory.persistence.checkpoint;
 import static java.util.concurrent.ConcurrentHashMap.newKeySet;
 import static java.util.concurrent.TimeUnit.MINUTES;
 import static java.util.concurrent.TimeUnit.SECONDS;
-import static java.util.stream.Collectors.toList;
 import static java.util.stream.Collectors.toUnmodifiableList;
 import static org.apache.ignite.internal.pagememory.persistence.PartitionMeta.partitionMetaPageId;
 import static org.apache.ignite.internal.pagememory.persistence.checkpoint.CheckpointDirtyPages.DIRTY_PAGE_COMPARATOR;
@@ -43,11 +42,9 @@ import java.util.Map.Entry;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
-import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ForkJoinPool;
-import java.util.concurrent.ForkJoinTask;
 import java.util.concurrent.ForkJoinWorkerThread;
 import org.apache.ignite.internal.lang.IgniteBiTuple;
 import org.apache.ignite.internal.lang.IgniteInternalCheckedException;
@@ -441,31 +438,10 @@ class CheckpointWorkflow {
             checkpointDirtyPages.add(new DirtyPagesAndPartitions(dataRegionDirtyPages.pageMemory, pageIds, partitionIds));
         }
 
-//        // Add tasks to sort arrays of dirty page IDs in parallel if their number is greater than or equal to PARALLEL_SORT_THRESHOLD.
-//        List<ForkJoinTask<?>> parallelSortTasks = checkpointDirtyPages.stream()
-//                .map(dirtyPagesAndPartitions -> dirtyPagesAndPartitions.dirtyPages)
-//                .filter(pageIds -> pageIds.length >= PARALLEL_SORT_THRESHOLD)
-//                .map(pageIds -> parallelSortThreadPool.submit(() -> Arrays.parallelSort(pageIds, DIRTY_PAGE_COMPARATOR)))
-//                .collect(toList());
-//
         // Sort arrays of dirty page IDs if their number is less than PARALLEL_SORT_THRESHOLD.
         for (DirtyPagesAndPartitions dirtyPagesAndPartitions : checkpointDirtyPages) {
-//            if (dirtyPagesAndPartitions.dirtyPages.length < PARALLEL_SORT_THRESHOLD) {
-                Arrays.sort(dirtyPagesAndPartitions.dirtyPages, DIRTY_PAGE_COMPARATOR);
-//            }
+            Arrays.sort(dirtyPagesAndPartitions.dirtyPages, DIRTY_PAGE_COMPARATOR);
         }
-//
-//        // Waits for a parallel sort task.
-//        for (ForkJoinTask<?> parallelSortTask : parallelSortTasks) {
-//            try {
-//                parallelSortTask.get();
-//            } catch (ExecutionException | InterruptedException e) {
-//                throw new IgniteInternalCheckedException(
-//                        "Failed to perform pages array parallel sort",
-//                        e instanceof ExecutionException ? e.getCause() : e
-//                );
-//            }
-//        }
 
         return new CheckpointDirtyPages(checkpointDirtyPages);
     }

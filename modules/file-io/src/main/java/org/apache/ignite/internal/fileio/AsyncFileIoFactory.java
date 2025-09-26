@@ -20,14 +20,26 @@ package org.apache.ignite.internal.fileio;
 import java.io.IOException;
 import java.nio.file.OpenOption;
 import java.nio.file.Path;
+import java.util.concurrent.ExecutorService;
 
 /**
  * {@link AsyncFileIo} factory.
  */
 public class AsyncFileIoFactory implements FileIoFactory {
+    private final ExecutorService asyncIoExecutor;
+
+    /**
+     * Constructor.
+     *
+     * @param asyncIoExecutor Async callback executor.
+     */
+    public AsyncFileIoFactory(ExecutorService asyncIoExecutor) {
+        this.asyncIoExecutor = asyncIoExecutor;
+    }
+
     /** {@inheritDoc} */
     @Override
     public FileIo create(Path filePath, OpenOption... modes) throws IOException {
-        return new AsyncFileIo(filePath, modes);
+        return new AsyncFileIo(filePath, asyncIoExecutor, modes);
     }
 }
