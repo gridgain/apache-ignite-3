@@ -195,7 +195,6 @@ public class PersistentPageMemoryStorageEngine extends AbstractPageMemoryStorage
                         new LinkedBlockingQueue<>(),
                         IgniteThreadFactory.create(igniteInstanceName, "persistent-mv-async-io", LOG)
                 );
-                ioExecutor.allowCoreThreadTimeOut(true);
 
                 asyncIoExecutor = ioExecutor;
 
