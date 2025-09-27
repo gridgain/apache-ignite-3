@@ -256,7 +256,6 @@ public class PersistentPageMemoryStorageEngine extends AbstractPageMemoryStorage
                 new LinkedBlockingQueue<>(),
                 IgniteThreadFactory.create(igniteInstanceName, "persistent-mv-partition-destruction", LOG)
         );
-        executor.allowCoreThreadTimeOut(true);
 
         destructionExecutor = executor;
     }

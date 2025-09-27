@@ -158,7 +158,6 @@ public class FileTransferServiceImpl implements FileTransferService {
                 new LinkedBlockingQueue<>(),
                 IgniteThreadFactory.create(nodeName, "file-transfer", LOG)
         );
-        executor.allowCoreThreadTimeOut(true);
 
         return executor;
     }

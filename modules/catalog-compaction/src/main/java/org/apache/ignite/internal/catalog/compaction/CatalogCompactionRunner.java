@@ -630,8 +630,6 @@ public class CatalogCompactionRunner implements IgniteComponent {
                 IgniteThreadFactory.create(localNodeName, "catalog-compaction", LOG)
         );
 
-        executor.allowCoreThreadTimeOut(true);
-
         return executor;
     }
 

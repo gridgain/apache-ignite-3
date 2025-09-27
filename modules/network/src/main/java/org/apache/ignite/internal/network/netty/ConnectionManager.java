@@ -249,7 +249,6 @@ public class ConnectionManager implements ChannelCreationListener {
                 new LinkedBlockingQueue<>(),
                 IgniteThreadFactory.create(nodeName, "connection-maintenance", LOG)
         );
-        maintenanceExecutor.allowCoreThreadTimeOut(true);
 
         connectionMaintenanceExecutor = maintenanceExecutor;
     }

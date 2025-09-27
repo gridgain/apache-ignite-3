@@ -79,8 +79,6 @@ public class CriticalStripedThreadPoolExecutor extends AbstractStripedThreadPool
                     threadFactory
             );
 
-            executor.allowCoreThreadTimeOut(allowCoreThreadTimeOut);
-
             execs[i] = executor;
         }
 

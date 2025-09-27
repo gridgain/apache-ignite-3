@@ -108,7 +108,6 @@ public class OutgoingSnapshotsManager implements PartitionsSnapshots, IgniteComp
                 new LinkedBlockingQueue<>(),
                 IgniteThreadFactory.create(nodeName, "outgoing-snapshots", LOG, STORAGE_READ)
         );
-        threadPoolExecutor.allowCoreThreadTimeOut(true);
 
         executor = threadPoolExecutor;
 

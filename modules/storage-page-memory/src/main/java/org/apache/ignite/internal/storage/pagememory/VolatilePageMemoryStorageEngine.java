@@ -135,7 +135,6 @@ public class VolatilePageMemoryStorageEngine extends AbstractPageMemoryStorageEn
                 new LinkedBlockingQueue<>(),
                 IgniteThreadFactory.create(igniteInstanceName, "volatile-mv-partition-destruction", LOG)
         );
-        executor.allowCoreThreadTimeOut(true);
 
         destructionExecutor = executor;
     }

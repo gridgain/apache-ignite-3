@@ -64,8 +64,6 @@ public class StripedThreadPoolExecutor extends AbstractStripedThreadPoolExecutor
                     threadFactory
             );
 
-            executor.allowCoreThreadTimeOut(allowCoreThreadTimeOut);
-
             execs[i] = executor;
         }
 

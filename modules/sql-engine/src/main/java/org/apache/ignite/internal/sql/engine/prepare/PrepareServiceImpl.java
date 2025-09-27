@@ -222,8 +222,6 @@ public class PrepareServiceImpl implements PrepareService {
                 IgniteThreadFactory.create(nodeName, "sql-planning-pool", LOG, NOTHING_ALLOWED)
         );
 
-        planningPool.allowCoreThreadTimeOut(true);
-
         metricManager.registerSource(sqlPlanCacheMetricSource);
         metricManager.enable(sqlPlanCacheMetricSource);
 

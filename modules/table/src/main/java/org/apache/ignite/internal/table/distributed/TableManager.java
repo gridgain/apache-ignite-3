@@ -617,7 +617,6 @@ public class TableManager implements IgniteTablesInternal, IgniteComponent {
                 new LinkedBlockingQueue<>(),
                 IgniteThreadFactory.create(nodeName, "incoming-raft-snapshot", LOG, STORAGE_READ, STORAGE_WRITE)
         );
-        incomingSnapshotsExecutor.allowCoreThreadTimeOut(true);
 
         pendingAssignmentsRebalanceListener = createPendingAssignmentsRebalanceListener();
 

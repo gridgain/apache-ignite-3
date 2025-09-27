@@ -110,7 +110,6 @@ public class MvGc implements ManuallyCloseable {
                     new LinkedBlockingQueue<>(),
                     IgniteThreadFactory.create(nodeName, "mv-gc", LOG, STORAGE_READ, STORAGE_WRITE)
             );
-            executor.allowCoreThreadTimeOut(true);
 
             lowWatermark.listen(LOW_WATERMARK_CHANGED, fromConsumer(this::onLwmChanged));
         });

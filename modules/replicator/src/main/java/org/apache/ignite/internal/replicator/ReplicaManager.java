@@ -307,7 +307,6 @@ public class ReplicaManager extends AbstractEventProducer<LocalReplicaEvent, Loc
                 new LinkedBlockingQueue<>(),
                 IgniteThreadFactory.create(nodeName, "throttled-log-replica-manager", LOG)
         );
-        throttledLogExecutor.allowCoreThreadTimeOut(true);
 
         throttledLog = Loggers.toThrottledLogger(LOG, throttledLogExecutor);
     }

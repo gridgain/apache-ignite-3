@@ -79,7 +79,6 @@ public class ClockWaiter implements IgniteComponent {
                 new LinkedBlockingQueue<>(),
                 IgniteThreadFactory.create(nodeName, "clock-waiter-future-executor", Loggers.forClass(ClockWaiter.class))
         );
-        executor.allowCoreThreadTimeOut(true);
 
         futureExecutor = executor;
     }

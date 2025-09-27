@@ -105,8 +105,6 @@ public class IndexBuildingManager implements IgniteComponent {
                 IgniteThreadFactory.create(nodeName, "build-index", LOG, STORAGE_READ, STORAGE_WRITE)
         );
 
-        executor.allowCoreThreadTimeOut(true);
-
         indexBuilder = new IndexBuilder(executor, replicaService, failureProcessor, nodeProperties);
 
         indexAvailabilityController = new IndexAvailabilityController(catalogManager, metaStorageManager, failureProcessor, indexBuilder);
