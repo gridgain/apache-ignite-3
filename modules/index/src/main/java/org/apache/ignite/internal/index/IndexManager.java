@@ -173,26 +173,24 @@ public class IndexManager implements IgniteComponent {
      *         passed parameters.
      */
     CompletableFuture<MvTableStorage> getMvTableStorage(long causalityToken, int tableId) {
-        return tableManager
-                .tableAsync(causalityToken, tableId)
-                .thenApply(table -> {
-                    if (table == null) {
-                        throw new IgniteInternalException(
-                                INTERNAL_ERR,
-                                "Table does not exist [tableId = {}]",
-                                tableId);
-                    }
+        TableViewInternal table = tableManager.cachedTable(tableId);
 
-                    MvTableStorage storage = table.internalTable().storage();
-                    if (storage == null) {
-                        throw new IgniteInternalException(
-                                INTERNAL_ERR,
-                                "Table storage for the specified table cannot be null [tableId = {}]",
-                                tableId);
-                    }
+        if (table == null) {
+            throw new IgniteInternalException(
+                    INTERNAL_ERR,
+                    "Table does not exist [tableId = {}]",
+                    tableId);
+        }
 
-                    return storage;
-                });
+        MvTableStorage storage = table.internalTable().storage();
+        if (storage == null) {
+            throw new IgniteInternalException(
+                    INTERNAL_ERR,
+                    "Table storage for the specified table cannot be null [tableId = {}]",
+                    tableId);
+        }
+
+        return CompletableFuture.completedFuture(storage);
     }
 
     private CompletableFuture<Boolean> onIndexCreate(CreateIndexEventParameters parameters) {
