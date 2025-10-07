@@ -17,11 +17,17 @@
 
 package org.apache.ignite.internal.table.distributed.schema;
 
+import java.time.Instant;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
 import java.util.concurrent.CompletableFuture;
 import java.util.function.LongSupplier;
 import org.apache.ignite.internal.hlc.HybridTimestamp;
+import org.apache.ignite.internal.logger.IgniteLogger;
+import org.apache.ignite.internal.logger.Loggers;
 import org.apache.ignite.internal.schema.SchemaSafeTimeTracker;
 import org.apache.ignite.internal.schema.SchemaSyncService;
+import org.jetbrains.annotations.NotNull;
 
 /**
  * A default implementation of {@link SchemaSyncService}.
@@ -30,6 +36,8 @@ public class SchemaSyncServiceImpl implements SchemaSyncService {
     private final SchemaSafeTimeTracker schemaSafeTimeTracker;
 
     private final LongSupplier delayDurationMs;
+
+    private final IgniteLogger log = Loggers.forClass(SchemaSyncServiceImpl.class);
 
     /**
      * Constructor.
@@ -41,7 +49,23 @@ public class SchemaSyncServiceImpl implements SchemaSyncService {
 
     @Override
     public CompletableFuture<Void> waitForMetadataCompleteness(HybridTimestamp ts) {
-        return schemaSafeTimeTracker.waitFor(metastoreSafeTimeToWait(ts));
+        HybridTimestamp waitForTs = metastoreSafeTimeToWait(ts);
+
+        return schemaSafeTimeTracker.waitFor(waitForTs)
+                .thenRun(() -> {
+                    long now = System.currentTimeMillis();
+
+                    if (now - ts.getPhysical() > 500) {
+                        log.info("Too long schema waiting [start={}, now={}, duration={}ms, delayDuration={}ms]",
+                                formatTs(ts.getPhysical()), formatTs(now), now - ts.getPhysical(), delayDurationMs.getAsLong());
+                    }
+                });
+    }
+
+    private static @NotNull String formatTs(long ts) {
+        DateTimeFormatter formater = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss z").withZone(ZoneId.systemDefault());
+
+        return formater.format(Instant.ofEpochMilli(ts));
     }
 
     private HybridTimestamp metastoreSafeTimeToWait(HybridTimestamp ts) {
