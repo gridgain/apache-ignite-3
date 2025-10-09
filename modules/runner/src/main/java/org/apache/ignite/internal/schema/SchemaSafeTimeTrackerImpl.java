@@ -35,6 +35,7 @@ import org.apache.ignite.internal.manager.IgniteComponent;
 import org.apache.ignite.internal.metastorage.Entry;
 import org.apache.ignite.internal.metastorage.server.NotificationEnqueuedListener;
 import org.apache.ignite.internal.metastorage.server.time.ClusterTime;
+import org.apache.ignite.internal.thread.ThreadUtils;
 import org.apache.ignite.internal.util.FastTimestamps;
 import org.apache.ignite.internal.util.PendingComparableValuesTracker;
 import org.jetbrains.annotations.NotNull;
@@ -91,6 +92,10 @@ public class SchemaSafeTimeTrackerImpl implements SchemaSafeTimeTracker, IgniteC
             }
 
             long getSafeTime = FastTimestamps.coarseCurrentTimeMillis();
+
+            if (!Thread.currentThread().getName().contains("FSMCaller-Disruptor")) {
+                ThreadUtils.dumpStack(log, "Updating timestamp in unexpected thread [ts={}]", timestamp);
+            }
 
             if (getSafeTime - timestamp.getPhysical() > 500) {
                 log.info("The time lag is too much [safeTime={}, curTime={}, duration={}ms]",
