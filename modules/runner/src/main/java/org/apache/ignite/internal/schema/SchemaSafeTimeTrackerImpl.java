@@ -90,7 +90,12 @@ public class SchemaSafeTimeTrackerImpl implements SchemaSafeTimeTracker, IgniteC
                 newSchemaSafeTimeUpdateFuture = schemaSafeTimeUpdateFuture;
             }
 
-            long getSafeTime = System.currentTimeMillis();
+            long getSafeTime = FastTimestamps.coarseCurrentTimeMillis();
+
+            if (getSafeTime - timestamp.getPhysical() > 500) {
+                log.info("The time lag is too much [safeTime={}, curTime={}, duration={}ms]",
+                        timestamp, formatTs(getSafeTime), getSafeTime - timestamp.getPhysical());
+            }
 
             newSchemaSafeTimeUpdateFuture = newSchemaSafeTimeUpdateFuture.thenRun(() -> {
                 if (FastTimestamps.coarseCurrentTimeMillis() - getSafeTime > 500) {
