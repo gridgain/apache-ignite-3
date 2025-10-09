@@ -19,18 +19,25 @@ package org.apache.ignite.internal.schema;
 
 import static org.apache.ignite.internal.util.CompletableFutures.nullCompletedFuture;
 
+import java.time.Instant;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
 import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import org.apache.ignite.internal.catalog.storage.UpdateLogImpl;
 import org.apache.ignite.internal.hlc.HybridTimestamp;
 import org.apache.ignite.internal.lang.NodeStoppingException;
+import org.apache.ignite.internal.logger.IgniteLogger;
+import org.apache.ignite.internal.logger.Loggers;
 import org.apache.ignite.internal.manager.ComponentContext;
 import org.apache.ignite.internal.manager.IgniteComponent;
 import org.apache.ignite.internal.metastorage.Entry;
 import org.apache.ignite.internal.metastorage.server.NotificationEnqueuedListener;
 import org.apache.ignite.internal.metastorage.server.time.ClusterTime;
+import org.apache.ignite.internal.util.FastTimestamps;
 import org.apache.ignite.internal.util.PendingComparableValuesTracker;
+import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.TestOnly;
 
 /**
@@ -64,6 +71,8 @@ public class SchemaSafeTimeTrackerImpl implements SchemaSafeTimeTracker, IgniteC
         return nullCompletedFuture();
     }
 
+    IgniteLogger log = Loggers.forClass(SchemaSafeTimeTrackerImpl.class);
+
     @Override
     public void onEnqueued(CompletableFuture<Void> newNotificationFuture, List<Entry> entries, HybridTimestamp timestamp) {
         boolean hasCatalogUpdates = hasCatalogUpdates(entries);
@@ -81,12 +90,28 @@ public class SchemaSafeTimeTrackerImpl implements SchemaSafeTimeTracker, IgniteC
                 newSchemaSafeTimeUpdateFuture = schemaSafeTimeUpdateFuture;
             }
 
+            long getSafeTime = System.currentTimeMillis();
+
             newSchemaSafeTimeUpdateFuture = newSchemaSafeTimeUpdateFuture.thenRun(() -> {
+                if (FastTimestamps.coarseCurrentTimeMillis() - getSafeTime > 500) {
+                    long cur = System.currentTimeMillis();
+
+                    log.info("We had gotten a safe time but could not notify immediately because"
+                                    + " the previous notification was still continuous [safeTime={}, curTime={}, duration={}ms].",
+                            timestamp, formatTs(cur), cur - getSafeTime);
+                }
+
                 schemaSafeTime.update(timestamp, null);
             });
 
             schemaSafeTimeUpdateFuture = newSchemaSafeTimeUpdateFuture;
         }
+    }
+
+    private static @NotNull String formatTs(long ts) {
+        DateTimeFormatter formater = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss z").withZone(ZoneId.systemDefault());
+
+        return formater.format(Instant.ofEpochMilli(ts));
     }
 
     private static boolean hasCatalogUpdates(List<Entry> entries) {
