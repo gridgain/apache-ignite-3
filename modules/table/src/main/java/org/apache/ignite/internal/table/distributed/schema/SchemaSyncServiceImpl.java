@@ -27,6 +27,7 @@ import org.apache.ignite.internal.logger.IgniteLogger;
 import org.apache.ignite.internal.logger.Loggers;
 import org.apache.ignite.internal.schema.SchemaSafeTimeTracker;
 import org.apache.ignite.internal.schema.SchemaSyncService;
+import org.apache.ignite.internal.thread.ThreadUtils;
 import org.jetbrains.annotations.NotNull;
 
 /**
@@ -56,7 +57,7 @@ public class SchemaSyncServiceImpl implements SchemaSyncService {
                     long now = System.currentTimeMillis();
 
                     if (now - ts.getPhysical() > 500) {
-                        log.info("Too long schema waiting [start={}, now={}, duration={}ms, delayDuration={}ms]",
+                        ThreadUtils.dumpStack(log, "Too long schema waiting [start={}, now={}, duration={}ms, delayDuration={}ms]",
                                 formatTs(ts.getPhysical()), formatTs(now), now - ts.getPhysical(), delayDurationMs.getAsLong());
                     }
                 });
