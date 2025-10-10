@@ -93,8 +93,9 @@ public class SchemaSafeTimeTrackerImpl implements SchemaSafeTimeTracker, IgniteC
 
             long getSafeTime = FastTimestamps.coarseCurrentTimeMillis();
 
-            if (!Thread.currentThread().getName().contains("FSMCaller-Disruptor")) {
-                ThreadUtils.dumpStack(log, "Updating timestamp in unexpected thread [ts={}]", timestamp);
+            if (Math.abs(timestamp.getPhysical() - schemaSafeTime.current().getPhysical()) > 500) {
+                log.info("The time jump is too much [oldSafeTime={}, newSafeTime={}, duration={}ms]",
+                        schemaSafeTime.current(), timestamp, timestamp.getPhysical() - schemaSafeTime.current().getPhysical());
             }
 
             if (getSafeTime - timestamp.getPhysical() > 500) {
