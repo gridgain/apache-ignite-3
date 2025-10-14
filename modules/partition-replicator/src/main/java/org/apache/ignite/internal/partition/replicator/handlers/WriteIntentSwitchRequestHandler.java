@@ -158,6 +158,13 @@ public class WriteIntentSwitchRequestHandler {
 
                     return reliableCatalogVersions.safeReliableCatalogVersionFor(commandTimestamp)
                             .thenApply(catalogVersion -> {
+                                if (FastTimestamps.coarseCurrentTimeMillis() - startTs > 500) {
+                                    LOG.warn("Waited for a long time for local transaction operations to finish 3 [txId=" + request.txId()
+                                                    + ", tables={}, durationMs={}, commitTs={}]", request.tableIds(),
+                                            FastTimestamps.coarseCurrentTimeMillis() - startTs,
+                                            request.commitTimestamp());
+                                }
+
                                 CompletableFuture<WriteIntentSwitchReplicatedInfo> commandReplicatedFuture =
                                         applyCommandToGroup(request, catalogVersion)
                                                 .thenApply(unused2 -> writeIntentSwitchReplicationInfoFor(request));
