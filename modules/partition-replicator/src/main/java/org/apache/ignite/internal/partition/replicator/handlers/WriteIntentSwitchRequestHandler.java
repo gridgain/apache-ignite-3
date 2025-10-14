@@ -56,6 +56,7 @@ import org.apache.ignite.internal.tx.message.TableWriteIntentSwitchReplicaReques
 import org.apache.ignite.internal.tx.message.TxMessagesFactory;
 import org.apache.ignite.internal.tx.message.WriteIntentSwitchReplicaRequest;
 import org.apache.ignite.internal.tx.message.WriteIntentSwitchReplicatedInfo;
+import org.apache.ignite.internal.util.FastTimestamps;
 import org.jetbrains.annotations.Nullable;
 
 /**
@@ -118,11 +119,20 @@ public class WriteIntentSwitchRequestHandler {
      * @return CompletableFuture of ReplicaResult.
      */
     public CompletableFuture<ReplicaResult> handle(WriteIntentSwitchReplicaRequest request, UUID senderId) {
+        long startTs = FastTimestamps.coarseCurrentTimeMillis();
+
         txFinishMarker.markFinished(request.txId(), request.commit() ? COMMITTED : ABORTED, request.commitTimestamp());
 
         List<CompletableFuture<ReplicaResult>> futures = request.tableIds().stream()
                 .map(tableId -> invokeTableWriteIntentSwitchReplicaRequest(tableId, request, clockService.current(), senderId))
                 .collect(toList());
+
+        if (FastTimestamps.coarseCurrentTimeMillis() - startTs > 500) {
+            LOG.warn("Waited for a long time for local transaction operations to finish [txId=" + request.txId()
+                            + ", tables={}, durationMs={}, commitTs={}]", request.tableIds(),
+                    FastTimestamps.coarseCurrentTimeMillis() - startTs,
+                    request.commitTimestamp());
+        }
 
         @Nullable HybridTimestamp commitTimestamp = request.commitTimestamp();
         HybridTimestamp commandTimestamp = commitTimestamp != null ? commitTimestamp : beginTimestamp(request.txId());
@@ -159,6 +169,7 @@ public class WriteIntentSwitchRequestHandler {
     ) {
         TableWriteIntentSwitchReplicaRequest tableSpecificRequest = TX_MESSAGES_FACTORY.tableWriteIntentSwitchReplicaRequest()
                 .groupId(ReplicaMessageUtils.toReplicationGroupIdMessage(REPLICA_MESSAGES_FACTORY, replicationGroupId))
+                // There's no sense in updating the timestamp themself.
                 .timestamp(now)
                 .txId(request.txId())
                 .commit(request.commit())
@@ -166,10 +177,12 @@ public class WriteIntentSwitchRequestHandler {
                 .tableId(tableId)
                 .build();
 
+        return replicaTableProcessor(tableId).process(tableSpecificRequest, ReplicaPrimacy.empty(), senderId);
+
         // Using empty primacy because the request is not a PrimaryReplicaRequest.
-        return tableAwareReplicaRequestPreProcessor.preProcessTableAwareRequest(tableSpecificRequest, ReplicaPrimacy.empty(), senderId)
-                .thenCompose(ignored ->
-                        replicaTableProcessor(tableId).process(tableSpecificRequest, ReplicaPrimacy.empty(), senderId));
+        //return tableAwareReplicaRequestPreProcessor.preProcessTableAwareRequest(tableSpecificRequest, ReplicaPrimacy.empty(), senderId)
+        //        .thenCompose(ignored ->
+        //                replicaTableProcessor(tableId).process(tableSpecificRequest, ReplicaPrimacy.empty(), senderId));
     }
 
     private CompletableFuture<Object> applyCommandToGroup(WriteIntentSwitchReplicaRequest request, Integer catalogVersion) {

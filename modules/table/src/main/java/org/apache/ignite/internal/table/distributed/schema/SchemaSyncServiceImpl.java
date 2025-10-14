@@ -28,6 +28,7 @@ import org.apache.ignite.internal.logger.Loggers;
 import org.apache.ignite.internal.schema.SchemaSafeTimeTracker;
 import org.apache.ignite.internal.schema.SchemaSyncService;
 import org.apache.ignite.internal.thread.ThreadUtils;
+import org.apache.ignite.internal.util.FastTimestamps;
 import org.jetbrains.annotations.NotNull;
 
 /**
@@ -52,13 +53,15 @@ public class SchemaSyncServiceImpl implements SchemaSyncService {
     public CompletableFuture<Void> waitForMetadataCompleteness(HybridTimestamp ts) {
         HybridTimestamp waitForTs = metastoreSafeTimeToWait(ts);
 
+        long getTs = FastTimestamps.coarseCurrentTimeMillis();
+
         return schemaSafeTimeTracker.waitFor(waitForTs)
                 .thenRun(() -> {
                     long now = System.currentTimeMillis();
 
-                    if (now - ts.getPhysical() > 500) {
+                    if (now - getTs > 500) {
                         ThreadUtils.dumpStack(log, "Too long schema waiting [start={}, now={}, duration={}ms, delayDuration={}ms]",
-                                formatTs(ts.getPhysical()), formatTs(now), now - ts.getPhysical(), delayDurationMs.getAsLong());
+                                formatTs(ts.getPhysical()), formatTs(now), now - getTs, delayDurationMs.getAsLong());
                     }
                 });
     }
