@@ -128,7 +128,7 @@ public class WriteIntentSwitchRequestHandler {
                 .collect(toList());
 
         if (FastTimestamps.coarseCurrentTimeMillis() - startTs > 500) {
-            LOG.warn("Waited for a long time for local transaction operations to finish 1 [txId=" + request.txId()
+            LOG.info("PVD:: Waited for a long time for local transaction operations to finish 1 [txId=" + request.txId()
                             + ", tables={}, durationMs={}, commitTs={}]", request.tableIds(),
                     FastTimestamps.coarseCurrentTimeMillis() - startTs,
                     request.commitTimestamp());
@@ -140,7 +140,7 @@ public class WriteIntentSwitchRequestHandler {
         return allOf(futures)
                 .thenCompose(unused -> {
                     if (FastTimestamps.coarseCurrentTimeMillis() - startTs > 500) {
-                        LOG.warn("Waited for a long time for local transaction operations to finish 2 [txId=" + request.txId()
+                        LOG.info("PVD:: Waited for a long time for local transaction operations to finish 2 [txId=" + request.txId()
                                         + ", tables={}, durationMs={}, commitTs={}]", request.tableIds(),
                                 FastTimestamps.coarseCurrentTimeMillis() - startTs,
                                 request.commitTimestamp());
@@ -159,7 +159,7 @@ public class WriteIntentSwitchRequestHandler {
                     return reliableCatalogVersions.safeReliableCatalogVersionFor(commandTimestamp)
                             .thenApply(catalogVersion -> {
                                 if (FastTimestamps.coarseCurrentTimeMillis() - startTs > 500) {
-                                    LOG.warn("Waited for a long time for local transaction operations to finish 3 [txId=" + request.txId()
+                                    LOG.info("PVD:: Waited for a long time for local transaction operations to finish 3 [txId=" + request.txId()
                                                     + ", tables={}, durationMs={}, commitTs={}]", request.tableIds(),
                                             FastTimestamps.coarseCurrentTimeMillis() - startTs,
                                             request.commitTimestamp());

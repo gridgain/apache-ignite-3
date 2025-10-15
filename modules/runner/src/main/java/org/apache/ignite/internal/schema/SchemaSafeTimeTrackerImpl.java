@@ -94,12 +94,12 @@ public class SchemaSafeTimeTrackerImpl implements SchemaSafeTimeTracker, IgniteC
             long getSafeTime = FastTimestamps.coarseCurrentTimeMillis();
 
             if (Math.abs(timestamp.getPhysical() - schemaSafeTime.current().getPhysical()) > 500) {
-                log.info("The time jump is too much [oldSafeTime={}, newSafeTime={}, duration={}ms]",
+                log.info("PVD:: The time jump is too much [oldSafeTime={}, newSafeTime={}, duration={}ms]",
                         schemaSafeTime.current(), timestamp, timestamp.getPhysical() - schemaSafeTime.current().getPhysical());
             }
 
             if (getSafeTime - timestamp.getPhysical() > 500) {
-                log.info("The time lag is too much [safeTime={}, curTime={}, duration={}ms]",
+                log.info("PVD:: The time lag is too much [safeTime={}, curTime={}, duration={}ms]",
                         timestamp, formatTs(getSafeTime), getSafeTime - timestamp.getPhysical());
             }
 
@@ -107,7 +107,7 @@ public class SchemaSafeTimeTrackerImpl implements SchemaSafeTimeTracker, IgniteC
                 if (FastTimestamps.coarseCurrentTimeMillis() - getSafeTime > 500) {
                     long cur = System.currentTimeMillis();
 
-                    log.info("We had gotten a safe time but could not notify immediately because"
+                    log.info("PVD:: We had gotten a safe time but could not notify immediately because"
                                     + " the previous notification was still continuous [safeTime={}, curTime={}, duration={}ms].",
                             timestamp, formatTs(cur), cur - getSafeTime);
                 }

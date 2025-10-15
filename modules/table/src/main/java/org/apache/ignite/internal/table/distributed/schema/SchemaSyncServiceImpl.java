@@ -60,8 +60,13 @@ public class SchemaSyncServiceImpl implements SchemaSyncService {
                     long now = System.currentTimeMillis();
 
                     if (now - getTs > 500) {
-                        ThreadUtils.dumpStack(log, "Too long schema waiting [start={}, now={}, duration={}ms, delayDuration={}ms]",
+                        ThreadUtils.dumpStack(log, "PVD:: Too long schema waiting [start={}, now={}, duration={}ms, delayDuration={}ms]",
                                 formatTs(ts.getPhysical()), formatTs(now), now - getTs, delayDurationMs.getAsLong());
+                    }
+
+                    if (now - ts.getPhysical() > 500) {
+                        ThreadUtils.dumpStack(log, "PVD:: Too long schema waiting 2 [start={}, now={}, duration={}ms, delayDuration={}ms]",
+                                formatTs(ts.getPhysical()), formatTs(now), now - ts.getPhysical(), delayDurationMs.getAsLong());
                     }
                 });
     }
