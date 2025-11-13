@@ -751,16 +751,17 @@ public class ClientTable implements Table {
      * @return The transaction.
      */
     @Nullable Transaction startTxIfNeeded(@Nullable Transaction tx, List<Transaction> txns, boolean txRequired) {
-        if (tx != null || !txRequired) {
-            return tx;
-        }
-
-        // Will use default timeout.
-        ClientLazyTransaction tx0 = new ClientLazyTransaction(channel().observableTimestamp(), new TransactionOptions(), true);
-
-        txns.add(tx0);
-
-        return tx0;
+//        if (tx != null || !txRequired) {
+//            return tx;
+//        }
+//
+//        // Will use default timeout.
+//        ClientLazyTransaction tx0 = new ClientLazyTransaction(channel().observableTimestamp(), new TransactionOptions(), true);
+//
+//        txns.add(tx0);
+//
+//        return tx0;
+        return null;
     }
 
     /**
