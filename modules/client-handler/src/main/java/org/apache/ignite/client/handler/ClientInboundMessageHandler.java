@@ -53,6 +53,7 @@ import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executor;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Consumer;
 import java.util.function.Function;
@@ -345,6 +346,8 @@ public class ClientInboundMessageHandler
         this.authenticationManager = authenticationManager;
         this.clockService = clockService;
         this.primaryReplicaTracker = primaryReplicaTracker;
+
+        //this.partitionOperationsExecutor = CompletableFuture.delayedExecutor(10, TimeUnit.MILLISECONDS, partitionOperationsExecutor);
         this.partitionOperationsExecutor = partitionOperationsExecutor;
         this.handshakeEventLoopSwitcher = handshakeEventLoopSwitcher;
 

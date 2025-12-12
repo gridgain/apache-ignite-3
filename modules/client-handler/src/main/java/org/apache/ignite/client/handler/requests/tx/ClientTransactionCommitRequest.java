@@ -31,6 +31,8 @@ import org.apache.ignite.internal.hlc.HybridTimestamp;
 import org.apache.ignite.internal.hlc.HybridTimestampTracker;
 import org.apache.ignite.internal.lang.IgniteInternalCheckedException;
 import org.apache.ignite.internal.lang.IgniteTuple3;
+import org.apache.ignite.internal.logger.IgniteLogger;
+import org.apache.ignite.internal.logger.Loggers;
 import org.apache.ignite.internal.replicator.ReplicationGroupId;
 import org.apache.ignite.internal.replicator.TablePartitionId;
 import org.apache.ignite.internal.table.IgniteTablesInternal;
@@ -45,6 +47,8 @@ import org.apache.ignite.tx.TransactionException;
  * Client transaction commit request.
  */
 public class ClientTransactionCommitRequest {
+    private static final IgniteLogger LOG = Loggers.forClass(ClientTransactionCommitRequest.class);
+
     /**
      * Processes the request.
      *
@@ -133,6 +137,8 @@ public class ClientTransactionCommitRequest {
             }
         }
 
+        LOG.info("DBG: before commit id=" + tx.id());
+
         return tx.commitAsync().handle((res, err) -> {
             if (!tx.isReadOnly()) {
                 tsTracker.update(clockService.current());
@@ -143,6 +149,8 @@ public class ClientTransactionCommitRequest {
             if (err != null) {
                 throw ExceptionUtils.sneakyThrow(err);
             }
+
+            LOG.info("DBG: after commit id=" + tx.id());
 
             return null;
         });

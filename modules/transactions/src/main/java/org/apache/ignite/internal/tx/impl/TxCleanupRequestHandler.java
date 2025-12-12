@@ -132,6 +132,8 @@ public class TxCleanupRequestHandler {
     private void processTxCleanup(TxCleanupMessage txCleanupMessage, InternalClusterNode sender, @Nullable Long correlationId) {
         assert correlationId != null;
 
+        LOG.info("DBG: start cleanup id=" + txCleanupMessage.txId());
+
         Map<EnlistedPartitionGroup, CompletableFuture<?>> writeIntentSwitches = new HashMap<>();
 
         // These cleanups will all be local.
@@ -162,6 +164,8 @@ public class TxCleanupRequestHandler {
         allOf(writeIntentSwitches.values().toArray(new CompletableFuture<?>[0]))
                 .whenComplete((unused, ex) -> {
                     releaseTxLocks(txCleanupMessage.txId());
+
+                    LOG.info("DBG: unlocked id=" + txCleanupMessage.txId());
 
                     remotelyTriggeredResourceRegistry.close(txCleanupMessage.txId());
 

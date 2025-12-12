@@ -362,6 +362,21 @@ public class DefaultMessagingService extends AbstractMessagingService {
                 .thenCompose(unused -> responseFuture);
     }
 
+    private CompletableFuture<Void> sendViaNetwork0(
+            UUID nodeId,
+            ChannelType type,
+            InetSocketAddress addr,
+            NetworkMessage message,
+            boolean strictIdCheck
+    ) {
+        Executor delayed = CompletableFuture.delayedExecutor(10, TimeUnit.MILLISECONDS);
+
+        CompletableFuture<CompletableFuture<Void>> fut =
+                CompletableFuture.supplyAsync(() -> sendViaNetwork(nodeId, type, addr, message, strictIdCheck), delayed);
+
+        return fut.thenCompose(Function.identity());
+    }
+
     /**
      * Sends network object.
      *

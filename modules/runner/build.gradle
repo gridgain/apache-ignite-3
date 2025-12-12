@@ -324,6 +324,16 @@ tasks.register('runClientGetAllExplicitBenchmark', JavaExec) {
     enableAssertions = true
 }
 
+tasks.register('runClientColocatedBenchmark', JavaExec) {
+    mainClass = 'org.apache.ignite.internal.benchmark.ClientKvColocatedBenchmark'
+
+    jvmArgs += addOpens + ['-Dio.netty.tryReflectionSetAccessible=true', '-Xmx16g']
+
+    classpath = sourceSets.integrationTest.runtimeClasspath
+
+    enableAssertions = true
+}
+
 jar {
     manifest {
         attributes(
