@@ -690,8 +690,6 @@ public class TxManagerImpl implements TxManager, NetworkMessageHandler, SystemVi
 
         ReadWriteTxContext txContext = transactionInflights.lockTxForNewUpdates(txId, enlistedGroups);
 
-        LOG.info("DBG: finish id=" + txId);
-
         // Wait for commit acks first, then proceed with the finish request.
         return txContext.performFinish(commitIntent, commit ->
                 prepareFinish(
@@ -740,8 +738,6 @@ public class TxManagerImpl implements TxManager, NetworkMessageHandler, SystemVi
             CompletableFuture<TransactionMeta> txFinishFuture,
             boolean unlock
     ) {
-        LOG.info("DBG: prepare finish id=" + txId);
-
         HybridTimestamp commitTimestamp = commitTimestamp(commit);
         // In case of commit it's required to check whether current primaries are still the same that were enlisted and whether
         // given primaries are not expired or, in other words, whether commitTimestamp is less or equal to the enlisted primaries
@@ -1137,8 +1133,6 @@ public class TxManagerImpl implements TxManager, NetworkMessageHandler, SystemVi
             @Nullable HybridTimestamp commitTimestamp,
             UUID txId
     ) {
-        LOG.info("DBG: before cleanup id=" + txId);
-
         for (ReplicationGroupId replicationGroupId : enlistedPartitions.keySet()) {
             assertReplicationGroupType(replicationGroupId);
         }

@@ -361,10 +361,14 @@ public class TransactionInflights {
                 try {
                     if (commit) {
                         if (readyException == null) {
-                            CompletableFuture<Void> actionFut = finishAction.apply(true);
+//                            CompletableFuture<Void> actionFut = finishAction.apply(true);
+//
+//                            actionFut.whenComplete((ignoredFinishActionResult, finishException) ->
+//                                    completeFinishInProgressFuture(true, null, finishException));
 
-                            actionFut.whenComplete((ignoredFinishActionResult, finishException) ->
-                                    completeFinishInProgressFuture(true, null, finishException));
+                            completeFinishInProgressFuture(true, null, null);
+
+                            finishAction.apply(true);
                         } else {
                             // If we got ready exception, that means some of enlisted partitions could be broken/unavailable.
                             // Respond to caller with the commit failure immediately to reduce potential unavailability window.

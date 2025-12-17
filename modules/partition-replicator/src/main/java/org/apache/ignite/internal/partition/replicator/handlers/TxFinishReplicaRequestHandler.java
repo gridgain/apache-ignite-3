@@ -130,8 +130,6 @@ public class TxFinishReplicaRequestHandler {
      * @return future result of the operation.
      */
     public CompletableFuture<TransactionResult> handle(TxFinishReplicaRequest request) {
-        LOG.info("DBG: finish request id=" + request.txId());
-
         // TODO: https://issues.apache.org/jira/browse/IGNITE-19170 Use ZonePartitionIdMessage and remove cast
         Map<ReplicationGroupId, PartitionEnlistment> enlistedGroups = asReplicationGroupIdToPartitionMap(request.groups());
 
@@ -225,17 +223,11 @@ public class TxFinishReplicaRequestHandler {
                 .map(entry -> new EnlistedPartitionGroup(entry.getKey(), entry.getValue().tableIds()))
                 .collect(toList());
 
-        LOG.info("DBG: start finish id=" + txId);
-
         return finishTransaction(enlistedPartitionGroups, txId, commit, commitTimestamp)
                 .thenCompose(txResult -> {
-                            LOG.info("DBG: start cleanup id=" + txId);
-
                             CompletableFuture<TransactionResult> fut = txManager.cleanup(replicationGroupId,
                                             enlistedPartitions, commit, commitTimestamp, txId)
                                     .thenApply(v -> {
-                                        LOG.info("DBG: finish cleanup id=" + txId);
-
                                         return txResult;
                                     });
 
