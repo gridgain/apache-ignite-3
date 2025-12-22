@@ -32,7 +32,9 @@ import org.apache.ignite.raft.jraft.Lifecycle;
 import org.apache.ignite.raft.jraft.entity.LogEntry;
 import org.apache.ignite.raft.jraft.entity.codec.LogEntryDecoder;
 import org.apache.ignite.raft.jraft.entity.codec.LogEntryEncoder;
-import org.apache.ignite.raft.jraft.entity.codec.v1.V1Encoder;import org.apache.ignite.raft.jraft.storage.logit.option.StoreOptions;
+import org.apache.ignite.raft.jraft.entity.codec.v1.V1Encoder;
+import org.apache.ignite.raft.jraft.entity.codec.v2.V2Encoder;
+import org.apache.ignite.raft.jraft.storage.logit.option.StoreOptions;
 import org.apache.ignite.raft.jraft.storage.logit.storage.factory.LogStoreFactory;
 import org.apache.ignite.raft.jraft.storage.logit.storage.file.AbstractFile;
 import org.apache.ignite.raft.jraft.storage.logit.storage.file.AbstractFile.RecoverResult;
@@ -344,7 +346,7 @@ public abstract class AbstractDB implements Lifecycle<LogStoreFactory> {
      * @return (writtenPosition, expectFlushPosition)
      */
     public Pair<Integer, Long> appendLogAsync(final long logIndex, LogEntryEncoder encoder, LogEntry logEntry) {
-        V1Encoder v1Encoder = (V1Encoder)encoder;
+        V2Encoder v1Encoder = (V2Encoder) encoder;
         int dataSize = v1Encoder.size(logEntry);
         final int waitToWroteSize = SegmentFile.getWriteBytes(dataSize);
 
