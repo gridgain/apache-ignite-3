@@ -41,6 +41,7 @@ import org.apache.ignite.internal.tx.MismatchingTransactionOutcomeInternalExcept
 import org.apache.ignite.internal.tx.PendingTxPartitionEnlistment;
 import org.apache.ignite.internal.tx.TransactionResult;
 import org.apache.ignite.internal.tx.message.FinishedTransactionsBatchMessage;
+import org.apache.ignite.internal.util.CompletableFutures;
 import org.jetbrains.annotations.Nullable;
 import org.jetbrains.annotations.TestOnly;
 
@@ -449,14 +450,15 @@ public class TransactionInflights {
 
         private CompletableFuture<Void> waitNoInflights() {
             // no new inflights are possible due to locked tx for update.
-            if (inflights == 0) {
-                if (err != null) {
-                    waitRepFut.completeExceptionally(err);
-                } else {
-                    waitRepFut.complete(null);
-                }
-            }
-            return waitRepFut;
+//            if (inflights == 0) {
+//                if (err != null) {
+//                    waitRepFut.completeExceptionally(err);
+//                } else {
+//                    waitRepFut.complete(null);
+//                }
+//            }
+//            return waitRepFut;
+            return CompletableFutures.nullCompletedFuture();
         }
 
         void cancelWaitingInflights(ReplicationGroupId groupId, long enlistmentConsistencyToken) {
