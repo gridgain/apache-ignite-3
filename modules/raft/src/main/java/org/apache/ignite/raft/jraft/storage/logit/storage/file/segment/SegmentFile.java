@@ -25,7 +25,7 @@ import org.apache.ignite.internal.util.GridUnsafe;
 import org.apache.ignite.raft.jraft.entity.LogEntry;
 import org.apache.ignite.raft.jraft.entity.codec.DefaultLogEntryCodecFactory;
 import org.apache.ignite.raft.jraft.entity.codec.v1.V1Encoder;
-import org.apache.ignite.raft.jraft.option.RaftOptions;
+import org.apache.ignite.raft.jraft.entity.codec.v2.V2Encoder;import org.apache.ignite.raft.jraft.option.RaftOptions;
 import org.apache.ignite.raft.jraft.storage.logit.storage.file.AbstractFile;
 import org.apache.ignite.raft.jraft.util.Bits;
 
@@ -96,7 +96,7 @@ public class SegmentFile extends AbstractFile {
      * @param entrySize Pre-calculated serialized entry size
      * @return the wrote position
      */
-    public int appendData(final long logIndex, V1Encoder encoder, LogEntry entry, int entrySize) {
+    public int appendData(final long logIndex, V2Encoder encoder, LogEntry entry, int entrySize) {
         this.writeLock.lock();
         try {
             assert (logIndex > getLastLogIndex());
