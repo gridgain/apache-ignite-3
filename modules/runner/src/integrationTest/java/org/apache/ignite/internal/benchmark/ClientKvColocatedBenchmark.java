@@ -17,9 +17,12 @@
 
 package org.apache.ignite.internal.benchmark;
 
+import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
+import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
@@ -89,7 +92,7 @@ public class ClientKvColocatedBenchmark extends ClientKvBenchmark {
                         .colocateBy("KEY")
                         .index("IVEXPIRATIONDATE")
                         .ifNotExists()
-                        //.zone(ZONE_NAME)
+                        .zone(ZONE_NAME)
                         .build()
         );
 
@@ -104,7 +107,7 @@ public class ClientKvColocatedBenchmark extends ClientKvBenchmark {
                         .primaryKey("TAGNAME", "TAGVALUE", "KEY")
                         .colocateBy("KEY")
                         .ifNotExists()
-                        //.zone(ZONE_NAME)
+                        .zone(ZONE_NAME)
                         .build()
         );
     }
@@ -123,25 +126,66 @@ public class ClientKvColocatedBenchmark extends ClientKvBenchmark {
         return "key-" + threadIndex + "-";
     }
 
-    /**
-     * Benchmark for colocated transaction via embedded client.
-     */
-    @Benchmark
-    public void replace() {
-        int opId = nextId();
-        String aKey = keyPrefixOfThread(Thread.currentThread().getId()) + opId;
+    public void createOrReplace(String aKey)
+    {
         Map<String, Set<String>> lvTags = new HashMap<>();
-        lvTags.put(TAG2, Set.of(TAG2_VALUE_PREFIX + aKey));
+        lvTags.put(TAG1, Set.of(TAG1_VALUE_PREFIX + aKey));
 
         var tx = client.transactions().begin();
-        var oldvalue = dataView.get(tx, createDataKey(aKey));
-        if (oldvalue != null) {
-            dataView.put(tx, createDataKey(aKey), createDataValue(aKey, lvTags, binaryPayload));
-
+        var oldValue = dataView.getAndPut(tx, createDataKey(aKey), createDataValue(aKey, lvTags, binaryPayload));
+        if (oldValue == null) {
+            tagsView.putAll(tx, buildTagMap(aKey, lvTags));
+        } else {
             tagsView.putAll(tx, buildTagMap(aKey, lvTags));
         }
         tx.commit();
     }
+
+    public byte[] get(String aKey)
+    {
+        var tuple = dataView.get(null, createDataKey(aKey));
+        return tuple != null ? tuple.bytesValue("PART_0") : null;
+    }
+
+    public void delete(String aKey)
+    {
+        var tx = client.transactions().begin();
+        var oldValue = dataView.getAndRemove(tx, createDataKey(aKey));
+        if (oldValue != null)
+        {
+            byte[] bytes = oldValue.bytesValue("IVTAGS");
+            Map<String, Collection<String>> tags = readTags(bytes);
+            tagsView.removeAll(tx, buildTagMap(aKey, tags).keySet());
+        }
+        tx.commit();
+    }
+
+    private void replace(String aKey) {
+        Map<String, Set<String>> lvTags = new HashMap<>();
+        lvTags.put(TAG2, Set.of(TAG2_VALUE_PREFIX + aKey));
+
+        var tx = client.transactions().begin();
+        Tuple dataKey = createDataKey(aKey);
+        Tuple dataValue = createDataValue(aKey, lvTags, binaryPayload);
+        if (!dataView.putIfAbsent(tx, dataKey, dataValue)) {
+            tagsView.putAll(tx, buildTagMap(aKey, lvTags));
+        }
+        tx.commit();
+    }
+
+    @Benchmark
+    public void flow1() {
+        int opId = nextId();
+
+        String aKey = keyPrefixOfThread(Thread.currentThread().getId()) + opId;
+
+        createOrReplace(aKey);
+        get(aKey);
+        replace(aKey);
+        get(aKey);
+        delete(aKey);
+    }
+
 
     /**
      * Benchmark's entry point. Can be started from command line: ./gradlew ":ignite-runner:ClientKvColocatedBenchmark" --args='jmh.batch=10
@@ -192,6 +236,28 @@ public class ClientKvColocatedBenchmark extends ClientKvBenchmark {
             throw new RuntimeException(e);
         }
         return baos.toByteArray();
+    }
+
+    private static Map<String, Collection<String>> readTags(byte[] data) {
+        Map<String, Collection<String>> res = new HashMap<>();
+
+        ByteArrayInputStream bais = new ByteArrayInputStream(data);
+        try (DataInputStream dis = new DataInputStream(bais)) {
+            int tagsSize = dis.read();
+            while(tagsSize-- > 0) {
+                String key = dis.readUTF();
+                ArrayList<String> vals = new ArrayList<>();
+                res.put(key, vals);
+
+                int valSize = dis.read();
+                while(valSize-- > 0) {
+                    vals.add(dis.readUTF());
+                }
+            }
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
+        return res;
     }
 
     private static byte[] writeExt(Map<String, String> tags) {

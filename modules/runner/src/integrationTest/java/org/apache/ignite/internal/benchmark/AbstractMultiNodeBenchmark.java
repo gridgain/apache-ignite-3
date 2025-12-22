@@ -96,7 +96,7 @@ public class AbstractMultiNodeBenchmark {
 
         try {
             // Create a new zone on the cluster's start-up.
-            //createDistributionZoneOnStartup();
+            createDistributionZoneOnStartup();
 
             // Create tables on the cluster's start-up.
             createTablesOnStartup();
