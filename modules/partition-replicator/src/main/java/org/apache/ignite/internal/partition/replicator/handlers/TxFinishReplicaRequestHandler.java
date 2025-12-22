@@ -223,9 +223,11 @@ public class TxFinishReplicaRequestHandler {
                 .map(entry -> new EnlistedPartitionGroup(entry.getKey(), entry.getValue().tableIds()))
                 .collect(toList());
         return finishTransaction(enlistedPartitionGroups, txId, commit, commitTimestamp)
-                .thenCompose(txResult ->
-                    txManager.cleanup(replicationGroupId, enlistedPartitions, commit, commitTimestamp, txId)
-                            .thenApply(v -> txResult)
+                .thenApply(txResult -> {
+                            txManager.cleanup(replicationGroupId, enlistedPartitions, commit, commitTimestamp, txId);
+
+                            return txResult;
+                        }
                 );
     }
 
