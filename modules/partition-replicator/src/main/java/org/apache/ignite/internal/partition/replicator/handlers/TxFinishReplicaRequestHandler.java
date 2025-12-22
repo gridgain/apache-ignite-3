@@ -224,7 +224,9 @@ public class TxFinishReplicaRequestHandler {
                 .collect(toList());
         return finishTransaction(enlistedPartitionGroups, txId, commit, commitTimestamp)
                 .thenApply(txResult -> {
-                            txManager.cleanup(replicationGroupId, enlistedPartitions, commit, commitTimestamp, txId);
+                            CompletableFuture.runAsync(() -> {
+                                txManager.cleanup(replicationGroupId, enlistedPartitions, commit, commitTimestamp, txId);
+                            });
 
                             return txResult;
                         }
