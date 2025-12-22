@@ -224,14 +224,10 @@ public class TxFinishReplicaRequestHandler {
                 .collect(toList());
 
         return finishTransaction(enlistedPartitionGroups, txId, commit, commitTimestamp)
-                .thenCompose(txResult -> {
-                            CompletableFuture<TransactionResult> fut = txManager.cleanup(replicationGroupId,
-                                            enlistedPartitions, commit, commitTimestamp, txId)
-                                    .thenApply(v -> {
-                                        return txResult;
-                                    });
+                .thenApply(txResult -> {
+                            txManager.cleanup(replicationGroupId, enlistedPartitions, commit, commitTimestamp, txId);
 
-                            return fut;
+                            return txResult;
                         }
                 );
     }
