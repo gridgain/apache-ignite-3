@@ -1019,7 +1019,7 @@ public class TxManagerImpl implements TxManager, NetworkMessageHandler, SystemVi
 
     @Override
     public CompletableFuture<Void> startAsync(ComponentContext componentContext) {
-        var deadlockPreventionPolicy = new DeadlockPreventionPolicyImpl(TxIdComparators.NONE, -1);
+        var deadlockPreventionPolicy = new DeadlockPreventionPolicyImpl(DEFAULT_TX_ID_COMPARATOR, DEFAULT_LOCK_TIMEOUT);
 
         // TODO https://issues.apache.org/jira/browse/IGNITE-23539
         lockManager.start(deadlockPreventionPolicy);
