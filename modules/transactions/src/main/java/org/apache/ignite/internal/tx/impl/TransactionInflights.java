@@ -363,7 +363,7 @@ public class TransactionInflights {
 
         CompletableFuture<Void> performFinish(UUID txId, long begin, boolean commit, Function<Boolean, CompletableFuture<Void>> finishAction) {
             waitReadyToFinish(commit).whenComplete((ignored, readyException) -> {
-                LOG.info("DBG: apply finish id={}, nanos={}", txId, (System.nanoTime() - begin));
+                LOG.info("DBG: apply finish id={}, nanos1={}", txId, (System.nanoTime() - begin));
 
                 try {
                     if (commit) {
@@ -372,10 +372,6 @@ public class TransactionInflights {
 
                             actionFut.whenComplete((ignoredFinishActionResult, finishException) ->
                                     completeFinishInProgressFuture(true, null, finishException));
-
-//                            completeFinishInProgressFuture(true, null, null);
-//
-//                            finishAction.apply(true);
                         } else {
                             // If we got ready exception, that means some of enlisted partitions could be broken/unavailable.
                             // Respond to caller with the commit failure immediately to reduce potential unavailability window.
@@ -456,15 +452,14 @@ public class TransactionInflights {
 
         private CompletableFuture<Void> waitNoInflights() {
             // no new inflights are possible due to locked tx for update.
-//            if (inflights == 0) {
-//                if (err != null) {
-//                    waitRepFut.completeExceptionally(err);
-//                } else {
-//                    waitRepFut.complete(null);
-//                }
-//            }
-//            return waitRepFut;
-            return CompletableFutures.nullCompletedFuture();
+            if (inflights == 0) {
+                if (err != null) {
+                    waitRepFut.completeExceptionally(err);
+                } else {
+                    waitRepFut.complete(null);
+                }
+            }
+            return waitRepFut;
         }
 
         void cancelWaitingInflights(ReplicationGroupId groupId, long enlistmentConsistencyToken) {
