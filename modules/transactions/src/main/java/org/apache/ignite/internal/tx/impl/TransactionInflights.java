@@ -369,10 +369,13 @@ public class TransactionInflights {
                     if (commit) {
                         if (readyException == null) {
                             CompletableFuture<Void> actionFut = finishAction.apply(true);
-                            CompletableFuture<Void> repFut = waitNoInflights();
 
-                            CompletableFuture.allOf(actionFut, repFut).whenComplete((ignoredFinishActionResult, finishException) ->
+                            actionFut.whenComplete((ignoredFinishActionResult, finishException) ->
                                     completeFinishInProgressFuture(true, null, finishException));
+
+//                            completeFinishInProgressFuture(true, null, null);
+//
+//                            finishAction.apply(true);
                         } else {
                             // If we got ready exception, that means some of enlisted partitions could be broken/unavailable.
                             // Respond to caller with the commit failure immediately to reduce potential unavailability window.
@@ -445,7 +448,7 @@ public class TransactionInflights {
                             });
                 }
 
-                return allOfToList(futures).thenCompose(unused -> nullCompletedFuture());
+                return allOfToList(futures).thenCompose(unused -> waitNoInflights());
             } else {
                 return nullCompletedFuture();
             }
@@ -453,14 +456,15 @@ public class TransactionInflights {
 
         private CompletableFuture<Void> waitNoInflights() {
             // no new inflights are possible due to locked tx for update.
-            if (inflights == 0) {
-                if (err != null) {
-                    waitRepFut.completeExceptionally(err);
-                } else {
-                    waitRepFut.complete(null);
-                }
-            }
-            return waitRepFut;
+//            if (inflights == 0) {
+//                if (err != null) {
+//                    waitRepFut.completeExceptionally(err);
+//                } else {
+//                    waitRepFut.complete(null);
+//                }
+//            }
+//            return waitRepFut;
+            return CompletableFutures.nullCompletedFuture();
         }
 
         void cancelWaitingInflights(ReplicationGroupId groupId, long enlistmentConsistencyToken) {
