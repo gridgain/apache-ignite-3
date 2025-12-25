@@ -228,18 +228,12 @@ public class TxFinishReplicaRequestHandler {
         LOG.info("DBG: start finish id=" + txId);
 
         return finishTransaction(enlistedPartitionGroups, txId, commit, commitTimestamp)
-                .thenCompose(txResult -> {
+                .thenApply(txResult -> {
                             LOG.info("DBG: start cleanup id=" + txId);
 
-                            CompletableFuture<TransactionResult> fut = txManager.cleanup(replicationGroupId,
-                                            enlistedPartitions, commit, commitTimestamp, txId)
-                                    .thenApply(v -> {
-                                        LOG.info("DBG: finish cleanup id=" + txId);
+                            txManager.cleanup(replicationGroupId, enlistedPartitions, commit, commitTimestamp, txId);
 
-                                        return txResult;
-                                    });
-
-                            return fut;
+                            return txResult;
                         }
                 );
     }
