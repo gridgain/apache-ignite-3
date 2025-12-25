@@ -137,6 +137,8 @@ public class ClientTransactionCommitRequest {
             }
         }
 
+        LOG.info("DBG: before commit id=" + tx.id());
+
         return tx.commitAsync().handle((res, err) -> {
             if (!tx.isReadOnly()) {
                 tsTracker.update(clockService.current());
@@ -147,6 +149,8 @@ public class ClientTransactionCommitRequest {
             if (err != null) {
                 throw ExceptionUtils.sneakyThrow(err);
             }
+
+            LOG.info("DBG: after commit id=" + tx.id());
 
             return null;
         });

@@ -35,6 +35,8 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Function;
 import org.apache.ignite.internal.hlc.ClockService;
 import org.apache.ignite.internal.hlc.HybridTimestamp;
+import org.apache.ignite.internal.logger.IgniteLogger;
+import org.apache.ignite.internal.logger.Loggers;
 import org.apache.ignite.internal.placementdriver.PlacementDriver;
 import org.apache.ignite.internal.replicator.ReplicationGroupId;
 import org.apache.ignite.internal.tx.MismatchingTransactionOutcomeInternalException;
@@ -51,6 +53,8 @@ import org.jetbrains.annotations.TestOnly;
  * some requests are in-flight.
  */
 public class TransactionInflights {
+    private static final IgniteLogger LOG = Loggers.forClass(TransactionInflights.class);
+
     /** Hint for maximum concurrent txns. */
     private static final int MAX_CONCURRENT_TXNS = 1024;
 
@@ -357,8 +361,10 @@ public class TransactionInflights {
             this.noWrites = noWrites;
         }
 
-        CompletableFuture<Void> performFinish(boolean commit, Function<Boolean, CompletableFuture<Void>> finishAction) {
+        CompletableFuture<Void> performFinish(UUID txId, boolean commit, Function<Boolean, CompletableFuture<Void>> finishAction) {
             waitReadyToFinish(commit).whenComplete((ignored, readyException) -> {
+                LOG.info("DBG: apply finish id=" + txId);
+
                 try {
                     if (commit) {
                         if (readyException == null) {

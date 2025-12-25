@@ -167,7 +167,7 @@ public class ClientKvColocatedBenchmark extends ClientKvBenchmark {
         var tx = client.transactions().begin();
         Tuple dataKey = createDataKey(aKey);
         Tuple dataValue = createDataValue(aKey, lvTags, binaryPayload);
-        if (!dataView.putIfAbsent(tx, dataKey, dataValue)) {
+        if (dataView.replace(tx, dataKey, dataValue)) {
             tagsView.putAll(tx, buildTagMap(aKey, lvTags));
         }
         tx.commit();
