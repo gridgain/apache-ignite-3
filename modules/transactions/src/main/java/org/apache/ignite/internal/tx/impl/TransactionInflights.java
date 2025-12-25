@@ -361,9 +361,9 @@ public class TransactionInflights {
             this.noWrites = noWrites;
         }
 
-        CompletableFuture<Void> performFinish(UUID txId, boolean commit, Function<Boolean, CompletableFuture<Void>> finishAction) {
+        CompletableFuture<Void> performFinish(UUID txId, long begin, boolean commit, Function<Boolean, CompletableFuture<Void>> finishAction) {
             waitReadyToFinish(commit).whenComplete((ignored, readyException) -> {
-                LOG.info("DBG: apply finish id=" + txId);
+                LOG.info("DBG: apply finish id={}, nanos={}", txId, (System.nanoTime() - begin));
 
                 try {
                     if (commit) {

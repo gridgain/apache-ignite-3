@@ -691,9 +691,10 @@ public class TxManagerImpl implements TxManager, NetworkMessageHandler, SystemVi
         ReadWriteTxContext txContext = transactionInflights.lockTxForNewUpdates(txId, enlistedGroups);
 
         LOG.info("DBG: finish id=" + txId);
+        long nanos0 = System.nanoTime();
 
         // Wait for commit acks first, then proceed with the finish request.
-        return txContext.performFinish(txId, commitIntent, commit ->
+        return txContext.performFinish(txId, nanos0, commitIntent, commit ->
                 prepareFinish(
                         observableTimestampTracker,
                         commitPartition,
