@@ -1687,6 +1687,7 @@ public class NodeImpl implements Node, RaftServerService {
             Utils.runInThread(this.getOptions().getCommonExecutor(), () -> {
                 for (final Closure done : dones) {
                     done.run(new Status(RaftError.EBUSY, "Node %s log manager is busy.", this.getNodeId()));
+                    LOG.info("Node %s log manager is busy", this.getNodeId());
                 }
             });
 

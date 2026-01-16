@@ -176,6 +176,9 @@ public class StripedDisruptor<T extends NodeIdAware> {
 
             queues[i] = disruptor.start();
             disruptors[i] = disruptor;
+            if (raftMetrics != null) {
+                raftMetrics.addRingBufferCapacity(i, () -> disruptor.getRingBuffer().remainingCapacity());
+            }
         }
     }
 

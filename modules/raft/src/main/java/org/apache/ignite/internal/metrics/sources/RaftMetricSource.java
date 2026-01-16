@@ -21,8 +21,10 @@ import java.lang.invoke.MethodHandles;
 import java.lang.invoke.VarHandle;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.function.LongSupplier;
 import java.util.stream.LongStream;
 import org.apache.ignite.internal.metrics.DistributionMetric;
+import org.apache.ignite.internal.metrics.LongGauge;
 import org.apache.ignite.internal.metrics.Metric;
 import org.apache.ignite.internal.metrics.MetricSet;
 import org.apache.ignite.internal.metrics.MetricSource;
@@ -154,6 +156,7 @@ public class RaftMetricSource implements MetricSource {
      */
     public DisruptorMetrics disruptorMetrics(String name) {
         return new DisruptorMetrics(
+                name,
                 (DistributionMetric) metrics.get(name + ".Batch"),
                 (DistributionMetric) metrics.get(name + ".Stripes")
         );
@@ -175,8 +178,10 @@ public class RaftMetricSource implements MetricSource {
     public class DisruptorMetrics {
         private final DistributionMetric batchSizeHistogramMetric;
         private final DistributionMetric stripeHistogramMetric;
+        private final String name;
 
-        DisruptorMetrics(DistributionMetric averageBatchSizeMetric, DistributionMetric stripeHistogramMetric) {
+        DisruptorMetrics(String name, DistributionMetric averageBatchSizeMetric, DistributionMetric stripeHistogramMetric) {
+            this.name = name;
             this.batchSizeHistogramMetric = averageBatchSizeMetric;
             this.stripeHistogramMetric = stripeHistogramMetric;
         }
@@ -191,6 +196,11 @@ public class RaftMetricSource implements MetricSource {
 
         public void hitToStripe(int stripe) {
             stripeHistogramMetric.add(stripe);
+        }
+
+        public void addRingBufferCapacity(int stripeNumber, LongSupplier remainingCapacity) {
+            String metricName = this.name + "_" + stripeNumber;
+            metrics.put(metricName, new LongGauge(metricName, "", remainingCapacity));
         }
     }
 }

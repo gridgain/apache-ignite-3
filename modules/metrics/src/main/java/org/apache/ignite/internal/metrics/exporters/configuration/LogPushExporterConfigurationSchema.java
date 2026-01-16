@@ -43,8 +43,7 @@ public class LogPushExporterConfigurationSchema extends ExporterConfigurationSch
      */
     @Value(hasDefault = true)
     public String[] enabledMetrics = {
-            "metastorage",
-            "placement-driver",
-            "resource.vacuum"
+            "raft",
+
     };
 }
