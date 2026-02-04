@@ -144,13 +144,16 @@ public class OrphanDetector {
     private CompletableFuture<Boolean> lockConflictListener(LockEventParameters params) {
         if (busyLock.enterBusy()) {
             try {
-                ArrayList<CompletableFuture<Boolean>> futs = new ArrayList<>(params.lockHolderTxs().size());
-
+                // Test all other lockers in the background.
                 for (UUID txId : params.lockHolderTxs()) {
-                    futs.add(checkTxOrphanedInternal(txId));
+                    if (params.lockOwnerTx().equals(txId)) {
+                        continue;
+                    }
+                    checkTxOrphanedInternal(txId);
                 }
 
-                return allOf(futs).thenApply(unused -> false);
+                // Test conflict lock owner.
+                return checkTxOrphanedInternal(params.lockOwnerTx());
             } finally {
                 busyLock.leaveBusy();
             }
@@ -175,7 +178,7 @@ public class OrphanDetector {
 
         if (makeTxAbandoned(txId, txState)) {
             LOG.info(
-                    "Conflict was found, and the coordinator of the transaction that holds a lock is not available "
+                    "Found a lock which belongs to abandoned transaction, will try to resolve the transaction state "
                             + "[txId={}, txCrd={}].",
                     txId,
                     txState.txCoordinatorId()
@@ -187,6 +190,7 @@ public class OrphanDetector {
         }
 
         // TODO: https://issues.apache.org/jira/browse/IGNITE-21153
+        // TODO Exception can be static final - we don't rely on it content.
         return failedFuture(
                 new TransactionException(ACQUIRE_LOCK_ERR, "The lock is held by the abandoned transaction [abandonedTxId=" + txId + "]."));
     }

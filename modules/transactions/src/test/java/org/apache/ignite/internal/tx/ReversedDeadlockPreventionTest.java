@@ -31,6 +31,7 @@ import org.junit.jupiter.api.Test;
 
 /**
  * Test for WOUND-WAIT deadlock prevention policy.
+ * TODO delete
  */
 public class ReversedDeadlockPreventionTest extends AbstractDeadlockPreventionTest {
     private long counter;

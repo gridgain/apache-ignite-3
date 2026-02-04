@@ -1024,6 +1024,22 @@ public abstract class AbstractLockManagerTest extends IgniteAbstractTest {
     }
 
     @Test
+    public void testWaitNotInOrder2() {
+        UUID txId0 = TestTransactionIds.newTransactionId();
+        UUID txId1 = TestTransactionIds.newTransactionId();
+        UUID txId2 = TestTransactionIds.newTransactionId();
+        LockKey key = lockKey();
+
+        lockManager.acquire(txId0, key, S).join();
+
+        lockManager.acquire(txId2, key, S).join();
+
+        var tx1Lock = lockManager.acquire(txId1, key, X);
+
+        assertFalse(tx1Lock.isDone());
+    }
+
+    @Test
     public void testWaitFailNotInOrder() {
         LockKey key = lockKey();
 

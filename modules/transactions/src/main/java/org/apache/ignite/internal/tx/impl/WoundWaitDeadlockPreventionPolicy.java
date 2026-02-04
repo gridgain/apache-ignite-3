@@ -20,20 +20,11 @@ package org.apache.ignite.internal.tx.impl;
 import java.util.Comparator;
 import java.util.UUID;
 import org.apache.ignite.internal.tx.DeadlockPreventionPolicy;
-import org.apache.ignite.internal.tx.Waiter;
 
 /**
- * Implements a deadlock prevention policy that resolves conflicts between two transactions (tx1 and tx2) contending for the same key. When
- * tx1 holds a lock and tx2 attempts to acquire it, the policy allows tx2 to wait for the lock if any of the following conditions are
- * met:
- * <ul>
- *     <li>tx2 is older than tx1.</li>
- *     <li>tx2 is younger than tx1 but has a higher {@link org.apache.ignite.internal.tx.TxPriority}.</li>
- *     <li>The wait timeout is greater than 0.</li>
- * </ul>
- * If none of these conditions are met, tx2 is aborted to prevent deadlock.
+ * Wound-wait prevention policy. TODO desc.
  */
-public class WaitDieDeadlockPreventionPolicy implements DeadlockPreventionPolicy {
+public class WoundWaitDeadlockPreventionPolicy implements DeadlockPreventionPolicy {
     private static final TxIdPriorityComparator TX_ID_PRIORITY_COMPARATOR = new TxIdPriorityComparator();
 
     /** {@inheritDoc} */
@@ -46,20 +37,5 @@ public class WaitDieDeadlockPreventionPolicy implements DeadlockPreventionPolicy
     @Override
     public long waitTimeout() {
         return 0;
-    }
-
-    @Override
-    public Waiter allowWait(Waiter waiter, Waiter owner) {
-        int res = TX_ID_PRIORITY_COMPARATOR.compare(waiter.txId(), owner.txId());
-
-        // Can happen in case of upgrade. Owner waits a lock itself.
-        // TODO don't need this.
-//        if (owner.intendedLockMode() != null) {
-//            return res < 0 ? owner : waiter;
-//        }
-
-        // Waiter is allowed to wait for owner if it's older.
-        // IDs are sorted for older to younger.
-        return res < 0 ? null : waiter;
     }
 }

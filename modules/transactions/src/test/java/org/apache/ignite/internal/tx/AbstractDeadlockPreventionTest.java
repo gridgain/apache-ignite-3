@@ -31,6 +31,7 @@ import org.junit.jupiter.api.Test;
 
 /**
  * Abstract class containing some tests for deadlock prevention that check common scenarios for different policies.
+ * TODO move all single keys tests to heap lm test as they cant produce deadlock.
  */
 public abstract class AbstractDeadlockPreventionTest extends AbstractLockingTest {
     protected abstract DeadlockPreventionPolicy deadlockPreventionPolicy();
