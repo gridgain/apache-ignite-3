@@ -84,4 +84,13 @@ public interface DeadlockPreventionPolicy {
     default @Nullable Waiter allowWait(Waiter waiter, Waiter owner) {
         return null;
     };
+
+    /**
+     * Order for a first conflict waiter search.
+     *
+     * @return
+     */
+    default boolean reverse() {
+        return false;
+    }
 }

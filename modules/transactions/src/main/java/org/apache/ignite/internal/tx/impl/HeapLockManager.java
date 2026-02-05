@@ -29,11 +29,11 @@ import java.util.Comparator;
 import java.util.EnumMap;
 import java.util.EnumSet;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
+import java.util.NavigableMap;
 import java.util.Set;
 import java.util.TreeMap;
 import java.util.UUID;
@@ -759,7 +759,8 @@ public class HeapLockManager extends AbstractEventProducer<LockEvent, LockEventP
      */
     public class LockState implements Releasable {
         /** Waiters sorted by priority. Older (higher priority) goes first. */
-        private final TreeMap<UUID, WaiterImpl> waiters;
+        private final Map<UUID, WaiterImpl> waiters;
+        private final NavigableMap<UUID, WaiterImpl> conflictsView;
 
         /** Lock key. */
         private volatile LockKey key;
@@ -768,7 +769,9 @@ public class HeapLockManager extends AbstractEventProducer<LockEvent, LockEventP
             Comparator<UUID> txComparator =
                     deadlockPreventionPolicy.txIdComparator() != null ? deadlockPreventionPolicy.txIdComparator() : UUID::compareTo;
 
-            this.waiters = new TreeMap<>(txComparator);
+            var waitersStore = new TreeMap<UUID, WaiterImpl>(txComparator);
+            this.waiters = waitersStore;
+            this.conflictsView = deadlockPreventionPolicy.reverse() ? waitersStore.descendingMap() : waitersStore;
         }
 
         /**
@@ -940,7 +943,7 @@ public class HeapLockManager extends AbstractEventProducer<LockEvent, LockEventP
             LockMode intendedLockMode = waiter.intendedLockMode();
             assert intendedLockMode != null : "Intended lock mode is null";
 
-            for (Entry<UUID, WaiterImpl> entry : waiters.descendingMap().entrySet()) {
+            for (Entry<UUID, WaiterImpl> entry : conflictsView.entrySet()) {
                 WaiterImpl tmp = entry.getValue();
 
                 if (tmp.equals(waiter)) {
