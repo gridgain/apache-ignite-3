@@ -76,7 +76,7 @@ public class LockKey {
     @Override
     public int hashCode() {
         // Apply more efficient hashing to byte buffers to decrease collisions
-        if (key instanceof ByteBuffer) {
+        if (key instanceof ByteBuffer) { // TODO get rid of if
             ByteBuffer key1 = (ByteBuffer) key;
             return HashUtils.hash32(HashUtils.hash64(key1, 0, key1.capacity(), contextId != null ? contextId.hashCode() : 0));
         }

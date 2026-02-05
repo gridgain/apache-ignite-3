@@ -20,6 +20,7 @@ package org.apache.ignite.internal.tx.impl;
 import java.util.Comparator;
 import java.util.UUID;
 import org.apache.ignite.internal.tx.DeadlockPreventionPolicy;
+import org.apache.ignite.internal.tx.Waiter;
 
 /**
  * Wound-wait prevention policy. TODO desc.
@@ -37,5 +38,15 @@ public class WoundWaitDeadlockPreventionPolicy implements DeadlockPreventionPoli
     @Override
     public long waitTimeout() {
         return 0;
+    }
+
+    @Override
+    public Waiter allowWait(Waiter waiter, Waiter owner) {
+        int res = TX_ID_PRIORITY_COMPARATOR.compare(waiter.txId(), owner.txId());
+        assert res != 0;
+
+        // Waiter is allowed to wait for owner if it's younger.
+        // Otherwise we have to fail owner.
+        return res > 0 ? null : owner;
     }
 }

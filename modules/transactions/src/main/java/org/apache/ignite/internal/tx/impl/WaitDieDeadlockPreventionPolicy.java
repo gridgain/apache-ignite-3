@@ -51,6 +51,7 @@ public class WaitDieDeadlockPreventionPolicy implements DeadlockPreventionPolicy
     @Override
     public Waiter allowWait(Waiter waiter, Waiter owner) {
         int res = TX_ID_PRIORITY_COMPARATOR.compare(waiter.txId(), owner.txId());
+        assert res != 0;
 
         // Can happen in case of upgrade. Owner waits a lock itself.
         // TODO don't need this.
@@ -61,5 +62,10 @@ public class WaitDieDeadlockPreventionPolicy implements DeadlockPreventionPolicy
         // Waiter is allowed to wait for owner if it's older.
         // IDs are sorted for older to younger.
         return res < 0 ? null : waiter;
+    }
+
+    @Override
+    public boolean reverse() {
+        return true;
     }
 }
