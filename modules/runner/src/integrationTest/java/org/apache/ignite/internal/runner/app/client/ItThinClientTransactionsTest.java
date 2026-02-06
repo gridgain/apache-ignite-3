@@ -1532,6 +1532,46 @@ public class ItThinClientTransactionsTest extends ItAbstractThinClientTest {
         assertThat(kvView.removeAllAsync(null, Arrays.asList(key0, key, key3)), willSucceedFast());
     }
 
+    @Test
+    public void testKillTransactionByConflict() {
+        ClientTable table = (ClientTable) table();
+        KeyValueView<Tuple, Tuple> kvView = table().keyValueView();
+
+        Map<Partition, ClusterNode> map = table.partitionDistribution().primaryReplicasAsync().join();
+        List<Tuple> tuples0 = generateKeysForPartition(700, 10, map, 0, table);
+
+        ClientLazyTransaction olderTxProxy = (ClientLazyTransaction) client().transactions().begin();
+        ClientLazyTransaction youngerTxProxy = (ClientLazyTransaction) client().transactions().begin();
+
+        Tuple key = tuples0.get(0);
+        Tuple key2 = tuples0.get(1);
+        Tuple val = val("1");
+        Tuple val2 = val("2");
+
+        // Take a lock on key to force tx ids init in desired order (they are assigned lazily).
+        // Older tx attempts to set value 1 for both keys.
+        // Younger tx attempts to set value 2 for both keys.
+        // Older tx should prevail.
+
+        kvView.put(olderTxProxy, key, val);
+        ClientTransaction olderTx = olderTxProxy.startedTx();
+
+        kvView.put(youngerTxProxy, key2, val2);
+        ClientTransaction youngerTx = youngerTxProxy.startedTx();
+
+        assertTrue(olderTx.txId().compareTo(youngerTx.txId()) < 0);
+
+        // Younger is allowed to wait with wound-wait.
+        CompletableFuture<Void> fut = kvView.putAsync(youngerTxProxy, key, val2);
+        assertFalse(fut.isDone());
+
+        // Should invalidate younger txn.
+        kvView.put(olderTxProxy, key2, val);
+
+        assertEquals(val, kvView.get(null, key));
+        assertEquals(val, kvView.get(null, key2));
+    }
+
     @AfterEach
     protected void validateInflights() throws NoSuchFieldException {
         System.out.println("DBG: validateInflights");

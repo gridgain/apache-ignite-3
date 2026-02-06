@@ -121,7 +121,7 @@ public class VolatileTxStateMetaStorage {
      * @param txId Transaction id.
      * @return The state meta or null if the state is unknown.
      */
-    public TxStateMeta state(UUID txId) {
+    public @Nullable TxStateMeta state(UUID txId) {
         return txStateMap.get(txId);
     }
 

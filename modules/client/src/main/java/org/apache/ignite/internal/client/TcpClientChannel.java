@@ -939,16 +939,16 @@ class TcpClientChannel implements ClientChannel, ClientMessageHandler, ClientCon
     }
 
     void checkTimeouts(long now) {
-        for (Entry<Long, TimeoutObjectImpl> req : pendingReqs.entrySet()) {
-            TimeoutObject<ClientMessageUnpacker> timeoutObject = req.getValue();
-
-            if (timeoutObject != null && timeoutObject.endTime() > 0 && now > timeoutObject.endTime()) {
-                // Client-facing future will fail with a timeout, but internal ClientRequestFuture will stay in the map -
-                // otherwise we'll fail with "protocol breakdown" error when a late response arrives from the server.
-                CompletableFuture<?> fut = timeoutObject.future();
-                fut.completeExceptionally(new TimeoutException());
-            }
-        }
+//        for (Entry<Long, TimeoutObjectImpl> req : pendingReqs.entrySet()) {
+//            TimeoutObject<ClientMessageUnpacker> timeoutObject = req.getValue();
+//
+//            if (timeoutObject != null && timeoutObject.endTime() > 0 && now > timeoutObject.endTime()) {
+//                // Client-facing future will fail with a timeout, but internal ClientRequestFuture will stay in the map -
+//                // otherwise we'll fail with "protocol breakdown" error when a late response arrives from the server.
+//                CompletableFuture<?> fut = timeoutObject.future();
+//                fut.completeExceptionally(new TimeoutException());
+//            }
+//        }
     }
 
     /**
