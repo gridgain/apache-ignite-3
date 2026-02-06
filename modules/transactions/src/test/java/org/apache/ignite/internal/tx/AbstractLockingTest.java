@@ -146,7 +146,9 @@ public abstract class AbstractLockingTest extends BaseIgniteAbstractTest {
 
     protected void finishTx(UUID tx) {
         Map<IgniteBiTuple<LockKey, LockMode>, CompletableFuture<Lock>> txLocks = locks.remove(tx);
-        assertNotNull(txLocks);
+        if (txLocks == null) {
+            return; // Finishing the tx is idempotent operation and allowed to call multiple times.
+        }
 
         for (Map.Entry<IgniteBiTuple<LockKey, LockMode>, CompletableFuture<Lock>> e : txLocks.entrySet()) {
             CompletableFuture<Lock> fut = e.getValue();

@@ -35,25 +35,12 @@ import org.junit.jupiter.api.Test;
  * Test for {@link WoundWaitDeadlockPreventionPolicy} with no-op fail action.
  */
 public class WoundWaitDeadlockPreventionRollbackFailActionTest extends AbstractLockingTest {
-    private static ExecutorService failExecutor;
-
-    @BeforeAll
-    static void beforeAll() {
-        failExecutor = Executors.newSingleThreadExecutor();
-    }
-
-    @AfterAll
-    static void shutdown() throws InterruptedException {
-        failExecutor.shutdown();
-        failExecutor.awaitTermination(5, TimeUnit.MILLISECONDS);
-    }
-
     @Override
     protected DeadlockPreventionPolicy deadlockPreventionPolicy() {
         return new WoundWaitDeadlockPreventionPolicy() {
             @Override
             public void failAction(UUID owner) {
-                failExecutor.execute(() -> rollbackTx(owner));
+                rollbackTx(owner);
             }
         };
     }
