@@ -58,7 +58,7 @@ public class LockWaiterMatcher extends TypeSafeMatcher<CompletableFuture<Lock>> 
         description.appendText("lock future which should wait for ").appendValue(waiterId);
     }
 
-    public static LockWaiterMatcher waitsFor(UUID txId) {
-        return new LockWaiterMatcher(txId);
+    public static LockWaiterMatcher waitsFor(UUID... txIds) {
+        return new LockWaiterMatcher(txIds[0]);
     }
 }

@@ -29,6 +29,7 @@ import java.util.Comparator;
 import java.util.EnumMap;
 import java.util.EnumSet;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
@@ -43,6 +44,7 @@ import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.Executor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.LongAdder;
+import java.util.function.Predicate;
 import org.apache.ignite.internal.configuration.SystemLocalConfiguration;
 import org.apache.ignite.internal.configuration.SystemPropertyView;
 import org.apache.ignite.internal.event.AbstractEventProducer;
@@ -835,7 +837,7 @@ public class HeapLockManager extends AbstractEventProducer<LockEvent, LockEventP
             assert lockMode != null : "Lock mode is null";
 
             WaiterImpl waiter = new WaiterImpl(txId, lockMode);
-            Runnable callback; // Called after exiting the waiters monitor.
+            List<Runnable> runnables; // Called after exiting the waiters monitor.
 
             synchronized (waiters) {
                 if (!isUsed()) {
@@ -865,20 +867,22 @@ public class HeapLockManager extends AbstractEventProducer<LockEvent, LockEventP
                     }
                 }
 
-                callback = tryAcquireInternal(waiter, prev == null, false);
+                runnables = tryAcquireInternal(waiter, prev == null, false);
             }
 
             // Callback outside the monitor.
-            if (callback != null) {
-                callback.run();
+            for (Runnable runnable1 : runnables) {
+                runnable1.run();
             }
 
             return new IgniteBiTuple<>(waiter.fut, waiter.lockMode());
         }
 
-        private @Nullable Runnable tryAcquireInternal(WaiterImpl waiter, boolean track, boolean unlock) {
-            WaiterImpl owner = findConflict(waiter);
-            if (owner != null) {
+        private List<Runnable> tryAcquireInternal(WaiterImpl waiter, boolean track, boolean unlock) {
+            List<Runnable> failed = new ArrayList<>();
+            boolean[] needWait = {false};
+
+            findConflicts(waiter, owner -> {
                 assert !waiter.txId.equals(owner.txId);
                 WaiterImpl toFail = (WaiterImpl) deadlockPreventionPolicy.allowWait(waiter, owner);
                 boolean isOrphanOwner = notifyListeners(waiter.txId(), owner.txId());
@@ -894,7 +898,9 @@ public class HeapLockManager extends AbstractEventProducer<LockEvent, LockEventP
                         track(waiter.txId, this);
                     }
 
-                    return null;
+                    needWait[0] = true;
+
+                    return true; // Stop iteration on found first eligible for waiting owner.
                 } else {
                     // Wait is not allowed, fail one of lockers according to policy.
                     if (toFail == waiter) {
@@ -905,27 +911,38 @@ public class HeapLockManager extends AbstractEventProducer<LockEvent, LockEventP
                         }
                         waiter.fail(createLockException(waiter, owner, isOrphanOwner));
 
-                        return waiter::notifyLocked;
+                        failed.add(waiter::notifyLocked);
+
+                        return true;
                     } else {
                         // Track waiter.
                         if (track) {
                             track(waiter.txId, this);
                         }
 
-                        // We need to fail the owner. Call action outside the lock.
-                        return () -> deadlockPreventionPolicy.failAction(toFail.txId);
+                        // We need to fail the owner. Call fail action outside the lock.
+                        failed.add(() -> deadlockPreventionPolicy.failAction(toFail.txId));
+
+                        return false;
                     }
                 }
-            } else {
-                waiter.lock();
+            });
 
-                // Lock granted, track.
-                if (track) {
-                    track(waiter.txId, this);
-                }
-
-                return waiter::notifyLocked;
+            if (!failed.isEmpty() || needWait[0]) {
+                // Grant not allowed.
+                return failed;
             }
+
+            waiter.lock();
+
+            // Lock granted, track.
+            if (track) {
+                track(waiter.txId, this);
+            }
+
+            failed.add(waiter::notifyLocked);
+
+            return failed;
         }
 
         /**
@@ -939,7 +956,28 @@ public class HeapLockManager extends AbstractEventProducer<LockEvent, LockEventP
             }
         }
 
-        private @Nullable WaiterImpl findConflict(WaiterImpl waiter) {
+//        private @Nullable WaiterImpl findConflict(WaiterImpl waiter) {
+//            LockMode intendedLockMode = waiter.intendedLockMode();
+//            assert intendedLockMode != null : "Intended lock mode is null";
+//
+//            for (Entry<UUID, WaiterImpl> entry : conflictsView.entrySet()) {
+//                WaiterImpl tmp = entry.getValue();
+//
+//                if (tmp.equals(waiter)) {
+//                    continue;
+//                }
+//
+//                LockMode currentlyAcquiredLockMode = tmp.lockMode;
+//
+//                if (currentlyAcquiredLockMode != null && !currentlyAcquiredLockMode.isCompatible(intendedLockMode)) {
+//                    return tmp;
+//                }
+//            }
+//
+//            return null;
+//        }
+
+        private void findConflicts(WaiterImpl waiter, Predicate<WaiterImpl> callback) {
             LockMode intendedLockMode = waiter.intendedLockMode();
             assert intendedLockMode != null : "Intended lock mode is null";
 
@@ -953,11 +991,12 @@ public class HeapLockManager extends AbstractEventProducer<LockEvent, LockEventP
                 LockMode currentlyAcquiredLockMode = tmp.lockMode;
 
                 if (currentlyAcquiredLockMode != null && !currentlyAcquiredLockMode.isCompatible(intendedLockMode)) {
-                    return tmp;
+                    boolean stop = callback.test(tmp);
+                    if (stop) {
+                        break;
+                    }
                 }
             }
-
-            return null;
         }
 
         private LockException createLockException(WaiterImpl waiter, WaiterImpl owner, boolean abandoned) {
@@ -1066,29 +1105,33 @@ public class HeapLockManager extends AbstractEventProducer<LockEvent, LockEventP
             Collection<WaiterImpl> values = new ArrayList<>(waiters.values());
 
             // TODO quadratic complexity !!!
-            List<WaiterImpl> conflicts = new ArrayList<>();
 
-            // Try to lock anything possible.
+            // Try to lock anything that possible.
             for (WaiterImpl tmp : values) {
                 if (!tmp.hasLockIntent()) {
                     continue;
                 }
 
-                WaiterImpl owner = findConflict(tmp);
-                if (owner == null) {
+                boolean[] hasConflicts = {false};
+
+                findConflicts(tmp, owner -> {
+                    hasConflicts[0] = true;
+                    return true;
+                });
+
+                if (!hasConflicts[0]) {
                     tmp.lock();
                     toNotify.add(tmp::notifyLocked);
-                } else {
-                    conflicts.add(tmp);
                 }
             }
 
-            // Re-test conflicts. A conflict which is allowed to wait is not failed.
-            for (WaiterImpl conflict : conflicts) {
-                Runnable runnable = tryAcquireInternal(conflict, false, true);
-                if (runnable != null) {
-                    toNotify.add(runnable);
+            // Re-test waiters to handle possible order violations. After previous step new owners can appear which allow waiting.
+            for (WaiterImpl tmp : values) {
+                if (!tmp.hasLockIntent()) {
+                    continue; // Ignore waiters which become owners.
                 }
+                List<Runnable> runnables = tryAcquireInternal(tmp, false, true);
+                toNotify.addAll(runnables);
             }
 
             return toNotify;

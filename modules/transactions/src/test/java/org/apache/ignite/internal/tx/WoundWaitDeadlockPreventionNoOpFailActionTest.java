@@ -17,47 +17,26 @@
 
 package org.apache.ignite.internal.tx;
 
-import static org.apache.ignite.internal.testframework.matchers.CompletableFutureMatcher.willCompleteSuccessfully;
 import static org.apache.ignite.internal.testframework.matchers.CompletableFutureMatcher.willSucceedFast;
-import static org.apache.ignite.internal.tx.test.LockConflictMatcher.conflictsWith;
 import static org.apache.ignite.internal.tx.test.LockWaiterMatcher.waitsFor;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.Executor;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.TimeUnit;
 import org.apache.ignite.internal.tx.impl.WoundWaitDeadlockPreventionPolicy;
-import org.apache.ignite.internal.tx.test.LockWaiterMatcher;
 import org.hamcrest.Matcher;
-import org.junit.jupiter.api.AfterAll;
-import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
 /**
- * Test for {@link WoundWaitDeadlockPreventionPolicy}.
+ * Test for {@link WoundWaitDeadlockPreventionPolicy} with no-op fail action.
  */
-public class WoundWaitDeadlockPreventionTest extends AbstractDeadlockPreventionTest {
-    private static ExecutorService failExecutor;
-
+public class WoundWaitDeadlockPreventionNoOpFailActionTest extends AbstractDeadlockPreventionTest {
     @Override
     protected Matcher<CompletableFuture<Lock>> conflictMatcher(UUID txId) {
         return waitsFor(txId);
-    }
-
-    @BeforeAll
-    static void beforeAll() {
-        failExecutor = Executors.newSingleThreadExecutor();
-    }
-
-    @AfterAll
-    static void shutdown() throws InterruptedException {
-        failExecutor.shutdown();
-        failExecutor.awaitTermination(5, TimeUnit.MILLISECONDS);
     }
 
     @Override
@@ -65,8 +44,7 @@ public class WoundWaitDeadlockPreventionTest extends AbstractDeadlockPreventionT
         return new WoundWaitDeadlockPreventionPolicy() {
             @Override
             public void failAction(UUID owner) {
-                //failExecutor.execute(() -> lockManager.releaseAll(owner));
-                // No-op. Will causes waiting instead of triggering a conflict.
+                // No-op action causes wound wait to wait on conflict.
             }
         };
     }
