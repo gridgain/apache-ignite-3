@@ -24,6 +24,8 @@ import static org.apache.ignite.internal.TestWrappers.unwrapIgniteImpl;
 import static org.apache.ignite.internal.testframework.matchers.CompletableFutureExceptionMatcher.willThrowWithCauseOrSuppressed;
 import static org.apache.ignite.internal.testframework.matchers.CompletableFutureMatcher.willSucceedFast;
 import static org.awaitility.Awaitility.await;
+import static org.apache.ignite.internal.testframework.matchers.CompletableFutureExceptionMatcher.willThrowWithCauseOrSuppressed;
+import static org.apache.ignite.internal.testframework.matchers.CompletableFutureMatcher.willSucceedFast;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.startsWith;
@@ -1568,8 +1570,50 @@ public class ItThinClientTransactionsTest extends ItAbstractThinClientTest {
         // Should invalidate younger txn.
         kvView.put(olderTxProxy, key2, val);
 
+        assertThat(fut, willThrowWithCauseOrSuppressed(TransactionException.class));
+
+        olderTx.commit();
+
+        assertThat(youngerTxProxy.commitAsync(), willThrowWithCauseOrSuppressed(TransactionException.class));
+        // TODO add direct mapping part and ensure it's cleaned up.
+        // TODO kill is broken for directly mapped transactions, need ticket!!!
+
         assertEquals(val, kvView.get(null, key));
         assertEquals(val, kvView.get(null, key2));
+    }
+
+    @Test
+    public void testRollbackDoesNotBlockOnLockConflict() {
+        ClientTable table = (ClientTable) table();
+        KeyValueView<Tuple, Tuple> kvView = table().keyValueView();
+
+        Map<Partition, ClusterNode> map = table.partitionDistribution().primaryReplicasAsync().join();
+        List<Tuple> tuples0 = generateKeysForPartition(800, 10, map, 0, table);
+
+        ClientLazyTransaction olderTxProxy = (ClientLazyTransaction) client().transactions().begin();
+        ClientLazyTransaction youngerTxProxy = (ClientLazyTransaction) client().transactions().begin();
+
+        Tuple key = tuples0.get(0);
+        Tuple key2 = tuples0.get(1);
+        Tuple val = val("1");
+        Tuple val2 = val("2");
+
+        kvView.put(olderTxProxy, key, val);
+        ClientTransaction olderTx = olderTxProxy.startedTx();
+
+        kvView.put(youngerTxProxy, key2, val2);
+        ClientTransaction youngerTx = youngerTxProxy.startedTx();
+
+        assertTrue(olderTx.txId().compareTo(youngerTx.txId()) < 0);
+
+        // Older is allowed to wait with wait-die.
+        CompletableFuture<Void> fut = kvView.putAsync(olderTxProxy, key2, val);
+        assertFalse(fut.isDone());
+
+        assertThat(olderTxProxy.rollbackAsync(), willSucceedFast());
+
+        // Operation future should be failed.
+        assertThat(fut, willThrowWithCauseOrSuppressed(TransactionException.class));
     }
 
     @AfterEach

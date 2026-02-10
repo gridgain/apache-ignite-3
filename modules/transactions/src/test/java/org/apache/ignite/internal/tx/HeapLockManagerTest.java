@@ -1234,6 +1234,29 @@ public class HeapLockManagerTest extends AbstractLockingTest {
         assertThat(f, willCompleteSuccessfully());
     }
 
+    @Test
+    public void testFailWaiter() {
+        UUID older = TestTransactionIds.newTransactionId();
+        UUID newer = TestTransactionIds.newTransactionId();
+
+        CompletableFuture<Lock> fut1 = lockManager.acquire(newer, lockKey(), X);
+        assertTrue(fut1.isDone());
+
+        // Currently only S locks are allowed to wait.
+        CompletableFuture<Lock> fut2 = lockManager.acquire(older, lockKey(), S);
+        assertFalse(fut2.isDone());
+
+        // Should do nothing.
+        lockManager.failAllWaiters(newer, new Exception());
+        assertFalse(fut2.isDone());
+
+        lockManager.failAllWaiters(older, new Exception("test"));
+        assertThat(fut2, willThrowWithCauseOrSuppressed(Exception.class, "test"));
+
+        lockManager.releaseAll(older);
+        lockManager.releaseAll(newer);
+    }
+
     /**
      * Do test single key multithreaded.
      *
