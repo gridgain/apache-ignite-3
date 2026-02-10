@@ -78,6 +78,8 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.Executor;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BiConsumer;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
@@ -288,7 +290,7 @@ public class PartitionReplicaListener implements ReplicaTableProcessor {
 
     private final Supplier<Map<Integer, IndexLocker>> indexesLockers;
 
-    private final ConcurrentMap<UUID, TxCleanupReadyFutureList> txCleanupReadyFutures = new ConcurrentHashMap<>();
+    private final ConcurrentMap<UUID, TxCleanupReadyState> txCleanupReadyFutures = new ConcurrentHashMap<>();
 
     /** Cleanup futures. */
     private final ConcurrentHashMap<RowId, CompletableFuture<?>> rowCleanupMap = new ConcurrentHashMap<>();
@@ -1428,41 +1430,42 @@ public class PartitionReplicaListener implements ReplicaTableProcessor {
     }
 
     private CompletableFuture<FuturesCleanupResult> awaitCleanupReadyFutures(UUID txId, boolean commit) {
-        List<CompletableFuture<?>> txUpdateFutures = new ArrayList<>();
-        List<CompletableFuture<?>> txReadFutures = new ArrayList<>();
-
         AtomicBoolean forceCleanup = new AtomicBoolean(true);
+        AtomicBoolean hadWrites = new AtomicBoolean(false);
+        AtomicReference<CompletableFuture<Void>> cleanupReadyFutureRef = new AtomicReference<>(nullCompletedFuture());
 
-        txCleanupReadyFutures.compute(txId, (id, txOps) -> {
-            if (txOps == null) {
-                return null;
-            }
-
-            // Cleanup futures (both read and update) are empty in two cases:
+        txCleanupReadyFutures.compute(txId, (id, txCleanupState) -> {
+            // Cleanup operations (both read and update) aren't registered in two cases:
             // - there were no actions in the transaction
             // - write intent switch is being executed on the new primary (the primary has changed after write intent appeared)
             // Both cases are expected to happen extremely rarely so we are fine to force the write intent switch.
 
             // The reason for the forced switch is that otherwise write intents would not be switched (if there is no volatile state and
-            // FuturesCleanupResult.hadUpdateFutures() returns false).
-            forceCleanup.set(txOps.isEmpty());
+            // FuturesCleanupResult.hadWrites() returns false).
+            forceCleanup.set(txCleanupState == null || !txCleanupState.hadAnyOperations());
 
-            txOps.futures.forEach((opId, future) -> {
-                if (opId.requestType.isRwRead()) {
-                    txReadFutures.add(future);
-                } else {
-                    txUpdateFutures.add(future);
-                }
-            });
+            if (txCleanupState == null) {
+                return null;
+            }
 
-            txOps.clear();
+            hadWrites.set(txCleanupState.hadWrites());
+
+            CompletableFuture<Void> fut = txCleanupState.lockAndAwaitInflights();
+            cleanupReadyFutureRef.set(fut);
 
             return null;
         });
 
-        return allOfFuturesExceptionIgnored(txUpdateFutures, commit, txId)
-                .thenCompose(v -> allOfFuturesExceptionIgnored(txReadFutures, commit, txId))
-                .thenApply(v -> new FuturesCleanupResult(!txReadFutures.isEmpty(), !txUpdateFutures.isEmpty(), forceCleanup.get()));
+        return cleanupReadyFutureRef.get()
+                .exceptionally(e -> {
+                    if (commit) {
+                        throw new AssertionError("Transaction is committing, but an operation has completed with exception [txId=" + txId
+                                + ", err=" + e.getMessage() + ']', e);
+                    }
+
+                    return null;
+                })
+                .thenApply(v -> new FuturesCleanupResult(hadWrites.get(), forceCleanup.get()));
     }
 
     private void applyWriteIntentSwitchCommandLocally(WriteIntentSwitchReplicaRequestBase request) {
@@ -1472,25 +1475,6 @@ public class PartitionReplicaListener implements ReplicaTableProcessor {
                 request.commitTimestamp(),
                 indexIdsAtRwTxBeginTsOrNull(request.txId())
         );
-    }
-
-    /**
-     * Creates a future that waits all transaction operations are completed.
-     *
-     * @param txFutures Transaction operation futures.
-     * @param commit If {@code true} this is a commit otherwise a rollback.
-     * @param txId Transaction id.
-     * @return The future completes when all futures in passed list are completed.
-     */
-    private static CompletableFuture<Void> allOfFuturesExceptionIgnored(List<CompletableFuture<?>> txFutures, boolean commit, UUID txId) {
-        return allOf(txFutures.toArray(new CompletableFuture<?>[0]))
-                .exceptionally(e -> {
-                    assert !commit :
-                            "Transaction is committing, but an operation has completed with exception [txId=" + txId
-                                    + ", err=" + e.getMessage() + ']';
-
-                    return null;
-                });
     }
 
     private void releaseTxLocks(UUID txId) {
@@ -1587,30 +1571,30 @@ public class PartitionReplicaListener implements ReplicaTableProcessor {
             });
         }
 
-        var cleanupReadyFut = new CompletableFuture<Void>();
+        AtomicBoolean inflightStarted = new AtomicBoolean(false);
 
-        txCleanupReadyFutures.compute(txId, (id, txOps) -> {
+        TxCleanupReadyState txCleanupReadyState = txCleanupReadyFutures.compute(txId, (id, txCleanupState) -> {
             // First check whether the transaction has already been finished.
             // And complete cleanupReadyFut with exception if it is the case.
             TxStateMeta txStateMeta = txManager.stateMeta(txId);
 
             if (txStateMeta == null || isFinalState(txStateMeta.txState()) || txStateMeta.txState() == FINISHING) {
-                cleanupReadyFut.completeExceptionally(new Exception());
-
-                return txOps;
+                // Don't start inflight.
+                return txCleanupState;
             }
 
-            // Otherwise collect cleanupReadyFut in the transaction's futures.
-            if (txOps == null) {
-                txOps = new TxCleanupReadyFutureList();
+            // Otherwise start new inflight in txCleanupState.
+            if (txCleanupState == null) {
+                txCleanupState = new TxCleanupReadyState();
             }
 
-            txOps.putOrReplaceFuture(opId, cleanupReadyFut);
+            boolean started = txCleanupState.startInflight(opId);
+            inflightStarted.set(started);
 
-            return txOps;
+            return txCleanupState;
         });
 
-        if (cleanupReadyFut.isCompletedExceptionally()) {
+        if (!inflightStarted.get()) {
             TxStateMeta txStateMeta = txManager.stateMeta(txId);
 
             TxState txState = txStateMeta == null ? null : txStateMeta.txState();
@@ -1626,9 +1610,12 @@ public class PartitionReplicaListener implements ReplicaTableProcessor {
 
         CompletableFuture<T> fut = op.get();
 
+        // If inflightStarted then txCleanupReadyState is not null.
+        requireNonNull(txCleanupReadyState, "txCleanupReadyState cannot be null here.");
+
         fut.whenComplete((v, th) -> {
             if (th != null) {
-                cleanupReadyFut.completeExceptionally(th);
+                txCleanupReadyState.completeInflightExceptionally(opId, th);
             } else {
                 if (v instanceof ReplicaResult) {
                     ReplicaResult res = (ReplicaResult) v;
@@ -1636,16 +1623,16 @@ public class PartitionReplicaListener implements ReplicaTableProcessor {
                     if (res.applyResult().replicationFuture() != null) {
                         res.applyResult().replicationFuture().whenComplete((v0, th0) -> {
                             if (th0 != null) {
-                                cleanupReadyFut.completeExceptionally(th0);
+                                txCleanupReadyState.completeInflightExceptionally(opId, th0);
                             } else {
-                                cleanupReadyFut.complete(null);
+                                txCleanupReadyState.completeInflight();
                             }
                         });
                     } else {
-                        cleanupReadyFut.complete(null);
+                        txCleanupReadyState.completeInflight();
                     }
                 } else {
-                    cleanupReadyFut.complete(null);
+                    txCleanupReadyState.completeInflight();
                 }
             }
         });
@@ -3634,22 +3621,147 @@ public class PartitionReplicaListener implements ReplicaTableProcessor {
     }
 
     /**
-     * Class that stores a list of futures for operations that has happened in a specific transaction. Also, the class has a property
-     * {@code state} that represents a transaction state.
+     * Class that stores a counter of inflight operations for a transaction. There is a map of failed operations (lazy init)
+     * but it doesn't store exceptions for operations there were retried successfully.
      */
-    private static class TxCleanupReadyFutureList {
-        final Map<OperationId, CompletableFuture<?>> futures = new HashMap<>();
+    private static class TxCleanupReadyState {
+        boolean hadAnyOperations = false;
+        boolean hadWrites = false;
+        final AtomicInteger inflightOperationsCount = new AtomicInteger(0);
+        volatile boolean locked = false;
+        volatile Map<OperationId, Throwable> failedOperations = null;
+        volatile CompletableFuture<Void> completionFuture = null;
 
-        boolean isEmpty() {
-            return futures.isEmpty();
+        // Should be called inside critical section on transaction.
+        boolean hadAnyOperations() {
+            return hadAnyOperations;
         }
 
-        void clear() {
-            futures.clear();
+        // Should be called inside critical section on transaction.
+        boolean hadWrites() {
+            return hadWrites;
         }
 
-        void putOrReplaceFuture(OperationId opId, CompletableFuture<?> fut) {
-            futures.put(opId, fut);
+        // Should be called inside critical section on transaction.
+        CompletableFuture<Void> lockAndAwaitInflights() {
+            if (locked) {
+                return completionFuture == null ? nullCompletedFuture() : completionFuture;
+            }
+
+            if (inflightOperationsCount.get() == 0) {
+                locked = true;
+                Throwable t = anyThrowableIfPresent();
+                return t == null ? nullCompletedFuture() : failedFuture(t);
+            }
+
+            CompletableFuture<Void> fut = completionFuture;
+
+            if (fut == null) {
+                fut = new CompletableFuture<>();
+                // Order is important because #completeInflight checks locked and then gets completionFuture.
+                completionFuture = fut;
+                locked = true;
+
+                // Recheck inflight count, because "complete" methods are cross-thread.
+                if (inflightOperationsCount.get() == 0) {
+                    completeFutureIfAny();
+                }
+            }
+
+            return fut;
+        }
+
+        @Nullable
+        private Throwable anyThrowableIfPresent() {
+            Map<OperationId, Throwable> map = failedOperations;
+            Throwable res = null;
+
+            if (map != null) {
+                synchronized (this) {
+                    if (!map.isEmpty()) {
+                        res = map.values().iterator().next();
+                    }
+                }
+            }
+
+            return res;
+        }
+
+        // Should be called inside critical section on transaction.
+        boolean startInflight(OperationId operationId) {
+            if (locked) {
+                return false;
+            }
+
+            hadAnyOperations = true;
+
+            if (operationId.requestType.isWrite()) {
+                hadWrites = true;
+            }
+
+            // Possibly retrying operation, so don't need information about previous failure.
+            removeThrowable(operationId);
+
+            inflightOperationsCount.incrementAndGet();
+
+            return true;
+        }
+
+        // Cross-thread.
+        void completeInflight() {
+            int remaining = inflightOperationsCount.decrementAndGet();
+
+            if (remaining == 0) {
+                completeFutureIfAny();
+            }
+        }
+
+        // Cross-thread.
+        void completeInflightExceptionally(OperationId operationId, Throwable t) {
+            storeThrowable(operationId, t);
+
+            completeInflight();
+        }
+
+        private void completeFutureIfAny() {
+            // Double check inflightOperationsCount after locked, because we are outside of critical section.
+            if (locked && inflightOperationsCount.get() == 0) {
+                CompletableFuture<Void> f = completionFuture;
+
+                if (f == null || f.isDone()) {
+                    return;
+                }
+
+                Throwable t = anyThrowableIfPresent();
+                if (t == null) {
+                    f.complete(null);
+                } else {
+                    f.completeExceptionally(t);
+                }
+            }
+        }
+
+        private void storeThrowable(OperationId operationId, Throwable e) {
+            synchronized (this) {
+                Map<OperationId, Throwable> map = failedOperations;
+
+                if (map == null) {
+                    map = new HashMap<>();
+                    failedOperations = map;
+                }
+
+                map.put(operationId, e);
+            }
+        }
+
+        private void removeThrowable(OperationId operationId) {
+            Map<OperationId, Throwable> map = failedOperations;
+
+            if (map != null) {
+                synchronized (this) {
+                    map.remove(operationId);
+                }
+            }
         }
     }
 
