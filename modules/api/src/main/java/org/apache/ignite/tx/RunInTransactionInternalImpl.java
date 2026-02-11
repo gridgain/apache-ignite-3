@@ -101,6 +101,7 @@ class RunInTransactionInternalImpl {
         try {
             tx.commit();
         } catch (Exception e) {
+            // TODO retry if killed
             try {
                 // Try to rollback tx in case if it's not finished. Retry is not needed here due to the durable finish.
                 tx.rollback();

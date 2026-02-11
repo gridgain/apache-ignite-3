@@ -749,6 +749,10 @@ public class InternalTableImpl implements InternalTable {
             }
 
             if (e != null) {
+                if (tx0.killed()) {
+                    return failedFuture(e); // Don't attempt to rollback killed transaction again.
+                }
+
                 CompletableFuture<Void> rollbackFuture;
                 if (isFinishedDueToTimeout(e)) {
                     rollbackFuture = tx0.rollbackTimeoutExceededAsync();

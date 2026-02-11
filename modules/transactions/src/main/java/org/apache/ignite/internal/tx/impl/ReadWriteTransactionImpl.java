@@ -66,7 +66,7 @@ public class ReadWriteTransactionImpl extends IgniteAbstractTransactionImpl {
     /**
      * {@code True} if a transaction is externally killed.
      */
-    private boolean killed;
+    private volatile boolean killed;
 
     /**
      * {@code True} if a remote(directly mapped) part of this transaction has no writes.
@@ -318,6 +318,11 @@ public class ReadWriteTransactionImpl extends IgniteAbstractTransactionImpl {
     @Override
     public CompletableFuture<Void> kill() {
         return finishInternal(false, null, false, false, false);
+    }
+
+    @Override
+    public boolean killed() {
+        return killed;
     }
 
     @Override

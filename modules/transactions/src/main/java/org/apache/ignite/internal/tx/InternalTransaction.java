@@ -160,6 +160,15 @@ public interface InternalTransaction extends Transaction {
     CompletableFuture<Void> kill();
 
     /**
+     * Returns kill flag.
+     *
+     * @return The value.
+     */
+    default boolean killed() {
+        return false;
+    }
+
+    /**
      * Rolls back the transaction due to timeout exceeded. After this method is called, {@link #isRolledBackWithTimeoutExceeded()} will
      * return {@code true}. A rollback of a completed or ending transaction has no effect and always succeeds when the transaction is
      * completed.

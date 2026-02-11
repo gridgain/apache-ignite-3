@@ -28,8 +28,10 @@ import static org.mockito.Mockito.mock;
 
 import java.util.ArrayList;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Phaser;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.atomic.AtomicInteger;
+import org.apache.ignite.Ignite;
 import org.apache.ignite.InitParametersBuilder;
 import org.apache.ignite.internal.ClusterPerClassIntegrationTest;
 import org.apache.ignite.internal.app.IgniteImpl;
@@ -63,6 +65,44 @@ public class ItKillTransactionTest extends ClusterPerClassIntegrationTest {
     @Test
     public void testKillTransactionBeforeRollback() throws Exception {
         killTransactionBeforeFinishing(false);
+    }
+
+    @Test
+    public void testRetryKilledTransaction() throws Exception {
+        Ignite node = node(0);
+        node.sql().executeScript("CREATE TABLE IF NOT EXISTS test (id INT PRIMARY KEY, val VARCHAR)");
+
+        AtomicInteger keyGenerator = new AtomicInteger(ThreadLocalRandom.current().nextInt(100));
+        int key = keyGenerator.incrementAndGet();
+        KeyValueView<Integer, String> kvView = node.tables().table("test").keyValueView(Integer.class, String.class);
+
+        Phaser phaser = new Phaser(2);
+        CompletableFuture<Void> fut = IgniteTestUtils.runAsync(() -> {
+            node.transactions().runInTransaction(tx -> {
+                kvView.put(tx, key, "Test val");
+                String res = kvView.get(tx, key);
+                assertEquals("Test val", res);
+
+                phaser.arriveAndAwaitAdvance();
+
+                IgniteImpl igniteImpl = Wrappers.unwrap(node, IgniteImpl.class);
+                InternalTransaction internalTx = Wrappers.unwrap(tx, InternalTransaction.class);
+
+                CompletableFuture<Boolean> killFut = igniteImpl.txManager().kill(internalTx.id());
+                killFut.join();
+
+                phaser.arriveAndDeregister();
+            });
+        });
+
+        // Phase 1 - sync before commit.
+        phaser.arriveAndAwaitAdvance();
+        // Phase 2 - sync after kill.
+        phaser.arriveAndAwaitAdvance();
+
+        fut.join();
+
+        assertEquals("Test val", kvView.get(null, key));
     }
 
     /**
