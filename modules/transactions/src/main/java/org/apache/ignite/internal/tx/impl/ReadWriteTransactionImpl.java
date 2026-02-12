@@ -40,6 +40,7 @@ import org.apache.ignite.internal.tx.PendingTxPartitionEnlistment;
 import org.apache.ignite.internal.tx.TransactionIds;
 import org.apache.ignite.internal.tx.TransactionKilledException;
 import org.apache.ignite.internal.tx.TxManager;
+import org.apache.ignite.internal.tx.TxPriority;
 import org.apache.ignite.tx.TransactionException;
 import org.jetbrains.annotations.Nullable;
 
@@ -338,14 +339,21 @@ public class ReadWriteTransactionImpl extends IgniteAbstractTransactionImpl {
     }
 
     @Override
-    public void restart() {
+    public void restart(long timeout) {
         enlistPartitionLock.writeLock().lock();
         try {
             killed = false;
             noRemoteWrites = true;
             enlisted.clear();
             finishFuture = null;
+            coordinatorId = null;
+            this.timeout = timeout;
             COMMIT_PART_UPDATER.set(this, null);
+            // TODO check for overflow.
+            int cnt = TransactionIds.retryCnt(id);
+            int nodeId = TransactionIds.nodeId(id);
+            TxPriority priority = TransactionIds.priority(id);
+            this.id = TransactionIds.transactionId(this.id.getMostSignificantBits(), cnt + 1, nodeId, priority);
         } finally {
             enlistPartitionLock.writeLock().unlock();
         }

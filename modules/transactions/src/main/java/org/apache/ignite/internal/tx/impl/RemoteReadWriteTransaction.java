@@ -151,7 +151,7 @@ public abstract class RemoteReadWriteTransaction implements InternalTransaction 
     }
 
     @Override
-    public void restart() {
+    public void restart(long timeout) {
         // Not applicable.
     }
 

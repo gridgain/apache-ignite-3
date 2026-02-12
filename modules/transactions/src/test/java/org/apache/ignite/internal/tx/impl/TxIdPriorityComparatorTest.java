@@ -22,6 +22,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import org.apache.ignite.internal.hlc.HybridClock;
 import org.apache.ignite.internal.hlc.HybridClockImpl;
+import org.apache.ignite.internal.hlc.HybridTimestamp;
 import org.apache.ignite.internal.tx.TransactionIds;
 import org.apache.ignite.internal.tx.TxPriority;
 import org.junit.jupiter.api.Test;
@@ -57,5 +58,16 @@ class TxIdPriorityComparatorTest {
 
         assertTrue(comparator.compare(tx1, tx2) > 0);
         assertTrue(comparator.compare(tx2, tx1) < 0);
+    }
+
+    @Test
+    public void compareEqualTimestamps() {
+        HybridTimestamp now = clock.now();
+        var tx1 = TransactionIds.transactionId(now, 1, 1, TxPriority.NORMAL);
+        var tx2 = TransactionIds.transactionId(now, 2, 1, TxPriority.NORMAL);
+
+        assertTrue(comparator.compare(tx1, tx2) < 0);
+        assertTrue(comparator.compare(tx2, tx1) > 0);
+        assertEquals(0, comparator.compare(tx1, tx1));
     }
 }

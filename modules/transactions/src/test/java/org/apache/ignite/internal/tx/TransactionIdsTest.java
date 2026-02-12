@@ -30,15 +30,23 @@ class TransactionIdsTest {
     @EnumSource(TxPriority.class)
     void transactionIdIsBuiltCorrectly(TxPriority priority) {
         HybridTimestamp beginTs = new HybridTimestamp(123L, 456);
+        int retryCnt = 10;
+        int nodeId = 1;
 
-        UUID txId = TransactionIds.transactionId(beginTs, 1, priority);
+        UUID txId = TransactionIds.transactionId(beginTs, retryCnt, nodeId, priority);
 
         HybridTimestamp extractedTs = TransactionIds.beginTimestamp(txId);
+        int extractedRetryCnt = TransactionIds.retryCnt(txId);
         int extractedNodeId = TransactionIds.nodeId(txId);
         TxPriority extractedPriority = TransactionIds.priority(txId);
 
         assertThat(extractedTs, is(beginTs));
-        assertThat(extractedNodeId, is(1));
+        assertThat(extractedRetryCnt, is(retryCnt));
+        assertThat(extractedNodeId, is(nodeId));
         assertThat(extractedPriority, is(priority));
+
+        UUID txId2 = TransactionIds.transactionId(extractedTs, extractedRetryCnt, extractedNodeId, extractedPriority);
+
+        assertThat(txId, is(txId2));
     }
 }

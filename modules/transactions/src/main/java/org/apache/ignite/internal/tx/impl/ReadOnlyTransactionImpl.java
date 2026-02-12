@@ -170,7 +170,7 @@ public class ReadOnlyTransactionImpl extends IgniteAbstractTransactionImpl {
     }
 
     @Override
-    public void restart() {
+    public void restart(long timeout) {
         throw new IllegalArgumentException();
     }
 }

@@ -162,7 +162,7 @@ public interface InternalTransaction extends Transaction {
     /**
      * Restarts this transaction.
      */
-    void restart();
+    void restart(long timeout);
 
     /**
      * Returns kill flag.

@@ -34,12 +34,24 @@ public class TxIdPriorityComparator implements Comparator<UUID> {
         TxPriority priority1 = TransactionIds.priority(o1);
         TxPriority priority2 = TransactionIds.priority(o2);
 
-        int priorityComparison = TX_PRIORITY_COMPARATOR.compare(priority1, priority2);
+        int res = TX_PRIORITY_COMPARATOR.compare(priority1, priority2);
 
-        if (priorityComparison == 0) {
-            return o1.compareTo(o2);
+        if (res == 0) {
+            long ts1 = o1.getMostSignificantBits();
+            long ts2 = o2.getMostSignificantBits();
+
+            res = Long.compare(ts1, ts2);
+
+            if (res == 0) {
+                int rc1 = TransactionIds.retryCnt(o1);
+                int rc2 = TransactionIds.retryCnt(o2);
+
+                return Integer.compare(rc1, rc2);
+            }
+
+            return res;
         } else {
-            return priorityComparison * -1; // Reverse order.
+            return res * -1; // Reverse order.
         }
     }
 }

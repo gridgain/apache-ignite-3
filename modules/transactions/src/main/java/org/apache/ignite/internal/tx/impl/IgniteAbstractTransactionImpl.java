@@ -39,7 +39,7 @@ import org.jetbrains.annotations.Nullable;
  */
 public abstract class IgniteAbstractTransactionImpl implements InternalTransaction {
     /** The id. */
-    private final UUID id;
+    protected UUID id;
 
     /** The transaction manager. */
     protected final TxManager txManager;
@@ -48,13 +48,13 @@ public abstract class IgniteAbstractTransactionImpl implements InternalTransacti
     protected final HybridTimestampTracker observableTsTracker;
 
     /** Transaction coordinator ephemeral ID. */
-    private final UUID coordinatorId;
+    protected UUID coordinatorId;
 
     /** Implicit transaction flag. */
     private final boolean implicit;
 
     /** Transaction timeout. */
-    protected final long timeout;
+    protected long timeout;
 
     /** Flag indicating that the transaction was rolled back due to timeout. */
     protected volatile boolean timeoutExceeded;

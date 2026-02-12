@@ -207,7 +207,7 @@ public class FakeTxManager implements TxManager {
             }
 
             @Override
-            public void restart() {
+            public void restart(long timeout) {
                 // No-op.
             }
         };

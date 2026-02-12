@@ -170,7 +170,7 @@ public class PublicApiThreadingTransaction implements InternalTransaction, Wrapp
     }
 
     @Override
-    public void restart() {
-        transaction.restart();
+    public void restart(long timeout) {
+        transaction.restart(timeout);
     }
 }

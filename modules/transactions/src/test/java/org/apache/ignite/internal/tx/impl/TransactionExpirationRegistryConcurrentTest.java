@@ -256,6 +256,11 @@ class TransactionExpirationRegistryConcurrentTest extends BaseIgniteAbstractTest
         }
 
         @Override
+        public void restart(long timeout) {
+            // No-op.
+        }
+
+        @Override
         public CompletableFuture<Void> rollbackTimeoutExceededAsync() {
             // Count the number of calls.
             rollbackCount.incrementAndGet();

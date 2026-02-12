@@ -179,7 +179,7 @@ public class ReadOnlyImplicitTransactionImpl implements InternalTransaction {
     }
 
     @Override
-    public void restart() {
+    public void restart(long timeout) {
         // No-op.
     }
 }
