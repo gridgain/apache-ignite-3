@@ -45,6 +45,7 @@ import org.apache.ignite.internal.tx.TxState;
 import org.apache.ignite.internal.tx.TxStateMeta;
 import org.apache.ignite.internal.tx.impl.EnlistedPartitionGroup;
 import org.apache.ignite.internal.tx.metrics.ResourceVacuumMetrics;
+import org.apache.ignite.tx.Transaction;
 import org.apache.ignite.internal.tx.metrics.TransactionMetricsSource;
 import org.apache.ignite.tx.TransactionException;
 import org.jetbrains.annotations.Nullable;
@@ -204,6 +205,11 @@ public class FakeTxManager implements TxManager {
             public boolean isRolledBackWithTimeoutExceeded() {
                 return false;
             }
+
+            @Override
+            public void restart() {
+                // No-op.
+            }
         };
     }
 
@@ -291,6 +297,11 @@ public class FakeTxManager implements TxManager {
     @Override
     public CompletableFuture<Void> discardLocalWriteIntents(List<EnlistedPartitionGroup> groups, UUID txId) {
         return nullCompletedFuture();
+    }
+
+    @Override
+    public <T> T runInTransaction(Function<Transaction, T> clo, HybridTimestampTracker observableTimestampTracker, Transaction tx) {
+        return null;
     }
 
     @Override

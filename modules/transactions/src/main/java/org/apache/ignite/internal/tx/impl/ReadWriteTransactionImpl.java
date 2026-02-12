@@ -61,7 +61,7 @@ public class ReadWriteTransactionImpl extends IgniteAbstractTransactionImpl {
     private final ReentrantReadWriteLock enlistPartitionLock = new ReentrantReadWriteLock();
 
     /** The future is initialized when this transaction starts committing or rolling back and is finished together with the transaction. */
-    private volatile CompletableFuture<Void> finishFuture;
+    private volatile @Nullable CompletableFuture<Void> finishFuture;
 
     /**
      * {@code True} if a transaction is externally killed.
@@ -334,6 +334,20 @@ public class ReadWriteTransactionImpl extends IgniteAbstractTransactionImpl {
             return timeoutExceeded;
         } finally {
             enlistPartitionLock.readLock().unlock();
+        }
+    }
+
+    @Override
+    public void restart() {
+        enlistPartitionLock.writeLock().lock();
+        try {
+            killed = false;
+            noRemoteWrites = true;
+            enlisted.clear();
+            finishFuture = null;
+            COMMIT_PART_UPDATER.set(this, null);
+        } finally {
+            enlistPartitionLock.writeLock().unlock();
         }
     }
 

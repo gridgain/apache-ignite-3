@@ -15,10 +15,11 @@
  * limitations under the License.
  */
 
-package org.apache.ignite.tx;
+package org.apache.ignite.internal.tx;
 
 import static java.util.concurrent.CompletableFuture.completedFuture;
 import static java.util.concurrent.CompletableFuture.failedFuture;
+import static org.apache.ignite.internal.tx.RunInTransactionInternalImpl.runInTransactionInternal;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.greaterThan;
 import static org.hamcrest.Matchers.instanceOf;
@@ -37,6 +38,12 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.Supplier;
+import org.apache.ignite.internal.util.IgniteUtils;
+import org.apache.ignite.tx.IgniteTransactions;
+import org.apache.ignite.tx.RetriableTransactionException;
+import org.apache.ignite.tx.Transaction;
+import org.apache.ignite.tx.TransactionException;
+import org.apache.ignite.tx.TransactionOptions;
 import org.jetbrains.annotations.Nullable;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -282,6 +289,24 @@ public class RunInTransactionRetryTest {
         @Override
         public CompletableFuture<Transaction> beginAsync(@Nullable TransactionOptions options) {
             return completedFuture(begin(options));
+        }
+
+        @Override
+        public <T> T runInTransaction(Function<Transaction, T> clo, @Nullable TransactionOptions options) throws TransactionException {
+            Transaction tx = begin(options);
+
+            long startTimestamp = IgniteUtils.monotonicMs();
+            long initialTimeout = startTimestamp + options.timeoutMillis();
+
+            return runInTransactionInternal(tx, clo, startTimestamp, initialTimeout, (tx0, timeout) -> {
+                // No-op.
+            });
+        }
+
+        @Override
+        public <T> CompletableFuture<T> runInTransactionAsync(Function<Transaction, CompletableFuture<T>> clo,
+                @Nullable TransactionOptions options) {
+            return null;
         }
     }
 

@@ -177,4 +177,9 @@ public class ReadOnlyImplicitTransactionImpl implements InternalTransaction {
     public void rollback() throws TransactionException {
         // No-op.
     }
+
+    @Override
+    public void restart() {
+        // No-op.
+    }
 }

@@ -151,6 +151,11 @@ public abstract class RemoteReadWriteTransaction implements InternalTransaction 
     }
 
     @Override
+    public void restart() {
+        // Not applicable.
+    }
+
+    @Override
     public CompletableFuture<Void> finish(boolean commit, @Nullable HybridTimestamp executionTimestamp, boolean full,
             boolean timeoutExceeded) {
         return null;

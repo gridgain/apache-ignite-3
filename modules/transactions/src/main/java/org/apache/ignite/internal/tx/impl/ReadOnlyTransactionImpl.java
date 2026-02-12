@@ -168,4 +168,9 @@ public class ReadOnlyTransactionImpl extends IgniteAbstractTransactionImpl {
     public CompletableFuture<Void> kill() {
         return finish(false, readTimestamp, false, false);
     }
+
+    @Override
+    public void restart() {
+        throw new IllegalArgumentException();
+    }
 }

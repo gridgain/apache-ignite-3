@@ -18,6 +18,7 @@
 package org.apache.ignite.internal.tx.impl;
 
 import java.util.concurrent.CompletableFuture;
+import java.util.function.Function;
 import org.apache.ignite.internal.hlc.HybridTimestampTracker;
 import org.apache.ignite.internal.tx.InternalTransaction;
 import org.apache.ignite.internal.tx.InternalTxOptions;
@@ -25,6 +26,7 @@ import org.apache.ignite.internal.tx.TxManager;
 import org.apache.ignite.internal.tx.TxPriority;
 import org.apache.ignite.tx.IgniteTransactions;
 import org.apache.ignite.tx.Transaction;
+import org.apache.ignite.tx.TransactionException;
 import org.apache.ignite.tx.TransactionOptions;
 import org.jetbrains.annotations.Nullable;
 import org.jetbrains.annotations.TestOnly;
@@ -79,5 +81,21 @@ public class IgniteTransactionsImpl implements IgniteTransactions {
     @TestOnly
     public Transaction beginWithPriority(boolean readOnly, TxPriority priority) {
         return txManager.beginExplicit(observableTimestampTracker, readOnly, InternalTxOptions.defaultsWithPriority(priority));
+    }
+
+    @Override
+    public <T> T runInTransaction(Function<Transaction, T> clo, @Nullable TransactionOptions options) throws TransactionException {
+        Transaction tx = begin(options);
+
+        return txManager.runInTransaction(clo, observableTimestampTracker, tx);
+    }
+
+    @Override
+    public <T> CompletableFuture<T> runInTransactionAsync(
+            Function<Transaction, CompletableFuture<T>> clo,
+            @Nullable TransactionOptions options
+    ) {
+        //return txManager.runInTransaction(clo, observableTimestampTracker, tx);
+        return CompletableFuture.failedFuture(new Exception());
     }
 }

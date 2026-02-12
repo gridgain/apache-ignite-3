@@ -160,6 +160,11 @@ public interface InternalTransaction extends Transaction {
     CompletableFuture<Void> kill();
 
     /**
+     * Restarts this transaction.
+     */
+    void restart();
+
+    /**
      * Returns kill flag.
      *
      * @return The value.

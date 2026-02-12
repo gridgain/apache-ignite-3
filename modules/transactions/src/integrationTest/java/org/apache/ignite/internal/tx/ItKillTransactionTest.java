@@ -77,19 +77,20 @@ public class ItKillTransactionTest extends ClusterPerClassIntegrationTest {
         KeyValueView<Integer, String> kvView = node.tables().table("test").keyValueView(Integer.class, String.class);
 
         Phaser phaser = new Phaser(2);
+        String testVal = "Test val";
         CompletableFuture<Void> fut = IgniteTestUtils.runAsync(() -> {
             node.transactions().runInTransaction(tx -> {
-                kvView.put(tx, key, "Test val");
+                kvView.put(tx, key, testVal);
                 String res = kvView.get(tx, key);
-                assertEquals("Test val", res);
+                assertEquals(testVal, res);
 
                 phaser.arriveAndAwaitAdvance();
 
                 IgniteImpl igniteImpl = Wrappers.unwrap(node, IgniteImpl.class);
                 InternalTransaction internalTx = Wrappers.unwrap(tx, InternalTransaction.class);
 
-                CompletableFuture<Boolean> killFut = igniteImpl.txManager().kill(internalTx.id());
-                killFut.join();
+                // TODO Kill async !!!.
+                igniteImpl.txManager().kill(internalTx.id()).join();
 
                 phaser.arriveAndDeregister();
             });
@@ -102,7 +103,7 @@ public class ItKillTransactionTest extends ClusterPerClassIntegrationTest {
 
         fut.join();
 
-        assertEquals("Test val", kvView.get(null, key));
+        assertEquals(testVal, kvView.get(null, key));
     }
 
     /**

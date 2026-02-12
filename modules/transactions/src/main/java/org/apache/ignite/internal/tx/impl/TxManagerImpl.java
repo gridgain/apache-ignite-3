@@ -29,6 +29,7 @@ import static org.apache.ignite.internal.lang.IgniteStringFormatter.format;
 import static org.apache.ignite.internal.thread.ThreadOperation.STORAGE_READ;
 import static org.apache.ignite.internal.thread.ThreadOperation.STORAGE_WRITE;
 import static org.apache.ignite.internal.tx.InternalTransaction.USE_CONFIGURED_TIMEOUT_DEFAULT;
+import static org.apache.ignite.internal.tx.RunInTransactionInternalImpl.runInTransactionInternal;
 import static org.apache.ignite.internal.tx.TransactionIds.beginTimestamp;
 import static org.apache.ignite.internal.tx.TransactionLogUtils.formatTxInfo;
 import static org.apache.ignite.internal.tx.TxState.ABORTED;
@@ -119,7 +120,9 @@ import org.apache.ignite.internal.tx.views.LocksViewProvider;
 import org.apache.ignite.internal.tx.views.TransactionsViewProvider;
 import org.apache.ignite.internal.util.CompletableFutures;
 import org.apache.ignite.internal.util.ExceptionUtils;
+import org.apache.ignite.internal.util.IgniteUtils;
 import org.apache.ignite.lang.ErrorGroups.Common;
+import org.apache.ignite.tx.Transaction;
 import org.apache.ignite.tx.TransactionException;
 import org.jetbrains.annotations.Nullable;
 import org.jetbrains.annotations.TestOnly;
@@ -141,8 +144,6 @@ public class TxManagerImpl implements TxManager, SystemViewProvider {
     public static final String RESOURCE_TTL_PROP = "txnResourceTtl";
 
     private static final int RESOURCE_TTL_PROP_DEFAULT_VALUE = 30 * 1000;
-
-    private static final TxIdComparators DEFAULT_TX_ID_COMPARATOR = TxIdComparators.NATURAL;
 
     private static final long DEFAULT_LOCK_TIMEOUT = 0;
 
@@ -1041,27 +1042,29 @@ public class TxManagerImpl implements TxManager, SystemViewProvider {
 
     @Override
     public CompletableFuture<Void> startAsync(ComponentContext componentContext) {
-        var deadlockPreventionPolicy = new WoundWaitDeadlockPreventionPolicy() {
-            @Override
-            public long waitTimeout() {
-                return DEFAULT_LOCK_TIMEOUT;
-            }
+//        var deadlockPreventionPolicy = new WoundWaitDeadlockPreventionPolicy() {
+//            @Override
+//            public long waitTimeout() {
+//                return DEFAULT_LOCK_TIMEOUT;
+//            }
+//
+//            @Override
+//            public void failAction(UUID owner) {
+//                TxStateMeta state = txStateVolatileStorage.state(owner);
+//                if (state == null || state.txCoordinatorId() == null) {
+//                    return; // tx state is invalid. locks should be cleaned up by tx recovery process.
+//                }
+//
+//                InternalClusterNode coordinator = topologyService.getById(state.txCoordinatorId());
+//                if (coordinator == null) {
+//                    return; // tx is abandoned. locks should be cleaned up by tx recovery process.
+//                }
+//
+//                txMessageSender.kill(coordinator, owner);
+//            }
+//        };
 
-            @Override
-            public void failAction(UUID owner) {
-                TxStateMeta state = txStateVolatileStorage.state(owner);
-                if (state == null || state.txCoordinatorId() == null) {
-                    return; // tx state is invalid. locks should be cleaned up by tx recovery process.
-                }
-
-                InternalClusterNode coordinator = topologyService.getById(state.txCoordinatorId());
-                if (coordinator == null) {
-                    return; // tx is abandoned. locks should be cleaned up by tx recovery process.
-                }
-
-                txMessageSender.kill(coordinator, owner);
-            }
-        };
+        var deadlockPreventionPolicy = new WaitDieDeadlockPreventionPolicy();
 
         txStateVolatileStorage.start();
 
@@ -1233,6 +1236,17 @@ public class TxManagerImpl implements TxManager, SystemViewProvider {
             // We don't need tx state any more.
             updateTxMeta(txId, old -> null);
             return null;
+        });
+    }
+
+    @Override
+    public <T> T runInTransaction(Function<Transaction, T> clo, HybridTimestampTracker observableTimestampTracker, Transaction tx) {
+        long startTimestamp = IgniteUtils.monotonicMs();
+        long initialTimeout = startTimestamp + ((InternalTransaction) tx).getTimeout();
+
+        return runInTransactionInternal(tx, clo, startTimestamp, initialTimeout, (tx0, timeout) -> {
+            InternalTransaction tx00 = (InternalTransaction) tx0;
+            tx00.restart();
         });
     }
 

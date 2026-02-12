@@ -31,6 +31,7 @@ import org.apache.ignite.internal.manager.IgniteComponent;
 import org.apache.ignite.internal.replicator.ZonePartitionId;
 import org.apache.ignite.internal.tx.impl.EnlistedPartitionGroup;
 import org.apache.ignite.internal.tx.metrics.ResourceVacuumMetrics;
+import org.apache.ignite.tx.Transaction;
 import org.apache.ignite.internal.tx.metrics.TransactionMetricsSource;
 import org.jetbrains.annotations.Nullable;
 import org.jetbrains.annotations.TestOnly;
@@ -277,6 +278,8 @@ public interface TxManager extends IgniteComponent {
      * @param txId Transaction id.
      */
     CompletableFuture<Void> discardLocalWriteIntents(List<EnlistedPartitionGroup> groups, UUID txId);
+
+    <T> T runInTransaction(Function<Transaction, T> clo, HybridTimestampTracker observableTimestampTracker, Transaction tx);
 
     /**
      * Returns lock retry count.

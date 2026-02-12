@@ -15,13 +15,13 @@
  * limitations under the License.
  */
 
-package org.apache.ignite.tx;
+package org.apache.ignite.internal.tx;
 
 import static java.util.Collections.synchronizedList;
 import static java.util.concurrent.CompletableFuture.completedFuture;
 import static java.util.concurrent.CompletableFuture.failedFuture;
 import static java.util.function.Function.identity;
-import static org.apache.ignite.tx.IgniteTransactionDefaults.DEFAULT_RW_TX_TIMEOUT_SECONDS;
+import static org.apache.ignite.internal.util.IgniteUtils.monotonicMs;
 
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -29,9 +29,15 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.function.BiConsumer;
+import java.util.function.Consumer;
 import java.util.function.Function;
+import org.apache.ignite.internal.util.CompletableFutures;
+import org.apache.ignite.tx.IgniteTransactions;
+import org.apache.ignite.tx.RetriableTransactionException;
+import org.apache.ignite.tx.Transaction;
+import org.apache.ignite.tx.TransactionException;
 import org.jetbrains.annotations.Nullable;
 
 /**
@@ -39,30 +45,23 @@ import org.jetbrains.annotations.Nullable;
  * {@link IgniteTransactions#runInTransactionAsync}, moved from the separate class to avoid the interface overloading. This
  * implementation is common for both client and embedded {@link IgniteTransactions}.
  */
-class RunInTransactionInternalImpl {
+public class RunInTransactionInternalImpl {
     private static final int MAX_SUPPRESSED = 100;
 
-    static <T> T runInTransactionInternal(
-            IgniteTransactions igniteTransactions,
+    public static <T> T runInTransactionInternal(
+            Transaction tx,
             Function<Transaction, T> clo,
-            @Nullable TransactionOptions options,
             long startTimestamp,
-            long initialTimeout
+            long initialTimeout,
+            BiConsumer<Transaction, Long> restartClo
     ) throws TransactionException {
         Objects.requireNonNull(clo);
 
-        TransactionOptions txOptions = options == null
-                ? new TransactionOptions().timeoutMillis(TimeUnit.SECONDS.toMillis(DEFAULT_RW_TX_TIMEOUT_SECONDS))
-                : options;
-
         List<Throwable> suppressed = new ArrayList<>();
 
-        Transaction tx;
         T ret;
 
         while (true) {
-            tx = igniteTransactions.begin(txOptions);
-
             try {
                 ret = clo.apply(tx);
 
@@ -73,15 +72,13 @@ class RunInTransactionInternalImpl {
                 long remainingTime = calcRemainingTime(initialTimeout, startTimestamp);
 
                 if (remainingTime > 0 && isRetriable(ex)) {
-                    // Rollback on user exception, should be retried until success or timeout to ensure the lock release
-                    // before the next attempt.
-                    rollbackWithRetry(tx, ex, startTimestamp, initialTimeout, suppressed);
-
+                    // Rollback is already performed on enlistment failure.
                     long remaining = calcRemainingTime(initialTimeout, startTimestamp);
 
                     if (remaining > 0) {
                         // Will go on retry iteration.
-                        txOptions = txOptions.timeoutMillis(remainingTime);
+                        restartClo.accept(tx, remaining);
+                        continue;
                     } else {
                         throwExceptionWithSuppressed(ex, suppressed);
                     }
@@ -96,79 +93,65 @@ class RunInTransactionInternalImpl {
                     throwExceptionWithSuppressed(ex, suppressed);
                 }
             }
-        }
 
-        try {
-            tx.commit();
-        } catch (Exception e) {
-            // TODO retry if killed
             try {
-                // Try to rollback tx in case if it's not finished. Retry is not needed here due to the durable finish.
-                tx.rollback();
-            } catch (Exception re) {
-                e.addSuppressed(re);
-            }
+                tx.commit();
+            } catch (Exception e) {
+                addSuppressedToList(suppressed, e);
 
-            throw e;
+                long remainingTime = calcRemainingTime(initialTimeout, startTimestamp);
+
+                if (remainingTime > 0 && isRetriable(e)) {
+                    long remaining = calcRemainingTime(initialTimeout, startTimestamp);
+
+                    if (remaining > 0) {
+                        // Will go on retry iteration.
+                        restartClo.accept(tx, remaining);
+                    } else {
+                        throwExceptionWithSuppressed(e, suppressed);
+                    }
+                } else {
+                    try {
+                        // Try to rollback tx in case if it's not finished. Retry is not needed here due to the durable finish.
+                        tx.rollback();
+                    } catch (Exception re) {
+                        e.addSuppressed(re);
+                    }
+
+                    throw e;
+                }
+            }
         }
 
         return ret;
     }
 
-    private static void rollbackWithRetry(
+    public static <T> CompletableFuture<T> runInTransactionAsyncInternal(
             Transaction tx,
-            Exception closureException,
-            long startTimestamp,
-            long initialTimeout,
-            List<Throwable> suppressed
-    ) {
-        while (true) {
-            try {
-                tx.rollback();
-
-                break;
-            } catch (Exception re) {
-                addSuppressedToList(suppressed, re);
-
-                if (calcRemainingTime(initialTimeout, startTimestamp) <= 0) {
-                    throwExceptionWithSuppressed(closureException, suppressed);
-                }
-            }
-        }
-    }
-
-    static <T> CompletableFuture<T> runInTransactionAsyncInternal(
-            IgniteTransactions igniteTransactions,
             Function<Transaction, CompletableFuture<T>> clo,
-            @Nullable TransactionOptions options,
             long startTimestamp,
             long initialTimeout,
-            @Nullable List<Throwable> suppressed
+            @Nullable List<Throwable> suppressed,
+            Consumer<Transaction> restartClo
     ) {
         Objects.requireNonNull(clo);
 
-        TransactionOptions txOptions = options == null
-                ? new TransactionOptions().timeoutMillis(TimeUnit.SECONDS.toMillis(DEFAULT_RW_TX_TIMEOUT_SECONDS))
-                : options;
-
         List<Throwable> sup = suppressed == null ? synchronizedList(new ArrayList<>()) : suppressed;
 
-        return igniteTransactions
-                .beginAsync(txOptions)
+        return CompletableFutures.nullCompletedFuture()
                 // User closure with retries.
-                .thenCompose(tx -> {
+                .thenCompose(ignored -> {
                     try {
                         return clo.apply(tx)
                                 .handle((res, e) -> {
                                     if (e != null) {
                                         return handleClosureException(
-                                                igniteTransactions,
                                                 tx,
                                                 clo,
-                                                txOptions,
                                                 startTimestamp,
                                                 initialTimeout,
                                                 sup,
+                                                restartClo,
                                                 e
                                         );
                                     } else {
@@ -178,7 +161,7 @@ class RunInTransactionInternalImpl {
                                 .thenCompose(identity())
                                 .thenApply(res -> new TxWithVal<>(tx, res));
                     } catch (Exception e) {
-                        return handleClosureException(igniteTransactions, tx, clo, txOptions, startTimestamp, initialTimeout, sup, e)
+                        return handleClosureException(tx, clo, startTimestamp, initialTimeout, sup, restartClo, e)
                                 .thenApply(res -> new TxWithVal<>(tx, res));
                     }
                 })
@@ -201,13 +184,12 @@ class RunInTransactionInternalImpl {
     }
 
     private static <T> CompletableFuture<T> handleClosureException(
-            IgniteTransactions igniteTransactions,
             Transaction currentTx,
             Function<Transaction, CompletableFuture<T>> clo,
-            TransactionOptions txOptions,
             long startTimestamp,
             long initialTimeout,
             List<Throwable> suppressed,
+            Consumer<Transaction> restartClo,
             Throwable e
     ) {
         addSuppressedToList(suppressed, e);
@@ -222,15 +204,15 @@ class RunInTransactionInternalImpl {
                         long remaining = calcRemainingTime(initialTimeout, startTimestamp);
 
                         if (remaining > 0) {
-                            TransactionOptions opt = txOptions.timeoutMillis(remaining);
+                            restartClo.accept(currentTx);
 
                             return runInTransactionAsyncInternal(
-                                    igniteTransactions,
+                                    currentTx,
                                     clo,
-                                    opt,
                                     startTimestamp,
                                     initialTimeout,
-                                    suppressed
+                                    suppressed,
+                                    restartClo
                             );
                         } else {
                             return throwExceptionWithSuppressedAsync(e, suppressed)
@@ -340,9 +322,7 @@ class RunInTransactionInternalImpl {
     }
 
     private static long calcRemainingTime(long initialTimeout, long startTimestamp) {
-        long now = System.currentTimeMillis();
-        long remainingTime = initialTimeout - (now - startTimestamp);
-        return remainingTime;
+        return initialTimeout - (monotonicMs() - startTimestamp);
     }
 
     private static <E extends Throwable> E sneakyThrow(Throwable e) throws E {
