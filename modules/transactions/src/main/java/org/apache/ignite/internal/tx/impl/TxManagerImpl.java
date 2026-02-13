@@ -1246,6 +1246,7 @@ public class TxManagerImpl implements TxManager, SystemViewProvider {
 
         return runInTransactionInternal(tx, clo, startTimestamp, initialTimeout, (tx0, timeout) -> {
             InternalTransaction tx00 = (InternalTransaction) tx0;
+            LOG.info("Restarting the transaction [id=" + tx00.id() + " , remaining=" + timeout);
             tx00.restart(timeout);
         });
     }

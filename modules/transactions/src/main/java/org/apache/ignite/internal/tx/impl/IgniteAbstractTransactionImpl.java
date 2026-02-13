@@ -48,7 +48,7 @@ public abstract class IgniteAbstractTransactionImpl implements InternalTransacti
     protected final HybridTimestampTracker observableTsTracker;
 
     /** Transaction coordinator ephemeral ID. */
-    protected UUID coordinatorId;
+    protected final UUID coordinatorId;
 
     /** Implicit transaction flag. */
     private final boolean implicit;

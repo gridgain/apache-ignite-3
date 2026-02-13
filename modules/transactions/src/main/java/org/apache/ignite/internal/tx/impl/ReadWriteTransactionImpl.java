@@ -340,13 +340,14 @@ public class ReadWriteTransactionImpl extends IgniteAbstractTransactionImpl {
 
     @Override
     public void restart(long timeout) {
+        // TODO copy instance to prevent immutability ?
         enlistPartitionLock.writeLock().lock();
         try {
             killed = false;
+            timeoutExceeded = false;
             noRemoteWrites = true;
             enlisted.clear();
             finishFuture = null;
-            coordinatorId = null;
             this.timeout = timeout;
             COMMIT_PART_UPDATER.set(this, null);
             // TODO check for overflow.

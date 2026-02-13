@@ -69,19 +69,12 @@ public class RunInTransactionInternalImpl {
             } catch (Exception ex) {
                 addSuppressedToList(suppressed, ex);
 
-                long remainingTime = calcRemainingTime(initialTimeout, startTimestamp);
+                long remaining = calcRemainingTime(initialTimeout);
 
-                if (remainingTime > 0 && isRetriable(ex)) {
+                if (remaining > 0 && isRetriable(ex)) {
                     // Rollback is already performed on enlistment failure.
-                    long remaining = calcRemainingTime(initialTimeout, startTimestamp);
-
-                    if (remaining > 0) {
-                        // Will go on retry iteration.
-                        restartClo.accept(tx, remaining);
-                        continue;
-                    } else {
-                        throwExceptionWithSuppressed(ex, suppressed);
-                    }
+                    restartClo.accept(tx, remaining);
+                    continue;
                 } else {
                     try {
                         // No retries here, rely on the durable finish.
@@ -99,17 +92,10 @@ public class RunInTransactionInternalImpl {
             } catch (Exception e) {
                 addSuppressedToList(suppressed, e);
 
-                long remainingTime = calcRemainingTime(initialTimeout, startTimestamp);
+                long remaining = calcRemainingTime(initialTimeout);
 
-                if (remainingTime > 0 && isRetriable(e)) {
-                    long remaining = calcRemainingTime(initialTimeout, startTimestamp);
-
-                    if (remaining > 0) {
-                        // Will go on retry iteration.
-                        restartClo.accept(tx, remaining);
-                    } else {
-                        throwExceptionWithSuppressed(e, suppressed);
-                    }
+                if (remaining > 0 && isRetriable(e)) {
+                    restartClo.accept(tx, remaining);
                 } else {
                     try {
                         // Try to rollback tx in case if it's not finished. Retry is not needed here due to the durable finish.
@@ -126,7 +112,7 @@ public class RunInTransactionInternalImpl {
         return ret;
     }
 
-    public static <T> CompletableFuture<T> runInTransactionAsyncInternal(
+    static <T> CompletableFuture<T> runInTransactionAsyncInternal(
             Transaction tx,
             Function<Transaction, CompletableFuture<T>> clo,
             long startTimestamp,
@@ -194,14 +180,14 @@ public class RunInTransactionInternalImpl {
     ) {
         addSuppressedToList(suppressed, e);
 
-        long remainingTime = calcRemainingTime(initialTimeout, startTimestamp);
+        long remainingTime = calcRemainingTime(initialTimeout);
 
         if (remainingTime > 0 && isRetriable(e)) {
             // Rollback on user exception, should be retried until success or timeout to ensure the lock release
             // before the next attempt.
             return rollbackWithRetryAsync(currentTx, startTimestamp, initialTimeout, suppressed, e)
                     .thenCompose(ignored -> {
-                        long remaining = calcRemainingTime(initialTimeout, startTimestamp);
+                        long remaining = calcRemainingTime(initialTimeout);
 
                         if (remaining > 0) {
                             restartClo.accept(currentTx);
@@ -249,7 +235,7 @@ public class RunInTransactionInternalImpl {
                     } else {
                         addSuppressedToList(suppressed, re);
 
-                        if (calcRemainingTime(initialTimeout, startTimestamp) <= 0) {
+                        if (calcRemainingTime(initialTimeout) <= 0) {
                             for (Throwable s : suppressed) {
                                 addSuppressed(e, s);
                             }
@@ -321,8 +307,8 @@ public class RunInTransactionInternalImpl {
         return false;
     }
 
-    private static long calcRemainingTime(long initialTimeout, long startTimestamp) {
-        return initialTimeout - (monotonicMs() - startTimestamp);
+    private static long calcRemainingTime(long initialTimeout) {
+        return initialTimeout - monotonicMs();
     }
 
     private static <E extends Throwable> E sneakyThrow(Throwable e) throws E {
