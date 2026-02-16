@@ -214,7 +214,7 @@ class IndexFileManager {
      * This method is intended to be called during {@link SegmentFileManager} recovery in order to create index files that may have been
      * lost due to a component stop before a checkpoint was able to complete.
      */
-    void recoverIndexFile(ReadModeIndexMemTable indexMemTable, FileProperties fileProperties) throws IOException {
+    void createIndexFile(ReadModeIndexMemTable indexMemTable, FileProperties fileProperties) throws IOException {
         saveIndexMemtable(indexMemTable, fileProperties, true);
     }
 

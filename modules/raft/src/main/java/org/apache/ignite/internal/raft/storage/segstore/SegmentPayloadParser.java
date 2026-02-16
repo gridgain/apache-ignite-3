@@ -104,7 +104,7 @@ class SegmentPayloadParser {
         }
     }
 
-    private static void validateSegmentFileHeader(ByteBuffer buffer, Path segmentFilePath) {
+    static void validateSegmentFileHeader(ByteBuffer buffer, Path segmentFilePath) {
         int magicNumber = buffer.getInt();
 
         if (magicNumber != MAGIC_NUMBER) {
@@ -132,7 +132,7 @@ class SegmentPayloadParser {
         return crc == expectedCrc;
     }
 
-    private static boolean endOfSegmentReached(ByteBuffer buffer) {
+    static boolean endOfSegmentReached(ByteBuffer buffer) {
         if (buffer.remaining() < SWITCH_SEGMENT_RECORD.length) {
             return true;
         }

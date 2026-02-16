@@ -20,7 +20,6 @@ package org.apache.ignite.internal.raft.storage.segstore;
 import static java.lang.Math.toIntExact;
 import static org.apache.ignite.internal.raft.configuration.LogStorageConfigurationSchema.UNSPECIFIED_MAX_LOG_ENTRY_SIZE;
 import static org.apache.ignite.internal.raft.configuration.LogStorageConfigurationSchema.computeDefaultMaxLogEntrySizeBytes;
-import static org.apache.ignite.internal.raft.storage.segstore.SegmentFile.fileName;
 import static org.apache.ignite.internal.raft.storage.segstore.SegmentInfo.MISSING_SEGMENT_FILE_OFFSET;
 import static org.apache.ignite.internal.raft.storage.segstore.SegmentPayload.RESET_RECORD_SIZE;
 import static org.apache.ignite.internal.raft.storage.segstore.SegmentPayload.TRUNCATE_PREFIX_RECORD_SIZE;
@@ -209,7 +208,7 @@ class SegmentFileManager implements ManuallyCloseable {
 
                         SegmentFileWithMemtable segmentFileWithMemtable = recoverSegmentFile(segmentFilePath, payloadParser);
 
-                        indexFileManager.recoverIndexFile(segmentFileWithMemtable.memtable().transitionToReadMode(), segmentFileProperties);
+                        indexFileManager.createIndexFile(segmentFileWithMemtable.memtable().transitionToReadMode(), segmentFileProperties);
                     }
                 }
             }
@@ -245,7 +244,7 @@ class SegmentFileManager implements ManuallyCloseable {
     }
 
     private SegmentFileWithMemtable allocateNewSegmentFile(int fileOrdinal) throws IOException {
-        Path path = segmentFilesDir.resolve(fileName(new FileProperties(fileOrdinal)));
+        Path path = segmentFilesDir.resolve(SegmentFile.fileName(new FileProperties(fileOrdinal)));
 
         SegmentFile segmentFile = SegmentFile.createNew(path, segmentFileSize, isSync);
 
@@ -547,7 +546,7 @@ class SegmentFileManager implements ManuallyCloseable {
             return EntrySearchResult.notFound();
         }
 
-        Path path = segmentFilesDir.resolve(fileName(segmentFilePointer.fileProperties()));
+        Path path = segmentFilesDir.resolve(SegmentFile.fileName(segmentFilePointer.fileProperties()));
 
         // TODO: Add a cache for recently accessed segment files, see https://issues.apache.org/jira/browse/IGNITE-26622.
         SegmentFile segmentFile = SegmentFile.openExisting(path, isSync);

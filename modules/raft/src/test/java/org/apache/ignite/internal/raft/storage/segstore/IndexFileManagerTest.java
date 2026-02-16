@@ -403,13 +403,13 @@ class IndexFileManagerTest extends IgniteAbstractTest {
 
         memtable.appendSegmentFileOffset(0, 1, 1);
 
-        indexFileManager.recoverIndexFile(memtable, new FileProperties(5));
+        indexFileManager.createIndexFile(memtable, new FileProperties(5));
 
         memtable = new StripedMemTable(STRIPES);
 
         memtable.appendSegmentFileOffset(0, 2, 2);
 
-        indexFileManager.recoverIndexFile(memtable, new FileProperties(6));
+        indexFileManager.createIndexFile(memtable, new FileProperties(6));
 
         // Restart the manager to update in-memory meta.
         indexFileManager = new IndexFileManager(workDir);
