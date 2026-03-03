@@ -48,9 +48,10 @@ public class TxStateMetaFinishing extends TxStateMeta {
             @Nullable UUID txCoordinatorId,
             @Nullable ZonePartitionId commitPartitionId,
             @Nullable Boolean isFinishingDueToTimeout,
-            @Nullable String txLabel
+            @Nullable String txLabel,
+            @Nullable Boolean killed
     ) {
-        super(TxState.FINISHING, txCoordinatorId, commitPartitionId, null, null, null, null, isFinishingDueToTimeout, txLabel);
+        super(TxState.FINISHING, txCoordinatorId, commitPartitionId, null, null, null, null, isFinishingDueToTimeout, txLabel, killed);
     }
 
     /**
@@ -117,7 +118,7 @@ public class TxStateMetaFinishing extends TxStateMeta {
         @Override
         public TxStateMeta build() {
             if (txState == TxState.FINISHING) {
-                return new TxStateMetaFinishing(txCoordinatorId, commitPartitionId, isFinishedDueToTimeout, txLabel);
+                return new TxStateMetaFinishing(txCoordinatorId, commitPartitionId, isFinishedDueToTimeout, txLabel, killed);
             } else {
                 return super.build();
             }

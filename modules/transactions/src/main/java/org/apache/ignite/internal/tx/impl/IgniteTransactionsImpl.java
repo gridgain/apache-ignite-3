@@ -52,6 +52,7 @@ public class IgniteTransactionsImpl implements IgniteTransactions {
     /** {@inheritDoc} */
     @Override
     public Transaction begin(@Nullable TransactionOptions options) {
+        // TODO move to begin exp
         InternalTxOptions internalTxOptions = options == null
                 ? InternalTxOptions.defaults()
                 : InternalTxOptions.builder()
@@ -85,9 +86,9 @@ public class IgniteTransactionsImpl implements IgniteTransactions {
 
     @Override
     public <T> T runInTransaction(Function<Transaction, T> clo, @Nullable TransactionOptions options) throws TransactionException {
-        Transaction tx = begin(options);
+        //Transaction tx = begin(options);
 
-        return txManager.runInTransaction(clo, observableTimestampTracker, tx);
+        return txManager.runInTransaction(clo, observableTimestampTracker, options);
     }
 
     @Override

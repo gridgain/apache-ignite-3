@@ -151,7 +151,8 @@ public class TxCleanupRecoveryRequestHandler {
                 txMeta.enlistedPartitions(),
                 txMeta.txState() == COMMITTED,
                 txMeta.commitTimestamp(),
-                txId
+                txId,
+                false
         ).exceptionally(throwable -> {
             LOG.warn(
                     "Failed to cleanup transaction {}.",

@@ -739,7 +739,7 @@ public class ItTransactionRecoveryTest extends ClusterPerTestIntegrationTest {
                 false,
                 true,
                 false,
-                Map.of(commitPartition, new PendingTxPartitionEnlistment(txCrdNode2.node().name(), 0L)),
+                false, Map.of(commitPartition, new PendingTxPartitionEnlistment(txCrdNode2.node().name(), 0L)),
                 rwTx1Id
         );
 

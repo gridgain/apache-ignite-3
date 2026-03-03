@@ -49,7 +49,7 @@ import org.junit.jupiter.api.Test;
 public class ItDataConsistencyTest extends ClusterPerClassIntegrationTest {
     private static final String ZONE_NAME = "test_zone";
     private static final String TABLE_NAME = "accounts";
-    private static final int WRITE_PARALLELISM = Runtime.getRuntime().availableProcessors();
+    private static final int WRITE_PARALLELISM = 8; // Runtime.getRuntime().availableProcessors();
     private static final int READ_PARALLELISM = 0;
     private static final int ACCOUNTS_COUNT = WRITE_PARALLELISM * 10;
     private static final double INITIAL = 1000;
@@ -212,8 +212,6 @@ public class ItDataConsistencyTest extends ClusterPerClassIntegrationTest {
                     view.upsert(tx, makeValue(acc1, val0 - amount));
 
                     view.upsert(tx, makeValue(acc2, val1 + amount));
-
-                    tx.commit();
                 });
 
                 ops.increment();

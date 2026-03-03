@@ -79,11 +79,11 @@ public class WriteIntentSwitchProcessor {
             EnlistedPartitionGroup partition,
             UUID txId,
             boolean commit,
-            @Nullable HybridTimestamp commitTimestamp
-    ) {
+            @Nullable HybridTimestamp commitTimestamp,
+            boolean killed) {
         String localNodeName = topologyService.localMember().name();
 
-        return txMessageSender.switchWriteIntents(localNodeName, partition, txId, commit, commitTimestamp);
+        return txMessageSender.switchWriteIntents(localNodeName, partition, txId, commit, commitTimestamp, killed);
     }
 
     /**
@@ -93,11 +93,12 @@ public class WriteIntentSwitchProcessor {
             boolean commit,
             @Nullable HybridTimestamp commitTimestamp,
             UUID txId,
-            EnlistedPartitionGroup partition
+            EnlistedPartitionGroup partition,
+            boolean killed
     ) {
         return placementDriverHelper.awaitPrimaryReplicaWithExceptionHandling(partition.groupId())
                 .thenCompose(leaseHolder ->
-                        txMessageSender.switchWriteIntents(leaseHolder.getLeaseholder(), partition, txId, commit, commitTimestamp))
+                        txMessageSender.switchWriteIntents(leaseHolder.getLeaseholder(), partition, txId, commit, commitTimestamp, killed))
                 .handle((res, ex) -> {
                     if (ex != null) {
                         Throwable cause = ExceptionUtils.unwrapCause(ex);
@@ -107,7 +108,7 @@ public class WriteIntentSwitchProcessor {
                                     formatTxInfo(txId, volatileTxStateMetaStorage, false),
                                     ex.getClass().getSimpleName() + ": " + ex.getMessage());
 
-                            return switchWriteIntentsWithRetry(commit, commitTimestamp, txId, partition);
+                            return switchWriteIntentsWithRetry(commit, commitTimestamp, txId, partition, killed);
                         }
 
                         if (!hasCause(ex, NodeStoppingException.class)) {

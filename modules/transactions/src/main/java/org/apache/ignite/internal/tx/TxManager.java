@@ -33,6 +33,7 @@ import org.apache.ignite.internal.tx.impl.EnlistedPartitionGroup;
 import org.apache.ignite.internal.tx.metrics.ResourceVacuumMetrics;
 import org.apache.ignite.tx.Transaction;
 import org.apache.ignite.internal.tx.metrics.TransactionMetricsSource;
+import org.apache.ignite.tx.TransactionOptions;
 import org.jetbrains.annotations.Nullable;
 import org.jetbrains.annotations.TestOnly;
 
@@ -184,13 +185,15 @@ public interface TxManager extends IgniteComponent {
     /**
      * Finishes a dependant transactions.
      *
-     * @param timestampTracker Observable timestamp tracker is used to determine the read timestamp for read-only transactions. Each client
-     *         should pass its own tracker to provide linearizability between read-write and read-only transactions started by this client.
+     * @param timestampTracker Observable timestamp tracker is used to determine the read timestamp for read-only transactions. Each
+     *         client should pass its own tracker to provide linearizability between read-write and read-only transactions started by this
+     *         client.
      * @param commitPartition Partition to store a transaction state. {@code null} if nothing was enlisted into the transaction.
      * @param commitIntent {@code true} if a commit requested.
      * @param timeoutExceeded {@code true} if a timeout exceeded.
      * @param recovery {@code true} if finished by recovery.
      * @param noRemoteWrites {@code true} if remote(directly mapped) part of this transaction has no writes.
+     * @param killed
      * @param enlistedGroups Map of enlisted partitions.
      * @param txId Transaction id.
      */
@@ -201,6 +204,7 @@ public interface TxManager extends IgniteComponent {
             boolean timeoutExceeded,
             boolean recovery,
             boolean noRemoteWrites,
+            boolean killed,
             Map<ZonePartitionId, PendingTxPartitionEnlistment> enlistedGroups,
             UUID txId
     );
@@ -222,7 +226,8 @@ public interface TxManager extends IgniteComponent {
             Map<ZonePartitionId, ? extends PartitionEnlistment> enlistedPartitions,
             boolean commit,
             @Nullable HybridTimestamp commitTimestamp,
-            UUID txId
+            UUID txId,
+            boolean killed
     );
 
     /**
@@ -242,7 +247,8 @@ public interface TxManager extends IgniteComponent {
             Collection<EnlistedPartitionGroup> enlistedPartitions,
             boolean commit,
             @Nullable HybridTimestamp commitTimestamp,
-            UUID txId
+            UUID txId,
+            boolean killed
     );
 
     /**
@@ -279,7 +285,7 @@ public interface TxManager extends IgniteComponent {
      */
     CompletableFuture<Void> discardLocalWriteIntents(List<EnlistedPartitionGroup> groups, UUID txId);
 
-    <T> T runInTransaction(Function<Transaction, T> clo, HybridTimestampTracker observableTimestampTracker, Transaction tx);
+    <T> T runInTransaction(Function<Transaction, T> clo, HybridTimestampTracker observableTimestampTracker, @Nullable TransactionOptions opts);
 
     /**
      * Returns lock retry count.

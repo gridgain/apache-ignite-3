@@ -59,6 +59,8 @@ public class TxStateMeta implements TransactionMeta {
 
     private final @Nullable String txLabel;
 
+    private final @Nullable Boolean killed;
+
     /**
      * The ignite transaction object is associated with this state.
      * This field can be initialized only on the transaction coordinator, {@code null} on the other nodes.
@@ -85,7 +87,7 @@ public class TxStateMeta implements TransactionMeta {
             @Nullable InternalTransaction tx,
             @Nullable Boolean isFinishedDueToTimeout
     ) {
-        this(txState, txCoordinatorId, commitPartitionId, commitTimestamp, tx, null, null, isFinishedDueToTimeout, null);
+        this(txState, txCoordinatorId, commitPartitionId, commitTimestamp, tx, null, null, isFinishedDueToTimeout, null, null);
     }
 
     /**
@@ -110,7 +112,8 @@ public class TxStateMeta implements TransactionMeta {
             @Nullable Long initialVacuumObservationTimestamp,
             @Nullable Long cleanupCompletionTimestamp,
             @Nullable Boolean isFinishedDueToTimeout,
-            @Nullable String txLabel
+            @Nullable String txLabel,
+            @Nullable Boolean killed
     ) {
         this.txState = txState;
         this.txCoordinatorId = txCoordinatorId;
@@ -120,6 +123,7 @@ public class TxStateMeta implements TransactionMeta {
         this.cleanupCompletionTimestamp = cleanupCompletionTimestamp;
         this.isFinishedDueToTimeout = isFinishedDueToTimeout;
         this.txLabel = txLabel;
+        this.killed = killed;
 
         if (initialVacuumObservationTimestamp != null) {
             this.initialVacuumObservationTimestamp = initialVacuumObservationTimestamp;
@@ -154,7 +158,7 @@ public class TxStateMeta implements TransactionMeta {
      * @return Transaction state meta.
      */
     public TxStateMetaFinishing finishing(boolean isFinishedDueToTimeoutFlag) {
-        return new TxStateMetaFinishing(txCoordinatorId, commitPartitionId, isFinishedDueToTimeoutFlag, txLabel);
+        return new TxStateMetaFinishing(txCoordinatorId, commitPartitionId, isFinishedDueToTimeoutFlag, txLabel, killed);
     }
 
     @Override
@@ -185,6 +189,10 @@ public class TxStateMeta implements TransactionMeta {
 
     public @Nullable Boolean isFinishedDueToTimeout() {
         return isFinishedDueToTimeout;
+    }
+
+    public @Nullable Boolean killed() {
+        return killed;
     }
 
     public @Nullable String txLabel() {
@@ -257,6 +265,7 @@ public class TxStateMeta implements TransactionMeta {
         private @Nullable Long cleanupCompletionTimestamp;
         protected @Nullable Boolean isFinishedDueToTimeout;
         protected @Nullable String txLabel;
+        protected @Nullable Boolean killed;
         protected @Nullable InternalTransaction tx;
 
         TxStateMetaBuilder(TxState txState) {
@@ -340,6 +349,11 @@ public class TxStateMeta implements TransactionMeta {
             return this;
         }
 
+        public TxStateMetaBuilder killed(@Nullable Boolean killed) {
+            this.killed = killed;
+            return this;
+        }
+
         public TxStateMetaBuilder txLabel(@Nullable String txLabel) {
             this.txLabel = txLabel;
             return this;
@@ -359,7 +373,7 @@ public class TxStateMeta implements TransactionMeta {
             requireNonNull(txState, "txState must not be null");
 
             if (txState == FINISHING) {
-                return new TxStateMetaFinishing(txCoordinatorId, commitPartitionId, isFinishedDueToTimeout, txLabel);
+                return new TxStateMetaFinishing(txCoordinatorId, commitPartitionId, isFinishedDueToTimeout, txLabel, killed);
             } else if (txState == ABANDONED) {
                 return new TxStateMetaAbandoned(txCoordinatorId, commitPartitionId, tx, txLabel);
             } else if (txState == UNKNOWN) {
@@ -374,7 +388,8 @@ public class TxStateMeta implements TransactionMeta {
                         initialVacuumObservationTimestamp,
                         cleanupCompletionTimestamp,
                         isFinishedDueToTimeout,
-                        txLabel
+                        txLabel,
+                        killed
                 );
             }
         }

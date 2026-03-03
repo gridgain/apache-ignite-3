@@ -102,14 +102,15 @@ import org.apache.ignite.internal.tx.MismatchingTransactionOutcomeInternalExcept
 import org.apache.ignite.internal.tx.OutdatedReadOnlyTransactionInternalException;
 import org.apache.ignite.internal.tx.PartitionEnlistment;
 import org.apache.ignite.internal.tx.PendingTxPartitionEnlistment;
+import org.apache.ignite.internal.tx.TransactionIds;
 import org.apache.ignite.internal.tx.TransactionMeta;
 import org.apache.ignite.internal.tx.TransactionResult;
 import org.apache.ignite.internal.tx.TxManager;
+import org.apache.ignite.internal.tx.TxPriority;
 import org.apache.ignite.internal.tx.TxState;
 import org.apache.ignite.internal.tx.TxStateMeta;
 import org.apache.ignite.internal.tx.TxStateMetaFinishing;
 import org.apache.ignite.internal.tx.configuration.TransactionConfiguration;
-import org.apache.ignite.internal.tx.impl.DeadlockPreventionPolicyImpl.TxIdComparators;
 import org.apache.ignite.internal.tx.impl.TransactionInflights.ReadWriteTxContext;
 import org.apache.ignite.internal.tx.message.TxKillMessage;
 import org.apache.ignite.internal.tx.message.TxMessageGroup;
@@ -124,6 +125,7 @@ import org.apache.ignite.internal.util.IgniteUtils;
 import org.apache.ignite.lang.ErrorGroups.Common;
 import org.apache.ignite.tx.Transaction;
 import org.apache.ignite.tx.TransactionException;
+import org.apache.ignite.tx.TransactionOptions;
 import org.jetbrains.annotations.Nullable;
 import org.jetbrains.annotations.TestOnly;
 
@@ -486,7 +488,8 @@ public class TxManagerImpl implements TxManager, SystemViewProvider {
             boolean implicit,
             InternalTxOptions options
     ) {
-        UUID txId = transactionIdGenerator.transactionIdFor(beginTimestamp, options.priority());
+        UUID txId = options.retryId() != null ? options.retryId()
+                : transactionIdGenerator.transactionIdFor(beginTimestamp, options.priority());
 
         long timeout = getTimeoutOrDefault(options, txConfig.readWriteTimeoutMillis().value());
 
@@ -675,10 +678,15 @@ public class TxManagerImpl implements TxManager, SystemViewProvider {
             boolean timeout,
             boolean recovery,
             boolean noRemoteWrites,
+            boolean killed,
             Map<ZonePartitionId, PendingTxPartitionEnlistment> enlistedGroups,
             UUID txId
     ) {
-        LOG.debug("Finish [commit={}, {}, groups={}, commitPartId={}].", commitIntent,
+        if (!commitIntent && !killed) {
+            System.out.println();
+        }
+
+        LOG.debug("Finish [commit={}, {}, groups={}, commitPartId={}].", commitIntent, //TODO add deb
                 formatTxInfo(txId, txStateVolatileStorage, false), enlistedGroups, commitPartition);
 
         assert enlistedGroups != null;
@@ -690,6 +698,7 @@ public class TxManagerImpl implements TxManager, SystemViewProvider {
                     .commitPartitionId(commitPartition)
                     .commitTimestamp(commitTimestamp(commitIntent))
                     .finishedDueToTimeout(timeout)
+                    .killed(killed)
                     .build()
             );
 
@@ -712,7 +721,7 @@ public class TxManagerImpl implements TxManager, SystemViewProvider {
 
         TxStateMetaFinishing finishingStateMeta =
                 txMeta == null
-                        ? new TxStateMetaFinishing(null, commitPartition, timeout, null)
+                        ? new TxStateMetaFinishing(null, commitPartition, timeout, null, killed)
                         : txMeta.finishing(timeout);
 
         TxStateMeta stateMeta = updateTxMeta(txId, oldMeta -> finishingStateMeta);
@@ -740,7 +749,8 @@ public class TxManagerImpl implements TxManager, SystemViewProvider {
                         enlistedGroups,
                         txId,
                         finishingStateMeta.txFinishFuture(),
-                        txContext.isNoWrites() && noRemoteWrites && !recovery
+                        txContext.isNoWrites() && noRemoteWrites && !recovery,
+                        killed
                 )
         ).whenComplete((unused, throwable) -> {
             if (localNodeId.equals(finishingStateMeta.txCoordinatorId())) {
@@ -772,7 +782,8 @@ public class TxManagerImpl implements TxManager, SystemViewProvider {
             Map<ZonePartitionId, PendingTxPartitionEnlistment> enlistedGroups,
             UUID txId,
             CompletableFuture<TransactionMeta> txFinishFuture,
-            boolean unlockOnly
+            boolean unlockOnly,
+            boolean killed
     ) {
         HybridTimestamp commitTimestamp = commitTimestamp(commit);
         // In case of commit it's required to check whether current primaries are still the same that were enlisted and whether
@@ -789,7 +800,7 @@ public class TxManagerImpl implements TxManager, SystemViewProvider {
                                     .collect(toMap(Entry::getKey, Entry::getValue));
 
                             if (unlockOnly) {
-                                return txCleanupRequestSender.cleanup(null, groups, verifiedCommit, commitTimestamp, txId)
+                                return txCleanupRequestSender.cleanup(null, groups, verifiedCommit, commitTimestamp, txId, killed)
                                         .thenAccept(ignored -> {
                                             // Don't keep useless state.
                                             TxStateMeta previous = txStateVolatileStorage.state(txId);
@@ -813,7 +824,8 @@ public class TxManagerImpl implements TxManager, SystemViewProvider {
                                     groups,
                                     txId,
                                     commitTimestamp,
-                                    txFinishFuture);
+                                    txFinishFuture,
+                                    killed);
                         })
                 .thenCompose(identity())
                 // Verification future is added in order to share the proper verification exception with the client.
@@ -843,7 +855,8 @@ public class TxManagerImpl implements TxManager, SystemViewProvider {
             Map<ZonePartitionId, PartitionEnlistment> enlistedPartitions,
             UUID txId,
             HybridTimestamp commitTimestamp,
-            CompletableFuture<TransactionMeta> txFinishFuture
+            CompletableFuture<TransactionMeta> txFinishFuture,
+            boolean killed
     ) {
         return trackFuture(placementDriverHelper.awaitPrimaryReplicaWithExceptionHandling(commitPartition)
                 .thenCompose(meta ->
@@ -856,7 +869,8 @@ public class TxManagerImpl implements TxManager, SystemViewProvider {
                                 enlistedPartitions,
                                 txId,
                                 commitTimestamp,
-                                txFinishFuture
+                                txFinishFuture,
+                                killed
                         ))
                 .handle((res, ex) -> {
                     if (ex != null) {
@@ -890,7 +904,8 @@ public class TxManagerImpl implements TxManager, SystemViewProvider {
                                     enlistedPartitions,
                                     txId,
                                     commitTimestamp,
-                                    txFinishFuture
+                                    txFinishFuture,
+                                    killed
                             ), partitionOperationsExecutor).thenCompose(identity());
                         } else {
                             LOG.warn("Failed to finish Tx {}.", ex,
@@ -914,7 +929,8 @@ public class TxManagerImpl implements TxManager, SystemViewProvider {
             Map<ZonePartitionId, PartitionEnlistment> enlistedPartitions,
             UUID txId,
             HybridTimestamp commitTimestamp,
-            CompletableFuture<TransactionMeta> txFinishFuture
+            CompletableFuture<TransactionMeta> txFinishFuture,
+            boolean killed
     ) {
         LOG.debug("Finish [partition={}, node={}, enlistmentConsistencyToken={}, commit={}, {}, groups={}",
                 commitPartition, primaryConsistentId, enlistmentConsistencyToken, commit,
@@ -927,7 +943,8 @@ public class TxManagerImpl implements TxManager, SystemViewProvider {
                         txId,
                         enlistmentConsistencyToken,
                         commit,
-                        commitTimestamp
+                        commitTimestamp,
+                        killed
                 )
                 .thenAccept(txResult -> {
                     validateTxFinishedAsExpected(commit, txId, txResult);
@@ -1042,30 +1059,30 @@ public class TxManagerImpl implements TxManager, SystemViewProvider {
 
     @Override
     public CompletableFuture<Void> startAsync(ComponentContext componentContext) {
-        var deadlockPreventionPolicy = new WoundWaitDeadlockPreventionPolicy() {
-            @Override
-            public long waitTimeout() {
-                return DEFAULT_LOCK_TIMEOUT;
-            }
+//        var deadlockPreventionPolicy = new WoundWaitDeadlockPreventionPolicy() {
+//            @Override
+//            public long waitTimeout() {
+//                return DEFAULT_LOCK_TIMEOUT;
+//            }
+//
+//            @Override
+//            public void failAction(UUID owner) {
+//                // TODO resolve tx with ABORT and delete locks
+//                TxStateMeta state = txStateVolatileStorage.state(owner);
+//                if (state == null || state.txCoordinatorId() == null) {
+//                    return; // tx state is invalid. locks should be cleaned up by tx recovery process.
+//                }
+//
+//                InternalClusterNode coordinator = topologyService.getById(state.txCoordinatorId());
+//                if (coordinator == null) {
+//                    return; // tx is abandoned. locks should be cleaned up by tx recovery process.
+//                }
+//
+//                txMessageSender.kill(coordinator, owner);
+//            }
+//        };
 
-            @Override
-            public void failAction(UUID owner) {
-                // TODO resolve tx with ABORT and delete locks
-                TxStateMeta state = txStateVolatileStorage.state(owner);
-                if (state == null || state.txCoordinatorId() == null) {
-                    return; // tx state is invalid. locks should be cleaned up by tx recovery process.
-                }
-
-                InternalClusterNode coordinator = topologyService.getById(state.txCoordinatorId());
-                if (coordinator == null) {
-                    return; // tx is abandoned. locks should be cleaned up by tx recovery process.
-                }
-
-                txMessageSender.kill(coordinator, owner);
-            }
-        };
-
-        //var deadlockPreventionPolicy = new WaitDieDeadlockPreventionPolicy();
+        var deadlockPreventionPolicy = new WaitDieDeadlockPreventionPolicy();
 
         txStateVolatileStorage.start();
 
@@ -1178,9 +1195,10 @@ public class TxManagerImpl implements TxManager, SystemViewProvider {
             Map<ZonePartitionId, ? extends PartitionEnlistment> enlistedPartitions,
             boolean commit,
             @Nullable HybridTimestamp commitTimestamp,
-            UUID txId
+            UUID txId,
+            boolean killed
     ) {
-        return txCleanupRequestSender.cleanup(commitPartitionId, enlistedPartitions, commit, commitTimestamp, txId);
+        return txCleanupRequestSender.cleanup(commitPartitionId, enlistedPartitions, commit, commitTimestamp, txId, killed);
     }
 
     @Override
@@ -1189,9 +1207,10 @@ public class TxManagerImpl implements TxManager, SystemViewProvider {
             Collection<EnlistedPartitionGroup> enlistedPartitions,
             boolean commit,
             @Nullable HybridTimestamp commitTimestamp,
-            UUID txId
+            UUID txId,
+            boolean killed
     ) {
-        return txCleanupRequestSender.cleanup(commitPartitionId, enlistedPartitions, commit, commitTimestamp, txId);
+        return txCleanupRequestSender.cleanup(commitPartitionId, enlistedPartitions, commit, commitTimestamp, txId, killed);
     }
 
     @Override
@@ -1241,15 +1260,43 @@ public class TxManagerImpl implements TxManager, SystemViewProvider {
     }
 
     @Override
-    public <T> T runInTransaction(Function<Transaction, T> clo, HybridTimestampTracker observableTimestampTracker, Transaction tx) {
-        long startTimestamp = IgniteUtils.monotonicMs();
-        long initialTimeout = startTimestamp + ((InternalTransaction) tx).getTimeout();
+    public <T> T runInTransaction(Function<Transaction, T> clo, HybridTimestampTracker observableTimestampTracker,
+            @Nullable TransactionOptions options) {
+        boolean readOnly = options != null && options.readOnly();
 
-        return runInTransactionInternal(tx, clo, startTimestamp, initialTimeout, (tx0, timeout) -> {
-            InternalTransaction tx00 = (InternalTransaction) tx0;
-            LOG.info("Restarting the transaction [id=" + tx00.id() + " , remaining=" + timeout);
-            tx00.restart(timeout);
-        });
+        InternalTxOptions internalTxOptions = options == null
+                ? InternalTxOptions.defaults()
+                : InternalTxOptions.builder()
+                        .timeoutMillis(options.timeoutMillis())
+                        .txLabel(options.label())
+                        .build();
+
+        long startTimestamp = IgniteUtils.monotonicMs();
+        long timeout = getTimeoutOrDefault(internalTxOptions, txConfig.readWriteTimeoutMillis().value());
+        long initialTimeout = startTimestamp + timeout;
+
+        return runInTransactionInternal(old -> {
+            InternalTxOptions opts;
+            if (old != null) {
+                InternalTransaction oldInt = (InternalTransaction) old;
+                UUID id = oldInt.id();
+
+                int cnt = TransactionIds.retryCnt(id);
+                int nodeId = TransactionIds.nodeId(id);
+                TxPriority priority = TransactionIds.priority(id);
+                UUID retryId = TransactionIds.transactionId(id.getMostSignificantBits(), cnt + 1, nodeId, priority);
+
+                opts = InternalTxOptions.builder().priority(internalTxOptions.priority())
+                        .retryId(retryId)
+                        .timeoutMillis(timeout) // TODO
+                        .txLabel(internalTxOptions.txLabel()).build();
+
+                LOG.info("Restarting the transaction [oldId=" + id + ", newId=" + retryId + ", remaining=" + opts.timeoutMillis());
+            } else {
+                opts = internalTxOptions;
+            }
+            return beginExplicit(observableTimestampTracker, readOnly, opts);
+        }, clo, startTimestamp, initialTimeout);
     }
 
     @Override

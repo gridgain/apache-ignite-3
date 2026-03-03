@@ -45,11 +45,12 @@ public class ReplicaTxFinishMarker {
      * @param txState Transaction state, must be either {@link TxState#COMMITTED} or {@link TxState#ABORTED}.
      * @param commitTimestamp Commit timestamp ({@code null} when aborting).
      */
-    public void markFinished(UUID txId, TxState txState, @Nullable HybridTimestamp commitTimestamp) {
+    public void markFinished(UUID txId, TxState txState, @Nullable HybridTimestamp commitTimestamp, boolean killed) {
         assert isFinalState(txState) : "Unexpected state [txId=" + txId + ", txState=" + txState + ']';
 
         txManager.updateTxMeta(txId, old -> builder(old, txState)
                 .commitTimestamp(txState == COMMITTED ? commitTimestamp : null)
+                .killed(killed ? Boolean.TRUE : null)
                 .build()
         );
     }

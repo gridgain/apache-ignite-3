@@ -234,6 +234,7 @@ public class ItColocationTest extends BaseIgniteAbstractTest {
                     boolean timeoutExceeded,
                     boolean recovery,
                     boolean noRemoteWrites,
+                    @Nullable Boolean killed,
                     Map<ZonePartitionId, PendingTxPartitionEnlistment> enlistedGroups,
                     UUID txId
             ) {

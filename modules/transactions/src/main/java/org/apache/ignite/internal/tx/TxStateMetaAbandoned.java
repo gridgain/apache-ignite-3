@@ -52,7 +52,7 @@ public class TxStateMetaAbandoned extends TxStateMeta {
             @Nullable InternalTransaction tx,
             @Nullable String txLabel
     ) {
-        super(ABANDONED, txCoordinatorId, commitPartitionId, null, tx, null, null, null, txLabel);
+        super(ABANDONED, txCoordinatorId, commitPartitionId, null, tx, null, null, null, txLabel, null);
 
         this.lastAbandonedMarkerTs = FastTimestamps.coarseCurrentTimeMillis();
     }

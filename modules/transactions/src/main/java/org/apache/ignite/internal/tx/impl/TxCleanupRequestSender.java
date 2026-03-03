@@ -188,7 +188,7 @@ public class TxCleanupRequestSender {
      * @return Completable future of Void.
      */
     public CompletableFuture<Void> cleanup(ZonePartitionId commitPartitionId, String node, UUID txId) {
-        return sendCleanupMessageWithRetries(commitPartitionId, false, null, txId, node, null, RETRY_INITIAL_TIMEOUT_MS, 0);
+        return sendCleanupMessageWithRetries(commitPartitionId, false, null, txId, node, null, RETRY_INITIAL_TIMEOUT_MS, 0, false);
     }
 
     /**
@@ -199,6 +199,7 @@ public class TxCleanupRequestSender {
      * @param commit {@code true} if a commit requested.
      * @param commitTimestamp Commit timestamp ({@code null} if it's an abort).
      * @param txId Transaction id.
+     * @param killed
      * @return Completable future of Void.
      */
     public CompletableFuture<Void> cleanup(
@@ -206,8 +207,8 @@ public class TxCleanupRequestSender {
             Map<ZonePartitionId, ? extends PartitionEnlistment> enlistedPartitions,
             boolean commit,
             @Nullable HybridTimestamp commitTimestamp,
-            UUID txId
-    ) {
+            UUID txId,
+            boolean killed) {
         // Start tracking the partitions we want to learn the replication confirmation from.
         if (commitPartitionId != null) {
             writeIntentsReplicated.put(
@@ -225,7 +226,8 @@ public class TxCleanupRequestSender {
             enlistedPartitionGroups.add(new EnlistedPartitionGroup(partitionId, partition.tableIds()));
         });
 
-        return cleanupPartitions(commitPartitionId, partitionsByPrimaryName, commit, commitTimestamp, txId, RETRY_INITIAL_TIMEOUT_MS, 0);
+        return cleanupPartitions(commitPartitionId, partitionsByPrimaryName, commit, commitTimestamp, txId, RETRY_INITIAL_TIMEOUT_MS, 0,
+                killed);
     }
 
     /**
@@ -243,9 +245,10 @@ public class TxCleanupRequestSender {
             Collection<EnlistedPartitionGroup> partitions,
             boolean commit,
             @Nullable HybridTimestamp commitTimestamp,
-            UUID txId
+            UUID txId,
+            boolean killed
     ) {
-        return cleanup(commitPartitionId, partitions, commit, commitTimestamp, txId, RETRY_INITIAL_TIMEOUT_MS, 0);
+        return cleanup(commitPartitionId, partitions, commit, commitTimestamp, txId, RETRY_INITIAL_TIMEOUT_MS, 0, killed);
     }
 
     private CompletableFuture<Void> cleanup(
@@ -255,7 +258,8 @@ public class TxCleanupRequestSender {
             @Nullable HybridTimestamp commitTimestamp,
             UUID txId,
             long timeout,
-            int attemptsMade
+            int attemptsMade,
+            boolean killed
     ) {
         Map<ZonePartitionId, EnlistedPartitionGroup> partitionIds = partitions.stream()
                 .collect(toMap(EnlistedPartitionGroup::groupId, identity()));
@@ -278,7 +282,8 @@ public class TxCleanupRequestSender {
                             txId,
                             toPartitionInfos(partitionData.partitionsWithoutPrimary, partitionIds),
                             timeout,
-                            attemptsMade
+                            attemptsMade,
+                            killed
                     );
 
                     Map<String, List<EnlistedPartitionGroup>> partitionsByPrimaryName = toPartitionInfosByPrimaryName(
@@ -292,7 +297,8 @@ public class TxCleanupRequestSender {
                             commitTimestamp,
                             txId,
                             timeout,
-                            attemptsMade
+                            attemptsMade,
+                            killed
                     );
                 });
     }
@@ -321,8 +327,8 @@ public class TxCleanupRequestSender {
             UUID txId,
             List<EnlistedPartitionGroup> partitionsWithoutPrimary,
             long timeout,
-            int attemptsMade
-    ) {
+            int attemptsMade,
+            boolean killed) {
         Map<ZonePartitionId, EnlistedPartitionGroup> partitionIds = partitionsWithoutPrimary.stream()
                 .collect(toMap(EnlistedPartitionGroup::groupId, identity()));
 
@@ -341,7 +347,8 @@ public class TxCleanupRequestSender {
                             commitTimestamp,
                             txId,
                             timeout,
-                            attemptsMade
+                            attemptsMade,
+                            killed
                     );
                 });
     }
@@ -353,7 +360,8 @@ public class TxCleanupRequestSender {
             @Nullable HybridTimestamp commitTimestamp,
             UUID txId,
             long timeout,
-            int attemptsMade
+            int attemptsMade,
+            boolean killed
     ) {
         List<CompletableFuture<Void>> cleanupFutures = new ArrayList<>();
 
@@ -362,7 +370,7 @@ public class TxCleanupRequestSender {
             List<EnlistedPartitionGroup> nodePartitions = entry.getValue();
 
             cleanupFutures.add(sendCleanupMessageWithRetries(commitPartitionId, commit, commitTimestamp, txId, node,
-                    commitPartitionId == null ? null : nodePartitions, timeout, attemptsMade));
+                    commitPartitionId == null ? null : nodePartitions, timeout, attemptsMade, killed));
         }
 
         return allOf(cleanupFutures.toArray(new CompletableFuture<?>[0]));
@@ -376,9 +384,10 @@ public class TxCleanupRequestSender {
             String node,
             @Nullable Collection<EnlistedPartitionGroup> partitions,
             long timeout,
-            int attemptsMade
+            int attemptsMade,
+            boolean killed
     ) {
-        return txMessageSender.cleanup(node, partitions, txId, commit, commitTimestamp)
+        return txMessageSender.cleanup(node, partitions, txId, commit, commitTimestamp, killed)
                 .thenApply(response -> {
                     if (response instanceof TxCleanupMessageErrorResponse) {
                         TxCleanupMessageErrorResponse errorResponse = (TxCleanupMessageErrorResponse) response;
@@ -418,7 +427,8 @@ public class TxCleanupRequestSender {
                                         node,
                                         partitions,
                                         incrementTimeout(timeout),
-                                        attemptsMade + 1
+                                        attemptsMade + 1,
+                                        killed
                                 );
                             }
 
@@ -432,7 +442,8 @@ public class TxCleanupRequestSender {
                                         commitTimestamp,
                                         txId,
                                         incrementTimeout(timeout),
-                                        attemptsMade + 1
+                                        attemptsMade + 1,
+                                        killed
                                     ),
                                     timeout,
                                     TimeUnit.MILLISECONDS,

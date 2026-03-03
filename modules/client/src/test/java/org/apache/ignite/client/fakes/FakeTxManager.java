@@ -251,6 +251,7 @@ public class FakeTxManager implements TxManager {
             boolean timeoutExceeded,
             boolean recovery,
             boolean noRemoteWrites,
+            @Nullable Boolean killed,
             Map<ZonePartitionId, PendingTxPartitionEnlistment> enlistedGroups,
             UUID txId
     ) {

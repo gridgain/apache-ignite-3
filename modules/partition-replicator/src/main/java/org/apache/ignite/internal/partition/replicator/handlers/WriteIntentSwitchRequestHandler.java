@@ -123,7 +123,7 @@ public class WriteIntentSwitchRequestHandler {
      * @return CompletableFuture of ReplicaResult.
      */
     public CompletableFuture<ReplicaResult> handle(WriteIntentSwitchReplicaRequest request, UUID senderId) {
-        txFinishMarker.markFinished(request.txId(), request.commit() ? COMMITTED : ABORTED, request.commitTimestamp());
+        txFinishMarker.markFinished(request.txId(), request.commit() ? COMMITTED : ABORTED, request.commitTimestamp(), request.killed());
 
         List<CompletableFuture<ReplicaResult>> futures = request.tableIds().stream()
                 .map(tableId -> invokeTableWriteIntentSwitchReplicaRequest(tableId, request, clockService.current(), senderId))

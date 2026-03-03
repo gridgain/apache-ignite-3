@@ -143,14 +143,14 @@ public class TxFinishReplicaRequestHandler {
                                     enlistedGroups,
                                     validationResult.isSuccessful(),
                                     validationResult.isSuccessful() ? commitTimestamp : null,
-                                    txId
-                            ).thenApply(txResult -> {
+                                    txId,
+                                    request.killed()).thenApply(txResult -> {
                                 throwIfSchemaValidationOnCommitFailed(validationResult, txResult);
                                 return txResult;
                             }));
         } else {
             // Aborting.
-            return finishAndCleanup(enlistedGroups, false, null, txId);
+            return finishAndCleanup(enlistedGroups, false, null, txId, request.killed());
         }
     }
 
@@ -170,8 +170,8 @@ public class TxFinishReplicaRequestHandler {
             Map<ZonePartitionId, PartitionEnlistment> enlistedPartitions,
             boolean commit,
             @Nullable HybridTimestamp commitTimestamp,
-            UUID txId
-    ) {
+            UUID txId,
+            boolean killed) {
         // Read TX state from the storage, we will need this state to check if the locks are released.
         // Since this state is written only on the transaction finish (see PartitionListener.handleFinishTxCommand),
         // the value of txMeta can be either null or COMMITTED/ABORTED. No other values are expected.
@@ -223,9 +223,9 @@ public class TxFinishReplicaRequestHandler {
         List<EnlistedPartitionGroup> enlistedPartitionGroups = enlistedPartitions.entrySet().stream()
                 .map(entry -> new EnlistedPartitionGroup(entry.getKey(), entry.getValue().tableIds()))
                 .collect(toList());
-        return finishTransaction(enlistedPartitionGroups, txId, commit, commitTimestamp)
+        return finishTransaction(enlistedPartitionGroups, txId, commit, killed, commitTimestamp)
                 .thenCompose(txResult ->
-                    txManager.cleanup(replicationGroupId, enlistedPartitions, commit, commitTimestamp, txId)
+                    txManager.cleanup(replicationGroupId, enlistedPartitions, commit, commitTimestamp, txId, killed)
                             .thenApply(v -> txResult)
                 );
     }
@@ -249,6 +249,7 @@ public class TxFinishReplicaRequestHandler {
             Collection<EnlistedPartitionGroup> partitions,
             UUID txId,
             boolean commit,
+            boolean killed,
             @Nullable HybridTimestamp commitTimestamp
     ) {
         assert !(commit && commitTimestamp == null) : "Cannot commit without the timestamp.";
@@ -271,7 +272,7 @@ public class TxFinishReplicaRequestHandler {
 
                     TransactionResult result = (TransactionResult) txOutcome;
 
-                    replicaTxFinishMarker.markFinished(txId, result.transactionState(), result.commitTimestamp());
+                    replicaTxFinishMarker.markFinished(txId, result.transactionState(), result.commitTimestamp(), killed);
 
                     if (commit != (result.transactionState() == COMMITTED)) {
                         throw new MismatchingTransactionOutcomeInternalException(

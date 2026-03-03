@@ -61,6 +61,8 @@ public interface TxFinishReplicaRequest extends PrimaryReplicaRequest, Timestamp
      */
     boolean commit();
 
+    boolean killed();
+
     /** Transaction commit timestamp. */
     @Nullable HybridTimestamp commitTimestamp();
 

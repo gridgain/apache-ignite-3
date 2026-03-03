@@ -94,6 +94,7 @@ public class TxMessageSender {
      * @param txId Transaction id.
      * @param commit {@code True} if a commit requested.
      * @param commitTimestamp Commit timestamp ({@code null} if it's an abort).
+     * @param killed
      * @return Completable future of WriteIntentSwitchReplicatedInfo.
      */
     public CompletableFuture<WriteIntentSwitchReplicatedInfo> switchWriteIntents(
@@ -101,8 +102,8 @@ public class TxMessageSender {
             EnlistedPartitionGroup partition,
             UUID txId,
             boolean commit,
-            @Nullable HybridTimestamp commitTimestamp
-    ) {
+            @Nullable HybridTimestamp commitTimestamp,
+            boolean killed) {
         return replicaService.invoke(
                 primaryConsistentId,
                 TX_MESSAGES_FACTORY.writeIntentSwitchReplicaRequest()
@@ -112,6 +113,7 @@ public class TxMessageSender {
                         .txId(txId)
                         .commit(commit)
                         .commitTimestamp(commitTimestamp)
+                        .killed(killed)
                         .build()
         );
     }
@@ -124,6 +126,7 @@ public class TxMessageSender {
      * @param txId Transaction id.
      * @param commit {@code True} if a commit requested.
      * @param commitTimestamp Commit timestamp ({@code null} if it's an abort).
+     * @param killed
      * @return Completable future of {@link NetworkMessage}.
      */
     public CompletableFuture<NetworkMessage> cleanup(
@@ -131,8 +134,8 @@ public class TxMessageSender {
             @Nullable Collection<EnlistedPartitionGroup> enlistedPartitionGroups,
             UUID txId,
             boolean commit,
-            @Nullable HybridTimestamp commitTimestamp
-    ) {
+            @Nullable HybridTimestamp commitTimestamp,
+            boolean killed) {
         return messagingService.invoke(
                 primaryConsistentId,
                 TX_MESSAGES_FACTORY.txCleanupMessage()
@@ -141,6 +144,7 @@ public class TxMessageSender {
                         .commitTimestamp(commitTimestamp)
                         .timestamp(clockService.now())
                         .groups(toPartitionMessages(enlistedPartitionGroups))
+                        .killed(killed)
                         .build(),
                 RPC_TIMEOUT_MILLIS);
     }
@@ -164,7 +168,8 @@ public class TxMessageSender {
             UUID txId,
             Long consistencyToken,
             boolean commit,
-            @Nullable HybridTimestamp commitTimestamp
+            @Nullable HybridTimestamp commitTimestamp,
+            boolean killed
     ) {
         ZonePartitionIdMessage commitPartitionIdMessage = toZonePartitionIdMessage(REPLICA_MESSAGES_FACTORY, commitPartition);
 
@@ -179,6 +184,7 @@ public class TxMessageSender {
                         .commit(commit)
                         .commitTimestamp(commitTimestamp)
                         .enlistmentConsistencyToken(consistencyToken)
+                        .killed(killed)
                         .build()
         );
     }

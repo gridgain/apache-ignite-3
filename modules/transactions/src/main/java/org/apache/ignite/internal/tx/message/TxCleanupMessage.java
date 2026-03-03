@@ -53,4 +53,6 @@ public interface TxCleanupMessage extends TimestampAware {
 
     /** Transaction commit timestamp. */
     @Nullable HybridTimestamp commitTimestamp();
+
+    boolean killed();
 }

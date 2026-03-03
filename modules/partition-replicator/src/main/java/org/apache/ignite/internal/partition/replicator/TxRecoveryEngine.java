@@ -71,7 +71,7 @@ public class TxRecoveryEngine {
                         false,
                         true,
                         false,
-                        Map.of(replicationGroupId, abandonedTxRecoveryEnlistmentFactory.apply(clusterNodeResolver.getById(senderId))),
+                        false, Map.of(replicationGroupId, abandonedTxRecoveryEnlistmentFactory.apply(clusterNodeResolver.getById(senderId))),
                         txId
                 )
                 .whenComplete((v, ex) -> runCleanupOnNode(replicationGroupId, txId, senderId));

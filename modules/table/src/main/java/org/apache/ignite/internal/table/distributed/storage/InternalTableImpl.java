@@ -64,6 +64,7 @@ import static org.apache.ignite.lang.ErrorGroups.Transactions.ACQUIRE_LOCK_ERR;
 import static org.apache.ignite.lang.ErrorGroups.Transactions.TX_ALREADY_FINISHED_ERR;
 import static org.apache.ignite.lang.ErrorGroups.Transactions.TX_ALREADY_FINISHED_WITH_TIMEOUT_ERR;
 import static org.apache.ignite.lang.ErrorGroups.Transactions.TX_FAILED_READ_WRITE_OPERATION_ERR;
+import static org.apache.ignite.lang.ErrorGroups.Transactions.TX_KILLED_ERR;
 
 import it.unimi.dsi.fastutil.ints.Int2ObjectMap;
 import it.unimi.dsi.fastutil.ints.Int2ObjectOpenHashMap;
@@ -129,6 +130,7 @@ import org.apache.ignite.internal.table.metrics.ReadWriteMetricSource;
 import org.apache.ignite.internal.tx.InternalTransaction;
 import org.apache.ignite.internal.tx.PendingTxPartitionEnlistment;
 import org.apache.ignite.internal.tx.TransactionIds;
+import org.apache.ignite.internal.tx.TransactionKilledException;
 import org.apache.ignite.internal.tx.TxManager;
 import org.apache.ignite.internal.tx.TxStateMeta;
 import org.apache.ignite.internal.tx.impl.TransactionInflights;
@@ -653,12 +655,15 @@ public class InternalTableImpl implements InternalTable {
             if (req.isWrite()) {
                 // Track only write requests from explicit transactions.
                 if (!tx.remote() && !transactionInflights.addInflight(tx.id())) {
-                    int code = TX_ALREADY_FINISHED_ERR;
-                    if (tx.isRolledBackWithTimeoutExceeded()) {
-                        code = TX_ALREADY_FINISHED_WITH_TIMEOUT_ERR;
+                    if (tx.killed()) {
+                        // TODO use enlist failed exception, account timeout
+                        return failedFuture(new TransactionKilledException(tx.id(), txManager));
                     }
 
+                    int code = tx.isRolledBackWithTimeoutExceeded() ? TX_ALREADY_FINISHED_WITH_TIMEOUT_ERR : TX_ALREADY_FINISHED_ERR;
+
                     return failedFuture(
+                            // TODO validate all "already finished"
                             new TransactionException(code, format(
                                     "Transaction is already finished [tableName={}, partId={}, txState={}, timeoutExceeded={}].",
                                     tableName,

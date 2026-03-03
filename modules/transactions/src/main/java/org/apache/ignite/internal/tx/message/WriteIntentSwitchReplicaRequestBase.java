@@ -43,4 +43,6 @@ public interface WriteIntentSwitchReplicaRequestBase extends ReplicaRequest, Tim
 
     /** Transaction commit timestamp. */
     @Nullable HybridTimestamp commitTimestamp();
+
+    boolean killed();
 }

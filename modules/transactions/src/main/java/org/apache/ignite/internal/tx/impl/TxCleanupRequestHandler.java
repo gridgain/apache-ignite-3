@@ -158,7 +158,9 @@ public class TxCleanupRequestHandler {
                         partition,
                         txCleanupMessage.txId(),
                         txCleanupMessage.commit(),
-                        txCleanupMessage.commitTimestamp()
+                        txCleanupMessage.commitTimestamp(),
+                        txCleanupMessage.killed()
+
                 ).thenAccept(this::processWriteIntentSwitchResponse);
 
                 writeIntentSwitches.put(partition, future);
@@ -168,6 +170,10 @@ public class TxCleanupRequestHandler {
         // If the partition collection is empty (likely to be the recovery case)- just run 'release locks'.
         allOf(writeIntentSwitches.values().toArray(new CompletableFuture<?>[0]))
                 .whenComplete((unused, ex) -> {
+                    if (ex != null) {
+                        System.out.println();
+                    }
+
                     releaseTxLocks(txCleanupMessage.txId());
 
                     remotelyTriggeredResourceRegistry.close(txCleanupMessage.txId());
@@ -187,7 +193,8 @@ public class TxCleanupRequestHandler {
                                                 txCleanupMessage.commit(),
                                                 txCleanupMessage.commitTimestamp(),
                                                 txCleanupMessage.txId(),
-                                                groupId
+                                                groupId,
+                                                txCleanupMessage.killed()
                                         )
                                         .thenAccept(this::processWriteIntentSwitchResponse)
                                         .whenComplete((retryRes, retryEx) -> {
@@ -307,13 +314,13 @@ public class TxCleanupRequestHandler {
                     partition,
                     txId,
                     false,
-                    null
-            );
+                    null,
+                    false); // TODO FIXME
 
             writeIntentSwitches.put(partition, future);
         }
 
-        releaseTxLocks(txId);
+        releaseTxLocks(txId); // TODO FIXME locks are released on switch.
 
         remotelyTriggeredResourceRegistry.close(txId);
 

@@ -43,6 +43,8 @@ public interface TxStateMetaMessage extends TransactionMetaMessage {
 
     @Nullable String txLabel();
 
+    @Nullable Boolean killed();
+
     /** Converts to {@link TxStateMeta}. */
     default TxStateMeta asTxStateMeta() {
         ZonePartitionIdMessage commitPartitionId = commitPartitionId();
@@ -56,7 +58,8 @@ public interface TxStateMetaMessage extends TransactionMetaMessage {
                 initialVacuumObservationTimestamp(),
                 cleanupCompletionTimestamp(),
                 isFinishedDueToTimeout(),
-                txLabel()
+                txLabel(),
+                killed()
         );
     }
 

@@ -49,23 +49,24 @@ public class RunInTransactionInternalImpl {
     private static final int MAX_SUPPRESSED = 100;
 
     public static <T> T runInTransactionInternal(
-            Transaction tx,
+            Function<Transaction, Transaction> fac,
             Function<Transaction, T> clo,
             long startTimestamp,
-            long initialTimeout,
-            BiConsumer<Transaction, Long> restartClo
+            long initialTimeout
     ) throws TransactionException {
         Objects.requireNonNull(clo);
 
         List<Throwable> suppressed = new ArrayList<>();
 
+        Transaction tx0 = fac.apply(null);
+
         T ret;
 
         while (true) {
             try {
-                ret = clo.apply(tx);
+                ret = clo.apply(tx0);
 
-                tx.commit();
+                tx0.commit();
 
                 break;
             } catch (Exception ex) {
@@ -75,11 +76,11 @@ public class RunInTransactionInternalImpl {
 
                 if (remaining > 0 && isRetriable(ex)) {
                     // Rollback is already performed on enlistment failure.
-                    restartClo.accept(tx, remaining);
+                    tx0 = fac.apply(tx0);
                 } else {
                     try {
                         // No retries here, rely on the durable finish.
-                        tx.rollback();
+                        tx0.rollback();
                     } catch (Exception e) {
                         addSuppressedToList(suppressed, e);
                     }

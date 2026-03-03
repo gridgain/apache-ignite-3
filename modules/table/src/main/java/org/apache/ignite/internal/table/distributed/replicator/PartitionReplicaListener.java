@@ -189,6 +189,7 @@ import org.apache.ignite.internal.tx.LockKey;
 import org.apache.ignite.internal.tx.LockManager;
 import org.apache.ignite.internal.tx.LockMode;
 import org.apache.ignite.internal.tx.OutdatedReadOnlyTransactionInternalException;
+import org.apache.ignite.internal.tx.TransactionKilledException;
 import org.apache.ignite.internal.tx.TransactionMeta;
 import org.apache.ignite.internal.tx.TxManager;
 import org.apache.ignite.internal.tx.TxState;
@@ -1417,11 +1418,16 @@ public class PartitionReplicaListener implements ReplicaTableProcessor {
             // At this point the transaction is marked as finished by ReplicaTxFinishMarker#markFinished, preventing new locks to appear.
             // Safe to invalidate waiters, which otherwise will block the cleanup process.
             // Using non-retriable exception intentionally to prevent unnecessary retries.
-            lockManager.failAllWaiters(request.txId(), new TransactionException(
-                    TX_ALREADY_FINISHED_ERR,
-                    format("Can't acquire a lock because the transaction is already finished [{}].",
-                            formatTxInfo(request.txId(), txManager))
-            ));
+            @Nullable Boolean killed = txStateMeta.killed();
+            if (killed != null && killed) {
+                lockManager.failAllWaiters(request.txId(), new TransactionKilledException(request.txId(), txManager));
+            } else {
+                lockManager.failAllWaiters(request.txId(), new TransactionException(
+                        TX_ALREADY_FINISHED_ERR,
+                        format("Can't acquire a lock because the transaction is already finished [{}].",
+                                formatTxInfo(request.txId(), txManager))
+                ));
+            }
         }
 
         return awaitCleanupReadyFutures(request.txId())
@@ -1596,12 +1602,31 @@ public class PartitionReplicaListener implements ReplicaTableProcessor {
             TxStateMeta txStateMeta = txManager.stateMeta(txId);
 
             TxState txState = txStateMeta == null ? null : txStateMeta.txState();
-            boolean isFinishedDueToTimeout = txStateMeta != null
-                    && txStateMeta.isFinishedDueToTimeout() != null
+
+            if (txState == null) {
+                return failedFuture(new TransactionException(TX_ALREADY_FINISHED_ERR,
+                        format("Transaction is already finished [{}, txState={}].", formatTxInfo(txId, txManager), txState)
+                ));
+            }
+
+            boolean isFinishedDueToTimeout = txStateMeta.isFinishedDueToTimeout() != null
                     && txStateMeta.isFinishedDueToTimeout();
 
-            return failedFuture(new TransactionException(
-                    isFinishedDueToTimeout ? TX_ALREADY_FINISHED_WITH_TIMEOUT_ERR : TX_ALREADY_FINISHED_ERR,
+            if (isFinishedDueToTimeout) {
+                return failedFuture(new TransactionException(
+                        TX_ALREADY_FINISHED_WITH_TIMEOUT_ERR,
+                        format("Transaction is already finished [{}, txState={}].", formatTxInfo(txId, txManager), txState)
+                ));
+            }
+
+            boolean killed = txStateMeta.killed() != null
+                    && txStateMeta.killed();
+
+            if (killed) {
+                return failedFuture(new TransactionKilledException(txId, txManager));
+            }
+
+            return failedFuture(new TransactionException(TX_ALREADY_FINISHED_ERR,
                     format("Transaction is already finished [{}, txState={}].", formatTxInfo(txId, txManager), txState)
             ));
         }

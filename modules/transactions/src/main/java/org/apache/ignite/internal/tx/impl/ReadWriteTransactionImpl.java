@@ -152,7 +152,7 @@ public class ReadWriteTransactionImpl extends IgniteAbstractTransactionImpl {
     /**
      * Fails the operation.
      */
-    private RuntimeException enlistFailedException() {
+    RuntimeException enlistFailedException() {
         return killed ? new TransactionKilledException(id(), txManager) :
                 new TransactionException(
                         TX_ALREADY_FINISHED_ERR,
@@ -255,6 +255,10 @@ public class ReadWriteTransactionImpl extends IgniteAbstractTransactionImpl {
                         killed = true;
                     }
                 } else {
+                    if (!isComplete) {
+                        killed = true;
+                    }
+
                     CompletableFuture<Void> finishFutureInternal = txManager.finish(
                             observableTsTracker,
                             commitPart,
@@ -262,6 +266,7 @@ public class ReadWriteTransactionImpl extends IgniteAbstractTransactionImpl {
                             timeoutExceeded,
                             false,
                             noRemoteWrites,
+                            !isComplete,
                             enlisted,
                             id()
                     );
@@ -270,8 +275,6 @@ public class ReadWriteTransactionImpl extends IgniteAbstractTransactionImpl {
                         finishFuture = finishFutureInternal.handle((unused, throwable) -> null);
                         this.timeoutExceeded = timeoutExceeded;
                     } else {
-                        killed = true;
-
                         return finishFutureInternal.handle((unused, throwable) -> {
                             // TODO https://issues.apache.org/jira/browse/IGNITE-25825 move before finish after async cleanup
                             if (killClosure != null) {
