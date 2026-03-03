@@ -159,11 +159,11 @@ public class TxCleanupTest extends IgniteAbstractTest {
 
         HybridTimestamp commitTimestamp = clock.now();
 
-        CompletableFuture<Void> cleanup = cleanupRequestSender.cleanup(ZONE_PARTITION_ID_1, PARTITIONS, true, commitTimestamp, txId, killed);
+        CompletableFuture<Void> cleanup = cleanupRequestSender.cleanup(ZONE_PARTITION_ID_1, PARTITIONS, true, commitTimestamp, txId, false);
 
         assertThat(cleanup, willCompleteSuccessfully());
 
-        verify(txMessageSender, times(1)).cleanup(any(), any(), any(), anyBoolean(), any(), killed);
+        verify(txMessageSender, times(1)).cleanup(any(), any(), any(), anyBoolean(), any(), false);
         verifyNoMoreInteractions(txMessageSender);
     }
 
@@ -186,11 +186,11 @@ public class TxCleanupTest extends IgniteAbstractTest {
 
         HybridTimestamp commitTimestamp = clock.now();
 
-        CompletableFuture<Void> cleanup = cleanupRequestSender.cleanup(ZONE_PARTITION_ID_1, PARTITIONS, true, commitTimestamp, txId, killed);
+        CompletableFuture<Void> cleanup = cleanupRequestSender.cleanup(ZONE_PARTITION_ID_1, PARTITIONS, true, commitTimestamp, txId, false);
 
         assertThat(cleanup, willCompleteSuccessfully());
 
-        verify(txMessageSender, times(3)).cleanup(any(), any(), any(), anyBoolean(), any(), killed);
+        verify(txMessageSender, times(3)).cleanup(any(), any(), any(), anyBoolean(), any(), false);
         verifyNoMoreInteractions(txMessageSender);
     }
 
@@ -211,11 +211,11 @@ public class TxCleanupTest extends IgniteAbstractTest {
 
         HybridTimestamp commitTimestamp = clock.now();
 
-        CompletableFuture<Void> cleanup = cleanupRequestSender.cleanup(ZONE_PARTITION_ID_1, PARTITIONS, true, commitTimestamp, txId, killed);
+        CompletableFuture<Void> cleanup = cleanupRequestSender.cleanup(ZONE_PARTITION_ID_1, PARTITIONS, true, commitTimestamp, txId, false);
 
         assertThat(cleanup, willCompleteSuccessfully());
 
-        verify(txMessageSender, times(2)).cleanup(any(), any(), any(), anyBoolean(), any(), killed);
+        verify(txMessageSender, times(2)).cleanup(any(), any(), any(), anyBoolean(), any(), false);
 
         verifyNoMoreInteractions(txMessageSender);
     }

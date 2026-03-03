@@ -48,7 +48,8 @@ public class TxStateMetaTest {
             null,
             null,
             false,
-            "my-tx-label"
+            "my-tx-label",
+            false
     );
 
     private static final TxStateMeta COMMITTED_META = new TxStateMeta(
@@ -60,7 +61,8 @@ public class TxStateMetaTest {
             null,
             null,
             false,
-            "my-tx-label"
+            "my-tx-label",
+            false
     );
 
     private static final TxStateMeta BASE_WITH_IVOT = new TxStateMeta(
@@ -72,7 +74,8 @@ public class TxStateMetaTest {
             1000L,
             null,
             false,
-            "my-tx-label"
+            "my-tx-label",
+            false
     );
 
     private static final TxStateMeta BASE_WITH_CCT = new TxStateMeta(
@@ -84,7 +87,8 @@ public class TxStateMetaTest {
             null,
             1000L,
             false,
-            "my-tx-label"
+            "my-tx-label",
+            false
     );
 
     @ParameterizedTest

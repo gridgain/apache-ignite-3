@@ -325,7 +325,7 @@ public abstract class AbstractDeadlockPreventionTest extends AbstractLockingTest
         var tx1 = beginTx();
         var tx2 = beginTx();
 
-        var k = key("test");
+        var k = lockKey("test");
 
         assertThat(slock(tx2, k), willSucceedFast());
         assertThat(slock(tx1, k), willSucceedFast());
