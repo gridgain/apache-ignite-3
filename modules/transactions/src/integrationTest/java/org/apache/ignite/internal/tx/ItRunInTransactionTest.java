@@ -18,6 +18,7 @@
 package org.apache.ignite.internal.tx;
 
 import static java.lang.String.format;
+import static org.apache.ignite.internal.TestWrappers.unwrapIgniteImpl;
 import static org.apache.ignite.internal.testframework.matchers.CompletableFutureExceptionMatcher.willThrowWithCauseOrSuppressed;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -30,6 +31,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Stream;
 import org.apache.ignite.Ignite;
 import org.apache.ignite.internal.ClusterPerTestIntegrationTest;
+import org.apache.ignite.internal.app.IgniteImpl;
 import org.apache.ignite.internal.lang.IgniteTriFunction;
 import org.apache.ignite.internal.testframework.IgniteTestUtils;
 import org.apache.ignite.table.Table;
@@ -89,6 +91,9 @@ public class ItRunInTransactionTest extends ClusterPerTestIntegrationTest {
 
         AtomicInteger cnt = new AtomicInteger();
 
+        IgniteImpl server0 = unwrapIgniteImpl(node(0));
+        boolean reverse = server0.txManager().lockManager().policy().reverse();
+
         CompletableFuture<Void> fut = IgniteTestUtils.runAsync(() -> {
             ignite().transactions().runInTransaction(youngerTx -> {
                 if (cnt.incrementAndGet() == 2) {
@@ -97,8 +102,16 @@ public class ItRunInTransactionTest extends ClusterPerTestIntegrationTest {
 
                 ctx.put.apply(ignite(), youngerTx, key2);
                 assertTrue(txId(olderTx).compareTo(txId(youngerTx)) < 0);
-                // Younger is not allowed to wait for older.
-                ctx.put.apply(ignite(), youngerTx, key);
+                if (reverse) {
+                    // Younger is not allowed to wait for older.
+                    ctx.put.apply(ignite(), youngerTx, key);
+                } else {
+                    // Older should invalidate younger.
+                    ctx.put.apply(ignite(), olderTx, key2);
+
+                    // At this point, younger tx is invalidated.
+                    System.out.println();
+                }
             });
         });
 

@@ -65,6 +65,8 @@ public class RunInTransactionInternalImpl {
             try {
                 ret = clo.apply(tx);
 
+                tx.commit();
+
                 break;
             } catch (Exception ex) {
                 addSuppressedToList(suppressed, ex);
@@ -74,7 +76,6 @@ public class RunInTransactionInternalImpl {
                 if (remaining > 0 && isRetriable(ex)) {
                     // Rollback is already performed on enlistment failure.
                     restartClo.accept(tx, remaining);
-                    continue;
                 } else {
                     try {
                         // No retries here, rely on the durable finish.
@@ -84,27 +85,6 @@ public class RunInTransactionInternalImpl {
                     }
 
                     throwExceptionWithSuppressed(ex, suppressed);
-                }
-            }
-
-            try {
-                tx.commit();
-            } catch (Exception e) {
-                addSuppressedToList(suppressed, e);
-
-                long remaining = calcRemainingTime(initialTimeout);
-
-                if (remaining > 0 && isRetriable(e)) {
-                    restartClo.accept(tx, remaining);
-                } else {
-                    try {
-                        // Try to rollback tx in case if it's not finished. Retry is not needed here due to the durable finish.
-                        tx.rollback();
-                    } catch (Exception re) {
-                        e.addSuppressed(re);
-                    }
-
-                    throw e;
                 }
             }
         }

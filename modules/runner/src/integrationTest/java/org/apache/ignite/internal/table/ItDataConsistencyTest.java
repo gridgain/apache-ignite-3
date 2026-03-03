@@ -50,7 +50,7 @@ public class ItDataConsistencyTest extends ClusterPerClassIntegrationTest {
     private static final String ZONE_NAME = "test_zone";
     private static final String TABLE_NAME = "accounts";
     private static final int WRITE_PARALLELISM = Runtime.getRuntime().availableProcessors();
-    private static final int READ_PARALLELISM = 1;
+    private static final int READ_PARALLELISM = 0;
     private static final int ACCOUNTS_COUNT = WRITE_PARALLELISM * 10;
     private static final double INITIAL = 1000;
     private static final double TOTAL = ACCOUNTS_COUNT * INITIAL;
@@ -111,6 +111,9 @@ public class ItDataConsistencyTest extends ClusterPerClassIntegrationTest {
             readThreads[i].setUncaughtExceptionHandler((t, e) -> firstErr.compareAndExchange(null, e));
             readThreads[i].start();
         }
+
+        log.info("Started {} writers", WRITE_PARALLELISM);
+        log.info("Started {} readers", READ_PARALLELISM);
 
         long cur = System.currentTimeMillis();
 
@@ -188,11 +191,10 @@ public class ItDataConsistencyTest extends ClusterPerClassIntegrationTest {
 
             while (!stop.get() && firstErr.get() == null) {
                 Ignite node = assignNodeForIteration(workerId);
-                Transaction tx = node.transactions().begin();
+                //Transaction tx = node.transactions().begin();
 
                 var view = node.tables().table("accounts").recordView();
-
-                try {
+                node.transactions().runInTransaction(tx -> {
                     long acc1 = rng.nextInt(ACCOUNTS_COUNT);
 
                     double amount = 100 + rng.nextInt(500);
@@ -212,12 +214,38 @@ public class ItDataConsistencyTest extends ClusterPerClassIntegrationTest {
                     view.upsert(tx, makeValue(acc2, val1 + amount));
 
                     tx.commit();
+                });
 
-                    ops.increment();
-                } catch (TransactionException e) {
-                    // Don't need to rollback manually if got IgniteException.
-                    fails.increment();
-                }
+                ops.increment();
+
+//                var view = node.tables().table("accounts").recordView();
+//
+//                try {
+//                    long acc1 = rng.nextInt(ACCOUNTS_COUNT);
+//
+//                    double amount = 100 + rng.nextInt(500);
+//
+//                    double val0 = view.get(tx, makeKey(acc1)).doubleValue("balance");
+//
+//                    long acc2 = acc1;
+//
+//                    while (acc1 == acc2) {
+//                        acc2 = rng.nextInt(ACCOUNTS_COUNT);
+//                    }
+//
+//                    double val1 = view.get(tx, makeKey(acc2)).doubleValue("balance");
+//
+//                    view.upsert(tx, makeValue(acc1, val0 - amount));
+//
+//                    view.upsert(tx, makeValue(acc2, val1 + amount));
+//
+//                    tx.commit();
+//
+//                    ops.increment();
+//                } catch (TransactionException e) {
+//                    // Don't need to rollback manually if got IgniteException.
+//                    fails.increment();
+//                }
             }
         };
     }

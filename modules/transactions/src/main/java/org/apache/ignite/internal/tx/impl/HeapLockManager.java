@@ -158,6 +158,11 @@ public class HeapLockManager extends AbstractEventProducer<LockEvent, LockEventP
     }
 
     @Override
+    public DeadlockPreventionPolicy policy() {
+        return deadlockPreventionPolicy;
+    }
+
+    @Override
     public CompletableFuture<Lock> acquire(UUID txId, LockKey lockKey, LockMode lockMode) {
         assert lockMode != null : "Lock mode is null";
 
@@ -886,7 +891,7 @@ public class HeapLockManager extends AbstractEventProducer<LockEvent, LockEventP
                 WaiterImpl toFail = (WaiterImpl) deadlockPreventionPolicy.allowWait(waiter, owner);
                 boolean isOrphanOwner = notifyListeners(waiter.txId(), owner.txId());
                 if (toFail == null) {
-                    // Set upper wait bound.
+                    // Waiting is allowed. Set upper wait bound.
                     if (deadlockPreventionPolicy.waitTimeout() > 0 && !unlock) {
                         // Do not add wait timeout again on unlock.
                         setWaiterTimeout(waiter);
@@ -998,7 +1003,7 @@ public class HeapLockManager extends AbstractEventProducer<LockEvent, LockEventP
             }
         }
 
-        private LockException createLockException(WaiterImpl waiter, WaiterImpl owner, boolean abandoned) {
+        private Exception createLockException(WaiterImpl waiter, WaiterImpl owner, boolean abandoned) {
             return new PossibleDeadlockOnLockAcquireException(
                     waiter.txId,
                     owner.txId,
